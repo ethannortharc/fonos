@@ -57,9 +57,17 @@
 		/* WP-06 View component source build files */
 		WP06001AA006001AA006001B /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06001AA006001AA006001A /* WaveformView.swift */; };
 		WP06002AA006002AA006002B /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06002AA006002AA006002A /* RecordButton.swift */; };
+		/* WP-07 Mode Picker & History View source build files */
+		WP07001AA007001AA007001B /* ModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07001AA007001AA007001A /* ModePicker.swift */; };
+		WP07002AA007002AA007002B /* ActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07002AA007002AA007002A /* ActivityCard.swift */; };
 		/* WP-06 test build files */
 		WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06003AA006003AA006003A /* INV01BuildTests.swift */; };
 		WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06004AA006004AA006004A /* INV11OfflineTests.swift */; };
+		/* WP-08 Settings View source build files */
+		WP08001AA008001AA008001B /* ProvidersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08001AA008001AA008001A /* ProvidersSection.swift */; };
+		WP08002AA008002AA008002B /* ModesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08002AA008002AA008002A /* ModesSection.swift */; };
+		WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08003AA008003AA008003A /* DestinationsSection.swift */; };
+		WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08004AA008004AA008004A /* DestinationPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -128,9 +136,17 @@
 		/* WP-06 View component source file references */
 		WP06001AA006001AA006001A /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		WP06002AA006002AA006002A /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
+		/* WP-07 Mode Picker & History View source file references */
+		WP07001AA007001AA007001A /* ModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePicker.swift; sourceTree = "<group>"; };
+		WP07002AA007002AA007002A /* ActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCard.swift; sourceTree = "<group>"; };
 		/* WP-06 test file references */
 		WP06003AA006003AA006003A /* INV01BuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV01BuildTests.swift; sourceTree = "<group>"; };
 		WP06004AA006004AA006004A /* INV11OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV11OfflineTests.swift; sourceTree = "<group>"; };
+		/* WP-08 Settings View source file references */
+		WP08001AA008001AA008001A /* ProvidersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersSection.swift; sourceTree = "<group>"; };
+		WP08002AA008002AA008002A /* ModesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesSection.swift; sourceTree = "<group>"; };
+		WP08003AA008003AA008003A /* DestinationsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationsSection.swift; sourceTree = "<group>"; };
+		WP08004AA008004AA008004A /* DestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -198,9 +214,22 @@
 				663C34A9CC884E40AD59B713 /* DictationView.swift */,
 				50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */,
 				50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */,
+				WP07001AA007001AA007001A /* ModePicker.swift */,
+				WP08004AA008004AA008004A /* DestinationPicker.swift */,
 				WP06000AA006000AA006000C /* Components */,
+				WP08000AA008000AA008000C /* SettingsView */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		WP08000AA008000AA008000C /* SettingsView */ = {
+			isa = PBXGroup;
+			children = (
+				WP08001AA008001AA008001A /* ProvidersSection.swift */,
+				WP08002AA008002AA008002A /* ModesSection.swift */,
+				WP08003AA008003AA008003A /* DestinationsSection.swift */,
+			);
+			path = SettingsView;
 			sourceTree = "<group>";
 		};
 		WP06000AA006000AA006000C /* Components */ = {
@@ -208,6 +237,7 @@
 			children = (
 				WP06001AA006001AA006001A /* WaveformView.swift */,
 				WP06002AA006002AA006002A /* RecordButton.swift */,
+				WP07002AA007002AA007002A /* ActivityCard.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -371,6 +401,12 @@
 				WP03001AA003001AA003001B /* FonosSTT.swift in Sources */,
 				WP06001AA006001AA006001B /* WaveformView.swift in Sources */,
 				WP06002AA006002AA006002B /* RecordButton.swift in Sources */,
+				WP07001AA007001AA007001B /* ModePicker.swift in Sources */,
+				WP07002AA007002AA007002B /* ActivityCard.swift in Sources */,
+				WP08001AA008001AA008001B /* ProvidersSection.swift in Sources */,
+				WP08002AA008002AA008002B /* ModesSection.swift in Sources */,
+				WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */,
+				WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

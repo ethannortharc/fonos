@@ -68,6 +68,11 @@
 		WP08002AA008002AA008002B /* ModesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08002AA008002AA008002A /* ModesSection.swift */; };
 		WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08003AA008003AA008003A /* DestinationsSection.swift */; };
 		WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08004AA008004AA008004A /* DestinationPicker.swift */; };
+		/* WP-09 Widget, Live Activity & Siri Shortcuts source build files */
+		WP09001AA009001AA009001B /* FonosWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09001AA009001AA009001A /* FonosWidget.swift */; };
+		WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09002AA009002AA009002A /* FonosLiveActivity.swift */; };
+		WP09003AA009003AA009003B /* DictateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09003AA009003AA009003A /* DictateIntent.swift */; };
+		WP09004AA009004AA009004B /* FonosIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09004AA009004AA009004A /* FonosIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -147,6 +152,11 @@
 		WP08002AA008002AA008002A /* ModesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesSection.swift; sourceTree = "<group>"; };
 		WP08003AA008003AA008003A /* DestinationsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationsSection.swift; sourceTree = "<group>"; };
 		WP08004AA008004AA008004A /* DestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationPicker.swift; sourceTree = "<group>"; };
+		/* WP-09 Widget, Live Activity & Siri Shortcuts file references */
+		WP09001AA009001AA009001A /* FonosWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosWidget.swift; sourceTree = "<group>"; };
+		WP09002AA009002AA009002A /* FonosLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosLiveActivity.swift; sourceTree = "<group>"; };
+		WP09003AA009003AA009003A /* DictateIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictateIntent.swift; sourceTree = "<group>"; };
+		WP09004AA009004AA009004A /* FonosIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosIntents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -154,9 +164,29 @@
 			isa = PBXGroup;
 			children = (
 				771A58FA8CA147459534EE1C /* FonosApp */,
+				WP09000AA009000AA009000C /* FonosWidget */,
+				WP09010AA009010AA009010C /* FonosIntents */,
 				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
 				4BD34BCD0DE7417A847A0D6B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		WP09000AA009000AA009000C /* FonosWidget */ = {
+			isa = PBXGroup;
+			children = (
+				WP09001AA009001AA009001A /* FonosWidget.swift */,
+				WP09002AA009002AA009002A /* FonosLiveActivity.swift */,
+			);
+			path = FonosWidget;
+			sourceTree = "<group>";
+		};
+		WP09010AA009010AA009010C /* FonosIntents */ = {
+			isa = PBXGroup;
+			children = (
+				WP09003AA009003AA009003A /* DictateIntent.swift */,
+				WP09004AA009004AA009004A /* FonosIntents.swift */,
+			);
+			path = FonosIntents;
 			sourceTree = "<group>";
 		};
 		4BD34BCD0DE7417A847A0D6B /* Products */ = {
@@ -407,6 +437,10 @@
 				WP08002AA008002AA008002B /* ModesSection.swift in Sources */,
 				WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */,
 				WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */,
+				WP09001AA009001AA009001B /* FonosWidget.swift in Sources */,
+				WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */,
+				WP09003AA009003AA009003B /* DictateIntent.swift in Sources */,
+				WP09004AA009004AA009004B /* FonosIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

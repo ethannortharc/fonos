@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Settings View
 
-/// Full settings screen with sections for STT, LLM, Recording, Destinations and History.
+/// Full settings screen with tabbed interface: Models | Modes | General.
 struct SettingsView: View {
 
     // MARK: - Config state
@@ -15,19 +15,13 @@ struct SettingsView: View {
         return AppConfig()
     }()
 
-    // MARK: - Keychain
+    // MARK: - Tab state
 
-    private let keychainSTT = KeychainStore(service: "com.fonos.stt")
-    private let keychainLLM = KeychainStore(service: "com.fonos.llm")
+    enum SettingsTab {
+        case models, modes, general
+    }
 
-    // MARK: - Local keychain state
-
-    @State private var sttAPIKey: String = ""
-    @State private var llmAPIKey: String = ""
-
-    // MARK: - Navigation state
-
-    @State private var showAddDestination = false
+    @State private var selectedTab: SettingsTab = .models
 
     // MARK: - Colors
 
@@ -44,131 +38,99 @@ struct SettingsView: View {
             ZStack {
                 bg.ignoresSafeArea()
 
-                List {
-                    speechToTextSection
-                    llmSection
-                    recordingSection
-                    destinationsSection
-                    historySection
+                VStack(spacing: 0) {
+                    // Tab bar
+                    tabBar
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
+                    Divider()
+                        .background(separator)
+
+                    // Tab content
+                    tabContent
                 }
-                .listStyle(.insetGrouped)
-                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
         }
-        .onAppear(perform: loadKeychainKeys)
         .onChange(of: config) { _, _ in
             saveConfig()
         }
-        .sheet(isPresented: $showAddDestination) {
-            AddDestinationSheet(config: $config)
+    }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(title: "Models", tab: .models)
+            tabButton(title: "Modes", tab: .modes)
+            tabButton(title: "General", tab: .general)
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
+    private func tabButton(title: String, tab: SettingsTab) -> some View {
+        let isSelected = selectedTab == tab
+        return Button {
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                selectedTab = tab
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? Color(hex: "#1a1917") : textDim)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(isSelected ? amber : Color.clear)
+                        .shadow(
+                            color: isSelected ? amber.opacity(0.3) : .clear,
+                            radius: 4,
+                            x: 0,
+                            y: 2
+                        )
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    // MARK: - Tab Content
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch selectedTab {
+        case .models:
+            ModelsTab(config: $config)
+        case .modes:
+            ModesTab(config: $config)
+        case .general:
+            generalTab
         }
     }
 
-    // MARK: - Speech-to-Text Section
+    // MARK: - General Tab
 
-    private var speechToTextSection: some View {
-        Section {
-            // Provider picker
-            Picker("Provider", selection: $config.sttProvider) {
-                Text("Apple Speech").tag("apple")
-                Text("OpenAI Whisper").tag("whisper")
-                Text("Fonos Server").tag("fonos")
-                Text("Custom").tag("custom")
-            }
-            .foregroundColor(textPrimary)
-            .listRowBackground(cardBg)
-            .listRowSeparatorTint(separator)
-
-            // Language selector
-            Picker("Language", selection: $config.sttLanguage) {
-                Text("Auto-detect").tag("auto")
-                Text("English").tag("en-US")
-                Text("Spanish").tag("es-ES")
-                Text("French").tag("fr-FR")
-                Text("German").tag("de-DE")
-                Text("Japanese").tag("ja-JP")
-                Text("Chinese").tag("zh-CN")
-                Text("Portuguese").tag("pt-BR")
-            }
-            .foregroundColor(textPrimary)
-            .listRowBackground(cardBg)
-            .listRowSeparatorTint(separator)
-
-            // API Key (Keychain)
-            if config.sttProvider != "apple" {
-                SecureField("API Key", text: $sttAPIKey)
-                    .foregroundColor(textPrimary)
-                    .tint(amber)
-                    .listRowBackground(cardBg)
-                    .listRowSeparatorTint(separator)
-                    .onChange(of: sttAPIKey) { _, newValue in
-                        try? keychainSTT.set(newValue, forKey: "api_key")
-                    }
-            }
-        } header: {
-            sectionHeader("Speech-to-Text")
+    private var generalTab: some View {
+        List {
+            recordingSection
+            destinationsSection
+            historySection
         }
-    }
-
-    // MARK: - LLM Processing Section
-
-    private var llmSection: some View {
-        Section {
-            // Provider picker
-            Picker("Provider", selection: $config.llmProvider) {
-                Text("OpenAI").tag("openai")
-                Text("Anthropic").tag("anthropic")
-                Text("Fonos Server").tag("fonos")
-                Text("Custom").tag("custom")
-            }
-            .foregroundColor(textPrimary)
-            .listRowBackground(cardBg)
-            .listRowSeparatorTint(separator)
-
-            // Model selector — filtered by provider
-            Picker("Model", selection: modelIDBinding) {
-                ForEach(modelsForProvider(config.llmProvider), id: \.self) { model in
-                    Text(model).tag(model)
-                }
-            }
-            .foregroundColor(textPrimary)
-            .listRowBackground(cardBg)
-            .listRowSeparatorTint(separator)
-
-            // Base URL (for custom/self-hosted)
-            if config.llmProvider == "fonos" || config.llmProvider == "custom" {
-                TextField("Base URL", text: $config.llmBaseURL)
-                    .foregroundColor(textPrimary)
-                    .tint(amber)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .listRowBackground(cardBg)
-                    .listRowSeparatorTint(separator)
-            }
-
-            // API Key (Keychain)
-            if config.llmProvider != "fonos" {
-                SecureField("API Key", text: $llmAPIKey)
-                    .foregroundColor(textPrimary)
-                    .tint(amber)
-                    .listRowBackground(cardBg)
-                    .listRowSeparatorTint(separator)
-                    .onChange(of: llmAPIKey) { _, newValue in
-                        try? keychainLLM.set(newValue, forKey: "api_key")
-                    }
-            }
-        } header: {
-            sectionHeader("LLM Processing")
-        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
     }
 
     // MARK: - Recording Section
 
     private var recordingSection: some View {
         Section {
-            // Record mode picker
             Picker("Record Mode", selection: $config.recordMode) {
                 Text("Tap to Record").tag(RecordMode.tap)
                 Text("Hold to Record").tag(RecordMode.hold)
@@ -177,7 +139,6 @@ struct SettingsView: View {
             .listRowBackground(cardBg)
             .listRowSeparatorTint(separator)
 
-            // Auto-send toggle
             let autoSendEnabled = Binding<Bool>(
                 get: { !config.autoSendDestination.isEmpty },
                 set: { enabled in
@@ -214,54 +175,7 @@ struct SettingsView: View {
     // MARK: - Destinations Section
 
     private var destinationsSection: some View {
-        Section {
-            ForEach(Array(config.destinations.enumerated()), id: \.element.id) { index, destination in
-                HStack(spacing: 12) {
-                    Image(systemName: destinationIcon(destination))
-                        .foregroundColor(amber)
-                        .frame(width: 22)
-
-                    Text(destinationLabel(destination))
-                        .foregroundColor(textPrimary)
-
-                    Spacer()
-
-                    // Active indicator for the auto-send destination
-                    if config.autoSendDestination == destination.id {
-                        Circle()
-                            .fill(Color(hex: "#fbbf24"))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-                .listRowBackground(cardBg)
-                .listRowSeparatorTint(separator)
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    // Prevent deleting clipboard (built-in)
-                    if destination.id != "clipboard" {
-                        Button(role: .destructive) {
-                            config.destinations.remove(at: index)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
-            }
-
-            Button {
-                showAddDestination = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "plus.circle.fill")
-                        .foregroundColor(amber)
-                    Text("Add Destination")
-                        .foregroundColor(amber)
-                }
-            }
-            .listRowBackground(cardBg)
-            .listRowSeparatorTint(separator)
-        } header: {
-            sectionHeader("Destinations")
-        }
+        DestinationsSection(config: $config)
     }
 
     // MARK: - History Section
@@ -302,58 +216,12 @@ struct SettingsView: View {
         }
     }
 
-    private func destinationIcon(_ destination: AnyTextDestination) -> String {
-        switch destination.id {
-        case "clipboard":  return "doc.on.clipboard"
-        case "messages":   return "message.fill"
-        case "url_scheme": return "link"
-        default:            return "arrow.up.forward.app"
-        }
-    }
-
-    private func modelsForProvider(_ provider: String) -> [String] {
-        switch provider {
-        case "openai":    return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
-        case "anthropic": return ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-3-5"]
-        case "fonos":     return ["llama3", "mistral", "phi3"]
-        default:          return ["default"]
-        }
-    }
-
-    private var modelIDBinding: Binding<String> {
-        Binding<String>(
-            get: {
-                config.modelProfiles.first?.modelID ?? modelsForProvider(config.llmProvider).first ?? ""
-            },
-            set: { newModel in
-                if var profile = config.modelProfiles.first {
-                    profile.modelID = newModel
-                    config.modelProfiles[0] = profile
-                } else {
-                    config.modelProfiles = [
-                        ModelProfile(
-                            id: UUID().uuidString,
-                            name: newModel,
-                            provider: config.llmProvider,
-                            modelID: newModel
-                        )
-                    ]
-                }
-            }
-        )
-    }
-
     // MARK: - Persistence
 
     private func saveConfig() {
         if let data = try? JSONEncoder().encode(config) {
             UserDefaults.standard.set(data, forKey: "app_config")
         }
-    }
-
-    private func loadKeychainKeys() {
-        sttAPIKey = (try? keychainSTT.get("api_key")) ?? ""
-        llmAPIKey = (try? keychainLLM.get("api_key")) ?? ""
     }
 }
 

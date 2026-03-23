@@ -6,6 +6,7 @@ import AVFoundation
 enum AudioCaptureError: Error, LocalizedError {
     case engineStartFailed(Error)
     case sessionSetupFailed(Error)
+    case permissionDenied
     case noInputAvailable
     case notRecording
 
@@ -13,6 +14,7 @@ enum AudioCaptureError: Error, LocalizedError {
         switch self {
         case .engineStartFailed(let err): return "Audio engine failed to start: \(err.localizedDescription)"
         case .sessionSetupFailed(let err): return "Audio session setup failed: \(err.localizedDescription)"
+        case .permissionDenied: return "Microphone permission is required. Please enable it in Settings."
         case .noInputAvailable: return "No audio input available"
         case .notRecording: return "Not currently recording"
         }
@@ -91,8 +93,15 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     // MARK: - Public API
 
     @MainActor
-    func startCapture() throws {
+    func startCapture() async throws {
         guard !isRecording else { return }
+
+        // Request microphone permission BEFORE touching engine.inputNode.
+        // Accessing inputNode without permission throws an uncatchable ObjC NSException.
+        let granted = await AVAudioApplication.requestRecordPermission()
+        guard granted else {
+            throw AudioCaptureError.permissionDenied
+        }
 
         // Configure audio session
         let session = AVAudioSession.sharedInstance()
@@ -107,12 +116,13 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Reset ring buffer
-        lock.lock()
-        ringBuffer = [Int16](repeating: 0, count: Self.maxSamples)
-        ringWriteIndex = 0
-        totalSamplesWritten = 0
-        lock.unlock()
+        // Guard against invalid format (0 channels / 0 sample rate)
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            throw AudioCaptureError.noInputAvailable
+        }
+
+        // Reset ring buffer (nonisolated helper avoids async-context warning on NSLock)
+        resetRingBuffer()
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             self?.processTapBuffer(buffer)
@@ -286,6 +296,15 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     }
 
     // MARK: - Private Helpers
+
+    /// Reset ring buffer state. Called synchronously (not in async context) to avoid NSLock warnings.
+    private nonisolated func resetRingBuffer() {
+        lock.lock()
+        ringBuffer = [Int16](repeating: 0, count: Self.maxSamples)
+        ringWriteIndex = 0
+        totalSamplesWritten = 0
+        lock.unlock()
+    }
 
     private func processTapBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let converter = AVAudioConverter(from: buffer.format, to: captureFormat) else { return }

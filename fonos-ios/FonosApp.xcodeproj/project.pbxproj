@@ -25,6 +25,10 @@
 		AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D12 /* ModelProfile.swift */; };
 		AA01B001AA014D00AA014D03 /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D13 /* Destination.swift */; };
 		AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D14 /* KeychainStore.swift */; };
+		/* WP-11 Settings model management build files */
+		WP11001AA011001AA011001B /* ModeConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11001AA011001AA011001A /* ModeConfig.swift */; };
+		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
+		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
 		/* New test build files */
 		AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */; };
 		AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */; };
@@ -121,6 +125,10 @@
 		AA01B001AA014D00AA014D12 /* ModelProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfile.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D13 /* Destination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Destination.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D14 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		/* WP-11 Settings model management file references */
+		WP11001AA011001AA011001A /* ModeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeConfig.swift; sourceTree = "<group>"; };
+		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
+		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D18 /* FonosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosApp.entitlements; sourceTree = "<group>"; };
 		/* New test file references */
 		AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV06ModeTests.swift; sourceTree = "<group>"; };
@@ -225,6 +233,7 @@
 				AA01B001AA014D00AA014D11 /* Mode.swift */,
 				AA01B001AA014D00AA014D12 /* ModelProfile.swift */,
 				AA01B001AA014D00AA014D13 /* Destination.swift */,
+				WP11001AA011001AA011001A /* ModeConfig.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -264,6 +273,8 @@
 				WP08001AA008001AA008001A /* ProvidersSection.swift */,
 				WP08002AA008002AA008002A /* ModesSection.swift */,
 				WP08003AA008003AA008003A /* DestinationsSection.swift */,
+				WP11002AA011002AA011002A /* ModelsTab.swift */,
+				WP11003AA011003AA011003A /* ModesTab.swift */,
 			);
 			path = SettingsView;
 			sourceTree = "<group>";
@@ -445,6 +456,9 @@
 				WP08002AA008002AA008002B /* ModesSection.swift in Sources */,
 				WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */,
 				WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */,
+				WP11001AA011001AA011001B /* ModeConfig.swift in Sources */,
+				WP11002AA011002AA011002B /* ModelsTab.swift in Sources */,
+				WP11003AA011003AA011003B /* ModesTab.swift in Sources */,
 				WP09001AA009001AA009001B /* FonosWidget.swift in Sources */,
 				WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */,
 				WP09003AA009003AA009003B /* DictateIntent.swift in Sources */,

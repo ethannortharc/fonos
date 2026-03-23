@@ -1,0 +1,594 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		663C34A9CC884E40AD59B701 /* FonosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663C34A9CC884E40AD59B711 /* FonosApp.swift */; };
+		663C34A9CC884E40AD59B702 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663C34A9CC884E40AD59B712 /* ContentView.swift */; };
+		663C34A9CC884E40AD59B703 /* DictationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663C34A9CC884E40AD59B713 /* DictationView.swift */; };
+		663C34A9CC884E40AD59B704 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */; };
+		663C34A9CC884E40AD59B705 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */; };
+		663C34A9CC884E40AD59B706 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */; };
+		663C34A9CC884E40AD59B707 /* DictationSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A4 /* DictationSession.swift */; };
+		663C34A9CC884E40AD59B708 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A5 /* AppConfig.swift */; };
+		663C34A9CC884E40AD59B709 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */; };
+		663C34A9CC884E40AD59B70A /* STTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A7 /* STTService.swift */; };
+		663C34A9CC884E40AD59B70B /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */; };
+		663C34A9CC884E40AD59B70C /* TextRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */; };
+		663C34A9CC884E40AD59B70D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */; };
+		/* New model source build files */
+		AA01B001AA014D00AA014D01 /* Mode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D11 /* Mode.swift */; };
+		AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D12 /* ModelProfile.swift */; };
+		AA01B001AA014D00AA014D03 /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D13 /* Destination.swift */; };
+		AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D14 /* KeychainStore.swift */; };
+		/* New test build files */
+		AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */; };
+		AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */; };
+		AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */; };
+		/* Test build files */
+		77D41ED5933B42BF9BE9C701 /* FonosAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C711 /* FonosAppTests.swift */; };
+		77D41ED5933B42BF9BE9C702 /* AudioCaptureServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C712 /* AudioCaptureServiceTests.swift */; };
+		77D41ED5933B42BF9BE9C703 /* STTServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C713 /* STTServiceTests.swift */; };
+		77D41ED5933B42BF9BE9C704 /* LLMServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C714 /* LLMServiceTests.swift */; };
+		77D41ED5933B42BF9BE9C705 /* ModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C715 /* ModeTests.swift */; };
+		77D41ED5933B42BF9BE9C706 /* TextRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C716 /* TextRouterTests.swift */; };
+		77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */; };
+		77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */; };
+		77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B8A5C71AD9544E80ADAACF01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11F387A36EAB42D7B29216FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E63F5454DE64F8A84201298;
+			remoteInfo = FonosApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		663C34A9CC884E40AD59B711 /* FonosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosApp.swift; sourceTree = "<group>"; };
+		663C34A9CC884E40AD59B712 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		663C34A9CC884E40AD59B713 /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A4 /* DictationSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationSession.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A5 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A7 /* STTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTService.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMService.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextRouter.swift; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		50BA9D99CDBC44ABA7E645AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		/* Product references */
+		BAC7AF7161324CE4AF50AD41 /* FonosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FonosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		/* Test file references */
+		77D41ED5933B42BF9BE9C711 /* FonosAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C712 /* AudioCaptureServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureServiceTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C713 /* STTServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTServiceTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C714 /* LLMServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMServiceTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C715 /* ModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C716 /* TextRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextRouterTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryTests.swift; sourceTree = "<group>"; };
+		77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTests.swift; sourceTree = "<group>"; };
+		/* New model file references */
+		AA01B001AA014D00AA014D11 /* Mode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mode.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D12 /* ModelProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfile.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D13 /* Destination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Destination.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D14 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D18 /* FonosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosApp.entitlements; sourceTree = "<group>"; };
+		/* New test file references */
+		AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV06ModeTests.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV09ConfigTests.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV10HistoryTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		EB7F26921B15416BBDBF911D = {
+			isa = PBXGroup;
+			children = (
+				771A58FA8CA147459534EE1C /* FonosApp */,
+				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
+				4BD34BCD0DE7417A847A0D6B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4BD34BCD0DE7417A847A0D6B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BAC7AF7161324CE4AF50AD41 /* FonosApp.app */,
+				6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		771A58FA8CA147459534EE1C /* FonosApp */ = {
+			isa = PBXGroup;
+			children = (
+				663C34A9CC884E40AD59B711 /* FonosApp.swift */,
+				1A3615C7390D4D119843D0DD /* Models */,
+				B0035A133D264734A9D8ABFA /* Services */,
+				125C680D279A4D5CB0E5B54D /* Views */,
+				915BC72CB554422381D99B83 /* Extensions */,
+				62C2153FB20345E1B143E7E4 /* Resources */,
+			);
+			path = FonosApp;
+			sourceTree = "<group>";
+		};
+		1A3615C7390D4D119843D0DD /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645A4 /* DictationSession.swift */,
+				50BA9D99CDBC44ABA7E645A5 /* AppConfig.swift */,
+				AA01B001AA014D00AA014D11 /* Mode.swift */,
+				AA01B001AA014D00AA014D12 /* ModelProfile.swift */,
+				AA01B001AA014D00AA014D13 /* Destination.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		B0035A133D264734A9D8ABFA /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */,
+				50BA9D99CDBC44ABA7E645A7 /* STTService.swift */,
+				50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */,
+				50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */,
+				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		125C680D279A4D5CB0E5B54D /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				663C34A9CC884E40AD59B712 /* ContentView.swift */,
+				663C34A9CC884E40AD59B713 /* DictationView.swift */,
+				50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */,
+				50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		915BC72CB554422381D99B83 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		62C2153FB20345E1B143E7E4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */,
+				50BA9D99CDBC44ABA7E645AB /* Info.plist */,
+				AA01B001AA014D00AA014D18 /* FonosApp.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		3E090E64BBAA4232B8A4810E /* FonosAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				77D41ED5933B42BF9BE9C711 /* FonosAppTests.swift */,
+				77D41ED5933B42BF9BE9C712 /* AudioCaptureServiceTests.swift */,
+				77D41ED5933B42BF9BE9C713 /* STTServiceTests.swift */,
+				77D41ED5933B42BF9BE9C714 /* LLMServiceTests.swift */,
+				77D41ED5933B42BF9BE9C715 /* ModeTests.swift */,
+				77D41ED5933B42BF9BE9C716 /* TextRouterTests.swift */,
+				77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */,
+				77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */,
+				77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */,
+				AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */,
+				AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */,
+				AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */,
+			);
+			path = FonosAppTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7E63F5454DE64F8A84201298 /* FonosApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3A5EF6CF3E0A45C081BEB5B8 /* Build configuration list for PBXNativeTarget "FonosApp" */;
+			buildPhases = (
+				FE1967CA54134ADA979C91A6 /* Sources */,
+				0F9785A3998649D9893B90F7 /* Resources */,
+				E3116401421D41DAB7AF53B1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FonosApp;
+			productName = FonosApp;
+			productReference = BAC7AF7161324CE4AF50AD41 /* FonosApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C4780AAF578C46BFBB87A7AA /* FonosAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA402CDB1EA844939DDAC1FA /* Build configuration list for PBXNativeTarget "FonosAppTests" */;
+			buildPhases = (
+				598E6D93E1274503BE563840 /* Sources */,
+				3445D25EE87F44BAAEA57B0F /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4DB2C7A870E4431CA33063D9 /* PBXTargetDependency */,
+			);
+			name = FonosAppTests;
+			productName = FonosAppTests;
+			productReference = 6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		11F387A36EAB42D7B29216FC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1700;
+				LastUpgradeCheck = 1700;
+				TargetAttributes = {
+					7E63F5454DE64F8A84201298 = {
+						CreatedOnToolsVersion = 17.0;
+					};
+					C4780AAF578C46BFBB87A7AA = {
+						CreatedOnToolsVersion = 17.0;
+						TestTargetID = 7E63F5454DE64F8A84201298;
+					};
+				};
+			};
+			buildConfigurationList = 756B8C3D892E4965B3541FAA /* Build configuration list for PBXProject "FonosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = EB7F26921B15416BBDBF911D;
+			productRefGroup = 4BD34BCD0DE7417A847A0D6B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7E63F5454DE64F8A84201298 /* FonosApp */,
+				C4780AAF578C46BFBB87A7AA /* FonosAppTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0F9785A3998649D9893B90F7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				663C34A9CC884E40AD59B70D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FE1967CA54134ADA979C91A6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				663C34A9CC884E40AD59B701 /* FonosApp.swift in Sources */,
+				663C34A9CC884E40AD59B702 /* ContentView.swift in Sources */,
+				663C34A9CC884E40AD59B703 /* DictationView.swift in Sources */,
+				663C34A9CC884E40AD59B704 /* HistoryView.swift in Sources */,
+				663C34A9CC884E40AD59B705 /* SettingsView.swift in Sources */,
+				663C34A9CC884E40AD59B706 /* Color+Hex.swift in Sources */,
+				663C34A9CC884E40AD59B707 /* DictationSession.swift in Sources */,
+				663C34A9CC884E40AD59B708 /* AppConfig.swift in Sources */,
+				663C34A9CC884E40AD59B709 /* AudioCaptureService.swift in Sources */,
+				663C34A9CC884E40AD59B70A /* STTService.swift in Sources */,
+				663C34A9CC884E40AD59B70B /* LLMService.swift in Sources */,
+				663C34A9CC884E40AD59B70C /* TextRouter.swift in Sources */,
+				AA01B001AA014D00AA014D01 /* Mode.swift in Sources */,
+				AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */,
+				AA01B001AA014D00AA014D03 /* Destination.swift in Sources */,
+				AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		598E6D93E1274503BE563840 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				77D41ED5933B42BF9BE9C701 /* FonosAppTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C702 /* AudioCaptureServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C703 /* STTServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C704 /* LLMServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C705 /* ModeTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C706 /* TextRouterTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */,
+				AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */,
+				AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */,
+				AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E3116401421D41DAB7AF53B1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3445D25EE87F44BAAEA57B0F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4DB2C7A870E4431CA33063D9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E63F5454DE64F8A84201298 /* FonosApp */;
+			targetProxy = B8A5C71AD9544E80ADAACF01 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		72EEA2B9000F4EAFB67013E3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_IVAR_ACCESS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		7BA1B7DB38D147B0B6F9CBC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_IVAR_ACCESS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		90A7727FF44248BF932BC148 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FonosApp/Resources/FonosApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FonosApp/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		63B806250AF3417C8C3CCE69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FonosApp/Resources/FonosApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FonosApp/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		663AF6821B1B4765BE16F5F1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FonosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FonosApp";
+			};
+			name = Debug;
+		};
+		AF8EA06618F7406A9330FA76 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FonosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FonosApp";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		756B8C3D892E4965B3541FAA /* Build configuration list for PBXProject "FonosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72EEA2B9000F4EAFB67013E3 /* Debug */,
+				7BA1B7DB38D147B0B6F9CBC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3A5EF6CF3E0A45C081BEB5B8 /* Build configuration list for PBXNativeTarget "FonosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90A7727FF44248BF932BC148 /* Debug */,
+				63B806250AF3417C8C3CCE69 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA402CDB1EA844939DDAC1FA /* Build configuration list for PBXNativeTarget "FonosAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				663AF6821B1B4765BE16F5F1 /* Debug */,
+				AF8EA06618F7406A9330FA76 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 11F387A36EAB42D7B29216FC /* Project object */;
+}

@@ -2,8 +2,14 @@ import SwiftUI
 
 /// Main dictation recording screen.
 struct DictationView: View {
-    @StateObject private var viewModel = DictationViewModel()
+    @ObservedObject var viewModel: DictationViewModel
     @State private var showCopiedFeedback = false
+
+    /// Convenience initialiser for previews and unit tests.
+    /// Uses a default no-op DictationViewModel (no STT provider).
+    init(viewModel: DictationViewModel = DictationViewModel()) {
+        self.viewModel = viewModel
+    }
 
     private let modes: [Mode] = [.raw, .polish, .formal, .translate(targetLanguage: "English"), .custom(
         systemPrompt: "You are a helpful assistant.",
@@ -393,5 +399,5 @@ struct DictationView: View {
 }
 
 #Preview {
-    DictationView()
+    DictationView(viewModel: DictationViewModel())
 }

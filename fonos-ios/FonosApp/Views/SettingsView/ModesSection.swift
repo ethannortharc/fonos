@@ -8,7 +8,7 @@ struct ModesSection: View {
     @Binding var modes: [Mode]
 
     @State private var showAddMode = false
-    @State private var editingMode: Mode? = nil
+    @State private var editingMode: Mode?
 
     private let amber = Color(hex: "#fbbf24")
     private let textPrimary = Color(hex: "#fafaf9")
@@ -131,7 +131,7 @@ private struct ModeRow: View {
 
 /// Form for creating or editing a custom mode.
 struct CustomModeForm: View {
-    var initialMode: Mode? = nil
+    var initialMode: Mode?
     let onSave: (Mode) -> Void
 
     @Environment(\.dismiss) private var dismiss

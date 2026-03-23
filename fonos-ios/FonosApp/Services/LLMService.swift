@@ -67,7 +67,9 @@ final class LLMService: Sendable {
         let messages = buildMessages(text: text, mode: mode)
         let requestBody = buildRequestBody(messages: messages, mode: mode)
 
-        let url = URL(string: "\(baseURL)/v1/chat/completions")!
+        guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
+            throw LLMError.networkUnavailable
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -110,7 +112,7 @@ final class LLMService: Sendable {
         let userContent = mode.applyTemplate(to: text)
         return [
             ["role": "system", "content": mode.systemPrompt],
-            ["role": "user",   "content": userContent]
+            ["role": "user", "content": userContent]
         ]
     }
 

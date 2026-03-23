@@ -68,6 +68,9 @@
 		WP08002AA008002AA008002B /* ModesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08002AA008002AA008002A /* ModesSection.swift */; };
 		WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08003AA008003AA008003A /* DestinationsSection.swift */; };
 		WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08004AA008004AA008004A /* DestinationPicker.swift */; };
+		/* WP-10 Integration test build files */
+		WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */; };
+		WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */; };
 		/* WP-09 Widget, Live Activity & Siri Shortcuts source build files */
 		WP09001AA009001AA009001B /* FonosWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09001AA009001AA009001A /* FonosWidget.swift */; };
 		WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09002AA009002AA009002A /* FonosLiveActivity.swift */; };
@@ -152,6 +155,9 @@
 		WP08002AA008002AA008002A /* ModesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesSection.swift; sourceTree = "<group>"; };
 		WP08003AA008003AA008003A /* DestinationsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationsSection.swift; sourceTree = "<group>"; };
 		WP08004AA008004AA008004A /* DestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationPicker.swift; sourceTree = "<group>"; };
+		/* WP-10 Integration test file references */
+		WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD06BundleSizeTests.swift; sourceTree = "<group>"; };
+		WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD07SwiftLintTests.swift; sourceTree = "<group>"; };
 		/* WP-09 Widget, Live Activity & Siri Shortcuts file references */
 		WP09001AA009001AA009001A /* FonosWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosWidget.swift; sourceTree = "<group>"; };
 		WP09002AA009002AA009002A /* FonosLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosLiveActivity.swift; sourceTree = "<group>"; };
@@ -316,6 +322,8 @@
 				WP03004AA003004AA003004A /* QD02STTParsingTests.swift */,
 				WP06003AA006003AA006003A /* INV01BuildTests.swift */,
 				WP06004AA006004AA006004A /* INV11OfflineTests.swift */,
+				WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */,
+				WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -471,6 +479,8 @@
 				WP04000000000000000004 /* QD04ErrorTests.swift in Sources */,
 				WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */,
 				WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */,
+				WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */,
+				WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

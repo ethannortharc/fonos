@@ -76,7 +76,19 @@ final class RealSpeechRecognizer: SpeechRecognizerProtocol, @unchecked Sendable 
     private var recognizer: SFSpeechRecognizer
 
     init(locale: Locale = .current) {
-        self.recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer()!
+        // SFSpeechRecognizer(locale:) returns nil only for truly unsupported locales.
+        // Fall back to the device locale, then to English if unavailable.
+        let englishLocale = Locale(identifier: "en-US")
+        if let localRecognizer = SFSpeechRecognizer(locale: locale) {
+            self.recognizer = localRecognizer
+        } else if let englishRecognizer = SFSpeechRecognizer(locale: englishLocale) {
+            self.recognizer = englishRecognizer
+        } else {
+            // SFSpeechRecognizer requires at least one supported locale; use system default.
+            self.recognizer = SFSpeechRecognizer(locale: .current) ?? {
+                fatalError("SFSpeechRecognizer is unavailable on this device.")
+            }()
+        }
     }
 
     func updateLocale(_ locale: Locale) {
@@ -196,7 +208,9 @@ final class WhisperSTT: STTProvider, @unchecked Sendable {
     }
 
     func transcribe(audioData: Data, language: String?) async throws -> String {
-        let url = URL(string: "\(baseURL)/v1/audio/transcriptions")!
+        guard let url = URL(string: "\(baseURL)/v1/audio/transcriptions") else {
+            throw STTError.badRequest
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -214,7 +228,7 @@ final class WhisperSTT: STTProvider, @unchecked Sendable {
         if let language {
             appendFormField(&body, boundary: boundary, name: "language", value: language)
         }
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)--\r\n".utf8))
         request.httpBody = body
 
         let (data, response): (Data, URLResponse)
@@ -262,18 +276,18 @@ final class WhisperSTT: STTProvider, @unchecked Sendable {
     }
 
     private func appendFormField(_ body: inout Data, boundary: String, name: String, value: String) {
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(value)\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+        body.append(Data("\(value)\r\n".utf8))
     }
 
     private func appendFormFile(_ body: inout Data, boundary: String, name: String,
                                 filename: String, mimeType: String, data: Data) {
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
         body.append(data)
-        body.append("\r\n".data(using: .utf8)!)
+        body.append(Data("\r\n".utf8))
     }
 }
 

@@ -1,0 +1,62 @@
+# SwiftLint configuration for FonosApp
+# Project: fonos-ios (iOS 17+, Swift 6)
+
+included:
+  - FonosApp
+
+excluded:
+  - FonosApp.xcodeproj
+  - FonosAppTests
+  - FonosIntents
+  - FonosWidget
+  - target
+  - .build
+  - DerivedData
+
+# Disable rules that are impractical for this codebase
+disabled_rules:
+  # Data(string.utf8) is cleaner than Data(string.utf8)! for known-encodable ASCII
+  - non_optional_string_data_conversion
+  # "bg", "ms", "av", "ch", "sp", "ut", "mt" are clear in context
+  # Single-letter loop vars (i, v) are conventional
+  - identifier_name
+
+# Warnings kept as warnings — configure thresholds for the project
+opt_in_rules:
+  - empty_count
+  - force_unwrapping
+
+# File/type size: these views are intentionally comprehensive
+file_length:
+  warning: 600
+  error: 800
+
+type_body_length:
+  warning: 400
+  error: 600
+
+function_body_length:
+  warning: 80
+  error: 120
+
+# Cyclomatic complexity: audio/STT code has inherent branching
+cyclomatic_complexity:
+  warning: 15
+  error: 20
+
+# Function parameter count: STT helpers have many params
+function_parameter_count:
+  warning: 7
+  error: 10
+
+# Line length
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+# Force cast and force try remain errors
+force_cast: error
+force_try: error
+force_unwrapping: error

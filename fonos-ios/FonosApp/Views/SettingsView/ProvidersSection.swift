@@ -41,7 +41,7 @@ struct ProvidersSection: View {
             providerRow
             secondaryRow
             if needsBaseURL { baseURLRow }
-            if needsAPIKey  { apiKeyRow  }
+            if needsAPIKey { apiKeyRow }
         } header: {
             Text(sectionTitle.uppercased())
                 .font(.system(size: 12, weight: .medium))

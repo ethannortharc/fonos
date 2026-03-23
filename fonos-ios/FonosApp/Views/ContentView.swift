@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var dictationViewModel = DictationViewModel()
+
     var body: some View {
         TabView {
-            DictationView()
+            DictationView(viewModel: dictationViewModel)
                 .tabItem {
-                    Label("Dictation", systemImage: "mic.fill")
+                    Label("Dictate", systemImage: "mic.fill")
                 }
 
             HistoryView()
@@ -19,6 +21,7 @@ struct ContentView: View {
                 }
         }
         .preferredColorScheme(.dark)
+        .tint(Color(hex: "#fbbf24"))
     }
 }
 

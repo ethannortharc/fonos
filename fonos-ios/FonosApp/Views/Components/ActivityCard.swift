@@ -3,7 +3,7 @@ import SwiftUI
 /// Single dictation result card for the history list.
 struct ActivityCard: View {
     let session: DictationSession
-    var onResend: ((DictationSession) -> Void)? = nil
+    var onResend: ((DictationSession) -> Void)?
 
     @State private var isExpanded = false
 

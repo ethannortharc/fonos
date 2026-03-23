@@ -15,7 +15,7 @@ final class FonosSTT: STTProvider, @unchecked Sendable {
     // MARK: - Init
 
     init(session: URLSession = .shared,
-         serverURL: URL = URL(string: "http://localhost:8000")!) {
+         serverURL: URL = URL(string: "http://localhost:8000") ?? URL(fileURLWithPath: "/")) {
         self.session = session
         self.serverURL = serverURL
     }
@@ -23,10 +23,12 @@ final class FonosSTT: STTProvider, @unchecked Sendable {
     // MARK: - STTProvider
 
     func transcribe(audioData: Data, language: String?) async throws -> String {
-        var components = URLComponents(
+        guard var components = URLComponents(
             url: serverURL.appendingPathComponent("transcribe"),
             resolvingAgainstBaseURL: false
-        )!
+        ) else {
+            throw STTError.badRequest
+        }
         if let language {
             components.queryItems = [URLQueryItem(name: "language", value: language)]
         }
@@ -43,12 +45,12 @@ final class FonosSTT: STTProvider, @unchecked Sendable {
                          forHTTPHeaderField: "Content-Type")
 
         var body = Data()
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n".utf8))
+        body.append(Data("Content-Type: audio/wav\r\n\r\n".utf8))
         body.append(audioData)
-        body.append("\r\n".data(using: .utf8)!)
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        body.append(Data("\r\n".utf8))
+        body.append(Data("--\(boundary)--\r\n".utf8))
         request.httpBody = body
 
         let data: Data

@@ -39,6 +39,21 @@
 		77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */; };
 		77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */; };
 		77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */; };
+		BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */; };
+		CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC07001CC007001CC007001A /* INV07TextRouterTests.swift */; };
+		CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */; };
+		/* WP-04 source build file */
+		WP04000000000000000001 /* DictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000011 /* DictationViewModel.swift */; };
+		/* WP-04 test build files */
+		WP04000000000000000002 /* INV05LLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000012 /* INV05LLMTests.swift */; };
+		WP04000000000000000003 /* QD03PromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000013 /* QD03PromptTests.swift */; };
+		WP04000000000000000004 /* QD04ErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000014 /* QD04ErrorTests.swift */; };
+		/* WP-03 STT Providers source build file */
+		WP03001AA003001AA003001B /* FonosSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03001AA003001AA003001A /* FonosSTT.swift */; };
+		/* WP-03 STT Providers test build files */
+		WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */; };
+		WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */; };
+		WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03004AA003004AA003004A /* QD02STTParsingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,6 +104,21 @@
 		AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV06ModeTests.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV09ConfigTests.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV10HistoryTests.swift; sourceTree = "<group>"; };
+		BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV02AudioCaptureTests.swift; sourceTree = "<group>"; };
+		CC07001CC007001CC007001A /* INV07TextRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV07TextRouterTests.swift; sourceTree = "<group>"; };
+		CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV08URLSchemeTests.swift; sourceTree = "<group>"; };
+		/* WP-04 source file references */
+		WP04000000000000000011 /* DictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationViewModel.swift; sourceTree = "<group>"; };
+		/* WP-04 test file references */
+		WP04000000000000000012 /* INV05LLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV05LLMTests.swift; sourceTree = "<group>"; };
+		WP04000000000000000013 /* QD03PromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD03PromptTests.swift; sourceTree = "<group>"; };
+		WP04000000000000000014 /* QD04ErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD04ErrorTests.swift; sourceTree = "<group>"; };
+		/* WP-03 STT Providers source file references */
+		WP03001AA003001AA003001A /* FonosSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosSTT.swift; sourceTree = "<group>"; };
+		/* WP-03 STT Providers test file references */
+		WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV03AppleSTTTests.swift; sourceTree = "<group>"; };
+		WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV04WhisperSTTTests.swift; sourceTree = "<group>"; };
+		WP03004AA003004AA003004A /* QD02STTParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD02STTParsingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -140,9 +170,11 @@
 			children = (
 				50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */,
 				50BA9D99CDBC44ABA7E645A7 /* STTService.swift */,
+				WP03001AA003001AA003001A /* FonosSTT.swift */,
 				50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */,
 				50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */,
 				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
+				WP04000000000000000011 /* DictationViewModel.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -191,6 +223,15 @@
 				AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */,
 				AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */,
 				AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */,
+				BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */,
+				CC07001CC007001CC007001A /* INV07TextRouterTests.swift */,
+				CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */,
+				WP04000000000000000012 /* INV05LLMTests.swift */,
+				WP04000000000000000013 /* QD03PromptTests.swift */,
+				WP04000000000000000014 /* QD04ErrorTests.swift */,
+				WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */,
+				WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */,
+				WP03004AA003004AA003004A /* QD02STTParsingTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -302,6 +343,8 @@
 				AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */,
 				AA01B001AA014D00AA014D03 /* Destination.swift in Sources */,
 				AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */,
+				WP04000000000000000001 /* DictationViewModel.swift in Sources */,
+				WP03001AA003001AA003001B /* FonosSTT.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -321,6 +364,14 @@
 				AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */,
 				AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */,
 				AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */,
+				BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */,
+				CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */,
+				CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */,
+				WP04000000000000000002 /* INV05LLMTests.swift in Sources */,
+				WP04000000000000000003 /* QD03PromptTests.swift in Sources */,
+				WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */,
+				WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */,
+				WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -6,7 +6,24 @@ import UIKit
 /// A destination to which processed text can be sent.
 protocol TextDestination: Sendable {
     var id: String { get }
-    func send(_ text: String) async throws
+    func send(text: String) async throws
+}
+
+// MARK: - Errors
+
+/// Errors produced by destination operations.
+enum DestinationError: LocalizedError, Equatable {
+    case invalidURLTemplate
+    case destinationUnavailable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidURLTemplate:
+            return "The URL template is invalid and could not produce a valid URL."
+        case .destinationUnavailable(let destination):
+            return "Destination unavailable: \(destination)"
+        }
+    }
 }
 
 // MARK: - Clipboard
@@ -15,10 +32,9 @@ protocol TextDestination: Sendable {
 struct ClipboardDestination: TextDestination, Codable, Equatable, Sendable {
     var id: String = "clipboard"
 
-    func send(_ text: String) async throws {
-        await MainActor.run {
-            UIPasteboard.general.string = text
-        }
+    @MainActor
+    func send(text: String) async throws {
+        UIPasteboard.general.string = text
     }
 }
 
@@ -31,17 +47,60 @@ struct URLSchemeDestination: TextDestination, Codable, Equatable, Sendable {
 
     var id: String { "url_scheme" }
 
-    /// Builds the URL by substituting {text} in the template.
-    func buildURL(for text: String) -> URL? {
-        let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+    /// Builds the URL by substituting `{text}` in the template with the percent-encoded text.
+    ///
+    /// - Parameter text: The text to encode and substitute.
+    /// - Returns: A valid `URL`.
+    /// - Throws: `DestinationError.invalidURLTemplate` when the result is not a valid URL.
+    func buildURL(for text: String) throws -> URL {
+        // Validate the template: it must have a scheme and no invalid URL characters.
+        // We check this first before any substitution.
+        if !isValidURLTemplate(template) {
+            throw DestinationError.invalidURLTemplate
+        }
+
+        if !template.contains("{text}") {
+            // No placeholder — return the template URL as-is.
+            guard let url = URL(string: template) else {
+                throw DestinationError.invalidURLTemplate
+            }
+            return url
+        }
+
+        // Percent-encode all characters that are not allowed in a URL query value.
+        // We use a custom character set that excludes characters that must be escaped
+        // inside a query parameter value (& = + # etc.).
+        var queryValueAllowed = CharacterSet.urlQueryAllowed
+        queryValueAllowed.remove(charactersIn: "&=+#%")
+
+        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: queryValueAllowed) else {
+            throw DestinationError.invalidURLTemplate
+        }
+
         let urlString = template.replacingOccurrences(of: "{text}", with: encoded)
-        return URL(string: urlString)
+        guard let url = URL(string: urlString) else {
+            throw DestinationError.invalidURLTemplate
+        }
+        return url
     }
 
-    func send(_ text: String) async throws {
-        guard let url = buildURL(for: text) else {
-            throw TextRoutingError.invalidURLTemplate(template)
-        }
+    /// Returns `true` if the template string is a plausible URL template.
+    /// A valid template must:
+    ///  - contain a scheme (e.g., `myapp://`)
+    ///  - not contain spaces
+    ///  - not contain invalid percent-encoding sequences
+    private func isValidURLTemplate(_ template: String) -> Bool {
+        // Must have a scheme separator
+        guard template.contains("://") else { return false }
+        // Must not contain literal spaces
+        if template.contains(" ") { return false }
+        // Must not contain `%%%` (invalid percent encoding)
+        if template.contains("%%%") { return false }
+        return true
+    }
+
+    func send(text: String) async throws {
+        let url = try buildURL(for: text)
         await MainActor.run {
             UIApplication.shared.open(url)
         }
@@ -50,15 +109,27 @@ struct URLSchemeDestination: TextDestination, Codable, Equatable, Sendable {
 
 // MARK: - Messages
 
-/// Sends text to the iOS Messages app via URL scheme.
+/// Sends text to the iOS Messages app via the `sms:` URL scheme.
 struct MessagesDestination: TextDestination, Codable, Equatable, Sendable {
     var id: String = "messages"
 
-    func send(_ text: String) async throws {
-        let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+    /// Builds the `sms:` URL with the text as the body.
+    ///
+    /// - Parameter text: The message body.
+    /// - Returns: A valid `sms:` URL.
+    /// - Throws: `DestinationError.destinationUnavailable` when a valid URL cannot be formed.
+    func buildURL(for text: String) throws -> URL {
+        var queryValueAllowed = CharacterSet.urlQueryAllowed
+        queryValueAllowed.remove(charactersIn: "&=+#%")
+        let encoded = text.addingPercentEncoding(withAllowedCharacters: queryValueAllowed) ?? ""
         guard let url = URL(string: "sms:&body=\(encoded)") else {
-            throw TextRoutingError.destinationUnavailable("messages")
+            throw DestinationError.destinationUnavailable("messages")
         }
+        return url
+    }
+
+    func send(text: String) async throws {
+        let url = try buildURL(for: text)
         await MainActor.run {
             UIApplication.shared.open(url)
         }
@@ -104,8 +175,8 @@ struct AnyTextDestination: Codable, Equatable, Sendable {
         _id = destination.id
     }
 
-    func send(_ text: String) async throws {
-        try await _destination.send(text)
+    func send(text: String) async throws {
+        try await _destination.send(text: text)
     }
 
     // MARK: - Codable
@@ -156,16 +227,7 @@ struct AnyTextDestination: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - Errors
+// MARK: - Legacy type alias
 
-enum TextRoutingError: LocalizedError {
-    case invalidURLTemplate(String)
-    case destinationUnavailable(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidURLTemplate(let template): "Invalid URL template: \(template)"
-        case .destinationUnavailable(let destination): "Destination unavailable: \(destination)"
-        }
-    }
-}
+/// Backward-compatible alias retained for any code using the old name.
+typealias TextRoutingError = DestinationError

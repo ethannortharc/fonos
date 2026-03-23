@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - DictationError
 
@@ -35,15 +36,106 @@ struct ProcessResult: Sendable {
 // MARK: - DictationViewModel
 
 /// Orchestrates STT transcription and optional LLM post-processing.
-final class DictationViewModel: @unchecked Sendable {
+/// Also drives the recording UI state for DictationView.
+final class DictationViewModel: ObservableObject, @unchecked Sendable {
+
+    // MARK: - UI State
+
+    enum RecordingState: Equatable {
+        case idle
+        case recording
+        case processing
+        case result(transcript: String, processed: String?)
+        case error(message: String)
+    }
+
+    @Published var recordingState: RecordingState = .idle
+    @Published var audioLevel: Float = 0
+    @Published var currentMode: Mode = .raw
+    @Published var sttLatency: TimeInterval = 0
+    @Published var llmLatency: TimeInterval = 0
+
+    /// Convenience for views/tests: true when actively recording.
+    var isRecording: Bool {
+        if case .recording = recordingState { return true }
+        return false
+    }
+
+    // MARK: - Services
+
     private let sttProvider: (any STTProvider)?
     private let llmService: LLMService?
+    private let audioCapture: AudioCaptureService
 
+    // MARK: - Init
+
+    /// No-arg initialiser for preview and test use.
+    /// Uses no STT provider — transcription will throw DictationError.noSTTProviderConfigured.
+    init() {
+        sttProvider = nil
+        llmService = nil
+        audioCapture = AudioCaptureService()
+    }
+
+    /// Designated initialiser for production use.
     init(sttProvider: (any STTProvider)?,
-         llmService: LLMService? = nil) {
+         llmService: LLMService? = nil,
+         audioCapture: AudioCaptureService = AudioCaptureService()) {
         self.sttProvider = sttProvider
         self.llmService = llmService
+        self.audioCapture = audioCapture
     }
+
+    // MARK: - Recording Control
+
+    @MainActor
+    func startRecording() {
+        guard !isRecording else { return }
+        do {
+            try audioCapture.startCapture()
+            recordingState = .recording
+        } catch {
+            recordingState = .error(message: error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    func stopRecording() {
+        guard isRecording else { return }
+        let wavData = audioCapture.stopCapture()
+        recordingState = .processing
+
+        Task {
+            do {
+                let result = try await processAudio(
+                    wavData ?? Data(),
+                    language: nil,
+                    mode: currentMode
+                )
+                await MainActor.run {
+                    recordingState = .result(
+                        transcript: result.text,
+                        processed: result.isRawFallback ? nil : result.text
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    recordingState = .error(message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func sendToDestination(_ destination: AnyTextDestination) {
+        guard case .result(let transcript, let processed) = recordingState else { return }
+        let text = processed ?? transcript
+        Task {
+            try? await destination.send(text: text)
+        }
+    }
+
+    // MARK: - Core Pipeline (also used by tests directly)
 
     /// Transcribe audio data using the configured STT provider.
     /// - Throws: `DictationError.noSTTProviderConfigured` if no provider is set.

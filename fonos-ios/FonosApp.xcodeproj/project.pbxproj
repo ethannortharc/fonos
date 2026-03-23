@@ -54,6 +54,12 @@
 		WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */; };
 		WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */; };
 		WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03004AA003004AA003004A /* QD02STTParsingTests.swift */; };
+		/* WP-06 View component source build files */
+		WP06001AA006001AA006001B /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06001AA006001AA006001A /* WaveformView.swift */; };
+		WP06002AA006002AA006002B /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06002AA006002AA006002A /* RecordButton.swift */; };
+		/* WP-06 test build files */
+		WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06003AA006003AA006003A /* INV01BuildTests.swift */; };
+		WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06004AA006004AA006004A /* INV11OfflineTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -119,6 +125,12 @@
 		WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV03AppleSTTTests.swift; sourceTree = "<group>"; };
 		WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV04WhisperSTTTests.swift; sourceTree = "<group>"; };
 		WP03004AA003004AA003004A /* QD02STTParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD02STTParsingTests.swift; sourceTree = "<group>"; };
+		/* WP-06 View component source file references */
+		WP06001AA006001AA006001A /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
+		WP06002AA006002AA006002A /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
+		/* WP-06 test file references */
+		WP06003AA006003AA006003A /* INV01BuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV01BuildTests.swift; sourceTree = "<group>"; };
+		WP06004AA006004AA006004A /* INV11OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV11OfflineTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -186,8 +198,18 @@
 				663C34A9CC884E40AD59B713 /* DictationView.swift */,
 				50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */,
 				50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */,
+				WP06000AA006000AA006000C /* Components */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		WP06000AA006000AA006000C /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				WP06001AA006001AA006001A /* WaveformView.swift */,
+				WP06002AA006002AA006002A /* RecordButton.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 		915BC72CB554422381D99B83 /* Extensions */ = {
@@ -232,6 +254,8 @@
 				WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */,
 				WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */,
 				WP03004AA003004AA003004A /* QD02STTParsingTests.swift */,
+				WP06003AA006003AA006003A /* INV01BuildTests.swift */,
+				WP06004AA006004AA006004A /* INV11OfflineTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -345,6 +369,8 @@
 				AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */,
 				WP04000000000000000001 /* DictationViewModel.swift in Sources */,
 				WP03001AA003001AA003001B /* FonosSTT.swift in Sources */,
+				WP06001AA006001AA006001B /* WaveformView.swift in Sources */,
+				WP06002AA006002AA006002B /* RecordButton.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -372,6 +398,9 @@
 				WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */,
 				WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */,
 				WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */,
+				WP04000000000000000004 /* QD04ErrorTests.swift in Sources */,
+				WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */,
+				WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

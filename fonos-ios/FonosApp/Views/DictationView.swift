@@ -169,42 +169,17 @@ struct DictationView: View {
     // MARK: - Record Button Section
 
     private var recordButtonSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             RecordButton(
                 state: recordButtonState,
                 onTap: handleRecordTap
             )
 
-            // Tap hint — also acts as a tappable stop target during recording
             Text(recordButtonHint)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(
-                    viewModel.isRecording
-                        ? Color.red
-                        : Color.white.opacity(0.5)
+                    viewModel.isRecording ? Color.red : Color.white.opacity(0.5)
                 )
-                .padding(.horizontal, 40)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewLog.info("👆 HINT TEXT tapped — state: \(String(describing: viewModel.recordingState))")
-                    handleRecordTap()
-                }
-
-            // Debug: large visible stop button during recording
-            if viewModel.isRecording {
-                Text("⏹ STOP RECORDING")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 14)
-                    .background(Color.red)
-                    .cornerRadius(12)
-                    .onTapGesture {
-                        viewLog.info("👆 DEBUG STOP tapped")
-                        viewModel.stopRecording()
-                    }
-            }
         }
     }
 

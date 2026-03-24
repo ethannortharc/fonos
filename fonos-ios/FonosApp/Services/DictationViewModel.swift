@@ -90,13 +90,16 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         self.audioCapture = audioCapture
     }
 
-    /// Start polling audio level from a main-thread Timer (30fps).
-    /// No cross-thread callbacks, no dispatch, no Sendable issues.
+    /// Poll audio level at 10fps — fast enough for waveform, slow enough to not starve touch events.
     private func startLevelPolling() {
         levelPollTimer?.invalidate()
-        levelPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        levelPollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.audioLevel = self.audioCapture.currentAudioLevel
+            let level = self.audioCapture.currentAudioLevel
+            // Only update if level actually changed (avoids unnecessary SwiftUI re-renders)
+            if abs(self.audioLevel - level) > 0.01 {
+                self.audioLevel = level
+            }
         }
     }
 

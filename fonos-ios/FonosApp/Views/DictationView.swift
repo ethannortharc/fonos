@@ -186,14 +186,11 @@ struct DictationView: View {
     }
 
     private var recordButtonState: RecordButton.ButtonState {
-        let result: RecordButton.ButtonState
         switch viewModel.recordingState {
-        case .idle, .result, .error: result = .idle
-        case .recording:             result = .recording
-        case .processing:            result = .processing
+        case .idle, .result, .error: return .idle
+        case .recording:             return .recording
+        case .processing:            return .processing
         }
-        viewLog.info("🎨 recordButtonState = \(String(describing: result)), viewModel.recordingState = \(String(describing: viewModel.recordingState)), audioLevel = \(viewModel.audioLevel)")
-        return result
     }
 
     private var recordButtonHint: String {

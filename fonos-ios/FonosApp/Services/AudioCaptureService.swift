@@ -161,10 +161,14 @@ final class AudioCaptureService: @unchecked Sendable {
         log.info("📍 Step 4: Resetting ring buffer...")
         resetRingBuffer()
 
-        // Install tap with native input format — conversion to 16kHz mono happens in processTapBuffer
-        log.info("📍 Step 5: Installing tap...")
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.processTapBuffer(buffer)
+        // Install tap — pass nil format to let the system choose (avoids format mismatch)
+        log.info("📍 Step 5: Installing tap (format=nil to use system default)...")
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+            guard let self else {
+                log.warning("⚠️ Tap callback: self is nil!")
+                return
+            }
+            self.processTapBuffer(buffer)
         }
 
         log.info("📍 Step 6: Preparing and starting engine...")

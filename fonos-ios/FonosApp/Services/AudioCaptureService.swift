@@ -96,14 +96,29 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     func startCapture() async throws {
         guard !isRecording else { return }
 
-        // Request microphone permission BEFORE touching engine.inputNode.
-        // Accessing inputNode without permission throws an uncatchable ObjC NSException.
-        let granted = await AVAudioApplication.requestRecordPermission()
-        guard granted else {
+        // Check mic permission synchronously first to avoid deadlocks.
+        // Only call the async request if permission hasn't been determined yet.
+        let permissionStatus = AVAudioSession.sharedInstance().recordPermission
+        switch permissionStatus {
+        case .granted:
+            break // Already have permission, proceed immediately
+        case .undetermined:
+            // First time — show the system permission dialog
+            let granted = await withCheckedContinuation { continuation in
+                AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                    continuation.resume(returning: granted)
+                }
+            }
+            guard granted else {
+                throw AudioCaptureError.permissionDenied
+            }
+        case .denied:
+            throw AudioCaptureError.permissionDenied
+        @unknown default:
             throw AudioCaptureError.permissionDenied
         }
 
-        // Configure audio session — use .playAndRecord (not .record) for broader compatibility
+        // Configure audio session — use .playAndRecord for broader device compatibility
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])

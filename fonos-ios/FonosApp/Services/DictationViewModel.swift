@@ -91,7 +91,6 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     @MainActor
     func startRecording() {
         guard !isRecording else { return }
-        recordingState = .processing  // show spinner while requesting permission
         Task { @MainActor in
             do {
                 try await audioCapture.startCapture()

@@ -66,6 +66,7 @@
 		WP11001AA011001AA011001B /* ModeConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11001AA011001AA011001A /* ModeConfig.swift */; };
 		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
 		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
+		MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP01001AA001001AA001001A /* ModelProbeService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -142,6 +143,7 @@
 		WP11001AA011001AA011001A /* ModeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeConfig.swift; sourceTree = "<group>"; };
 		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
 		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
+		MP01001AA001001AA001001A /* ModelProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProbeService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -272,6 +274,7 @@
 				50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */,
 				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
 				WP04000000000000000011 /* DictationViewModel.swift */,
+				MP01001AA001001AA001001A /* ModelProbeService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -462,6 +465,7 @@
 				663C34A9CC884E40AD59B70A /* STTService.swift in Sources */,
 				663C34A9CC884E40AD59B70B /* LLMService.swift in Sources */,
 				663C34A9CC884E40AD59B70C /* TextRouter.swift in Sources */,
+				MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */,
 				AA01B001AA014D00AA014D01 /* Mode.swift in Sources */,
 				AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */,
 				AA01B001AA014D00AA014D03 /* Destination.swift in Sources */,

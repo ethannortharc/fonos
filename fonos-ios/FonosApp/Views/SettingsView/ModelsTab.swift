@@ -9,6 +9,13 @@ struct ModelsTab: View {
 
     @State private var showAddModel = false
     @State private var editingProfile: ModelProfile?
+    @State private var showProbe = false
+    @State private var probeURL = ""
+    @State private var probeKey = ""
+    @State private var probeProvider = "omlx"
+    @State private var probeResult: ModelProbeService.ProbeResult?
+    @State private var probing = false
+    @State private var probeError: String?
 
     private let amber = Color(hex: "#fbbf24")
     private let green = Color(hex: "#86efac")
@@ -29,6 +36,34 @@ struct ModelsTab: View {
             ModelProfileForm(onSave: { profile in
                 config.modelProfiles.append(profile)
             })
+        }
+        .sheet(isPresented: $showProbe) {
+            ProbeSheet(
+                probeURL: $probeURL,
+                probeKey: $probeKey,
+                probeProvider: $probeProvider,
+                probing: $probing,
+                probeError: $probeError,
+                probeResult: $probeResult,
+                onAddModels: { models in
+                    for model in models {
+                        let profileID = "\(probeProvider)-\(Int(Date().timeIntervalSince1970))-\(model.id.hashValue)"
+                        let profile = ModelProfile(
+                            id: profileID,
+                            name: model.name,
+                            provider: probeProvider,
+                            modelID: model.id,
+                            baseURL: probeURL.isEmpty ? nil : probeURL,
+                            capabilities: model.capabilities
+                        )
+                        config.modelProfiles.append(profile)
+                        // Save API key if provided
+                        if !probeKey.isEmpty {
+                            try? KeychainStore(service: "com.fonos.models").set(probeKey, forKey: profileID)
+                        }
+                    }
+                }
+            )
         }
         .sheet(item: $editingProfile) { profile in
             ModelProfileForm(
@@ -129,8 +164,26 @@ struct ModelsTab: View {
                 HStack(spacing: 10) {
                     Image(systemName: "plus.circle.fill")
                         .foregroundColor(amber)
-                    Text("Add Model")
+                    Text("Add Model Manually")
                         .foregroundColor(amber)
+                }
+            }
+            .listRowBackground(cardBg)
+            .listRowSeparatorTint(separator)
+
+            // Probe button
+            Button {
+                showProbe = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundColor(green)
+                    Text("Probe Endpoint")
+                        .foregroundColor(green)
+                    Spacer()
+                    Text("Auto-detect models")
+                        .font(.system(size: 11))
+                        .foregroundColor(textDim)
                 }
             }
             .listRowBackground(cardBg)
@@ -247,6 +300,7 @@ private struct ModelProfileRow: View {
             case "google":    return ("magnifyingglass.circle", Color(hex: "#60a5fa"))
             case "ollama":    return ("server.rack", green)
             case "lmstudio":  return ("laptopcomputer", green)
+            case "omlx":      return ("apple.terminal", Color(hex: "#60a5fa"))
             default:          return ("network", textDim)
             }
         }()
@@ -261,6 +315,7 @@ private struct ModelProfileRow: View {
         case "google":    return "Google"
         case "ollama":    return "Ollama"
         case "lmstudio":  return "LM Studio"
+        case "omlx":      return "OMLX"
         case "custom":    return "Custom"
         default:          return provider.capitalized
         }
@@ -300,6 +355,7 @@ struct ModelProfileForm: View {
         ("google", "Google", "magnifyingglass.circle"),
         ("ollama", "Ollama", "server.rack"),
         ("lmstudio", "LM Studio", "laptopcomputer"),
+        ("omlx", "OMLX", "apple.terminal"),
         ("custom", "Custom", "network")
     ]
 
@@ -447,6 +503,7 @@ struct ModelProfileForm: View {
         case "google":    return "https://generativelanguage.googleapis.com"
         case "ollama":    return "http://localhost:11434"
         case "lmstudio":  return "http://localhost:1234"
+        case "omlx":      return "http://localhost:8000"
         default:          return ""
         }
     }
@@ -540,5 +597,229 @@ private struct ProviderButton: View {
         }
         .buttonStyle(PlainButtonStyle())
         .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isSelected)
+    }
+}
+
+// MARK: - Probe Sheet
+
+/// Sheet for probing an endpoint to discover available models.
+private struct ProbeSheet: View {
+    @Binding var probeURL: String
+    @Binding var probeKey: String
+    @Binding var probeProvider: String
+    @Binding var probing: Bool
+    @Binding var probeError: String?
+    @Binding var probeResult: ModelProbeService.ProbeResult?
+    let onAddModels: ([ModelProbeService.DiscoveredModel]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedModels: Set<String> = []
+
+    private let amber = Color(hex: "#fbbf24")
+    private let green = Color(hex: "#86efac")
+    private let bg = Color(hex: "#1a1917")
+    private let textPrimary = Color(hex: "#fafaf9")
+    private let textDim = Color(hex: "#fafaf9").opacity(0.5)
+
+    private let probeProviders: [(id: String, label: String, defaultURL: String)] = [
+        ("omlx", "OMLX", "http://localhost:8000"),
+        ("ollama", "Ollama", "http://localhost:11434"),
+        ("lmstudio", "LM Studio", "http://localhost:1234"),
+        ("custom", "Custom", ""),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                bg.ignoresSafeArea()
+
+                Form {
+                    // Provider quick-select
+                    Section {
+                        ForEach(probeProviders, id: \.id) { p in
+                            Button {
+                                probeProvider = p.id
+                                probeURL = p.defaultURL
+                            } label: {
+                                HStack {
+                                    Text(p.label)
+                                        .foregroundColor(probeProvider == p.id ? amber : textPrimary)
+                                    Spacer()
+                                    if probeProvider == p.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(amber)
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.white.opacity(0.04))
+                        }
+                    } header: {
+                        Text("PROVIDER").font(.system(size: 12, weight: .medium)).foregroundColor(textDim).textCase(nil)
+                    }
+
+                    // URL + Key
+                    Section {
+                        TextField("Endpoint URL", text: $probeURL)
+                            .foregroundColor(textPrimary)
+                            .tint(amber)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .listRowBackground(Color.white.opacity(0.06))
+
+                        SecureField("API Key (optional)", text: $probeKey)
+                            .foregroundColor(textPrimary)
+                            .tint(amber)
+                            .listRowBackground(Color.white.opacity(0.06))
+                    } header: {
+                        Text("ENDPOINT").font(.system(size: 12, weight: .medium)).foregroundColor(textDim).textCase(nil)
+                    }
+
+                    // Probe button
+                    Section {
+                        Button {
+                            runProbe()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                if probing {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                    Text("Probe")
+                                }
+                                Spacer()
+                            }
+                            .foregroundColor(.white)
+                            .padding(.vertical, 4)
+                        }
+                        .disabled(probeURL.isEmpty || probing)
+                        .listRowBackground(probeURL.isEmpty ? Color.gray.opacity(0.3) : amber)
+                    }
+
+                    // Error
+                    if let error = probeError {
+                        Section {
+                            Text(error)
+                                .foregroundColor(Color.red)
+                                .font(.system(size: 13))
+                                .listRowBackground(Color.red.opacity(0.08))
+                        }
+                    }
+
+                    // Results
+                    if let result = probeResult {
+                        Section {
+                            ForEach(result.models) { model in
+                                Button {
+                                    toggleModel(model.id)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: selectedModels.contains(model.id) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(selectedModels.contains(model.id) ? amber : textDim)
+                                            .font(.system(size: 20))
+
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(model.name)
+                                                .foregroundColor(textPrimary)
+                                                .font(.system(size: 14, weight: .medium))
+                                            Text(model.id)
+                                                .foregroundColor(textDim)
+                                                .font(.system(size: 11, design: .monospaced))
+                                            HStack(spacing: 4) {
+                                                ForEach(model.capabilities, id: \.self) { cap in
+                                                    Text(cap.uppercased())
+                                                        .font(.system(size: 9, weight: .bold))
+                                                        .foregroundColor(cap == "stt" ? amber : green)
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 1)
+                                                        .background(
+                                                            RoundedRectangle(cornerRadius: 3)
+                                                                .fill((cap == "stt" ? amber : green).opacity(0.12))
+                                                        )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                .listRowBackground(Color.white.opacity(0.04))
+                            }
+                        } header: {
+                            Text("DISCOVERED \(result.models.count) MODELS")
+                                .font(.system(size: 12, weight: .medium)).foregroundColor(green).textCase(nil)
+                        }
+
+                        // Add selected
+                        Section {
+                            Button {
+                                let selected = result.models.filter { selectedModels.contains($0.id) }
+                                onAddModels(selected)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Text("Add \(selectedModels.count) Model\(selectedModels.count == 1 ? "" : "s")")
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                }
+                                .foregroundColor(.white)
+                                .padding(.vertical, 4)
+                            }
+                            .disabled(selectedModels.isEmpty)
+                            .listRowBackground(selectedModels.isEmpty ? Color.gray.opacity(0.3) : green)
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Probe Endpoint")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(amber)
+                }
+            }
+        }
+        .onAppear {
+            if probeURL.isEmpty {
+                probeURL = probeProviders.first?.defaultURL ?? ""
+            }
+        }
+    }
+
+    private func toggleModel(_ id: String) {
+        if selectedModels.contains(id) {
+            selectedModels.remove(id)
+        } else {
+            selectedModels.insert(id)
+        }
+    }
+
+    private func runProbe() {
+        probing = true
+        probeError = nil
+        probeResult = nil
+        selectedModels = []
+
+        Task {
+            do {
+                let result = try await ModelProbeService.probe(
+                    baseURL: probeURL,
+                    apiKey: probeKey.isEmpty ? nil : probeKey,
+                    provider: probeProvider
+                )
+                await MainActor.run {
+                    probeResult = result
+                    selectedModels = Set(result.models.map(\.id))
+                    probing = false
+                }
+            } catch {
+                await MainActor.run {
+                    probeError = error.localizedDescription
+                    probing = false
+                }
+            }
+        }
     }
 }

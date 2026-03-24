@@ -66,8 +66,8 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     /// True while recording. Safe to read from any context (protected by internal lock).
     @Published private(set) var isRecording: Bool = false
 
-    /// Current audio level (0.0-1.0) for waveform visualization. Updated from tap callback.
-    @Published var audioLevel: Float = 0
+    /// Callback for audio level updates (0.0-1.0). Called on main thread.
+    var onAudioLevelUpdate: ((Float) -> Void)?
 
     // MARK: - Private Properties
 
@@ -372,8 +372,9 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
             }
             let rms = sqrt(sumOfSquares / max(1, Float(frameLength)))
             let normalizedLevel = min(1.0, rms * 5.0)
-            DispatchQueue.main.async { [weak self] in
-                self?.audioLevel = normalizedLevel
+            let callback = self.onAudioLevelUpdate
+            DispatchQueue.main.async {
+                callback?(normalizedLevel)
             }
         }
 

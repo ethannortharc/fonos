@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Combine
 import os.log
 
 private let log = Logger(subsystem: "com.fonos.ios", category: "DictationViewModel")
@@ -70,7 +69,6 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     private let sttProvider: (any STTProvider)?
     private let llmService: LLMService?
     private let audioCapture: AudioCaptureService
-    private var audioLevelObservation: Any?
 
     // MARK: - Init
 
@@ -80,7 +78,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         sttProvider = nil
         llmService = nil
         audioCapture = AudioCaptureService()
-        observeAudioLevel()
+        setupAudioLevelCallback()
     }
 
     /// Designated initialiser for production use.
@@ -90,16 +88,14 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         self.sttProvider = sttProvider
         self.llmService = llmService
         self.audioCapture = audioCapture
-        observeAudioLevel()
+        setupAudioLevelCallback()
     }
 
-    private func observeAudioLevel() {
-        // Forward audio level from AudioCaptureService to this view model
-        audioLevelObservation = audioCapture.$audioLevel
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] level in
-                self?.audioLevel = level
-            }
+    private func setupAudioLevelCallback() {
+        audioCapture.onAudioLevelUpdate = { [weak self] level in
+            // Already on main thread (dispatched in AudioCaptureService)
+            self?.audioLevel = level
+        }
     }
 
     // MARK: - Recording Control

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -20,20 +20,6 @@
 		663C34A9CC884E40AD59B70B /* LLMService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */; };
 		663C34A9CC884E40AD59B70C /* TextRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */; };
 		663C34A9CC884E40AD59B70D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */; };
-		/* New model source build files */
-		AA01B001AA014D00AA014D01 /* Mode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D11 /* Mode.swift */; };
-		AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D12 /* ModelProfile.swift */; };
-		AA01B001AA014D00AA014D03 /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D13 /* Destination.swift */; };
-		AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D14 /* KeychainStore.swift */; };
-		/* WP-11 Settings model management build files */
-		WP11001AA011001AA011001B /* ModeConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11001AA011001AA011001A /* ModeConfig.swift */; };
-		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
-		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
-		/* New test build files */
-		AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */; };
-		AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */; };
-		AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */; };
-		/* Test build files */
 		77D41ED5933B42BF9BE9C701 /* FonosAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C711 /* FonosAppTests.swift */; };
 		77D41ED5933B42BF9BE9C702 /* AudioCaptureServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C712 /* AudioCaptureServiceTests.swift */; };
 		77D41ED5933B42BF9BE9C703 /* STTServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C713 /* STTServiceTests.swift */; };
@@ -43,43 +29,43 @@
 		77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */; };
 		77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */; };
 		77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */; };
+		AA01B001AA014D00AA014D01 /* Mode.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D11 /* Mode.swift */; };
+		AA01B001AA014D00AA014D02 /* ModelProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D12 /* ModelProfile.swift */; };
+		AA01B001AA014D00AA014D03 /* Destination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D13 /* Destination.swift */; };
+		AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D14 /* KeychainStore.swift */; };
+		AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */; };
+		AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */; };
+		AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */; };
 		BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */; };
 		CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC07001CC007001CC007001A /* INV07TextRouterTests.swift */; };
 		CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */; };
-		/* WP-04 source build file */
-		WP04000000000000000001 /* DictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000011 /* DictationViewModel.swift */; };
-		/* WP-04 test build files */
-		WP04000000000000000002 /* INV05LLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000012 /* INV05LLMTests.swift */; };
-		WP04000000000000000003 /* QD03PromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000013 /* QD03PromptTests.swift */; };
-		WP04000000000000000004 /* QD04ErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000014 /* QD04ErrorTests.swift */; };
-		/* WP-03 STT Providers source build file */
 		WP03001AA003001AA003001B /* FonosSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03001AA003001AA003001A /* FonosSTT.swift */; };
-		/* WP-03 STT Providers test build files */
 		WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */; };
 		WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */; };
 		WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03004AA003004AA003004A /* QD02STTParsingTests.swift */; };
-		/* WP-06 View component source build files */
+		WP04000000000000000001 /* DictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000011 /* DictationViewModel.swift */; };
+		WP04000000000000000002 /* INV05LLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000012 /* INV05LLMTests.swift */; };
+		WP04000000000000000003 /* QD03PromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000013 /* QD03PromptTests.swift */; };
+		WP04000000000000000004 /* QD04ErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000014 /* QD04ErrorTests.swift */; };
 		WP06001AA006001AA006001B /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06001AA006001AA006001A /* WaveformView.swift */; };
 		WP06002AA006002AA006002B /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06002AA006002AA006002A /* RecordButton.swift */; };
-		/* WP-07 Mode Picker & History View source build files */
-		WP07001AA007001AA007001B /* ModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07001AA007001AA007001A /* ModePicker.swift */; };
-		WP07002AA007002AA007002B /* ActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07002AA007002AA007002A /* ActivityCard.swift */; };
-		/* WP-06 test build files */
 		WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06003AA006003AA006003A /* INV01BuildTests.swift */; };
 		WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06004AA006004AA006004A /* INV11OfflineTests.swift */; };
-		/* WP-08 Settings View source build files */
+		WP07001AA007001AA007001B /* ModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07001AA007001AA007001A /* ModePicker.swift */; };
+		WP07002AA007002AA007002B /* ActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP07002AA007002AA007002A /* ActivityCard.swift */; };
 		WP08001AA008001AA008001B /* ProvidersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08001AA008001AA008001A /* ProvidersSection.swift */; };
 		WP08002AA008002AA008002B /* ModesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08002AA008002AA008002A /* ModesSection.swift */; };
 		WP08003AA008003AA008003B /* DestinationsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08003AA008003AA008003A /* DestinationsSection.swift */; };
 		WP08004AA008004AA008004B /* DestinationPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP08004AA008004AA008004A /* DestinationPicker.swift */; };
-		/* WP-10 Integration test build files */
-		WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */; };
-		WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */; };
-		/* WP-09 Widget, Live Activity & Siri Shortcuts source build files */
 		WP09001AA009001AA009001B /* FonosWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09001AA009001AA009001A /* FonosWidget.swift */; };
 		WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09002AA009002AA009002A /* FonosLiveActivity.swift */; };
 		WP09003AA009003AA009003B /* DictateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09003AA009003AA009003A /* DictateIntent.swift */; };
 		WP09004AA009004AA009004B /* FonosIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP09004AA009004AA009004A /* FonosIntents.swift */; };
+		WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */; };
+		WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */; };
+		WP11001AA011001AA011001B /* ModeConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11001AA011001AA011001A /* ModeConfig.swift */; };
+		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
+		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -93,9 +79,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		663C34A9CC884E40AD59B711 /* FonosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosApp.swift; sourceTree = "<group>"; };
-		663C34A9CC884E40AD59B712 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		663C34A9CC884E40AD59B713 /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
@@ -107,10 +90,10 @@
 		50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextRouter.swift; sourceTree = "<group>"; };
 		50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		50BA9D99CDBC44ABA7E645AB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		/* Product references */
-		BAC7AF7161324CE4AF50AD41 /* FonosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FonosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		663C34A9CC884E40AD59B711 /* FonosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosApp.swift; sourceTree = "<group>"; };
+		663C34A9CC884E40AD59B712 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		663C34A9CC884E40AD59B713 /* DictationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationView.swift; sourceTree = "<group>"; };
 		6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		/* Test file references */
 		77D41ED5933B42BF9BE9C711 /* FonosAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppTests.swift; sourceTree = "<group>"; };
 		77D41ED5933B42BF9BE9C712 /* AudioCaptureServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureServiceTests.swift; sourceTree = "<group>"; };
 		77D41ED5933B42BF9BE9C713 /* STTServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STTServiceTests.swift; sourceTree = "<group>"; };
@@ -120,138 +103,65 @@
 		77D41ED5933B42BF9BE9C717 /* ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigTests.swift; sourceTree = "<group>"; };
 		77D41ED5933B42BF9BE9C718 /* HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryTests.swift; sourceTree = "<group>"; };
 		77D41ED5933B42BF9BE9C719 /* OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTests.swift; sourceTree = "<group>"; };
-		/* New model file references */
 		AA01B001AA014D00AA014D11 /* Mode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mode.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D12 /* ModelProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProfile.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D13 /* Destination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Destination.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D14 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
-		/* WP-11 Settings model management file references */
-		WP11001AA011001AA011001A /* ModeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeConfig.swift; sourceTree = "<group>"; };
-		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
-		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
-		AA01B001AA014D00AA014D18 /* FonosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosApp.entitlements; sourceTree = "<group>"; };
-		/* New test file references */
 		AA01B001AA014D00AA014D15 /* INV06ModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV06ModeTests.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV09ConfigTests.swift; sourceTree = "<group>"; };
 		AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV10HistoryTests.swift; sourceTree = "<group>"; };
+		AA01B001AA014D00AA014D18 /* FonosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosApp.entitlements; sourceTree = "<group>"; };
+		BAC7AF7161324CE4AF50AD41 /* FonosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FonosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV02AudioCaptureTests.swift; sourceTree = "<group>"; };
 		CC07001CC007001CC007001A /* INV07TextRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV07TextRouterTests.swift; sourceTree = "<group>"; };
 		CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV08URLSchemeTests.swift; sourceTree = "<group>"; };
-		/* WP-04 source file references */
-		WP04000000000000000011 /* DictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationViewModel.swift; sourceTree = "<group>"; };
-		/* WP-04 test file references */
-		WP04000000000000000012 /* INV05LLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV05LLMTests.swift; sourceTree = "<group>"; };
-		WP04000000000000000013 /* QD03PromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD03PromptTests.swift; sourceTree = "<group>"; };
-		WP04000000000000000014 /* QD04ErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD04ErrorTests.swift; sourceTree = "<group>"; };
-		/* WP-03 STT Providers source file references */
 		WP03001AA003001AA003001A /* FonosSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosSTT.swift; sourceTree = "<group>"; };
-		/* WP-03 STT Providers test file references */
 		WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV03AppleSTTTests.swift; sourceTree = "<group>"; };
 		WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV04WhisperSTTTests.swift; sourceTree = "<group>"; };
 		WP03004AA003004AA003004A /* QD02STTParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD02STTParsingTests.swift; sourceTree = "<group>"; };
-		/* WP-06 View component source file references */
+		WP04000000000000000011 /* DictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationViewModel.swift; sourceTree = "<group>"; };
+		WP04000000000000000012 /* INV05LLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV05LLMTests.swift; sourceTree = "<group>"; };
+		WP04000000000000000013 /* QD03PromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD03PromptTests.swift; sourceTree = "<group>"; };
+		WP04000000000000000014 /* QD04ErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD04ErrorTests.swift; sourceTree = "<group>"; };
 		WP06001AA006001AA006001A /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		WP06002AA006002AA006002A /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
-		/* WP-07 Mode Picker & History View source file references */
-		WP07001AA007001AA007001A /* ModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePicker.swift; sourceTree = "<group>"; };
-		WP07002AA007002AA007002A /* ActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCard.swift; sourceTree = "<group>"; };
-		/* WP-06 test file references */
 		WP06003AA006003AA006003A /* INV01BuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV01BuildTests.swift; sourceTree = "<group>"; };
 		WP06004AA006004AA006004A /* INV11OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV11OfflineTests.swift; sourceTree = "<group>"; };
-		/* WP-08 Settings View source file references */
+		WP07001AA007001AA007001A /* ModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModePicker.swift; sourceTree = "<group>"; };
+		WP07002AA007002AA007002A /* ActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCard.swift; sourceTree = "<group>"; };
 		WP08001AA008001AA008001A /* ProvidersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersSection.swift; sourceTree = "<group>"; };
 		WP08002AA008002AA008002A /* ModesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesSection.swift; sourceTree = "<group>"; };
 		WP08003AA008003AA008003A /* DestinationsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationsSection.swift; sourceTree = "<group>"; };
 		WP08004AA008004AA008004A /* DestinationPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestinationPicker.swift; sourceTree = "<group>"; };
-		/* WP-10 Integration test file references */
-		WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD06BundleSizeTests.swift; sourceTree = "<group>"; };
-		WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD07SwiftLintTests.swift; sourceTree = "<group>"; };
-		/* WP-09 Widget, Live Activity & Siri Shortcuts file references */
 		WP09001AA009001AA009001A /* FonosWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosWidget.swift; sourceTree = "<group>"; };
 		WP09002AA009002AA009002A /* FonosLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosLiveActivity.swift; sourceTree = "<group>"; };
 		WP09003AA009003AA009003A /* DictateIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictateIntent.swift; sourceTree = "<group>"; };
 		WP09004AA009004AA009004A /* FonosIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosIntents.swift; sourceTree = "<group>"; };
+		WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD06BundleSizeTests.swift; sourceTree = "<group>"; };
+		WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD07SwiftLintTests.swift; sourceTree = "<group>"; };
+		WP11001AA011001AA011001A /* ModeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeConfig.swift; sourceTree = "<group>"; };
+		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
+		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFrameworksBuildPhase section */
+		3445D25EE87F44BAAEA57B0F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E3116401421D41DAB7AF53B1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
-		EB7F26921B15416BBDBF911D = {
-			isa = PBXGroup;
-			children = (
-				771A58FA8CA147459534EE1C /* FonosApp */,
-				WP09000AA009000AA009000C /* FonosWidget */,
-				WP09010AA009010AA009010C /* FonosIntents */,
-				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
-				4BD34BCD0DE7417A847A0D6B /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		WP09000AA009000AA009000C /* FonosWidget */ = {
-			isa = PBXGroup;
-			children = (
-				WP09001AA009001AA009001A /* FonosWidget.swift */,
-				WP09002AA009002AA009002A /* FonosLiveActivity.swift */,
-			);
-			path = FonosWidget;
-			sourceTree = "<group>";
-		};
-		WP09010AA009010AA009010C /* FonosIntents */ = {
-			isa = PBXGroup;
-			children = (
-				WP09003AA009003AA009003A /* DictateIntent.swift */,
-				WP09004AA009004AA009004A /* FonosIntents.swift */,
-			);
-			path = FonosIntents;
-			sourceTree = "<group>";
-		};
-		4BD34BCD0DE7417A847A0D6B /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				BAC7AF7161324CE4AF50AD41 /* FonosApp.app */,
-				6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		771A58FA8CA147459534EE1C /* FonosApp */ = {
-			isa = PBXGroup;
-			children = (
-				663C34A9CC884E40AD59B711 /* FonosApp.swift */,
-				1A3615C7390D4D119843D0DD /* Models */,
-				B0035A133D264734A9D8ABFA /* Services */,
-				125C680D279A4D5CB0E5B54D /* Views */,
-				915BC72CB554422381D99B83 /* Extensions */,
-				62C2153FB20345E1B143E7E4 /* Resources */,
-			);
-			path = FonosApp;
-			sourceTree = "<group>";
-		};
-		1A3615C7390D4D119843D0DD /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				50BA9D99CDBC44ABA7E645A4 /* DictationSession.swift */,
-				50BA9D99CDBC44ABA7E645A5 /* AppConfig.swift */,
-				AA01B001AA014D00AA014D11 /* Mode.swift */,
-				AA01B001AA014D00AA014D12 /* ModelProfile.swift */,
-				AA01B001AA014D00AA014D13 /* Destination.swift */,
-				WP11001AA011001AA011001A /* ModeConfig.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		B0035A133D264734A9D8ABFA /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */,
-				50BA9D99CDBC44ABA7E645A7 /* STTService.swift */,
-				WP03001AA003001AA003001A /* FonosSTT.swift */,
-				50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */,
-				50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */,
-				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
-				WP04000000000000000011 /* DictationViewModel.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
 		125C680D279A4D5CB0E5B54D /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -267,44 +177,17 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		WP08000AA008000AA008000C /* SettingsView */ = {
+		1A3615C7390D4D119843D0DD /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				WP08001AA008001AA008001A /* ProvidersSection.swift */,
-				WP08002AA008002AA008002A /* ModesSection.swift */,
-				WP08003AA008003AA008003A /* DestinationsSection.swift */,
-				WP11002AA011002AA011002A /* ModelsTab.swift */,
-				WP11003AA011003AA011003A /* ModesTab.swift */,
+				50BA9D99CDBC44ABA7E645A4 /* DictationSession.swift */,
+				50BA9D99CDBC44ABA7E645A5 /* AppConfig.swift */,
+				AA01B001AA014D00AA014D11 /* Mode.swift */,
+				AA01B001AA014D00AA014D12 /* ModelProfile.swift */,
+				AA01B001AA014D00AA014D13 /* Destination.swift */,
+				WP11001AA011001AA011001A /* ModeConfig.swift */,
 			);
-			path = SettingsView;
-			sourceTree = "<group>";
-		};
-		WP06000AA006000AA006000C /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				WP06001AA006001AA006001A /* WaveformView.swift */,
-				WP06002AA006002AA006002A /* RecordButton.swift */,
-				WP07002AA007002AA007002A /* ActivityCard.swift */,
-			);
-			path = Components;
-			sourceTree = "<group>";
-		};
-		915BC72CB554422381D99B83 /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */,
-			);
-			path = Extensions;
-			sourceTree = "<group>";
-		};
-		62C2153FB20345E1B143E7E4 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */,
-				50BA9D99CDBC44ABA7E645AB /* Info.plist */,
-				AA01B001AA014D00AA014D18 /* FonosApp.entitlements */,
-			);
-			path = Resources;
+			path = Models;
 			sourceTree = "<group>";
 		};
 		3E090E64BBAA4232B8A4810E /* FonosAppTests */ = {
@@ -337,6 +220,111 @@
 				WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */,
 			);
 			path = FonosAppTests;
+			sourceTree = "<group>";
+		};
+		4BD34BCD0DE7417A847A0D6B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BAC7AF7161324CE4AF50AD41 /* FonosApp.app */,
+				6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		62C2153FB20345E1B143E7E4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645AA /* Assets.xcassets */,
+				50BA9D99CDBC44ABA7E645AB /* Info.plist */,
+				AA01B001AA014D00AA014D18 /* FonosApp.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		771A58FA8CA147459534EE1C /* FonosApp */ = {
+			isa = PBXGroup;
+			children = (
+				663C34A9CC884E40AD59B711 /* FonosApp.swift */,
+				1A3615C7390D4D119843D0DD /* Models */,
+				B0035A133D264734A9D8ABFA /* Services */,
+				125C680D279A4D5CB0E5B54D /* Views */,
+				915BC72CB554422381D99B83 /* Extensions */,
+				62C2153FB20345E1B143E7E4 /* Resources */,
+			);
+			path = FonosApp;
+			sourceTree = "<group>";
+		};
+		915BC72CB554422381D99B83 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645A3 /* Color+Hex.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		B0035A133D264734A9D8ABFA /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				50BA9D99CDBC44ABA7E645A6 /* AudioCaptureService.swift */,
+				50BA9D99CDBC44ABA7E645A7 /* STTService.swift */,
+				WP03001AA003001AA003001A /* FonosSTT.swift */,
+				50BA9D99CDBC44ABA7E645A8 /* LLMService.swift */,
+				50BA9D99CDBC44ABA7E645A9 /* TextRouter.swift */,
+				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
+				WP04000000000000000011 /* DictationViewModel.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		EB7F26921B15416BBDBF911D = {
+			isa = PBXGroup;
+			children = (
+				771A58FA8CA147459534EE1C /* FonosApp */,
+				WP09000AA009000AA009000C /* FonosWidget */,
+				WP09010AA009010AA009010C /* FonosIntents */,
+				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
+				4BD34BCD0DE7417A847A0D6B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		WP06000AA006000AA006000C /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				WP06001AA006001AA006001A /* WaveformView.swift */,
+				WP06002AA006002AA006002A /* RecordButton.swift */,
+				WP07002AA007002AA007002A /* ActivityCard.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		WP08000AA008000AA008000C /* SettingsView */ = {
+			isa = PBXGroup;
+			children = (
+				WP08001AA008001AA008001A /* ProvidersSection.swift */,
+				WP08002AA008002AA008002A /* ModesSection.swift */,
+				WP08003AA008003AA008003A /* DestinationsSection.swift */,
+				WP11002AA011002AA011002A /* ModelsTab.swift */,
+				WP11003AA011003AA011003A /* ModesTab.swift */,
+			);
+			path = SettingsView;
+			sourceTree = "<group>";
+		};
+		WP09000AA009000AA009000C /* FonosWidget */ = {
+			isa = PBXGroup;
+			children = (
+				WP09001AA009001AA009001A /* FonosWidget.swift */,
+				WP09002AA009002AA009002A /* FonosLiveActivity.swift */,
+			);
+			path = FonosWidget;
+			sourceTree = "<group>";
+		};
+		WP09010AA009010AA009010C /* FonosIntents */ = {
+			isa = PBXGroup;
+			children = (
+				WP09003AA009003AA009003A /* DictateIntent.swift */,
+				WP09004AA009004AA009004A /* FonosIntents.swift */,
+			);
+			path = FonosIntents;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -426,6 +414,38 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		598E6D93E1274503BE563840 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				77D41ED5933B42BF9BE9C701 /* FonosAppTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C702 /* AudioCaptureServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C703 /* STTServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C704 /* LLMServiceTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C705 /* ModeTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C706 /* TextRouterTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */,
+				77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */,
+				AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */,
+				AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */,
+				AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */,
+				BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */,
+				CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */,
+				CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */,
+				WP04000000000000000002 /* INV05LLMTests.swift in Sources */,
+				WP04000000000000000003 /* QD03PromptTests.swift in Sources */,
+				WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */,
+				WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */,
+				WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */,
+				WP04000000000000000004 /* QD04ErrorTests.swift in Sources */,
+				WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */,
+				WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */,
+				WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */,
+				WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FE1967CA54134ADA979C91A6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -466,56 +486,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		598E6D93E1274503BE563840 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				77D41ED5933B42BF9BE9C701 /* FonosAppTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C702 /* AudioCaptureServiceTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C703 /* STTServiceTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C704 /* LLMServiceTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C705 /* ModeTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C706 /* TextRouterTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C707 /* ConfigTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C708 /* HistoryTests.swift in Sources */,
-				77D41ED5933B42BF9BE9C709 /* OfflineTests.swift in Sources */,
-				AA01B001AA014D00AA014D05 /* INV06ModeTests.swift in Sources */,
-				AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */,
-				AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */,
-				BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */,
-				CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */,
-				CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */,
-				WP04000000000000000002 /* INV05LLMTests.swift in Sources */,
-				WP04000000000000000003 /* QD03PromptTests.swift in Sources */,
-				WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */,
-				WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */,
-				WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */,
-				WP04000000000000000004 /* QD04ErrorTests.swift in Sources */,
-				WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */,
-				WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */,
-				WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */,
-				WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXFrameworksBuildPhase section */
-		E3116401421D41DAB7AF53B1 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		3445D25EE87F44BAAEA57B0F /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		4DB2C7A870E4431CA33063D9 /* PBXTargetDependency */ = {
@@ -526,6 +497,51 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		63B806250AF3417C8C3CCE69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FonosApp/Resources/FonosApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = SBU743JJ9S;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FonosApp/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		663AF6821B1B4765BE16F5F1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FonosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FonosApp";
+			};
+			name = Debug;
+		};
 		72EEA2B9000F4EAFB67013E3 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -652,6 +668,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = SBU743JJ9S;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = FonosApp/Resources/Info.plist;
@@ -666,50 +683,6 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Debug;
-		};
-		63B806250AF3417C8C3CCE69 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = FonosApp/Resources/FonosApp.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = FonosApp/Resources/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-		663AF6821B1B4765BE16F5F1 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.tests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FonosApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FonosApp";
 			};
 			name = Debug;
 		};
@@ -734,20 +707,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		756B8C3D892E4965B3541FAA /* Build configuration list for PBXProject "FonosApp" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				72EEA2B9000F4EAFB67013E3 /* Debug */,
-				7BA1B7DB38D147B0B6F9CBC1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		3A5EF6CF3E0A45C081BEB5B8 /* Build configuration list for PBXNativeTarget "FonosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				90A7727FF44248BF932BC148 /* Debug */,
 				63B806250AF3417C8C3CCE69 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		756B8C3D892E4965B3541FAA /* Build configuration list for PBXProject "FonosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				72EEA2B9000F4EAFB67013E3 /* Debug */,
+				7BA1B7DB38D147B0B6F9CBC1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -762,7 +735,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = 11F387A36EAB42D7B29216FC /* Project object */;
 }

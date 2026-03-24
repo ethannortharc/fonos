@@ -103,20 +103,26 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
             throw AudioCaptureError.permissionDenied
         }
 
-        // Configure audio session
+        // Configure audio session — use .playAndRecord (not .record) for broader compatibility
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setPreferredSampleRate(16_000)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             throw AudioCaptureError.sessionSetupFailed(error)
         }
 
+        // Stop any previous engine state to prevent "only one tap per bus" crash
+        if engine.isRunning {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
+
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Guard against invalid format (0 channels / 0 sample rate)
+        // Guard against invalid format (0 channels / 0 sample rate — happens when mic unavailable)
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
             throw AudioCaptureError.noInputAvailable
         }
@@ -124,6 +130,7 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         // Reset ring buffer (nonisolated helper avoids async-context warning on NSLock)
         resetRingBuffer()
 
+        // Install tap with native input format — conversion to 16kHz mono happens in processTapBuffer
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             self?.processTapBuffer(buffer)
         }
@@ -315,8 +322,16 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: captureFormat,
                                                    frameCapacity: outputFrameCount) else { return }
 
+        // The input block may be called multiple times by the converter.
+        // Provide data only on the first call, then signal end-of-stream.
+        var hasProvidedData = false
         var conversionError: NSError?
         let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outStatus in
+            if hasProvidedData {
+                outStatus.pointee = .endOfStream
+                return nil
+            }
+            hasProvidedData = true
             outStatus.pointee = .haveData
             return buffer
         }

@@ -69,6 +69,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     private let sttProvider: (any STTProvider)?
     private let llmService: LLMService?
     private let audioCapture: AudioCaptureService
+    private var levelPollTimer: Timer?
 
     // MARK: - Init
 
@@ -78,7 +79,6 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         sttProvider = nil
         llmService = nil
         audioCapture = AudioCaptureService()
-        setupAudioLevelCallback()
     }
 
     /// Designated initialiser for production use.
@@ -88,14 +88,22 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         self.sttProvider = sttProvider
         self.llmService = llmService
         self.audioCapture = audioCapture
-        setupAudioLevelCallback()
     }
 
-    private func setupAudioLevelCallback() {
-        audioCapture.onAudioLevelUpdate = { [weak self] level in
-            // Already on main thread (dispatched in AudioCaptureService)
-            self?.audioLevel = level
+    /// Start polling audio level from a main-thread Timer (30fps).
+    /// No cross-thread callbacks, no dispatch, no Sendable issues.
+    private func startLevelPolling() {
+        levelPollTimer?.invalidate()
+        levelPollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.audioLevel = self.audioCapture.currentAudioLevel
         }
+    }
+
+    private func stopLevelPolling() {
+        levelPollTimer?.invalidate()
+        levelPollTimer = nil
+        audioLevel = 0
     }
 
     // MARK: - Recording Control
@@ -142,6 +150,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
             try audioCapture.startCapture()
             log.info("✅ startCapture() succeeded, setting state to .recording")
             recordingState = .recording
+            startLevelPolling()
         } catch {
             log.error("❌ startCapture() threw: \(error.localizedDescription)")
             recordingState = .error(message: error.localizedDescription)
@@ -152,7 +161,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     func stopRecording() {
         guard isRecording else { return }
         let wavData = audioCapture.stopCapture()
-        audioLevel = 0
+        stopLevelPolling()
 
         // If no STT provider is configured, skip processing entirely
         guard sttProvider != nil else {

@@ -66,8 +66,8 @@ final class AudioCaptureService: @unchecked Sendable {
     /// True while recording.
     private(set) var isRecording: Bool = false
 
-    /// Callback for audio level updates (0.0-1.0). Called on main thread.
-    var onAudioLevelUpdate: ((Float) -> Void)?
+    /// Current audio level (0.0-1.0), written from audio thread. Read from main thread via polling.
+    nonisolated(unsafe) private(set) var currentAudioLevel: Float = 0
 
     // MARK: - Private Properties
 
@@ -371,11 +371,8 @@ final class AudioCaptureService: @unchecked Sendable {
                 sumOfSquares += sample * sample
             }
             let rms = sqrt(sumOfSquares / max(1, Float(frameLength)))
-            let normalizedLevel = min(1.0, rms * 5.0)
-            let callback = self.onAudioLevelUpdate
-            DispatchQueue.main.async {
-                callback?(normalizedLevel)
-            }
+            // Write level directly — no dispatch, no callback, no cross-thread publishing
+            currentAudioLevel = min(1.0, rms * 5.0)
         }
 
         // Convert to 16kHz Int16 for the ring buffer (for WAV export)

@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import Combine
+import os.log
+
+private let log = Logger(subsystem: "com.fonos.ios", category: "DictationViewModel")
 
 // MARK: - DictationError
 
@@ -103,18 +106,24 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     @MainActor
     func startRecording() {
-        guard !isRecording else { return }
+        log.info("▶️ startRecording() called, isRecording=\(self.isRecording)")
+        guard !isRecording else {
+            log.warning("⚠️ Already recording, ignoring tap")
+            return
+        }
 
         let permission = audioCapture.micPermissionStatus()
+        log.info("🎤 Mic permission status: \(String(describing: permission.rawValue))")
 
         switch permission {
         case .granted:
-            // Permission already granted — start immediately (synchronous, no deadlock)
+            log.info("✅ Permission granted, calling doStartCapture()")
             doStartCapture()
         case .undetermined:
-            // Need to request — do it async, then start synchronously on callback
+            log.info("❓ Permission undetermined, requesting...")
             Task { @MainActor in
                 let granted = await audioCapture.requestMicPermission()
+                log.info("🎤 Permission request result: \(granted)")
                 if granted {
                     doStartCapture()
                 } else {
@@ -122,19 +131,23 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
                 }
             }
         case .denied:
+            log.error("❌ Permission denied")
             recordingState = .error(message: "Microphone permission denied. Go to Settings → Privacy → Microphone to enable.")
         @unknown default:
+            log.error("❌ Permission unknown")
             recordingState = .error(message: "Microphone permission unavailable.")
         }
     }
 
-    /// Actually start audio capture. Called synchronously on MainActor after permission is confirmed.
     @MainActor
     private func doStartCapture() {
+        log.info("🔴 doStartCapture() — about to call audioCapture.startCapture()")
         do {
             try audioCapture.startCapture()
+            log.info("✅ startCapture() succeeded, setting state to .recording")
             recordingState = .recording
         } catch {
+            log.error("❌ startCapture() threw: \(error.localizedDescription)")
             recordingState = .error(message: error.localizedDescription)
         }
     }

@@ -1,5 +1,8 @@
 import Foundation
 import AVFoundation
+import os.log
+
+private let log = Logger(subsystem: "com.fonos.ios", category: "AudioCapture")
 
 // MARK: - Errors
 
@@ -114,49 +117,70 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     /// run in an async context to avoid deadlocks with its internal threads.
     @MainActor
     func startCapture() throws {
-        guard !isRecording else { return }
+        log.info("🎙 startCapture() called, isRecording=\(self.isRecording)")
+        guard !isRecording else {
+            log.warning("⚠️ Already recording")
+            return
+        }
 
         // Configure audio session
+        log.info("📍 Step 1: Setting up AVAudioSession...")
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            log.info("📍 Step 1a: setCategory OK")
             try session.setPreferredSampleRate(16_000)
+            log.info("📍 Step 1b: setPreferredSampleRate OK")
             try session.setActive(true, options: .notifyOthersOnDeactivation)
+            log.info("📍 Step 1c: setActive OK")
         } catch {
+            log.error("❌ Audio session setup failed: \(error.localizedDescription)")
             throw AudioCaptureError.sessionSetupFailed(error)
         }
 
         // Stop any previous engine state to prevent "only one tap per bus" crash
+        log.info("📍 Step 2: Checking engine state, isRunning=\(self.engine.isRunning)")
         if engine.isRunning {
+            log.info("📍 Step 2a: Stopping previous engine")
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
 
+        log.info("📍 Step 3: Accessing inputNode...")
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        log.info("📍 Step 3: Input format: sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount), commonFormat=\(inputFormat.commonFormat.rawValue)")
 
         // Guard against invalid format (0 channels / 0 sample rate)
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+            log.error("❌ Invalid input format")
             throw AudioCaptureError.noInputAvailable
         }
 
         // Reset ring buffer
+        log.info("📍 Step 4: Resetting ring buffer...")
         resetRingBuffer()
 
         // Install tap with native input format — conversion to 16kHz mono happens in processTapBuffer
+        log.info("📍 Step 5: Installing tap...")
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             self?.processTapBuffer(buffer)
         }
 
+        log.info("📍 Step 6: Preparing and starting engine...")
         do {
             engine.prepare()
+            log.info("📍 Step 6a: engine.prepare() OK")
             try engine.start()
+            log.info("📍 Step 6b: engine.start() OK ✅")
         } catch {
+            log.error("❌ Engine start failed: \(error.localizedDescription)")
             inputNode.removeTap(onBus: 0)
             throw AudioCaptureError.engineStartFailed(error)
         }
 
         isRecording = true
+        log.info("🎙 Recording started successfully ✅")
     }
 
     /// Stop recording and return all captured audio as WAV data.

@@ -62,16 +62,16 @@ struct RecordButton: View {
 
     private var buttonBackground: Color {
         switch state {
-        case .idle:       return Color(hex: "#fbbf24")
-        case .recording:  return Color(hex: "#ef4444")
-        case .processing: return Color(hex: "#fbbf24").opacity(0.7)
+        case .idle:       return Color(red: 251/255, green: 191/255, blue: 36/255)   // amber
+        case .recording:  return Color(red: 239/255, green: 68/255, blue: 68/255)    // RED
+        case .processing: return Color(red: 251/255, green: 191/255, blue: 36/255).opacity(0.7)
         }
     }
 
     private var buttonShadow: Color {
         switch state {
-        case .idle:       return Color(hex: "#fbbf24").opacity(0.4)
-        case .recording:  return Color(hex: "#ef4444").opacity(0.5)
+        case .idle:       return Color(red: 251/255, green: 191/255, blue: 36/255).opacity(0.4)
+        case .recording:  return Color(red: 239/255, green: 68/255, blue: 68/255).opacity(0.5)
         case .processing: return Color.clear
         }
     }

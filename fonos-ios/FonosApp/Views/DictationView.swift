@@ -1,4 +1,7 @@
 import SwiftUI
+import os.log
+
+private let viewLog = Logger(subsystem: "com.fonos.ios", category: "DictationView")
 
 /// Main dictation recording screen.
 struct DictationView: View {
@@ -173,17 +176,24 @@ struct DictationView: View {
             )
 
             Text(recordButtonHint)
-                .font(.caption)
-                .foregroundColor(Color(hex: "#fafaf9").opacity(0.5))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(
+                    viewModel.isRecording
+                        ? Color(red: 239/255, green: 68/255, blue: 68/255) // red when recording
+                        : Color(hex: "#fafaf9").opacity(0.5)
+                )
         }
     }
 
     private var recordButtonState: RecordButton.ButtonState {
+        let result: RecordButton.ButtonState
         switch viewModel.recordingState {
-        case .idle, .result, .error: return .idle
-        case .recording:             return .recording
-        case .processing:            return .processing
+        case .idle, .result, .error: result = .idle
+        case .recording:             result = .recording
+        case .processing:            result = .processing
         }
+        viewLog.info("🎨 recordButtonState = \(String(describing: result)), viewModel.recordingState = \(String(describing: viewModel.recordingState)), audioLevel = \(viewModel.audioLevel)")
+        return result
     }
 
     private var recordButtonHint: String {

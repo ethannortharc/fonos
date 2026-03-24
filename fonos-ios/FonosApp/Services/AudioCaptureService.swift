@@ -47,7 +47,7 @@ enum WAVError: Error, LocalizedError {
 /// - `captureFormat`, `isRecording`, `encodeToWAV`, and `decodeWAV` are intentionally
 ///   nonisolated so tests can call them synchronously without MainActor context.
 /// - Internal state mutations happen on the main actor via DispatchQueue.main or Task.
-final class AudioCaptureService: ObservableObject, @unchecked Sendable {
+final class AudioCaptureService: @unchecked Sendable {
     // MARK: - Public Properties
 
     /// The capture format: 16kHz, 16-bit integer PCM, mono.
@@ -63,8 +63,8 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         return format
     }()
 
-    /// True while recording. Safe to read from any context (protected by internal lock).
-    @Published private(set) var isRecording: Bool = false
+    /// True while recording.
+    private(set) var isRecording: Bool = false
 
     /// Callback for audio level updates (0.0-1.0). Called on main thread.
     var onAudioLevelUpdate: ((Float) -> Void)?

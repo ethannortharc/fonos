@@ -175,13 +175,36 @@ struct DictationView: View {
                 onTap: handleRecordTap
             )
 
+            // Tap hint — also acts as a tappable stop target during recording
             Text(recordButtonHint)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(
                     viewModel.isRecording
-                        ? Color(red: 239/255, green: 68/255, blue: 68/255) // red when recording
-                        : Color(hex: "#fafaf9").opacity(0.5)
+                        ? Color.red
+                        : Color.white.opacity(0.5)
                 )
+                .padding(.horizontal, 40)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewLog.info("👆 HINT TEXT tapped — state: \(String(describing: viewModel.recordingState))")
+                    handleRecordTap()
+                }
+
+            // Debug: large visible stop button during recording
+            if viewModel.isRecording {
+                Text("⏹ STOP RECORDING")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 14)
+                    .background(Color.red)
+                    .cornerRadius(12)
+                    .onTapGesture {
+                        viewLog.info("👆 DEBUG STOP tapped")
+                        viewModel.stopRecording()
+                    }
+            }
         }
     }
 

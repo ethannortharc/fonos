@@ -34,49 +34,53 @@ struct DictationView: View {
 
                 // MARK: - Mode Picker Strip
                 modePickerStrip
-                    .padding(.top, 16)
+                    .padding(.top, 12)
                     .padding(.horizontal, 20)
 
-                Spacer()
+                Spacer(minLength: 20)
 
-                // MARK: - Waveform
+                // MARK: - Waveform + Button (compact, pushed up)
                 WaveformView(
                     audioLevel: viewModel.audioLevel,
                     isRecording: viewModel.isRecording
                 )
-                .padding(.horizontal, 40)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
 
-                // MARK: - Record Button
                 recordButtonSection
 
-                // MARK: - Result Area
-                if case .result(let transcript, let processed) = viewModel.recordingState {
-                    resultCard(transcript: transcript, processed: processed)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 24)
-                }
+                // MARK: - Model Info
+                modelInfoLabel
+                    .padding(.top, 12)
 
-                // MARK: - Error
-                if case .error(let message) = viewModel.recordingState {
-                    errorCard(message: message)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 24)
-                }
+                Spacer(minLength: 16)
 
-                Spacer()
+                // MARK: - Result / Error Area (scrollable)
+                ScrollView {
+                    VStack(spacing: 12) {
+                        if case .result(let transcript, let processed) = viewModel.recordingState {
+                            resultCard(transcript: transcript, processed: processed)
+                        }
+
+                        if case .error(let message) = viewModel.recordingState {
+                            errorCard(message: message)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .frame(maxHeight: 240)
 
                 // MARK: - Latency
                 if viewModel.sttLatency > 0 || viewModel.llmLatency > 0 {
                     latencyView
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 8)
+                        .padding(.bottom, 4)
                 }
 
                 // MARK: - Destination Quick Actions
                 destinationStrip
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 12)
             }
         }
     }
@@ -198,6 +202,46 @@ struct DictationView: View {
         case .processing: return "Processing..."
         case .result:     return "Tap to record again"
         case .error:      return "Tap to try again"
+        }
+    }
+
+    // MARK: - Model Info Label
+
+    private var modelInfoLabel: some View {
+        HStack(spacing: 6) {
+            // STT model indicator
+            HStack(spacing: 4) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 9))
+                Text("Apple Speech")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+            }
+            .foregroundColor(Color.orange.opacity(0.6))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(Color.orange.opacity(0.08))
+            )
+
+            // Mode + LLM indicator
+            HStack(spacing: 4) {
+                Image(systemName: viewModel.currentMode.icon)
+                    .font(.system(size: 9))
+                Text(viewModel.currentMode.displayName)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                if viewModel.currentMode.requiresLLM {
+                    Text("·")
+                    Text("No LLM")
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(Color.white.opacity(0.3))
+                }
+            }
+            .foregroundColor(Color(red: 134/255, green: 239/255, blue: 172/255).opacity(0.6))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(Color(red: 134/255, green: 239/255, blue: 172/255).opacity(0.08))
+            )
         }
     }
 

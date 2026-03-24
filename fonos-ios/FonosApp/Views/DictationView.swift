@@ -213,7 +213,7 @@ struct DictationView: View {
             HStack(spacing: 4) {
                 Image(systemName: "waveform")
                     .font(.system(size: 9))
-                Text("Apple Speech")
+                Text(viewModel.sttProviderName)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
             }
             .foregroundColor(Color.orange.opacity(0.6))
@@ -231,9 +231,14 @@ struct DictationView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                 if viewModel.currentMode.requiresLLM {
                     Text("·")
-                    Text("No LLM")
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundColor(Color.white.opacity(0.3))
+                    if let llmName = viewModel.llmProviderName {
+                        Text(llmName)
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    } else {
+                        Text("No LLM")
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundColor(Color.white.opacity(0.3))
+                    }
                 }
             }
             .foregroundColor(Color(red: 134/255, green: 239/255, blue: 172/255).opacity(0.6))

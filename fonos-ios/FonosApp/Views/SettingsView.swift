@@ -5,15 +5,9 @@ import SwiftUI
 /// Full settings screen with tabbed interface: Models | Modes | General.
 struct SettingsView: View {
 
-    // MARK: - Config state
+    // MARK: - Config state (shared with DictationViewModel via ContentView binding)
 
-    @State private var config: AppConfig = {
-        if let data = UserDefaults.standard.data(forKey: "app_config"),
-           let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
-            return decoded
-        }
-        return AppConfig()
-    }()
+    @Binding var config: AppConfig
 
     // MARK: - Tab state
 
@@ -328,5 +322,5 @@ struct AddDestinationSheet: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(config: .constant(AppConfig()))
 }

@@ -66,28 +66,90 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     // MARK: - Services
 
-    private let sttProvider: (any STTProvider)?
-    private let llmService: LLMService?
     private let audioCapture: AudioCaptureService
     private var levelPollTimer: Timer?
 
+    /// AppConfig reference — read by resolveSTT/LLM to pick the right provider.
+    /// Updated from ContentView when settings change.
+    @Published var config: AppConfig = AppConfig()
+
     // MARK: - Init
 
-    /// Default initialiser — uses Apple Speech (on-device) as STT provider.
-    /// No LLM configured by default (raw mode only until user configures one).
     init() {
-        sttProvider = AppleSTT()
-        llmService = nil
         audioCapture = AudioCaptureService()
     }
 
-    /// Designated initialiser for production use.
+    /// Test initialiser with explicit providers.
+    private var _testSTT: (any STTProvider)?
+    private var _testLLM: LLMService?
     init(sttProvider: (any STTProvider)?,
          llmService: LLMService? = nil,
          audioCapture: AudioCaptureService = AudioCaptureService()) {
-        self.sttProvider = sttProvider
-        self.llmService = llmService
+        self._testSTT = sttProvider
+        self._testLLM = llmService
         self.audioCapture = audioCapture
+    }
+
+    // MARK: - Provider Resolution
+
+    /// Resolve the current STT provider from config. Falls back to Apple Speech.
+    var sttProvider: any STTProvider {
+        if let test = _testSTT { return test }
+
+        let profileID = config.sttProfile
+        if !profileID.isEmpty, let profile = config.modelProfiles.first(where: { $0.id == profileID }) {
+            let key = (try? KeychainStore(service: "com.fonos.models").get(profile.id)) ?? ""
+            let baseURL = profile.baseURL ?? ""
+            switch profile.provider {
+            case "openai":
+                return WhisperSTT(apiKey: key, baseURL: baseURL.isEmpty ? "https://api.openai.com" : baseURL)
+            case "fonos":
+                let url = URL(string: baseURL.isEmpty ? "http://localhost:9880" : baseURL) ?? URL(string: "http://localhost:9880")!
+                return FonosSTT(serverURL: url)
+            default:
+                // For OMLX, Ollama, etc. with STT — use Whisper-compatible endpoint
+                if profile.hasSTT && !baseURL.isEmpty {
+                    return WhisperSTT(apiKey: key, baseURL: baseURL)
+                }
+            }
+        }
+        // Default: Apple on-device Speech Recognition
+        return AppleSTT()
+    }
+
+    /// Resolve the current LLM service from config. Returns nil if not configured.
+    var llmService: LLMService? {
+        if let test = _testLLM { return test }
+
+        let profileID = config.llmProfile
+        guard !profileID.isEmpty, let profile = config.modelProfiles.first(where: { $0.id == profileID }) else {
+            return nil
+        }
+        let key = (try? KeychainStore(service: "com.fonos.models").get(profile.id)) ?? ""
+        let baseURL = profile.baseURL ?? ""
+        return LLMService(
+            apiKey: key,
+            modelID: profile.modelID,
+            baseURL: baseURL.isEmpty ? "https://api.openai.com" : baseURL
+        )
+    }
+
+    /// Human-readable name of the current STT provider for UI display.
+    var sttProviderName: String {
+        let profileID = config.sttProfile
+        if !profileID.isEmpty, let profile = config.modelProfiles.first(where: { $0.id == profileID }) {
+            return profile.name
+        }
+        return "Apple Speech"
+    }
+
+    /// Human-readable name of the current LLM provider for UI display.
+    var llmProviderName: String? {
+        let profileID = config.llmProfile
+        guard !profileID.isEmpty, let profile = config.modelProfiles.first(where: { $0.id == profileID }) else {
+            return nil
+        }
+        return profile.name
     }
 
     /// Poll audio level at 10fps — fast enough for waveform, slow enough to not starve touch events.
@@ -175,14 +237,8 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         guard isRecording else { return }
         stopLevelPolling()
 
-        // Stop engine and get WAV data on background thread
+        // Stop engine and get WAV data
         let wavData = audioCapture.stopCapture()
-
-        // If no LLM configured and mode requires LLM, show info
-        guard sttProvider != nil else {
-            recordingState = .error(message: "No speech-to-text provider configured. Add a model with STT capability in Settings.")
-            return
-        }
 
         let dataSize = wavData?.count ?? 0
         let mode = self.currentMode
@@ -233,10 +289,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     /// Transcribe audio data using the configured STT provider.
     /// - Throws: `DictationError.noSTTProviderConfigured` if no provider is set.
     func transcribeAudio(_ audioData: Data, language: String?) async throws -> String {
-        guard let provider = sttProvider else {
-            throw DictationError.noSTTProviderConfigured
-        }
-        return try await provider.transcribe(audioData: audioData, language: language)
+        return try await sttProvider.transcribe(audioData: audioData, language: language)
     }
 
     /// Transcribe audio and optionally apply LLM post-processing.

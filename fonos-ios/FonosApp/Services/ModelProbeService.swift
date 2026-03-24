@@ -55,17 +55,62 @@ struct ModelProbeService {
         log.info("🔍 Found \(modelsResponse.data.count) models")
 
         let discovered = modelsResponse.data.map { model in
-            DiscoveredModel(
+            // Prefer type/capability from API response; fall back to name inference
+            let caps = capabilitiesFromAPIType(model) ?? inferCapabilities(modelID: model.id, provider: provider)
+            return DiscoveredModel(
                 id: model.id,
                 name: humanReadableName(model.id),
-                capabilities: inferCapabilities(modelID: model.id, provider: provider)
+                capabilities: caps
             )
         }
 
         return ProbeResult(models: discovered, endpoint: cleanURL, provider: provider)
     }
 
-    /// Infer capabilities from model name patterns.
+    /// Extract capabilities from API response type/metadata fields.
+    /// Returns nil if no type info available (falls back to name inference).
+    private static func capabilitiesFromAPIType(_ model: ModelEntry) -> [String]? {
+        // Check explicit type field (OMLX, some providers)
+        if let type = model.type, !type.isEmpty {
+            let lower = type.lowercased()
+            var caps: [String] = []
+            if lower.contains("audio") || lower.contains("stt") || lower.contains("speech")
+                || lower.contains("transcri") || lower.contains("whisper") {
+                caps.append("stt")
+            }
+            if lower.contains("chat") || lower.contains("text") || lower.contains("completion")
+                || lower.contains("llm") || lower.contains("generate") || lower.contains("instruct") {
+                caps.append("llm")
+            }
+            if lower.contains("embed") {
+                // Embedding only — no LLM or STT
+                return caps.isEmpty ? nil : caps
+            }
+            if lower.contains("tts") || lower.contains("voice") {
+                // TTS — skip for now (not used in iOS app)
+            }
+            if !caps.isEmpty { return caps }
+        }
+
+        // Check capabilities array (some providers return this)
+        if let apiCaps = model.capabilities, !apiCaps.isEmpty {
+            var caps: [String] = []
+            for cap in apiCaps {
+                let lower = cap.lowercased()
+                if lower.contains("stt") || lower.contains("audio") || lower.contains("transcri") {
+                    caps.append("stt")
+                }
+                if lower.contains("chat") || lower.contains("completion") || lower.contains("llm") {
+                    caps.append("llm")
+                }
+            }
+            if !caps.isEmpty { return caps }
+        }
+
+        return nil // No type info — fall back to name inference
+    }
+
+    /// Infer capabilities from model name patterns (fallback).
     private static func inferCapabilities(modelID: String, provider: String) -> [String] {
         let lower = modelID.lowercased()
         var caps: [String] = []
@@ -121,11 +166,27 @@ private struct ModelsListResponse: Decodable {
     let data: [ModelEntry]
 }
 
-private struct ModelEntry: Decodable {
+struct ModelEntry: Decodable {
     let id: String
     let object: String?
     let created: Int?
     let owned_by: String?
+    let type: String?           // OMLX and some providers return this
+    let capabilities: [String]? // Some providers return explicit capabilities
+
+    enum CodingKeys: String, CodingKey {
+        case id, object, created, owned_by, type, capabilities
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        object = try container.decodeIfPresent(String.self, forKey: .object)
+        created = try container.decodeIfPresent(Int.self, forKey: .created)
+        owned_by = try container.decodeIfPresent(String.self, forKey: .owned_by)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities)
+    }
 }
 
 // MARK: - Errors

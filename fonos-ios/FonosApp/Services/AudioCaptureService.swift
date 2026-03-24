@@ -113,80 +113,62 @@ final class AudioCaptureService: @unchecked Sendable {
     }
 
     /// Start audio capture. Must be called AFTER mic permission is granted.
-    /// This is intentionally synchronous — AVAudioEngine setup must not
-    /// run in an async context to avoid deadlocks with its internal threads.
-    @MainActor
-    func startCapture() throws {
-        log.info("🎙 startCapture() called, isRecording=\(self.isRecording)")
+    /// Runs engine setup on a background queue to avoid blocking the main thread.
+    func startCapture(completion: @escaping @Sendable (Error?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            self._startCaptureSync(completion: completion)
+        }
+    }
+
+    /// Internal synchronous engine setup — runs on background thread.
+    private func _startCaptureSync(completion: @escaping @Sendable (Error?) -> Void) {
+        log.info("🎙 startCapture() on background thread")
         guard !isRecording else {
-            log.warning("⚠️ Already recording")
+            completion(nil)
             return
         }
 
-        // Configure audio session
-        log.info("📍 Step 1: Setting up AVAudioSession...")
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-            log.info("📍 Step 1a: setCategory OK")
             try session.setPreferredSampleRate(16_000)
-            log.info("📍 Step 1b: setPreferredSampleRate OK")
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            log.info("📍 Step 1c: setActive OK")
         } catch {
-            log.error("❌ Audio session setup failed: \(error.localizedDescription)")
-            throw AudioCaptureError.sessionSetupFailed(error)
+            completion(AudioCaptureError.sessionSetupFailed(error))
+            return
         }
 
-        // Stop any previous engine state to prevent "only one tap per bus" crash
-        log.info("📍 Step 2: Checking engine state, isRunning=\(self.engine.isRunning)")
         if engine.isRunning {
-            log.info("📍 Step 2a: Stopping previous engine")
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
 
-        log.info("📍 Step 3: Accessing inputNode...")
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        log.info("📍 Step 3: Input format: sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount), commonFormat=\(inputFormat.commonFormat.rawValue)")
 
-        // Guard against invalid format (0 channels / 0 sample rate)
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
-            log.error("❌ Invalid input format")
-            throw AudioCaptureError.noInputAvailable
+            completion(AudioCaptureError.noInputAvailable)
+            return
         }
 
-        // Reset ring buffer
-        log.info("📍 Step 4: Resetting ring buffer...")
         resetRingBuffer()
-
-        // IMPORTANT: prepare → installTap → start (this order is required on real devices)
-        log.info("📍 Step 5: engine.prepare()...")
         engine.prepare()
 
-        log.info("📍 Step 6: Installing tap (format=nil)...")
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
-            guard let self else {
-                log.warning("⚠️ Tap callback: self is nil!")
-                return
-            }
-            self.processTapBuffer(buffer)
+            self?.processTapBuffer(buffer)
         }
-        log.info("📍 Step 6a: Tap installed OK")
 
-        log.info("📍 Step 7: engine.start()...")
         do {
             try engine.start()
-            log.info("📍 Step 7a: engine.start() OK ✅")
         } catch {
-            log.error("❌ Engine start failed: \(error.localizedDescription)")
             inputNode.removeTap(onBus: 0)
-            throw AudioCaptureError.engineStartFailed(error)
+            completion(AudioCaptureError.engineStartFailed(error))
+            return
         }
 
         isRecording = true
-        log.info("🎙 Recording started successfully ✅")
+        log.info("🎙 Recording started on background thread ✅")
+        completion(nil)
     }
 
     /// Stop recording and return all captured audio as WAV data.

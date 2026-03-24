@@ -73,10 +73,10 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     // MARK: - Init
 
-    /// No-arg initialiser for preview and test use.
-    /// Uses no STT provider — transcription will throw DictationError.noSTTProviderConfigured.
+    /// Default initialiser — uses Apple Speech (on-device) as STT provider.
+    /// No LLM configured by default (raw mode only until user configures one).
     init() {
-        sttProvider = nil
+        sttProvider = AppleSTT()
         llmService = nil
         audioCapture = AudioCaptureService()
     }
@@ -148,31 +148,37 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     @MainActor
     private func doStartCapture() {
-        log.info("🔴 doStartCapture() — DEBUG: testing UI only, no engine")
+        log.info("🔴 doStartCapture() — starting engine on background thread")
 
-        // DEBUG: Skip audio engine entirely to isolate if freeze is UI or engine
+        // Set recording state immediately for responsive UI
         recordingState = .recording
-        log.info("✅ State set to .recording (engine NOT started)")
+        startLevelPolling()
 
-        // NOTE: Uncomment below to re-enable real recording:
-        // do {
-        //     try audioCapture.startCapture()
-        //     log.info("✅ startCapture() succeeded, setting state to .recording")
-        //     recordingState = .recording
-        //     startLevelPolling()
-        // } catch {
-        //     log.error("❌ startCapture() threw: \(error.localizedDescription)")
-        //     recordingState = .error(message: error.localizedDescription)
-        // }
+        // Start audio engine on background thread to avoid blocking main thread
+        audioCapture.startCapture { [weak self] error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    log.error("❌ Engine start failed: \(error.localizedDescription)")
+                    self.recordingState = .error(message: error.localizedDescription)
+                    self.stopLevelPolling()
+                } else {
+                    log.info("✅ Engine started successfully on background thread")
+                }
+            }
+        }
     }
 
     @MainActor
     func stopRecording() {
+        log.info("⏹ stopRecording() called")
         guard isRecording else { return }
-        let wavData = audioCapture.stopCapture()
         stopLevelPolling()
 
-        // If no STT provider is configured, skip processing entirely
+        // Stop engine and get WAV data on background thread
+        let wavData = audioCapture.stopCapture()
+
+        // If no LLM configured and mode requires LLM, show info
         guard sttProvider != nil else {
             recordingState = .error(message: "No speech-to-text provider configured. Add a model with STT capability in Settings.")
             return

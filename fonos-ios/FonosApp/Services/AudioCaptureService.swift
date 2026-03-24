@@ -161,8 +161,11 @@ final class AudioCaptureService: @unchecked Sendable {
         log.info("📍 Step 4: Resetting ring buffer...")
         resetRingBuffer()
 
-        // Install tap — pass nil format to let the system choose (avoids format mismatch)
-        log.info("📍 Step 5: Installing tap (format=nil to use system default)...")
+        // IMPORTANT: prepare → installTap → start (this order is required on real devices)
+        log.info("📍 Step 5: engine.prepare()...")
+        engine.prepare()
+
+        log.info("📍 Step 6: Installing tap (format=nil)...")
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
             guard let self else {
                 log.warning("⚠️ Tap callback: self is nil!")
@@ -170,13 +173,12 @@ final class AudioCaptureService: @unchecked Sendable {
             }
             self.processTapBuffer(buffer)
         }
+        log.info("📍 Step 6a: Tap installed OK")
 
-        log.info("📍 Step 6: Preparing and starting engine...")
+        log.info("📍 Step 7: engine.start()...")
         do {
-            engine.prepare()
-            log.info("📍 Step 6a: engine.prepare() OK")
             try engine.start()
-            log.info("📍 Step 6b: engine.start() OK ✅")
+            log.info("📍 Step 7a: engine.start() OK ✅")
         } catch {
             log.error("❌ Engine start failed: \(error.localizedDescription)")
             inputNode.removeTap(onBus: 0)

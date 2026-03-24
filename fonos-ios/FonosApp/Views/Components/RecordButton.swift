@@ -44,8 +44,6 @@ struct RecordButton: View {
                 radius: state == .recording ? 16 : 8,
                 x: 0, y: 4
             )
-            .scaleEffect(state == .recording ? 1.08 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: state)
         }
         .buttonStyle(.plain)
         .frame(width: buttonSize + 48, height: buttonSize + 48)

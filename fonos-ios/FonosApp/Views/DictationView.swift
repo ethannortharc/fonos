@@ -207,12 +207,16 @@ struct DictationView: View {
     }
 
     private func handleRecordTap() {
+        viewLog.info("👆 handleRecordTap() — current state: \(String(describing: viewModel.recordingState))")
         switch viewModel.recordingState {
         case .idle, .result, .error:
+            viewLog.info("👆 → calling startRecording()")
             viewModel.startRecording()
         case .recording:
+            viewLog.info("👆 → calling stopRecording()")
             viewModel.stopRecording()
         case .processing:
+            viewLog.info("👆 → processing, ignoring tap")
             break
         }
     }

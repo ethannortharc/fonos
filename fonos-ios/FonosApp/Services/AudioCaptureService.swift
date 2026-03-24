@@ -350,17 +350,48 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         lock.unlock()
     }
 
+    private nonisolated(unsafe) static var tapCallCount = 0
+
     private func processTapBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let converter = AVAudioConverter(from: buffer.format, to: captureFormat) else { return }
+        Self.tapCallCount += 1
+        let callNum = Self.tapCallCount
+
+        // Log first few calls to verify tap is working
+        if callNum <= 3 {
+            log.info("🔊 processTapBuffer #\(callNum): frames=\(buffer.frameLength), rate=\(buffer.format.sampleRate), channels=\(buffer.format.channelCount)")
+        }
+
+        // Compute audio level directly from the input buffer (float32 format)
+        // This avoids needing the converter for visualization
+        if let floatData = buffer.floatChannelData {
+            let frameLength = Int(buffer.frameLength)
+            var sumOfSquares: Float = 0
+            for i in 0..<frameLength {
+                let sample = floatData[0][i]
+                sumOfSquares += sample * sample
+            }
+            let rms = sqrt(sumOfSquares / max(1, Float(frameLength)))
+            let normalizedLevel = min(1.0, rms * 5.0)
+            DispatchQueue.main.async { [weak self] in
+                self?.audioLevel = normalizedLevel
+            }
+        }
+
+        // Convert to 16kHz Int16 for the ring buffer (for WAV export)
+        guard let converter = AVAudioConverter(from: buffer.format, to: captureFormat) else {
+            if callNum <= 3 { log.error("❌ Failed to create converter") }
+            return
+        }
 
         let ratio = captureFormat.sampleRate / buffer.format.sampleRate
         let outputFrameCount = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio))
 
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: captureFormat,
-                                                   frameCapacity: outputFrameCount) else { return }
+                                                   frameCapacity: outputFrameCount) else {
+            if callNum <= 3 { log.error("❌ Failed to create output buffer") }
+            return
+        }
 
-        // The input block may be called multiple times by the converter.
-        // Provide data only on the first call, then signal end-of-stream.
         var hasProvidedData = false
         var conversionError: NSError?
         let status = converter.convert(to: outputBuffer, error: &conversionError) { _, outStatus in
@@ -373,21 +404,12 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
             return buffer
         }
 
+        if callNum <= 3 {
+            log.info("🔊 Conversion #\(callNum): status=\(status.rawValue), outFrames=\(outputBuffer.frameLength), error=\(conversionError?.localizedDescription ?? "none")")
+        }
+
         guard status != .error, let int16Ptr = outputBuffer.int16ChannelData else { return }
         let frameLength = Int(outputBuffer.frameLength)
-
-        // Compute RMS audio level for waveform visualization
-        var sumOfSquares: Float = 0
-        for i in 0..<frameLength {
-            let sample = Float(int16Ptr[0][i]) / Float(Int16.max)
-            sumOfSquares += sample * sample
-        }
-        let rms = sqrt(sumOfSquares / max(1, Float(frameLength)))
-        // Normalize to 0-1 range (typical voice RMS is 0.01-0.3)
-        let normalizedLevel = min(1.0, rms * 5.0)
-        DispatchQueue.main.async { [weak self] in
-            self?.audioLevel = normalizedLevel
-        }
 
         lock.lock()
         for i in 0..<frameLength {

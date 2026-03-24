@@ -148,16 +148,22 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     @MainActor
     private func doStartCapture() {
-        log.info("🔴 doStartCapture() — about to call audioCapture.startCapture()")
-        do {
-            try audioCapture.startCapture()
-            log.info("✅ startCapture() succeeded, setting state to .recording")
-            recordingState = .recording
-            startLevelPolling()
-        } catch {
-            log.error("❌ startCapture() threw: \(error.localizedDescription)")
-            recordingState = .error(message: error.localizedDescription)
-        }
+        log.info("🔴 doStartCapture() — DEBUG: testing UI only, no engine")
+
+        // DEBUG: Skip audio engine entirely to isolate if freeze is UI or engine
+        recordingState = .recording
+        log.info("✅ State set to .recording (engine NOT started)")
+
+        // NOTE: Uncomment below to re-enable real recording:
+        // do {
+        //     try audioCapture.startCapture()
+        //     log.info("✅ startCapture() succeeded, setting state to .recording")
+        //     recordingState = .recording
+        //     startLevelPolling()
+        // } catch {
+        //     log.error("❌ startCapture() threw: \(error.localizedDescription)")
+        //     recordingState = .error(message: error.localizedDescription)
+        // }
     }
 
     @MainActor

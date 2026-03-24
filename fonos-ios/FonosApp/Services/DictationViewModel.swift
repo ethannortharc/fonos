@@ -184,15 +184,26 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
             return
         }
 
+        let dataSize = wavData?.count ?? 0
+        let mode = self.currentMode
+        log.info("⏹ Got WAV data: \(dataSize) bytes, mode: \(mode.id)")
+
+        if mode.requiresLLM && llmService == nil {
+            // Show transcript only — no LLM configured
+            log.info("⚠️ Mode requires LLM but none configured, will use raw transcript")
+        }
+
         recordingState = .processing
 
         Task {
             do {
+                log.info("🔄 Starting STT transcription...")
                 let result = try await processAudio(
                     wavData ?? Data(),
                     language: nil,
-                    mode: currentMode
+                    mode: mode
                 )
+                log.info("✅ Processing complete: \(result.text.prefix(50))...")
                 await MainActor.run {
                     recordingState = .result(
                         transcript: result.text,
@@ -200,6 +211,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
                     )
                 }
             } catch {
+                log.error("❌ Processing failed: \(error.localizedDescription)")
                 await MainActor.run {
                     recordingState = .error(message: error.localizedDescription)
                 }

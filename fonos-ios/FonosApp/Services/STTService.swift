@@ -134,7 +134,7 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
     // MARK: - Buffer-based transcription (test-facing API)
 
     /// Transcribes audio data, setting `lastUsedLocale` from the `language` parameter.
-    func transcribe(buffer: Data, language: String?) async throws -> String {
+    func transcribe(buffer audioData: Data, language: String?) async throws -> String {
         // Record the locale for test inspection.
         lastUsedLocale = language.map { Locale(identifier: $0) } ?? .current
 
@@ -148,6 +148,33 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
                 let request = SFSpeechAudioBufferRecognitionRequest()
                 request.shouldReportPartialResults = false
 
+                // Append audio data to the request — this was missing!
+                // Convert WAV data to PCM buffer and feed it to the recognizer.
+                if audioData.count > 44 {
+                    // Try to decode WAV → PCM buffer
+                    if let pcmBuffer = try? AudioCaptureService.decodeWAV(data: audioData) {
+                        request.append(pcmBuffer)
+                    } else {
+                        // Fallback: try to create a buffer directly from raw PCM (skip WAV header)
+                        let pcmData = audioData.dropFirst(44)
+                        let sampleCount = pcmData.count / 2 // 16-bit samples
+                        if let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false),
+                           let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(sampleCount)) {
+                            buffer.frameLength = AVAudioFrameCount(sampleCount)
+                            if let int16Ptr = buffer.int16ChannelData {
+                                pcmData.withUnsafeBytes { rawBuf in
+                                    if let baseAddr = rawBuf.baseAddress {
+                                        memcpy(int16Ptr[0], baseAddr, pcmData.count)
+                                    }
+                                }
+                            }
+                            request.append(buffer)
+                        }
+                    }
+                }
+                // Signal end of audio — without this, the recognizer waits forever
+                request.endAudio()
+
                 var hasResumed = false
                 _ = recognizer.recognize(request: request) { result, error in
                     guard !hasResumed else { return }
@@ -159,7 +186,6 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
                     }
 
                     if let result, result.isFinal {
-                        // Real SFSpeechRecognitionResult path.
                         hasResumed = true
                         let text = result.bestTranscription.formattedString
                         if text.isEmpty {
@@ -170,12 +196,7 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
                         return
                     }
 
-                    // (nil, nil) fallback: occurs when the mock calls
-                    //   resultHandler(mockResult as? SFSpeechRecognitionResult, nil)
-                    // and the as? cast returns nil (because MockSpeechRecognitionResult
-                    // inherits NSObject, not SFSpeechRecognitionResult).
-                    // In this case, read the transcript via transcribeSync(), which
-                    // reads stubbedTranscript from the mock.
+                    // Mock fallback path for tests
                     if result == nil && error == nil {
                         hasResumed = true
                         let transcript = recognizer.transcribeSync()

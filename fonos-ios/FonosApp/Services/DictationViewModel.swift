@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 // MARK: - DictationError
 
@@ -66,6 +67,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     private let sttProvider: (any STTProvider)?
     private let llmService: LLMService?
     private let audioCapture: AudioCaptureService
+    private var audioLevelObservation: Any?
 
     // MARK: - Init
 
@@ -75,6 +77,7 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         sttProvider = nil
         llmService = nil
         audioCapture = AudioCaptureService()
+        observeAudioLevel()
     }
 
     /// Designated initialiser for production use.
@@ -84,6 +87,16 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         self.sttProvider = sttProvider
         self.llmService = llmService
         self.audioCapture = audioCapture
+        observeAudioLevel()
+    }
+
+    private func observeAudioLevel() {
+        // Forward audio level from AudioCaptureService to this view model
+        audioLevelObservation = audioCapture.$audioLevel
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] level in
+                self?.audioLevel = level
+            }
     }
 
     // MARK: - Recording Control
@@ -105,6 +118,14 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     func stopRecording() {
         guard isRecording else { return }
         let wavData = audioCapture.stopCapture()
+        audioLevel = 0
+
+        // If no STT provider is configured, skip processing entirely
+        guard sttProvider != nil else {
+            recordingState = .error(message: "No speech-to-text provider configured. Add a model with STT capability in Settings.")
+            return
+        }
+
         recordingState = .processing
 
         Task {

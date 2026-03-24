@@ -63,6 +63,9 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
     /// True while recording. Safe to read from any context (protected by internal lock).
     @Published private(set) var isRecording: Bool = false
 
+    /// Current audio level (0.0-1.0) for waveform visualization. Updated from tap callback.
+    @Published var audioLevel: Float = 0
+
     // MARK: - Private Properties
 
     private let engine = AVAudioEngine()
@@ -353,6 +356,19 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
 
         guard status != .error, let int16Ptr = outputBuffer.int16ChannelData else { return }
         let frameLength = Int(outputBuffer.frameLength)
+
+        // Compute RMS audio level for waveform visualization
+        var sumOfSquares: Float = 0
+        for i in 0..<frameLength {
+            let sample = Float(int16Ptr[0][i]) / Float(Int16.max)
+            sumOfSquares += sample * sample
+        }
+        let rms = sqrt(sumOfSquares / max(1, Float(frameLength)))
+        // Normalize to 0-1 range (typical voice RMS is 0.01-0.3)
+        let normalizedLevel = min(1.0, rms * 5.0)
+        DispatchQueue.main.async { [weak self] in
+            self?.audioLevel = normalizedLevel
+        }
 
         lock.lock()
         for i in 0..<frameLength {

@@ -84,9 +84,9 @@ struct RecordButton: View {
                 .font(.system(size: 40, weight: .medium))
                 .foregroundColor(Color(hex: "#1a1917"))
         case .recording:
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white)
-                .frame(width: 28, height: 28)
+            Image(systemName: "stop.fill")
+                .font(.system(size: 32, weight: .medium))
+                .foregroundColor(.white)
         case .processing:
             ProgressView()
                 .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "#1a1917")))

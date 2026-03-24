@@ -104,13 +104,38 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
     @MainActor
     func startRecording() {
         guard !isRecording else { return }
-        Task { @MainActor in
-            do {
-                try await audioCapture.startCapture()
-                recordingState = .recording
-            } catch {
-                recordingState = .error(message: error.localizedDescription)
+
+        let permission = audioCapture.micPermissionStatus()
+
+        switch permission {
+        case .granted:
+            // Permission already granted — start immediately (synchronous, no deadlock)
+            doStartCapture()
+        case .undetermined:
+            // Need to request — do it async, then start synchronously on callback
+            Task { @MainActor in
+                let granted = await audioCapture.requestMicPermission()
+                if granted {
+                    doStartCapture()
+                } else {
+                    recordingState = .error(message: "Microphone permission is required. Please enable it in Settings.")
+                }
             }
+        case .denied:
+            recordingState = .error(message: "Microphone permission denied. Go to Settings → Privacy → Microphone to enable.")
+        @unknown default:
+            recordingState = .error(message: "Microphone permission unavailable.")
+        }
+    }
+
+    /// Actually start audio capture. Called synchronously on MainActor after permission is confirmed.
+    @MainActor
+    private func doStartCapture() {
+        do {
+            try audioCapture.startCapture()
+            recordingState = .recording
+        } catch {
+            recordingState = .error(message: error.localizedDescription)
         }
     }
 

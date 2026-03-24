@@ -95,33 +95,28 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
 
     // MARK: - Public API
 
+    /// Check current microphone permission status.
+    nonisolated func micPermissionStatus() -> AVAudioSession.RecordPermission {
+        AVAudioSession.sharedInstance().recordPermission
+    }
+
+    /// Request microphone permission. Call only when status is .undetermined.
+    func requestMicPermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    /// Start audio capture. Must be called AFTER mic permission is granted.
+    /// This is intentionally synchronous — AVAudioEngine setup must not
+    /// run in an async context to avoid deadlocks with its internal threads.
     @MainActor
-    func startCapture() async throws {
+    func startCapture() throws {
         guard !isRecording else { return }
 
-        // Check mic permission synchronously first to avoid deadlocks.
-        // Only call the async request if permission hasn't been determined yet.
-        let permissionStatus = AVAudioSession.sharedInstance().recordPermission
-        switch permissionStatus {
-        case .granted:
-            break // Already have permission, proceed immediately
-        case .undetermined:
-            // First time — show the system permission dialog
-            let granted = await withCheckedContinuation { continuation in
-                AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-            guard granted else {
-                throw AudioCaptureError.permissionDenied
-            }
-        case .denied:
-            throw AudioCaptureError.permissionDenied
-        @unknown default:
-            throw AudioCaptureError.permissionDenied
-        }
-
-        // Configure audio session — use .playAndRecord for broader device compatibility
+        // Configure audio session
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
@@ -140,12 +135,12 @@ final class AudioCaptureService: ObservableObject, @unchecked Sendable {
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Guard against invalid format (0 channels / 0 sample rate — happens when mic unavailable)
+        // Guard against invalid format (0 channels / 0 sample rate)
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
             throw AudioCaptureError.noInputAvailable
         }
 
-        // Reset ring buffer (nonisolated helper avoids async-context warning on NSLock)
+        // Reset ring buffer
         resetRingBuffer()
 
         // Install tap with native input format — conversion to 16kHz mono happens in processTapBuffer

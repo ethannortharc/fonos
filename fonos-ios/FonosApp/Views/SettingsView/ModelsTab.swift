@@ -800,33 +800,40 @@ private struct ProbeSheet: View {
                             }
                         }
 
-                        // Add selected
+                        // Add selected — only models with at least one capability
                         Section {
                             Button {
                                 let selected = result.models.filter { selectedModels.contains($0.id) }
-                                // Apply user-selected capabilities for models without auto-detection
+                                // Apply user-selected capabilities
                                 let resolved = selected.map { model -> ModelProbeService.DiscoveredModel in
-                                    if model.autoDetected {
-                                        return model
-                                    }
+                                    if model.autoDetected { return model }
                                     var m = model
                                     m.capabilities = Array(modelCapabilities[model.id, default: []])
                                     return m
                                 }
-                                onAddModels(resolved, probeKey)
+                                // Filter out models with no capabilities chosen
+                                let valid = resolved.filter { !$0.capabilities.isEmpty }
+                                guard !valid.isEmpty else { return }
+                                onAddModels(valid, probeKey)
                                 dismiss()
                             } label: {
+                                let validCount = validModelCount(in: result)
                                 HStack {
                                     Spacer()
-                                    Text("Add \(selectedModels.count) Model\(selectedModels.count == 1 ? "" : "s")")
-                                        .fontWeight(.semibold)
+                                    if validCount == 0 && !selectedModels.isEmpty {
+                                        Text("Select type for each model first")
+                                            .fontWeight(.medium)
+                                    } else {
+                                        Text("Add \(validCount) Model\(validCount == 1 ? "" : "s")")
+                                            .fontWeight(.semibold)
+                                    }
                                     Spacer()
                                 }
                                 .foregroundColor(.white)
                                 .padding(.vertical, 4)
                             }
-                            .disabled(selectedModels.isEmpty)
-                            .listRowBackground(selectedModels.isEmpty ? Color.gray.opacity(0.3) : green)
+                            .disabled(validModelCount(in: result) == 0)
+                            .listRowBackground(validModelCount(in: result) == 0 ? Color.gray.opacity(0.3) : green)
                         }
                     }
                 }
@@ -878,6 +885,15 @@ private struct ProbeSheet: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    /// Count models that are selected AND have at least one capability.
+    private func validModelCount(in result: ModelProbeService.ProbeResult) -> Int {
+        result.models.filter { model in
+            guard selectedModels.contains(model.id) else { return false }
+            if model.autoDetected { return !model.capabilities.isEmpty }
+            return !(modelCapabilities[model.id, default: []].isEmpty)
+        }.count
     }
 
     private func toggleModel(_ id: String) {

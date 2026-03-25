@@ -100,18 +100,27 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         if !profileID.isEmpty, let profile = config.modelProfiles.first(where: { $0.id == profileID }) {
             let key = (try? KeychainStore(service: "com.fonos.models").get(profile.id)) ?? ""
             let baseURL = profile.baseURL ?? ""
+            log.info("🔌 Resolving STT: provider=\(profile.provider), model=\(profile.modelID), baseURL=\(baseURL)")
+
             switch profile.provider {
             case "openai":
-                return WhisperSTT(apiKey: key, baseURL: baseURL.isEmpty ? "https://api.openai.com" : baseURL)
+                let url = baseURL.isEmpty ? "https://api.openai.com" : baseURL
+                log.info("🔌 → WhisperSTT(\(url))")
+                return WhisperSTT(apiKey: key, baseURL: url)
             case "fonos":
                 let url = URL(string: baseURL.isEmpty ? "http://localhost:9880" : baseURL) ?? URL(string: "http://localhost:9880")!
+                log.info("🔌 → FonosSTT(\(url))")
                 return FonosSTT(serverURL: url)
             default:
                 // For OMLX, Ollama, etc. with STT — use Whisper-compatible endpoint
                 if profile.hasSTT && !baseURL.isEmpty {
+                    log.info("🔌 → WhisperSTT(\(baseURL)) [provider: \(profile.provider)]")
                     return WhisperSTT(apiKey: key, baseURL: baseURL)
                 }
+                log.warning("🔌 → STT profile found but no STT capability or empty URL, falling back to Apple")
             }
+        } else {
+            log.info("🔌 No STT profile configured, using Apple Speech")
         }
         // Default: Apple on-device Speech Recognition
         return AppleSTT()

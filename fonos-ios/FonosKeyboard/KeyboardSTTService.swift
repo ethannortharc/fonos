@@ -5,11 +5,14 @@ import os.log
 
 private let kbSTTLog = Logger(subsystem: "com.fonos.ios.keyboard", category: "KeyboardSTT")
 
-// MARK: - App Group Constants
+// MARK: - Config Constants
 
-private enum AppGroup {
-    static let suiteName = "group.com.fonos.ios"
+private enum ConfigKeys {
     static let configKey = "app_config"
+    // App Group requires paid developer account provisioning.
+    // For now, read from standard UserDefaults (same app container).
+    // When App Group is provisioned, add suiteName here.
+    static let keychainService = "com.fonos.models"
 }
 
 // MARK: - KeyboardSTTService
@@ -79,12 +82,10 @@ final class KeyboardSTTService: @unchecked Sendable {
     // MARK: - Config Resolution
 
     private func resolveConfig() -> (provider: String, language: String?, apiKey: String, baseURL: String, modelID: String) {
-        let defaults = UserDefaults(suiteName: AppGroup.suiteName) ?? .standard
-        let fallback = UserDefaults.standard
-
-        // Try App Group first, then fall back to standard
-        let configData = defaults.data(forKey: AppGroup.configKey)
-            ?? fallback.data(forKey: AppGroup.configKey)
+        // Keyboard extension runs in a separate process.
+        // Without App Group provisioning, we can't read the main app's UserDefaults.
+        // Fall back to Apple Speech (on-device, no config needed).
+        let configData = UserDefaults.standard.data(forKey: ConfigKeys.configKey)
 
         var sttProvider = "apple"
         var sttLanguage: String? = nil
@@ -99,39 +100,34 @@ final class KeyboardSTTService: @unchecked Sendable {
         }
 
         // If provider is not apple, resolve from model profiles
-        if sttProvider != "apple" {
+        if !sttProfileID.isEmpty {
             if let data = configData,
                let config = try? JSONDecoder().decode(MinimalConfig.self, from: data),
                let profiles = config.modelProfiles {
 
-                // Find the STT profile
                 let profile = profiles.first { $0.id == sttProfileID && $0.capabilities.contains("stt") }
                     ?? profiles.first { $0.capabilities.contains("stt") }
 
                 if let p = profile {
-                    let apiKey = readAPIKey(for: p.provider) ?? ""
+                    let apiKey = readAPIKey(for: p.id) ?? ""
                     let baseURL = p.baseURL ?? defaultBaseURL(for: p.provider)
+                    kbSTTLog.info("🔌 Keyboard using STT: \(p.modelID) @ \(baseURL)")
                     return ("whisper", sttLanguage, apiKey, baseURL, p.modelID)
                 }
             }
-            // Default to OpenAI Whisper
-            let apiKey = readAPIKey(for: "openai") ?? ""
-            return ("whisper", sttLanguage, apiKey, "https://api.openai.com", "whisper-1")
         }
 
         return ("apple", sttLanguage, "", "", "")
     }
 
-    private func readAPIKey(for provider: String) -> String? {
-        // In the keyboard extension, try to read from Keychain
-        // Using the same service name as the main app
-        let service = "com.fonos.ios"
-        let account = "\(provider)_api_key"
+    private func readAPIKey(for profileID: String) -> String? {
+        // Read API key from Keychain — same service + key format as main app's KeychainStore
+        let service = ConfigKeys.keychainService
 
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
-            kSecAttrAccount: account,
+            kSecAttrAccount: profileID,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]

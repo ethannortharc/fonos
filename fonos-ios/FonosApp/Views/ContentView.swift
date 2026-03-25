@@ -19,9 +19,10 @@ struct ContentView: View {
                 get: { dictationViewModel.config },
                 set: { newConfig in
                     dictationViewModel.config = newConfig
-                    // Persist to UserDefaults
+                    // Persist to UserDefaults (standard + App Group for keyboard extension)
                     if let data = try? JSONEncoder().encode(newConfig) {
                         UserDefaults.standard.set(data, forKey: "app_config")
+                        UserDefaults(suiteName: "group.com.fonos.ios")?.set(data, forKey: "app_config")
                     }
                 }
             ))
@@ -33,9 +34,15 @@ struct ContentView: View {
         .tint(Color(hex: "#fbbf24"))
         .onAppear {
             // Load saved config into view model
-            if let data = UserDefaults.standard.data(forKey: "app_config"),
+            // Try App Group first, fall back to standard UserDefaults
+            let appGroupDefaults = UserDefaults(suiteName: "group.com.fonos.ios")
+            let data = appGroupDefaults?.data(forKey: "app_config")
+                ?? UserDefaults.standard.data(forKey: "app_config")
+            if let data,
                let saved = try? JSONDecoder().decode(AppConfig.self, from: data) {
                 dictationViewModel.config = saved
+                // Mirror to App Group for keyboard extension access
+                appGroupDefaults?.set(data, forKey: "app_config")
             }
         }
     }

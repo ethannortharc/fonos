@@ -67,6 +67,10 @@
 		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
 		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
 		MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP01001AA001001AA001001A /* ModelProbeService.swift */; };
+		KB12001AA012001AA012001B /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12001AA012001AA012001A /* KeyboardViewController.swift */; };
+		KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12002AA012002AA012002A /* KeyboardAudioService.swift */; };
+		KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12003AA012003AA012003A /* KeyboardSTTService.swift */; };
+		KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KB12004AA012004AA012004A /* FonosKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +80,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7E63F5454DE64F8A84201298;
 			remoteInfo = FonosApp;
+		};
+		KB12010AA012010AA012010C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11F387A36EAB42D7B29216FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = KB12005AA012005AA012005C /* FonosKeyboard */;
+			remoteInfo = FonosKeyboard;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -144,6 +155,12 @@
 		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
 		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
 		MP01001AA001001AA001001A /* ModelProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProbeService.swift; sourceTree = "<group>"; };
+		KB12001AA012001AA012001A /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		KB12002AA012002AA012002A /* KeyboardAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAudioService.swift; sourceTree = "<group>"; };
+		KB12003AA012003AA012003A /* KeyboardSTTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSTTService.swift; sourceTree = "<group>"; };
+		KB12004AA012004AA012004A /* FonosKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FonosKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		KB12006AA012006AA012006A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KB12007AA012007AA012007A /* FonosKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosKeyboard.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -155,6 +172,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E3116401421D41DAB7AF53B1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KB12011AA012011AA012011C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -229,6 +253,7 @@
 			children = (
 				BAC7AF7161324CE4AF50AD41 /* FonosApp.app */,
 				6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */,
+				KB12004AA012004AA012004A /* FonosKeyboard.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -285,9 +310,22 @@
 				771A58FA8CA147459534EE1C /* FonosApp */,
 				WP09000AA009000AA009000C /* FonosWidget */,
 				WP09010AA009010AA009010C /* FonosIntents */,
+				KB12000AA012000AA012000C /* FonosKeyboard */,
 				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
 				4BD34BCD0DE7417A847A0D6B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		KB12000AA012000AA012000C /* FonosKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				KB12001AA012001AA012001A /* KeyboardViewController.swift */,
+				KB12002AA012002AA012002A /* KeyboardAudioService.swift */,
+				KB12003AA012003AA012003A /* KeyboardSTTService.swift */,
+				KB12006AA012006AA012006A /* Info.plist */,
+				KB12007AA012007AA012007A /* FonosKeyboard.entitlements */,
+			);
+			path = FonosKeyboard;
 			sourceTree = "<group>";
 		};
 		WP06000AA006000AA006000C /* Components */ = {
@@ -340,15 +378,34 @@
 				FE1967CA54134ADA979C91A6 /* Sources */,
 				0F9785A3998649D9893B90F7 /* Resources */,
 				E3116401421D41DAB7AF53B1 /* Frameworks */,
+				KB12012AA012012AA012012C /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				KB12009AA012009AA012009C /* PBXTargetDependency */,
 			);
 			name = FonosApp;
 			productName = FonosApp;
 			productReference = BAC7AF7161324CE4AF50AD41 /* FonosApp.app */;
 			productType = "com.apple.product-type.application";
+		};
+		KB12005AA012005AA012005C /* FonosKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KB12008AA012008AA012008C /* Build configuration list for PBXNativeTarget "FonosKeyboard" */;
+			buildPhases = (
+				KB12013AA012013AA012013C /* Sources */,
+				KB12014AA012014AA012014C /* Resources */,
+				KB12011AA012011AA012011C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FonosKeyboard;
+			productName = FonosKeyboard;
+			productReference = KB12004AA012004AA012004A /* FonosKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		C4780AAF578C46BFBB87A7AA /* FonosAppTests */ = {
 			isa = PBXNativeTarget;
@@ -384,6 +441,9 @@
 						CreatedOnToolsVersion = 17.0;
 						TestTargetID = 7E63F5454DE64F8A84201298;
 					};
+					KB12005AA012005AA012005C = {
+						CreatedOnToolsVersion = 17.0;
+					};
 				};
 			};
 			buildConfigurationList = 756B8C3D892E4965B3541FAA /* Build configuration list for PBXProject "FonosApp" */;
@@ -401,9 +461,24 @@
 			targets = (
 				7E63F5454DE64F8A84201298 /* FonosApp */,
 				C4780AAF578C46BFBB87A7AA /* FonosAppTests */,
+				KB12005AA012005AA012005C /* FonosKeyboard */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		KB12012AA012012AA012012C /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		0F9785A3998649D9893B90F7 /* Resources */ = {
@@ -411,6 +486,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				663C34A9CC884E40AD59B70D /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KB12014AA012014AA012014C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -490,6 +572,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		KB12013AA012013AA012013C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KB12001AA012001AA012001B /* KeyboardViewController.swift in Sources */,
+				KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */,
+				KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -497,6 +589,11 @@
 			isa = PBXTargetDependency;
 			target = 7E63F5454DE64F8A84201298 /* FonosApp */;
 			targetProxy = B8A5C71AD9544E80ADAACF01 /* PBXContainerItemProxy */;
+		};
+		KB12009AA012009AA012009C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = KB12005AA012005AA012005C /* FonosKeyboard */;
+			targetProxy = KB12010AA012010AA012010C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -708,6 +805,58 @@
 			};
 			name = Release;
 		};
+		KB12015AA012015AA012015C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FonosKeyboard/FonosKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FonosKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.keyboard;
+				PRODUCT_NAME = FonosKeyboard;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		KB12016AA012016AA012016C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = FonosKeyboard/FonosKeyboard.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = FonosKeyboard/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.keyboard;
+				PRODUCT_NAME = FonosKeyboard;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -734,6 +883,15 @@
 			buildConfigurations = (
 				663AF6821B1B4765BE16F5F1 /* Debug */,
 				AF8EA06618F7406A9330FA76 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KB12008AA012008AA012008C /* Build configuration list for PBXNativeTarget "FonosKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KB12015AA012015AA012015C /* Debug */,
+				KB12016AA012016AA012016C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

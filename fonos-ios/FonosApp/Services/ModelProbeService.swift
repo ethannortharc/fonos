@@ -16,10 +16,11 @@ struct ModelProbeService {
     struct DiscoveredModel: Identifiable, Sendable {
         let id: String           // model ID from the API
         let name: String         // human-friendly name
-        let capabilities: [String]  // ["llm", "stt"] inferred from model name/type
+        var capabilities: [String]  // ["llm", "stt"] — from API or user-selected
         let baseURL: String      // the endpoint URL this model was discovered at
         let provider: String     // provider that owns this model
-        var selected: Bool = true   // user can deselect before adding
+        let autoDetected: Bool   // true = capabilities from API, false = user must choose
+        var selected: Bool = true
     }
 
     /// Probe an endpoint for available models.
@@ -59,20 +60,21 @@ struct ModelProbeService {
         log.info("🔍 Probed endpoint: \(cleanURL), provider: \(provider)")
 
         let discovered = modelsResponse.data.map { model in
-            // Log raw API fields for debugging
-            log.info("📋 Model: \(model.id), type=\(model.type ?? "nil"), task_type=\(model.task_type ?? "nil"), pipeline=\(model.pipeline_tag ?? "nil"), resolved=\(model.resolvedType ?? "nil"), object=\(model.object ?? "nil")")
+            log.info("📋 Model: \(model.id), type=\(model.type ?? "nil"), task_type=\(model.task_type ?? "nil"), resolved=\(model.resolvedType ?? "nil")")
 
-            // Prefer type/capability from API response; fall back to name inference
+            // Only use API-provided type info. If none available, leave empty for user to choose.
             let apiCaps = capabilitiesFromAPIType(model)
-            let caps = apiCaps ?? inferCapabilities(modelID: model.id, provider: provider)
-            log.info("📋 → Resolved caps: \(caps.joined(separator: ",")) (from \(apiCaps != nil ? "API type" : "name inference")), baseURL=\(cleanURL)")
+            let autoDetected = apiCaps != nil
+            let caps = apiCaps ?? []  // empty = user must choose
+            log.info("📋 → caps: \(caps.isEmpty ? "NONE (user must choose)" : caps.joined(separator: ",")) (autoDetected=\(autoDetected)), baseURL=\(cleanURL)")
 
             return DiscoveredModel(
                 id: model.id,
                 name: humanReadableName(model.id),
                 capabilities: caps,
-                baseURL: cleanURL,    // embed the actual probed URL in each model
-                provider: provider
+                baseURL: cleanURL,
+                provider: provider,
+                autoDetected: autoDetected
             )
         }
 
@@ -123,8 +125,9 @@ struct ModelProbeService {
         return nil // No type info — fall back to name inference
     }
 
-    /// Infer capabilities from model name patterns (fallback).
-    private static func inferCapabilities(modelID: String, provider: String) -> [String] {
+    /// Infer capabilities from model name patterns — NO LONGER used by probe.
+    /// Kept for potential future use (e.g., manual model add hints).
+    static func inferCapabilities(modelID: String, provider: String) -> [String] {
         let lower = modelID.lowercased()
         var caps: [String] = []
 

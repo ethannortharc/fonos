@@ -627,6 +627,7 @@ private struct ProbeSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedModels: Set<String> = []
+    @State private var modelCapabilities: [String: Set<String>] = [:]  // modelID → user-chosen caps
 
     private let amber = Color(hex: "#fbbf24")
     private let green = Color(hex: "#86efac")
@@ -724,41 +725,54 @@ private struct ProbeSheet: View {
                     if let result = probeResult {
                         Section {
                             ForEach(result.models) { model in
-                                Button {
-                                    toggleModel(model.id)
-                                } label: {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    // Top row: checkbox + name
                                     HStack(spacing: 12) {
-                                        Image(systemName: selectedModels.contains(model.id) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(selectedModels.contains(model.id) ? amber : textDim)
-                                            .font(.system(size: 20))
+                                        Button { toggleModel(model.id) } label: {
+                                            Image(systemName: selectedModels.contains(model.id) ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(selectedModels.contains(model.id) ? amber : textDim)
+                                                .font(.system(size: 20))
+                                        }
+                                        .buttonStyle(.plain)
 
-                                        VStack(alignment: .leading, spacing: 3) {
+                                        VStack(alignment: .leading, spacing: 2) {
                                             Text(model.name)
                                                 .foregroundColor(textPrimary)
                                                 .font(.system(size: 14, weight: .medium))
                                                 .lineLimit(1)
-                                                .truncationMode(.tail)
+                                                .minimumScaleFactor(0.7)
                                             Text(model.id)
                                                 .foregroundColor(textDim)
                                                 .font(.system(size: 11, design: .monospaced))
                                                 .lineLimit(1)
                                                 .truncationMode(.middle)
-                                            HStack(spacing: 4) {
-                                                ForEach(model.capabilities, id: \.self) { cap in
-                                                    Text(cap.uppercased())
-                                                        .font(.system(size: 9, weight: .bold))
-                                                        .foregroundColor(cap == "stt" ? amber : green)
-                                                        .padding(.horizontal, 5)
-                                                        .padding(.vertical, 1)
-                                                        .background(
-                                                            RoundedRectangle(cornerRadius: 3)
-                                                                .fill((cap == "stt" ? amber : green).opacity(0.12))
-                                                        )
-                                                }
+                                        }
+                                    }
+
+                                    // Capability row: auto-detected badges OR user toggles
+                                    if model.autoDetected {
+                                        // API provided type — show as read-only badges
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "checkmark.seal.fill")
+                                                .font(.system(size: 9))
+                                                .foregroundColor(green.opacity(0.5))
+                                            ForEach(model.capabilities, id: \.self) { cap in
+                                                capBadge(cap)
                                             }
+                                        }
+                                    } else {
+                                        // No API type — user chooses capabilities
+                                        HStack(spacing: 6) {
+                                            Text("Type:")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(textDim)
+                                            capToggle("STT", cap: "stt", modelID: model.id, color: amber)
+                                            capToggle("LLM", cap: "llm", modelID: model.id, color: green)
+                                            capToggle("TTS", cap: "tts", modelID: model.id, color: Color(hex: "#c084fc"))
                                         }
                                     }
                                 }
+                                .padding(.vertical, 4)
                                 .listRowBackground(Color.white.opacity(0.04))
                             }
                         } header: {
@@ -790,8 +804,16 @@ private struct ProbeSheet: View {
                         Section {
                             Button {
                                 let selected = result.models.filter { selectedModels.contains($0.id) }
-                                // Each model carries its own baseURL — guaranteed correct
-                                onAddModels(selected, probeKey)
+                                // Apply user-selected capabilities for models without auto-detection
+                                let resolved = selected.map { model -> ModelProbeService.DiscoveredModel in
+                                    if model.autoDetected {
+                                        return model
+                                    }
+                                    var m = model
+                                    m.capabilities = Array(modelCapabilities[model.id, default: []])
+                                    return m
+                                }
+                                onAddModels(resolved, probeKey)
                                 dismiss()
                             } label: {
                                 HStack {
@@ -824,6 +846,38 @@ private struct ProbeSheet: View {
                 probeURL = probeProviders.first?.defaultURL ?? ""
             }
         }
+    }
+
+    private func capBadge(_ cap: String) -> some View {
+        let color: Color = cap == "stt" ? amber : cap == "llm" ? green : Color(hex: "#c084fc")
+        return Text(cap.uppercased())
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 3).fill(color.opacity(0.12)))
+    }
+
+    private func capToggle(_ label: String, cap: String, modelID: String, color: Color) -> some View {
+        let isOn = modelCapabilities[modelID, default: []].contains(cap)
+        return Button {
+            if isOn {
+                modelCapabilities[modelID, default: []].remove(cap)
+            } else {
+                modelCapabilities[modelID, default: []].insert(cap)
+            }
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isOn ? .white : color)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isOn ? color : color.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggleModel(_ id: String) {

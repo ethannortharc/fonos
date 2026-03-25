@@ -45,20 +45,20 @@ struct ModelsTab: View {
                 probing: $probing,
                 probeError: $probeError,
                 probeResult: $probeResult,
-                onAddModels: { models, resolvedURL, resolvedKey, resolvedProvider in
+                onAddModels: { models, apiKey in
                     for model in models {
-                        let profileID = "\(resolvedProvider)-\(Int(Date().timeIntervalSince1970))-\(model.id.hashValue)"
+                        let profileID = "\(model.provider)-\(Int(Date().timeIntervalSince1970))-\(abs(model.id.hashValue) % 10000)"
                         let profile = ModelProfile(
                             id: profileID,
                             name: model.name,
-                            provider: resolvedProvider,
+                            provider: model.provider,
                             modelID: model.id,
-                            baseURL: resolvedURL.isEmpty ? nil : resolvedURL,
+                            baseURL: model.baseURL,  // URL from the model itself — guaranteed correct
                             capabilities: model.capabilities
                         )
                         config.modelProfiles.append(profile)
-                        if !resolvedKey.isEmpty {
-                            try? KeychainStore(service: "com.fonos.models").set(resolvedKey, forKey: profileID)
+                        if !apiKey.isEmpty {
+                            try? KeychainStore(service: "com.fonos.models").set(apiKey, forKey: profileID)
                         }
                     }
                 }
@@ -618,7 +618,7 @@ private struct ProbeSheet: View {
     @Binding var probing: Bool
     @Binding var probeError: String?
     @Binding var probeResult: ModelProbeService.ProbeResult?
-    let onAddModels: (_ models: [ModelProbeService.DiscoveredModel], _ url: String, _ key: String, _ provider: String) -> Void
+    let onAddModels: (_ models: [ModelProbeService.DiscoveredModel], _ apiKey: String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedModels: Set<String> = []
@@ -785,8 +785,8 @@ private struct ProbeSheet: View {
                         Section {
                             Button {
                                 let selected = result.models.filter { selectedModels.contains($0.id) }
-                                // Use result.endpoint — captured at probe time, guaranteed correct
-                                onAddModels(selected, result.endpoint, probeKey, result.provider)
+                                // Each model carries its own baseURL — guaranteed correct
+                                onAddModels(selected, probeKey)
                                 dismiss()
                             } label: {
                                 HStack {

@@ -17,6 +17,8 @@ struct ModelProbeService {
         let id: String           // model ID from the API
         let name: String         // human-friendly name
         let capabilities: [String]  // ["llm", "stt"] inferred from model name/type
+        let baseURL: String      // the endpoint URL this model was discovered at
+        let provider: String     // provider that owns this model
         var selected: Bool = true   // user can deselect before adding
     }
 
@@ -54,13 +56,17 @@ struct ModelProbeService {
         let modelsResponse = try JSONDecoder().decode(ModelsListResponse.self, from: data)
         log.info("🔍 Found \(modelsResponse.data.count) models")
 
+        log.info("🔍 Probed endpoint: \(cleanURL), provider: \(provider)")
+
         let discovered = modelsResponse.data.map { model in
             // Prefer type/capability from API response; fall back to name inference
             let caps = capabilitiesFromAPIType(model) ?? inferCapabilities(modelID: model.id, provider: provider)
             return DiscoveredModel(
                 id: model.id,
                 name: humanReadableName(model.id),
-                capabilities: caps
+                capabilities: caps,
+                baseURL: cleanURL,    // embed the actual probed URL in each model
+                provider: provider
             )
         }
 

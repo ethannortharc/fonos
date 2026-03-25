@@ -48,11 +48,10 @@ final class KeyboardAudioService: @unchecked Sendable {
 
     // MARK: - Public API
 
-    /// Start recording. Completion called on background thread.
+    /// Start recording synchronously on the calling thread.
+    /// Keyboard extension UI is simple enough that brief main-thread blocking is OK.
     func startCapture(completion: @escaping @Sendable (Error?) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.startCaptureSync(completion: completion)
-        }
+        startCaptureSync(completion: completion)
     }
 
     /// Stop recording and return WAV data (if any audio was captured).

@@ -378,7 +378,10 @@ struct ModeConfigForm: View {
             Picker(selection: $sttModelID) {
                 Text("Default").tag("")
                 ForEach(availableSTTModels) { model in
-                    Text(model.name).lineLimit(1).tag(model.id)
+                    Text(model.name)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .tag(model.id)
                 }
             } label: {
                 Text("Model")
@@ -429,7 +432,10 @@ struct ModeConfigForm: View {
                 Picker(selection: $llmModelID) {
                     Text("Default").tag("")
                     ForEach(availableLLMModels) { model in
-                        Text(model.name).lineLimit(1).tag(model.id)
+                        Text(model.name)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .tag(model.id)
                     }
                 } label: {
                     Text("Model")

@@ -84,7 +84,10 @@ struct ModelsTab: View {
             Picker(selection: $config.sttProfile) {
                 Text("Not configured").tag("")
                 ForEach(sttModels) { profile in
-                    Text(profile.name).lineLimit(1).tag(profile.id)
+                    Text(profile.name)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .tag(profile.id)
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -103,7 +106,10 @@ struct ModelsTab: View {
             Picker(selection: $config.llmProfile) {
                 Text("Not configured").tag("")
                 ForEach(llmModels) { profile in
-                    Text(profile.name).lineLimit(1).tag(profile.id)
+                    Text(profile.name)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .tag(profile.id)
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -243,6 +249,7 @@ private struct ModelProfileRow: View {
                         .foregroundColor(textPrimary)
                         .font(.system(size: 15, weight: .medium))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .truncationMode(.tail)
 
                     HStack(spacing: 6) {
@@ -750,16 +757,36 @@ private struct ProbeSheet: View {
                                 .listRowBackground(Color.white.opacity(0.04))
                             }
                         } header: {
-                            Text("DISCOVERED \(result.models.count) MODELS")
-                                .font(.system(size: 12, weight: .medium)).foregroundColor(green).textCase(nil)
+                            HStack {
+                                Text("DISCOVERED \(result.models.count) MODELS")
+                                    .font(.system(size: 12, weight: .medium)).foregroundColor(green).textCase(nil)
+                                Spacer()
+                                Button {
+                                    if selectedModels.count == result.models.count {
+                                        selectedModels.removeAll()
+                                    } else {
+                                        selectedModels = Set(result.models.map(\.id))
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: selectedModels.count == result.models.count
+                                              ? "checkmark.circle.fill" : "circle.dashed")
+                                            .font(.system(size: 11))
+                                        Text(selectedModels.count == result.models.count ? "Deselect All" : "Select All")
+                                            .font(.system(size: 11, weight: .medium))
+                                    }
+                                    .foregroundColor(amber)
+                                    .textCase(nil)
+                                }
+                            }
                         }
 
                         // Add selected
                         Section {
                             Button {
                                 let selected = result.models.filter { selectedModels.contains($0.id) }
-                                // Pass current URL/key/provider at time of add (not stale captures)
-                                onAddModels(selected, probeURL, probeKey, probeProvider)
+                                // Use result.endpoint — captured at probe time, guaranteed correct
+                                onAddModels(selected, result.endpoint, probeKey, result.provider)
                                 dismiss()
                             } label: {
                                 HStack {

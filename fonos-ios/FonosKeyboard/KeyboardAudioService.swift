@@ -78,13 +78,23 @@ final class KeyboardAudioService: @unchecked Sendable {
     private func startCaptureSync(completion: @escaping @Sendable (Error?) -> Void) {
         guard !isRecording else { completion(nil); return }
 
+        // Check mic permission first
+        let permission = AVAudioSession.sharedInstance().recordPermission
+        guard permission == .granted else {
+            completion(NSError(domain: "KeyboardAudio", code: 2,
+                               userInfo: [NSLocalizedDescriptionKey: "Mic permission not granted (status: \(permission.rawValue)). Enable 'Allow Full Access' in Settings → Keyboards → Fonos."]))
+            return
+        }
+
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .default, options: [])
+            // Use .playAndRecord for keyboard extension compatibility
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setPreferredSampleRate(Self.sampleRate)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            completion(error)
+            completion(NSError(domain: "KeyboardAudio", code: 3,
+                               userInfo: [NSLocalizedDescriptionKey: "Audio session setup failed: \(error.localizedDescription)"]))
             return
         }
 
@@ -97,8 +107,8 @@ final class KeyboardAudioService: @unchecked Sendable {
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
-            completion(NSError(domain: "KeyboardAudio", code: 1,
-                               userInfo: [NSLocalizedDescriptionKey: "No audio input available"]))
+            completion(NSError(domain: "KeyboardAudio", code: 4,
+                               userInfo: [NSLocalizedDescriptionKey: "No audio input (channels=\(inputFormat.channelCount), rate=\(inputFormat.sampleRate))"]))
             return
         }
 
@@ -113,7 +123,8 @@ final class KeyboardAudioService: @unchecked Sendable {
             try engine.start()
         } catch {
             inputNode.removeTap(onBus: 0)
-            completion(error)
+            completion(NSError(domain: "KeyboardAudio", code: 5,
+                               userInfo: [NSLocalizedDescriptionKey: "Engine start failed: \(error.localizedDescription)"]))
             return
         }
 

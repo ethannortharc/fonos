@@ -221,11 +221,18 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - Recording Flow
 
     private func startRecording() {
+        // Check if "Allow Full Access" is enabled (required for mic in keyboard extension)
+        guard isFullAccessEnabled else {
+            showError("Enable Full Access")
+            kbLog.error("Full Access not enabled — go to Settings → Keyboards → Fonos → Allow Full Access")
+            return
+        }
+
         audioService.startCapture { [weak self] error in
             DispatchQueue.main.async {
                 if let error {
-                    kbLog.error("Start capture failed: \(error.localizedDescription)")
-                    self?.showError("Mic error")
+                    kbLog.error("❌ Capture failed: \(error.localizedDescription)")
+                    self?.showError(error.localizedDescription)
                 } else {
                     self?.recordingState = .recording
                 }
@@ -279,12 +286,21 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: - Permissions
 
+    /// Check if "Allow Full Access" is enabled for this keyboard extension.
+    /// Without it, mic and network access are blocked.
+    private var isFullAccessEnabled: Bool {
+        // The most reliable way to check is hasFullAccess (inherited from UIInputViewController)
+        return self.hasFullAccess
+    }
+
     private func requestPermissions() {
-        AVAudioApplication.requestRecordPermission { granted in
-            if !granted {
-                DispatchQueue.main.async { [weak self] in
-                    self?.micButton.isEnabled = false
-                    self?.statusLabel.text = "No mic access"
+        // In keyboard extension, mic permission must be requested AFTER "Allow Full Access" is granted
+        if isFullAccessEnabled {
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                if !granted {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.showError("Allow mic access")
+                    }
                 }
             }
         }
@@ -293,8 +309,7 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - Config Helper
 
     private func readModeName() -> String {
-        let defaults = UserDefaults(suiteName: "group.com.fonos.ios") ?? .standard
-        guard let data = defaults.data(forKey: "app_config") ?? UserDefaults.standard.data(forKey: "app_config") else {
+        guard let data = UserDefaults.standard.data(forKey: "app_config") else {
             return "Dictate"
         }
 

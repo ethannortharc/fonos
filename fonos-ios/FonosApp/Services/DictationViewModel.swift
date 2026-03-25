@@ -105,8 +105,8 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
             switch profile.provider {
             case "openai":
                 let url = baseURL.isEmpty ? "https://api.openai.com" : baseURL
-                log.info("🔌 → WhisperSTT(\(url))")
-                return WhisperSTT(apiKey: key, baseURL: url)
+                log.info("🔌 → WhisperSTT(\(url), model=\(profile.modelID))")
+                return WhisperSTT(apiKey: key, baseURL: url, modelID: profile.modelID)
             case "fonos":
                 let url = URL(string: baseURL.isEmpty ? "http://localhost:9880" : baseURL) ?? URL(string: "http://localhost:9880")!
                 log.info("🔌 → FonosSTT(\(url))")
@@ -114,8 +114,8 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
             default:
                 // For OMLX, Ollama, etc. with STT — use Whisper-compatible endpoint
                 if profile.hasSTT && !baseURL.isEmpty {
-                    log.info("🔌 → WhisperSTT(\(baseURL)) [provider: \(profile.provider)]")
-                    return WhisperSTT(apiKey: key, baseURL: baseURL)
+                    log.info("🔌 → WhisperSTT(\(baseURL), model=\(profile.modelID)) [provider: \(profile.provider)]")
+                    return WhisperSTT(apiKey: key, baseURL: baseURL, modelID: profile.modelID)
                 }
                 log.warning("🔌 → STT profile found but no STT capability or empty URL, falling back to Apple")
             }

@@ -1,5 +1,8 @@
 import Foundation
 import Speech
+import os.log
+
+private let sttLog = Logger(subsystem: "com.fonos.ios", category: "STT")
 
 // MARK: - STTProvider Protocol
 
@@ -214,38 +217,46 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
 
 // MARK: - WhisperSTT
 
-/// STT provider that sends audio to the OpenAI Whisper API.
+/// STT provider that sends audio to an OpenAI-compatible transcription API.
 final class WhisperSTT: STTProvider, @unchecked Sendable {
     private let session: URLSession
     private let apiKey: String
     private let baseURL: String
+    private let modelID: String  // actual model ID to send in the request
 
     init(session: URLSession = .shared,
          apiKey: String,
-         baseURL: String = "https://api.openai.com") {
+         baseURL: String = "https://api.openai.com",
+         modelID: String = "whisper-1") {
         self.session = session
         self.apiKey = apiKey
         self.baseURL = baseURL
+        self.modelID = modelID
     }
 
     func transcribe(audioData: Data, language: String?) async throws -> String {
-        guard let url = URL(string: "\(baseURL)/v1/audio/transcriptions") else {
+        let urlString = "\(baseURL)/v1/audio/transcriptions"
+        guard let url = URL(string: urlString) else {
             throw STTError.badRequest
         }
+
+        sttLog.info("🌐 WhisperSTT POST \(urlString), model=\(self.modelID), audioSize=\(audioData.count)")
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
 
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         var body = Data()
-        // model field
-        appendFormField(&body, boundary: boundary, name: "model", value: "whisper-1")
-        // audio file field
+        // Use actual model ID, not hardcoded "whisper-1"
+        appendFormField(&body, boundary: boundary, name: "model", value: modelID)
         appendFormFile(&body, boundary: boundary, name: "file", filename: "audio.wav",
                        mimeType: "audio/wav", data: audioData)
-        // language field (if provided)
         if let language {
             appendFormField(&body, boundary: boundary, name: "language", value: language)
         }
@@ -255,20 +266,24 @@ final class WhisperSTT: STTProvider, @unchecked Sendable {
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await session.data(for: request)
-        } catch let urlError as URLError {
-            switch urlError.code {
-            case .timedOut:
-                throw STTError.timeout
-            case .notConnectedToInternet, .networkConnectionLost:
-                throw STTError.networkUnavailable
-            default:
-                throw STTError.networkUnavailable
+        } catch {
+            let desc = (error as? URLError)?.localizedDescription ?? error.localizedDescription
+            sttLog.error("🌐 ❌ Request failed: \(desc)")
+            if let urlError = error as? URLError {
+                switch urlError.code {
+                case .timedOut: throw STTError.timeout
+                case .notConnectedToInternet, .networkConnectionLost: throw STTError.networkUnavailable
+                default: throw STTError.recognizerError("Request to \(urlString) failed: \(desc)")
+                }
             }
+            throw STTError.recognizerError("Request failed: \(desc)")
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw STTError.parseError
         }
+
+        sttLog.info("🌐 Response: HTTP \(httpResponse.statusCode), body=\(data.count) bytes")
 
         switch httpResponse.statusCode {
         case 200:
@@ -276,18 +291,31 @@ final class WhisperSTT: STTProvider, @unchecked Sendable {
         case 401:
             throw STTError.authenticationFailed
         case 400:
-            throw STTError.badRequest
+            let body = String(data: data, encoding: .utf8) ?? ""
+            sttLog.error("🌐 400 Bad Request: \(body)")
+            throw STTError.recognizerError("Bad request: \(body.prefix(200))")
         default:
-            throw STTError.networkUnavailable
+            let body = String(data: data, encoding: .utf8) ?? ""
+            sttLog.error("🌐 HTTP \(httpResponse.statusCode): \(body)")
+            throw STTError.recognizerError("Server returned HTTP \(httpResponse.statusCode): \(body.prefix(200))")
         }
 
-        guard let decoded = try? JSONDecoder().decode(WhisperResponse.self, from: data) else {
-            throw STTError.parseError
+        // Try standard Whisper response format
+        if let decoded = try? JSONDecoder().decode(WhisperResponse.self, from: data) {
+            guard !decoded.text.isEmpty else { throw STTError.noTranscript }
+            return decoded.text
         }
-        guard !decoded.text.isEmpty else {
-            throw STTError.noTranscript
+
+        // Try alternative response formats (some servers return differently)
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let text = json["text"] as? String ?? json["transcript"] as? String ?? json["result"] as? String {
+            guard !text.isEmpty else { throw STTError.noTranscript }
+            return text
         }
-        return decoded.text
+
+        let responseStr = String(data: data, encoding: .utf8) ?? "<binary>"
+        sttLog.error("🌐 Cannot parse response: \(responseStr.prefix(200))")
+        throw STTError.parseError
     }
 
     // MARK: - Private helpers

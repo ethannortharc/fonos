@@ -71,7 +71,7 @@ final class KeyboardViewController: UIInputViewController {
             containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             containerView.topAnchor.constraint(equalTo: view.topAnchor),
             containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            containerView.heightAnchor.constraint(greaterThanOrEqualToConstant: 60),
+            containerView.heightAnchor.constraint(equalToConstant: 120),
         ])
 
         setupGlobeButton()
@@ -113,9 +113,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func setupStatusLabel() {
-        statusLabel.font = UIFont.systemFont(ofSize: 12, weight: .regular)
+        statusLabel.font = UIFont.systemFont(ofSize: 13, weight: .regular)
         statusLabel.textColor = textColor
         statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 2
+        statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(statusLabel)
     }
@@ -131,40 +133,45 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func layoutElements() {
-        // Horizontal layout:
-        // [globe] [modeLabel] [spacer] [micButton] [spacer] [statusLabel] [dismiss]
+        // Two-row layout:
+        // Row 1 (top):  [globe] [modeLabel]  [micButton]  [dismiss]
+        // Row 2 (bottom): [statusLabel — full width, multiline]
+
+        let topY: CGFloat = 28  // center Y for top row
+        let micSize: CGFloat = 52
 
         NSLayoutConstraint.activate([
-            // Globe: left edge
+            // Globe: top-left
             globeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
-            globeButton.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
+            globeButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
             globeButton.widthAnchor.constraint(equalToConstant: 36),
             globeButton.heightAnchor.constraint(equalToConstant: 36),
 
             // Mode label: right of globe
-            modeLabel.leadingAnchor.constraint(equalTo: globeButton.trailingAnchor, constant: 4),
-            modeLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            modeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 80),
+            modeLabel.leadingAnchor.constraint(equalTo: globeButton.trailingAnchor, constant: 6),
+            modeLabel.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
+            modeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 100),
 
-            // Mic button: center
+            // Mic button: center top
             micButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            micButton.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            micButton.widthAnchor.constraint(equalToConstant: 48),
-            micButton.heightAnchor.constraint(equalToConstant: 48),
+            micButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
+            micButton.widthAnchor.constraint(equalToConstant: micSize),
+            micButton.heightAnchor.constraint(equalToConstant: micSize),
 
-            // Status label: right of mic
-            statusLabel.leadingAnchor.constraint(equalTo: micButton.trailingAnchor, constant: 8),
-            statusLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-
-            // Dismiss: right edge
+            // Dismiss: top-right
             dismissButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            dismissButton.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
+            dismissButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
             dismissButton.widthAnchor.constraint(equalToConstant: 36),
             dismissButton.heightAnchor.constraint(equalToConstant: 36),
 
-            // Status label doesn't overlap dismiss
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: dismissButton.leadingAnchor, constant: -4),
+            // Status label: bottom row, full width
+            statusLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            statusLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            statusLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: topY + micSize / 2 + 8),
+            statusLabel.bottomAnchor.constraint(lessThanOrEqualTo: containerView.bottomAnchor, constant: -8),
         ])
+
+        micButton.layer.cornerRadius = micSize / 2
     }
 
     // MARK: - UI Update

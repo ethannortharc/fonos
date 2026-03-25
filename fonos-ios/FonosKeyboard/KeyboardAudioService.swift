@@ -87,8 +87,8 @@ final class KeyboardAudioService: @unchecked Sendable {
 
         let session = AVAudioSession.sharedInstance()
         do {
-            // Use .playAndRecord for keyboard extension compatibility
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+            // Keyboard extension MUST use .mixWithOthers — it runs alongside the host app
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
             try session.setPreferredSampleRate(Self.sampleRate)
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {

@@ -59,8 +59,14 @@ struct ModelProbeService {
         log.info("🔍 Probed endpoint: \(cleanURL), provider: \(provider)")
 
         let discovered = modelsResponse.data.map { model in
+            // Log raw API fields for debugging
+            log.info("📋 Model: \(model.id), type=\(model.type ?? "nil"), task_type=\(model.task_type ?? "nil"), pipeline=\(model.pipeline_tag ?? "nil"), resolved=\(model.resolvedType ?? "nil"), object=\(model.object ?? "nil")")
+
             // Prefer type/capability from API response; fall back to name inference
-            let caps = capabilitiesFromAPIType(model) ?? inferCapabilities(modelID: model.id, provider: provider)
+            let apiCaps = capabilitiesFromAPIType(model)
+            let caps = apiCaps ?? inferCapabilities(modelID: model.id, provider: provider)
+            log.info("📋 → Resolved caps: \(caps.joined(separator: ",")) (from \(apiCaps != nil ? "API type" : "name inference")), baseURL=\(cleanURL)")
+
             return DiscoveredModel(
                 id: model.id,
                 name: humanReadableName(model.id),
@@ -76,12 +82,12 @@ struct ModelProbeService {
     /// Extract capabilities from API response type/metadata fields.
     /// Returns nil if no type info available (falls back to name inference).
     private static func capabilitiesFromAPIType(_ model: ModelEntry) -> [String]? {
-        // Check explicit type field (OMLX, some providers)
-        if let type = model.type, !type.isEmpty {
+        // Check explicit type field from any of: type, task_type, pipeline_tag
+        if let type = model.resolvedType, !type.isEmpty {
             let lower = type.lowercased()
             var caps: [String] = []
             if lower.contains("audio") || lower.contains("stt") || lower.contains("speech")
-                || lower.contains("transcri") || lower.contains("whisper") {
+                || lower.contains("transcri") || lower.contains("whisper") || lower.contains("asr") {
                 caps.append("stt")
             }
             if lower.contains("chat") || lower.contains("text") || lower.contains("completion")
@@ -103,7 +109,8 @@ struct ModelProbeService {
             var caps: [String] = []
             for cap in apiCaps {
                 let lower = cap.lowercased()
-                if lower.contains("stt") || lower.contains("audio") || lower.contains("transcri") {
+                if lower.contains("stt") || lower.contains("audio") || lower.contains("transcri")
+                    || lower.contains("asr") {
                     caps.append("stt")
                 }
                 if lower.contains("chat") || lower.contains("completion") || lower.contains("llm") {
@@ -123,7 +130,7 @@ struct ModelProbeService {
 
         // STT detection
         if lower.contains("whisper") || lower.contains("stt") || lower.contains("speech")
-            || lower.contains("audio") || lower.contains("transcri") {
+            || lower.contains("audio") || lower.contains("transcri") || lower.contains("asr") {
             caps.append("stt")
         }
 
@@ -174,14 +181,17 @@ private struct ModelsListResponse: Decodable {
 
 struct ModelEntry: Decodable {
     let id: String
-    let object: String?
+    let object: String?         // "model"
     let created: Int?
     let owned_by: String?
-    let type: String?           // OMLX and some providers return this
+    let type: String?           // OMLX: "chat", "audio", etc.
     let capabilities: [String]? // Some providers return explicit capabilities
+    let task_type: String?      // Alternative field name for type
+    let pipeline_tag: String?   // HuggingFace-style field
 
     enum CodingKeys: String, CodingKey {
         case id, object, created, owned_by, type, capabilities
+        case task_type, pipeline_tag
     }
 
     init(from decoder: Decoder) throws {
@@ -192,6 +202,13 @@ struct ModelEntry: Decodable {
         owned_by = try container.decodeIfPresent(String.self, forKey: .owned_by)
         type = try container.decodeIfPresent(String.self, forKey: .type)
         capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities)
+        task_type = try container.decodeIfPresent(String.self, forKey: .task_type)
+        pipeline_tag = try container.decodeIfPresent(String.self, forKey: .pipeline_tag)
+    }
+
+    /// Combined type string from all possible type fields
+    var resolvedType: String? {
+        type ?? task_type ?? pipeline_tag
     }
 }
 

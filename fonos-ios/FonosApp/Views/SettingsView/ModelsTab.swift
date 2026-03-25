@@ -56,6 +56,7 @@ struct ModelsTab: View {
                             baseURL: model.baseURL,  // URL from the model itself — guaranteed correct
                             capabilities: model.capabilities
                         )
+                        print("✅ Adding model: \(profile.name), baseURL=\(profile.baseURL ?? "nil"), caps=\(profile.capabilities)")
                         config.modelProfiles.append(profile)
                         if !apiKey.isEmpty {
                             try? KeychainStore(service: "com.fonos.models").set(apiKey, forKey: profileID)

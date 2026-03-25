@@ -26,6 +26,9 @@ struct AppConfig: Codable, Equatable {
     /// Active mode identifier (matches ModeConfig.id or Mode.id).
     var activeModeID: String = "raw"
 
+    /// Target language for Translate mode.
+    var translateTargetLanguage: String = "English"
+
     /// Legacy modes array — kept for Codable backward compat and existing tests.
     var modes: [Mode] = Mode.builtInModes
 

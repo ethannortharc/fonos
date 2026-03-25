@@ -113,12 +113,91 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         List {
+            dictationSection
             recordingSection
             destinationsSection
             historySection
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+    }
+
+    // MARK: - Dictation Section
+
+    private var dictationSection: some View {
+        Section {
+            // Default Mode
+            Picker("Default Mode", selection: $config.activeModeID) {
+                Text("📝 Raw").tag("raw")
+                Text("✨ Polish").tag("polish")
+                Text("👔 Formal").tag("formal")
+                Text("🌐 Translate").tag("translate")
+                // Custom modes from config
+                ForEach(config.modeConfigs.filter { !$0.isBuiltIn }, id: \.id) { modeConfig in
+                    Text("\(modeConfig.icon) \(modeConfig.name)").tag(modeConfig.id)
+                }
+            }
+            .foregroundColor(textPrimary)
+            .listRowBackground(cardBg)
+            .listRowSeparatorTint(separator)
+
+            // STT Language
+            Picker("STT Language", selection: $config.sttLanguage) {
+                Text("Auto-detect").tag("auto")
+                Section("Common") {
+                    Text("English").tag("en")
+                    Text("中文 (Chinese)").tag("zh")
+                    Text("日本語 (Japanese)").tag("ja")
+                    Text("한국어 (Korean)").tag("ko")
+                    Text("Español (Spanish)").tag("es")
+                    Text("Français (French)").tag("fr")
+                    Text("Deutsch (German)").tag("de")
+                    Text("Português (Portuguese)").tag("pt")
+                    Text("Italiano (Italian)").tag("it")
+                    Text("Русский (Russian)").tag("ru")
+                    Text("العربية (Arabic)").tag("ar")
+                    Text("हिन्दी (Hindi)").tag("hi")
+                    Text("ภาษาไทย (Thai)").tag("th")
+                    Text("Tiếng Việt (Vietnamese)").tag("vi")
+                    Text("Bahasa Indonesia").tag("id")
+                    Text("Türkçe (Turkish)").tag("tr")
+                    Text("Nederlands (Dutch)").tag("nl")
+                    Text("Polski (Polish)").tag("pl")
+                }
+            }
+            .foregroundColor(textPrimary)
+            .listRowBackground(cardBg)
+            .listRowSeparatorTint(separator)
+
+            // Translate Target Language (visible when mode is translate)
+            Picker("Translate To", selection: $config.translateTargetLanguage) {
+                Text("English").tag("English")
+                Text("中文 (Chinese)").tag("Chinese")
+                Text("日本語 (Japanese)").tag("Japanese")
+                Text("한국어 (Korean)").tag("Korean")
+                Text("Español (Spanish)").tag("Spanish")
+                Text("Français (French)").tag("French")
+                Text("Deutsch (German)").tag("German")
+                Text("Português (Portuguese)").tag("Portuguese")
+                Text("Italiano (Italian)").tag("Italian")
+                Text("Русский (Russian)").tag("Russian")
+                Text("العربية (Arabic)").tag("Arabic")
+                Text("हिन्दी (Hindi)").tag("Hindi")
+                Text("ภาษาไทย (Thai)").tag("Thai")
+                Text("Tiếng Việt (Vietnamese)").tag("Vietnamese")
+                Text("Bahasa Indonesia (Indonesian)").tag("Indonesian")
+                Text("Türkçe (Turkish)").tag("Turkish")
+            }
+            .foregroundColor(textPrimary)
+            .listRowBackground(cardBg)
+            .listRowSeparatorTint(separator)
+        } header: {
+            sectionHeader("Dictation")
+        } footer: {
+            Text("Default Mode is used when dictation starts. STT Language helps the speech recognizer. Translate To sets the target language for Translate mode.")
+                .foregroundColor(textDim)
+                .font(.system(size: 12))
+        }
     }
 
     // MARK: - Recording Section

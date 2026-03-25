@@ -54,9 +54,29 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
 
     @Published var recordingState: RecordingState = .idle
     @Published var audioLevel: Float = 0
-    @Published var currentMode: Mode = .raw
     @Published var sttLatency: TimeInterval = 0
     @Published var llmLatency: TimeInterval = 0
+
+    /// Current mode — derived from config.activeModeID
+    var currentMode: Mode {
+        get {
+            switch config.activeModeID {
+            case "raw": return .raw
+            case "polish": return .polish
+            case "formal": return .formal
+            case "translate": return .translate(targetLanguage: config.translateTargetLanguage)
+            default:
+                // Check custom modes
+                if let custom = config.modeConfigs.first(where: { $0.id == config.activeModeID }) {
+                    return custom.mode
+                }
+                return .raw
+            }
+        }
+        set {
+            config.activeModeID = newValue.id
+        }
+    }
 
     /// Convenience for views/tests: true when actively recording.
     var isRecording: Bool {
@@ -263,9 +283,10 @@ final class DictationViewModel: ObservableObject, @unchecked Sendable {
         Task {
             do {
                 log.info("🔄 Starting STT transcription...")
+                let sttLang = config.sttLanguage == "auto" ? nil : config.sttLanguage
                 let result = try await processAudio(
                     wavData ?? Data(),
-                    language: nil,
+                    language: sttLang,
                     mode: mode
                 )
                 log.info("✅ Processing complete: \(result.text.prefix(50))...")

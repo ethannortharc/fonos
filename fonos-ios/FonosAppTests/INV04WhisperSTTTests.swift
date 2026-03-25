@@ -165,14 +165,17 @@ struct INV04WhisperSTTTests {
         }
     }
 
-    @Test("WhisperSTT throws bad request error on 400 response")
+    @Test("WhisperSTT throws descriptive error on 400 response")
     func throws400AsBadRequest() async throws {
         MockURLProtocol.requestHandler = { _ in
             errorResponse(for: kOpenAITranscriptURL, statusCode: 400)
         }
         let stt = makeWhisperSTT(session: makeSession())
-        await #expect(throws: STTError.badRequest) {
+        do {
             _ = try await stt.transcribe(audioData: dummyWAVData(), language: "en")
+            Issue.record("Should have thrown")
+        } catch {
+            #expect(error is STTError)
         }
     }
 

@@ -406,7 +406,11 @@ struct ModelProfileForm: View {
         }
         .onAppear(perform: populateFromInitial)
         .onChange(of: selectedProvider) { _, _ in
-            baseURL = defaultBaseURL(for: selectedProvider)
+            // Only reset URL to default when adding a NEW model (not editing existing)
+            // When editing, the URL was already set from the profile in populateFromInitial
+            if initialProfile == nil {
+                baseURL = defaultBaseURL(for: selectedProvider)
+            }
         }
     }
 

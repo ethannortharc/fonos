@@ -134,13 +134,29 @@ struct ModelProbeService {
             caps.append("stt")
         }
 
-        // LLM detection (most models are LLM by default)
+        // Skip TTS models — they're not LLM or STT
+        if lower.contains("tts") || lower.contains("text-to-speech") {
+            if caps.isEmpty { return ["tts"] }
+            return caps
+        }
+
+        // Skip speech enhancement / noise reduction models
+        if lower.contains("mossformer") || lower.contains("-se") && lower.count < 20 {
+            return caps.isEmpty ? ["other"] : caps
+        }
+
+        // LLM detection
         if lower.contains("llama") || lower.contains("mistral") || lower.contains("phi")
-            || lower.contains("qwen") || lower.contains("gemma") || lower.contains("gpt")
+            || lower.contains("gemma") || lower.contains("gpt")
             || lower.contains("chat") || lower.contains("instruct") || lower.contains("codellama")
             || lower.contains("deepseek") || lower.contains("yi-") || lower.contains("command")
             || lower.contains("claude") || lower.contains("llm") {
             caps.append("llm")
+        }
+
+        // Qwen without ASR/TTS suffix is LLM
+        if lower.contains("qwen") && !lower.contains("asr") && !lower.contains("tts") {
+            if !caps.contains("llm") { caps.append("llm") }
         }
 
         // If no specific pattern matched, default to LLM for most providers

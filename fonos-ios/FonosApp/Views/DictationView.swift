@@ -215,6 +215,8 @@ struct DictationView: View {
                     .font(.system(size: 9))
                 Text(viewModel.sttProviderName)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .foregroundColor(Color.orange.opacity(0.6))
             .padding(.horizontal, 8)

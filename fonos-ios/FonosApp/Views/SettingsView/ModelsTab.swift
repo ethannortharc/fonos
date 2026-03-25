@@ -45,21 +45,20 @@ struct ModelsTab: View {
                 probing: $probing,
                 probeError: $probeError,
                 probeResult: $probeResult,
-                onAddModels: { models in
+                onAddModels: { models, resolvedURL, resolvedKey, resolvedProvider in
                     for model in models {
-                        let profileID = "\(probeProvider)-\(Int(Date().timeIntervalSince1970))-\(model.id.hashValue)"
+                        let profileID = "\(resolvedProvider)-\(Int(Date().timeIntervalSince1970))-\(model.id.hashValue)"
                         let profile = ModelProfile(
                             id: profileID,
                             name: model.name,
-                            provider: probeProvider,
+                            provider: resolvedProvider,
                             modelID: model.id,
-                            baseURL: probeURL.isEmpty ? nil : probeURL,
+                            baseURL: resolvedURL.isEmpty ? nil : resolvedURL,
                             capabilities: model.capabilities
                         )
                         config.modelProfiles.append(profile)
-                        // Save API key if provided
-                        if !probeKey.isEmpty {
-                            try? KeychainStore(service: "com.fonos.models").set(probeKey, forKey: profileID)
+                        if !resolvedKey.isEmpty {
+                            try? KeychainStore(service: "com.fonos.models").set(resolvedKey, forKey: profileID)
                         }
                     }
                 }
@@ -85,7 +84,7 @@ struct ModelsTab: View {
             Picker(selection: $config.sttProfile) {
                 Text("Not configured").tag("")
                 ForEach(sttModels) { profile in
-                    Text(profile.name).tag(profile.id)
+                    Text(profile.name).lineLimit(1).tag(profile.id)
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -104,7 +103,7 @@ struct ModelsTab: View {
             Picker(selection: $config.llmProfile) {
                 Text("Not configured").tag("")
                 ForEach(llmModels) { profile in
-                    Text(profile.name).tag(profile.id)
+                    Text(profile.name).lineLimit(1).tag(profile.id)
                 }
             } label: {
                 HStack(spacing: 12) {
@@ -242,7 +241,9 @@ private struct ModelProfileRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.name)
                         .foregroundColor(textPrimary)
-                        .font(.system(size: 15))
+                        .font(.system(size: 15, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
                     HStack(spacing: 6) {
                         Text("\(providerDisplayName(profile.provider)) · \(profile.modelID)")
@@ -610,7 +611,7 @@ private struct ProbeSheet: View {
     @Binding var probing: Bool
     @Binding var probeError: String?
     @Binding var probeResult: ModelProbeService.ProbeResult?
-    let onAddModels: ([ModelProbeService.DiscoveredModel]) -> Void
+    let onAddModels: (_ models: [ModelProbeService.DiscoveredModel], _ url: String, _ key: String, _ provider: String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedModels: Set<String> = []
@@ -723,9 +724,13 @@ private struct ProbeSheet: View {
                                             Text(model.name)
                                                 .foregroundColor(textPrimary)
                                                 .font(.system(size: 14, weight: .medium))
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
                                             Text(model.id)
                                                 .foregroundColor(textDim)
                                                 .font(.system(size: 11, design: .monospaced))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
                                             HStack(spacing: 4) {
                                                 ForEach(model.capabilities, id: \.self) { cap in
                                                     Text(cap.uppercased())
@@ -753,7 +758,8 @@ private struct ProbeSheet: View {
                         Section {
                             Button {
                                 let selected = result.models.filter { selectedModels.contains($0.id) }
-                                onAddModels(selected)
+                                // Pass current URL/key/provider at time of add (not stale captures)
+                                onAddModels(selected, probeURL, probeKey, probeProvider)
                                 dismiss()
                             } label: {
                                 HStack {

@@ -21,15 +21,24 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable, AVCaptureAudioD
 
     override init() { super.init() }
 
-    func startCapture(completion: @escaping (Error?) -> Void) {
+    func startCapture(completion: @escaping @Sendable (Error?) -> Void) {
         guard !isRecording else { completion(nil); return }
 
-        let permission = AVAudioSession.sharedInstance().recordPermission
-        guard permission == .granted else {
-            completion(makeError("Mic not authorized. Enable Full Access in Settings → Keyboards → Fonos."))
-            return
+        // MUST explicitly request mic permission — keyboard extension has its own
+        // permission separate from the main app. This triggers the system dialog.
+        let svc = self
+        AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                if granted {
+                    svc.startCaptureAfterPermission(completion: completion)
+                } else {
+                    completion(svc.makeError("Mic denied. Go to Settings → Privacy → Microphone → enable Fonos."))
+                }
+            }
         }
+    }
 
+    private func startCaptureAfterPermission(completion: @escaping @Sendable (Error?) -> Void) {
         // Try approaches in order of reliability
         // Approach 1: AVAudioEngine with NO manual session config (let engine handle it)
         if tryAudioEngine() {

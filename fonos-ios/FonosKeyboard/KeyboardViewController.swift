@@ -44,6 +44,24 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         setupUI()
         updateUI()
+
+        // Log extension state for debugging
+        let perm = AVAudioSession.sharedInstance().recordPermission
+        let fullAccess = hasFullAccess
+        kbLog.info("🔑 KB viewDidLoad: fullAccess=\(fullAccess), micPermission=\(perm.rawValue) (0=undetermined, 1=denied, 2=granted)")
+        statusLabel.text = "Tap to dictate (mic:\(perm.rawValue) fa:\(fullAccess))"
+
+        // Pre-request mic permission on load so dialog appears early
+        if fullAccess {
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
+                DispatchQueue.main.async {
+                    kbLog.info("🔑 KB mic request result: \(granted)")
+                    if !granted {
+                        self?.keyboardState = .error("Mic denied — enable in Settings → Privacy → Microphone")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - UI Setup

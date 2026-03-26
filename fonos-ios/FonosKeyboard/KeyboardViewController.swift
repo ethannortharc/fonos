@@ -218,51 +218,40 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
 
-        audioService.startCapture { [weak self] error in
-            DispatchQueue.main.async {
+        // Start live speech recognition — transcribes as you speak
+        audioService.startLiveRecognition(
+            language: nil,
+            onPartialResult: { [weak self] partial in
+                // Show live transcript as user speaks
+                self?.statusLabel.text = partial.isEmpty ? "Listening..." : partial
+                self?.statusLabel.textColor = .label
+            },
+            completion: { [weak self] error in
                 if let error {
                     kbLog.error("❌ \(error.localizedDescription)")
-                    // Show the ACTUAL error so we can debug
                     self?.keyboardState = .error(error.localizedDescription)
                 } else {
                     self?.keyboardState = .recording
                 }
             }
-        }
+        )
     }
 
     private func stopAndTranscribe() {
-        guard let result = audioService.stopCapture() else {
-            keyboardState = .error("No audio captured")
+        let transcript = audioService.stopLiveRecognition()
+
+        if transcript.isEmpty {
+            keyboardState = .error("No speech detected")
             return
         }
 
-        kbLog.info("⏹ KB: \(result.wavData.count) bytes")
-        statusLabel.text = "Processing..."
-        statusLabel.textColor = .secondaryLabel
-        micButton.isEnabled = false
+        // Insert the recognized text directly into the active text field
+        textDocumentProxy.insertText(transcript)
+        kbLog.info("✅ KB inserted: \(transcript.prefix(50))...")
 
-        let stt = sttService
-        let fileURL = result.fileURL
-        let wavData = result.wavData
-
-        Task {
-            do {
-                let transcript = try await stt.transcribe(fileURL: fileURL, audioData: wavData)
-                kbLog.info("✅ KB: \(transcript.prefix(50))...")
-                await MainActor.run {
-                    self.textDocumentProxy.insertText(transcript)
-                    self.keyboardState = .done
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                        if case .done = self?.keyboardState { self?.keyboardState = .ready }
-                    }
-                }
-            } catch {
-                kbLog.error("❌ KB STT: \(error.localizedDescription)")
-                await MainActor.run {
-                    self.keyboardState = .error(error.localizedDescription)
-                }
-            }
+        keyboardState = .done
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            if case .done = self?.keyboardState { self?.keyboardState = .ready }
         }
     }
 

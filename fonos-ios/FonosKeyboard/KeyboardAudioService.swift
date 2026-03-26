@@ -27,20 +27,21 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
             return
         }
 
-        // Configure audio session for keyboard extension
+        // Configure audio session — use .record (simplest, mic-only)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .mixWithOthers])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            try session.setCategory(.record, mode: .default)
+            try session.setActive(true)
         } catch {
             completion(makeError("Audio session: \(error.localizedDescription)"))
             return
         }
 
-        // Set up recorder with 16kHz mono PCM
+        // Record at device's native sample rate for best compatibility
+        // (SFSpeechRecognizer handles resampling internally)
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16000.0,
+            AVSampleRateKey: AVAudioSession.sharedInstance().sampleRate,
             AVNumberOfChannelsKey: 1,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
@@ -53,11 +54,16 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
 
             recorder = try AVAudioRecorder(url: recordingURL, settings: settings)
             recorder?.delegate = self
+            recorder?.isMeteringEnabled = true  // enable level metering to verify capture
             guard let recorder, recorder.prepareToRecord() else {
                 completion(makeError("Failed to prepare recorder"))
                 return
             }
-            recorder.record()
+            let started = recorder.record()
+            if !started {
+                completion(makeError("Recorder.record() returned false"))
+                return
+            }
             isRecording = true
             completion(nil)
         } catch {
@@ -75,15 +81,29 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
     @discardableResult
     func stopCapture() -> CaptureResult? {
         guard isRecording else { return nil }
+
+        // Check audio levels before stopping
+        recorder?.updateMeters()
+        let avgPower = recorder?.averagePower(forChannel: 0) ?? -160
+        let peakPower = recorder?.peakPower(forChannel: 0) ?? -160
+        print("🎙 KB Audio levels: avg=\(avgPower)dB, peak=\(peakPower)dB")
+
         recorder?.stop()
         isRecording = false
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        guard FileManager.default.fileExists(atPath: recordingURL.path),
-              let data = try? Data(contentsOf: recordingURL),
-              data.count > 100 else { return nil }
+        guard FileManager.default.fileExists(atPath: recordingURL.path) else {
+            print("🎙 ❌ Recording file not found at \(recordingURL.path)")
+            return nil
+        }
 
+        guard let data = try? Data(contentsOf: recordingURL), data.count > 100 else {
+            print("🎙 ❌ Recording file too small or unreadable")
+            return nil
+        }
+
+        print("🎙 ✅ Recording file: \(data.count) bytes, sampleRate=\(AVAudioSession.sharedInstance().sampleRate)")
         return CaptureResult(fileURL: recordingURL, wavData: data)
     }
 

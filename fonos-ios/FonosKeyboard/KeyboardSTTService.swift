@@ -62,14 +62,16 @@ final class KeyboardSTTService: @unchecked Sendable {
 
     // MARK: - Transcribe
 
-    /// Transcribe WAV audio data using the configured provider.
-    func transcribe(audioData: Data) async throws -> String {
+    /// Transcribe audio using the configured provider.
+    /// - fileURL: for Apple Speech (reads file directly, no manual parsing)
+    /// - audioData: for Whisper API (uploads as multipart)
+    func transcribe(fileURL: URL, audioData: Data) async throws -> String {
         let (provider, language, apiKey, baseURL, modelID) = resolveConfig()
         kbSTTLog.info("🎤 KB STT: provider=\(provider), dataSize=\(audioData.count), lang=\(language ?? "auto")")
 
         if provider == "apple" {
-            kbSTTLog.info("🎤 Using Apple Speech (on-device)")
-            return try await transcribeWithApple(audioData: audioData, language: language)
+            kbSTTLog.info("🎤 Using Apple Speech (on-device) with file URL")
+            return try await transcribeWithApple(fileURL: fileURL, language: language)
         } else {
             kbSTTLog.info("🎤 Using Whisper: \(baseURL)/v1/audio/transcriptions, model=\(modelID)")
             return try await transcribeWithWhisper(
@@ -219,21 +221,16 @@ final class KeyboardSTTService: @unchecked Sendable {
 
     // MARK: - Apple Speech Transcription
 
-    private func transcribeWithApple(audioData: Data, language: String?) async throws -> String {
+    private func transcribeWithApple(fileURL: URL, language: String?) async throws -> String {
         return try await withCheckedThrowingContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
+                kbSTTLog.info("🎤 Speech auth status: \(status.rawValue)")
                 guard status == .authorized else {
                     continuation.resume(throwing: STTError.permissionDenied)
                     return
                 }
 
-                let locale: Locale
-                if let lang = language {
-                    locale = Locale(identifier: lang)
-                } else {
-                    locale = .current
-                }
-
+                let locale = language.map { Locale(identifier: $0) } ?? .current
                 let recognizer = SFSpeechRecognizer(locale: locale)
                     ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
 
@@ -242,41 +239,24 @@ final class KeyboardSTTService: @unchecked Sendable {
                     return
                 }
 
-                let req = SFSpeechAudioBufferRecognitionRequest()
-                req.shouldReportPartialResults = false
-
-                // Feed audio data
-                if audioData.count > 44,
-                   let fmt = AVAudioFormat(commonFormat: .pcmFormatInt16,
-                                           sampleRate: 16_000, channels: 1, interleaved: false) {
-                    let pcmData = audioData.dropFirst(44)
-                    let sampleCount = pcmData.count / 2
-                    if let buf = AVAudioPCMBuffer(pcmFormat: fmt,
-                                                  frameCapacity: AVAudioFrameCount(sampleCount)) {
-                        buf.frameLength = AVAudioFrameCount(sampleCount)
-                        if let ptr = buf.int16ChannelData {
-                            pcmData.withUnsafeBytes { raw in
-                                if let base = raw.baseAddress {
-                                    memcpy(ptr[0], base, pcmData.count)
-                                }
-                            }
-                        }
-                        req.append(buf)
-                    }
-                }
-                req.endAudio()
+                // Use URL request — lets Speech framework read the file directly
+                // No manual WAV parsing, no buffer creation, no format issues
+                let request = SFSpeechURLRecognitionRequest(url: fileURL)
+                kbSTTLog.info("🎤 Recognizing file: \(fileURL.lastPathComponent)")
 
                 var resumed = false
-                _ = recognizer.recognitionTask(with: req) { result, error in
+                recognizer.recognitionTask(with: request) { result, error in
                     guard !resumed else { return }
                     if let error {
                         resumed = true
+                        kbSTTLog.error("🎤 Recognition error: \(error.localizedDescription)")
                         continuation.resume(throwing: STTError.unknown(error.localizedDescription))
                         return
                     }
                     if let result, result.isFinal {
                         resumed = true
                         let text = result.bestTranscription.formattedString
+                        kbSTTLog.info("🎤 Result: \(text.prefix(50))...")
                         if text.isEmpty {
                             continuation.resume(throwing: STTError.noTranscript)
                         } else {

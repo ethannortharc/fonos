@@ -264,21 +264,23 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func stopRecordingAndTranscribe() {
-        guard let wavData = audioService.stopCapture() else {
-            kbLog.error("⏹ No WAV data returned from recorder")
+        guard let result = audioService.stopCapture() else {
+            kbLog.error("⏹ No audio captured")
             recordingState = .error("No audio captured")
             return
         }
 
-        kbLog.info("⏹ Got WAV data: \(wavData.count) bytes")
-        statusLabel.text = "Processing \(wavData.count / 1024)KB..."
+        kbLog.info("⏹ Got WAV: \(result.wavData.count) bytes, file: \(result.fileURL.lastPathComponent)")
+        statusLabel.text = "Processing \(result.wavData.count / 1024)KB..."
         recordingState = .processing
 
         let stt = sttService
+        let fileURL = result.fileURL
+        let wavData = result.wavData
         Task {
             do {
                 kbLog.info("🔄 Starting KB transcription...")
-                let transcript = try await stt.transcribe(audioData: wavData)
+                let transcript = try await stt.transcribe(fileURL: fileURL, audioData: wavData)
                 kbLog.info("✅ KB Transcript: \(transcript.prefix(80))...")
                 await MainActor.run {
                     self.textDocumentProxy.insertText(transcript)

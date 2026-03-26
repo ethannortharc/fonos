@@ -65,19 +65,26 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Stop recording and return the WAV data.
+    /// Stop recording and return the file URL (for SFSpeechURLAudioRequest)
+    /// and the WAV data (for Whisper API upload).
+    struct CaptureResult {
+        let fileURL: URL
+        let wavData: Data
+    }
+
     @discardableResult
-    func stopCapture() -> Data? {
+    func stopCapture() -> CaptureResult? {
         guard isRecording else { return nil }
         recorder?.stop()
         isRecording = false
 
-        // Deactivate audio session
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        // Read recorded file
-        guard FileManager.default.fileExists(atPath: recordingURL.path) else { return nil }
-        return try? Data(contentsOf: recordingURL)
+        guard FileManager.default.fileExists(atPath: recordingURL.path),
+              let data = try? Data(contentsOf: recordingURL),
+              data.count > 100 else { return nil }
+
+        return CaptureResult(fileURL: recordingURL, wavData: data)
     }
 
     private func makeError(_ message: String) -> NSError {

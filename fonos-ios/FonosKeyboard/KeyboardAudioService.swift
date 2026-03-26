@@ -46,56 +46,54 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
         try? FileManager.default.removeItem(at: url)
         print("🎙 KB: Recording URL: \(url.path)")
 
-        // Try AAC format first (more compatible), fallback to PCM
-        let aacSettings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: session.sampleRate,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ]
-
-        do {
-            recorder = try AVAudioRecorder(url: url, settings: aacSettings)
-        } catch {
-            print("🎙 KB: AAC recorder init failed: \(error.localizedDescription)")
-            // Fallback: try PCM
-            let pcmSettings: [String: Any] = [
+        // Try multiple formats — some don't work in keyboard extension sandbox
+        let formats: [(name: String, ext: String, settings: [String: Any])] = [
+            ("AppleLossless", "caf", [
+                AVFormatIDKey: Int(kAudioFormatAppleLossless),
+                AVNumberOfChannelsKey: 1,
+                AVSampleRateKey: session.sampleRate,
+            ]),
+            ("AAC", "m4a", [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: session.sampleRate,
+                AVNumberOfChannelsKey: 1,
+            ]),
+            ("PCM-native", "wav", [
                 AVFormatIDKey: Int(kAudioFormatLinearPCM),
                 AVSampleRateKey: session.sampleRate,
                 AVNumberOfChannelsKey: 1,
                 AVLinearPCMBitDepthKey: 16,
                 AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsBigEndianKey: false,
-            ]
+            ]),
+        ]
+
+        var recordStarted = false
+        for fmt in formats {
+            let fmtURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fonos_kb.\(fmt.ext)")
+            try? FileManager.default.removeItem(at: fmtURL)
+
             do {
-                let pcmURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fonos_kb.wav")
-                try? FileManager.default.removeItem(at: pcmURL)
-                recorder = try AVAudioRecorder(url: pcmURL, settings: pcmSettings)
+                let rec = try AVAudioRecorder(url: fmtURL, settings: fmt.settings)
+                rec.delegate = self
+                rec.isMeteringEnabled = true
+
+                if rec.prepareToRecord() && rec.record() {
+                    recorder = rec
+                    recordStarted = true
+                    print("🎙 KB: ✅ Recording with \(fmt.name) at \(fmtURL.lastPathComponent)")
+                    break
+                } else {
+                    print("🎙 KB: ❌ \(fmt.name) — prepare=\(rec.prepareToRecord()), record failed")
+                    rec.stop()
+                }
             } catch {
-                completion(makeError("Recorder init: \(error.localizedDescription)"))
-                return
+                print("🎙 KB: ❌ \(fmt.name) init failed: \(error.localizedDescription)")
             }
         }
 
-        guard let recorder else {
-            completion(makeError("Recorder is nil after init"))
-            return
-        }
-
-        recorder.delegate = self
-        recorder.isMeteringEnabled = true
-
-        let prepared = recorder.prepareToRecord()
-        print("🎙 KB: prepareToRecord=\(prepared)")
-        guard prepared else {
-            completion(makeError("prepareToRecord() failed"))
-            return
-        }
-
-        let started = recorder.record()
-        print("🎙 KB: record()=\(started), duration=\(recorder.currentTime)")
-        guard started else {
-            completion(makeError("record() returned false. Input available: \(session.isInputAvailable), category: \(session.category.rawValue)"))
+        guard recordStarted else {
+            completion(makeError("All audio formats failed. Input: \(session.isInputAvailable), rate: \(session.sampleRate)"))
             return
         }
 

@@ -1,25 +1,21 @@
 import UIKit
 import AVFoundation
-import Speech
 import os.log
 
 private let kbLog = Logger(subsystem: "com.fonos.ios.keyboard", category: "KeyboardVC")
-
-// MARK: - KeyboardViewController
 
 final class KeyboardViewController: UIInputViewController {
 
     // MARK: - State
 
-    private enum RecordingState {
-        case idle
+    private enum KeyboardState {
+        case ready
         case recording
-        case processing
         case error(String)
         case done
     }
 
-    private var recordingState: RecordingState = .idle {
+    private var keyboardState: KeyboardState = .ready {
         didSet { updateUI() }
     }
 
@@ -31,19 +27,16 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - UI Elements
 
     private let containerView = UIView()
-    private let globeButton = UIButton(type: .system)
-    private let modeLabel = UILabel()
+    private let modeButton = UIButton(type: .system)
     private let micButton = UIButton(type: .custom)
     private let statusLabel = UILabel()
-    private let dismissButton = UIButton(type: .system)
+    private let switchButton = UIButton(type: .system)
 
     // MARK: - Colors
-    // Use system colors so the keyboard blends with the host app's theme
-    private var bgColor: UIColor { UIColor.systemBackground }
-    private let amberColor = UIColor(red: 0xfb/255.0, green: 0xbf/255.0, blue: 0x24/255.0, alpha: 1)
-    private let redColor = UIColor(red: 0xef/255.0, green: 0x44/255.0, blue: 0x44/255.0, alpha: 1)
-    private var textColor: UIColor { UIColor.label }
-    private var dimColor: UIColor { UIColor.secondaryLabel }
+
+    private let amberColor = UIColor(red: 0xfb/255, green: 0xbf/255, blue: 0x24/255, alpha: 1)
+    private let redColor = UIColor(red: 0xef/255, green: 0x44/255, blue: 0x44/255, alpha: 1)
+    private let greenColor = UIColor(red: 0x86/255, green: 0xef/255, blue: 0xac/255, alpha: 1)
 
     // MARK: - Lifecycle
 
@@ -51,18 +44,12 @@ final class KeyboardViewController: UIInputViewController {
         super.viewDidLoad()
         setupUI()
         updateUI()
-        requestPermissions()
-    }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
     }
 
     // MARK: - UI Setup
 
     private func setupUI() {
         view.backgroundColor = .clear
-
         containerView.backgroundColor = .clear
         containerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(containerView)
@@ -72,142 +59,95 @@ final class KeyboardViewController: UIInputViewController {
             containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             containerView.topAnchor.constraint(equalTo: view.topAnchor),
             containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            containerView.heightAnchor.constraint(equalToConstant: 120),
+            containerView.heightAnchor.constraint(equalToConstant: 100),
         ])
 
-        setupGlobeButton()
-        setupModeLabel()
-        setupMicButton()
-        setupStatusLabel()
-        setupDismissButton()
-        layoutElements()
-    }
+        // Mode button (left) — shows current mode, long-press to switch keyboard
+        modeButton.setTitle("✦ Dictate", for: .normal)
+        modeButton.setTitleColor(amberColor, for: .normal)
+        modeButton.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        modeButton.translatesAutoresizingMaskIntoConstraints = false
+        modeButton.addTarget(self, action: #selector(modeTapped), for: .touchUpInside)
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(switchKeyboard(_:)))
+        modeButton.addGestureRecognizer(longPress)
+        containerView.addSubview(modeButton)
 
-    private func setupGlobeButton() {
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-        let image = UIImage(systemName: "globe", withConfiguration: config)
-        globeButton.setImage(image, for: .normal)
-        globeButton.tintColor = dimColor
-        globeButton.translatesAutoresizingMaskIntoConstraints = false
-        globeButton.addTarget(self, action: #selector(globeTapped), for: .touchUpInside)
-        containerView.addSubview(globeButton)
-    }
-
-    private func setupModeLabel() {
-        modeLabel.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
-        modeLabel.textColor = amberColor
-        modeLabel.textAlignment = .left
-        modeLabel.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(modeLabel)
-
-        // Read mode name from config
-        let modeName = readModeName()
-        modeLabel.text = "✦ \(modeName)"
-    }
-
-    private func setupMicButton() {
+        // Mic button (center)
         micButton.translatesAutoresizingMaskIntoConstraints = false
-        micButton.layer.cornerRadius = 24
+        micButton.layer.cornerRadius = 28
         micButton.clipsToBounds = true
         micButton.addTarget(self, action: #selector(micTapped), for: .touchUpInside)
         containerView.addSubview(micButton)
-    }
 
-    private func setupStatusLabel() {
-        statusLabel.font = UIFont.systemFont(ofSize: 13, weight: .regular)
-        statusLabel.textColor = textColor
+        // Status label (bottom, full width)
+        statusLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 2
-        statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(statusLabel)
-    }
 
-    private func setupDismissButton() {
-        let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
-        let image = UIImage(systemName: "keyboard.chevron.compact.down", withConfiguration: config)
-        dismissButton.setImage(image, for: .normal)
-        dismissButton.tintColor = dimColor
-        dismissButton.translatesAutoresizingMaskIntoConstraints = false
-        dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
-        containerView.addSubview(dismissButton)
-    }
+        // Switch keyboard button (right) — small, for switching keyboards
+        let switchConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        switchButton.setImage(UIImage(systemName: "keyboard.chevron.compact.down", withConfiguration: switchConfig), for: .normal)
+        switchButton.tintColor = .tertiaryLabel
+        switchButton.translatesAutoresizingMaskIntoConstraints = false
+        switchButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+        containerView.addSubview(switchButton)
 
-    private func layoutElements() {
-        // Two-row layout:
-        // Row 1 (top):  [globe] [modeLabel]  [micButton]  [dismiss]
-        // Row 2 (bottom): [statusLabel — full width, multiline]
-
-        let topY: CGFloat = 28  // center Y for top row
-        let micSize: CGFloat = 52
-
+        // Layout
+        let micSize: CGFloat = 56
         NSLayoutConstraint.activate([
-            // Globe: top-left
-            globeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 12),
-            globeButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
-            globeButton.widthAnchor.constraint(equalToConstant: 36),
-            globeButton.heightAnchor.constraint(equalToConstant: 36),
+            // Mode: top-left
+            modeButton.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            modeButton.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 12),
 
-            // Mode label: right of globe
-            modeLabel.leadingAnchor.constraint(equalTo: globeButton.trailingAnchor, constant: 6),
-            modeLabel.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
-            modeLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 100),
-
-            // Mic button: center top
+            // Mic: center-top
             micButton.centerXAnchor.constraint(equalTo: containerView.centerXAnchor),
-            micButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
+            micButton.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 8),
             micButton.widthAnchor.constraint(equalToConstant: micSize),
             micButton.heightAnchor.constraint(equalToConstant: micSize),
 
-            // Dismiss: top-right
-            dismissButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            dismissButton.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: topY),
-            dismissButton.widthAnchor.constraint(equalToConstant: 36),
-            dismissButton.heightAnchor.constraint(equalToConstant: 36),
+            // Switch: top-right
+            switchButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            switchButton.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 12),
 
-            // Status label: bottom row, full width
+            // Status: below mic
             statusLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
             statusLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
-            statusLabel.topAnchor.constraint(equalTo: containerView.topAnchor, constant: topY + micSize / 2 + 8),
-            statusLabel.bottomAnchor.constraint(lessThanOrEqualTo: containerView.bottomAnchor, constant: -8),
+            statusLabel.topAnchor.constraint(equalTo: micButton.bottomAnchor, constant: 6),
         ])
 
-        micButton.layer.cornerRadius = micSize / 2
+        // Read mode name
+        modeButton.setTitle("✦ \(readModeName())", for: .normal)
     }
 
     // MARK: - UI Update
 
     private func updateUI() {
-        let symConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-        switch recordingState {
-        case .idle:
+        let symConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+        switch keyboardState {
+        case .ready:
             micButton.backgroundColor = amberColor
             micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
             micButton.isEnabled = true
-            statusLabel.text = "Ready"
-            statusLabel.textColor = textColor
+            statusLabel.text = "Tap to dictate"
+            statusLabel.textColor = .secondaryLabel
 
         case .recording:
             micButton.backgroundColor = redColor
             micButton.setImage(UIImage(systemName: "stop.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .white
-            statusLabel.text = "Recording..."
+            statusLabel.text = "Recording... tap to stop"
             statusLabel.textColor = redColor
-
-        case .processing:
-            micButton.backgroundColor = amberColor.withAlphaComponent(0.5)
-            micButton.setImage(UIImage(systemName: "ellipsis", withConfiguration: symConfig), for: .normal)
-            micButton.tintColor = .black
-            micButton.isEnabled = false
-            statusLabel.textColor = textColor
 
         case .error(let msg):
             micButton.backgroundColor = amberColor
             micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
             micButton.isEnabled = true
-            statusLabel.text = "⚠ \(msg)"
+            statusLabel.text = msg
             statusLabel.textColor = redColor
 
         case .done:
@@ -215,15 +155,28 @@ final class KeyboardViewController: UIInputViewController {
             micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
             micButton.isEnabled = true
-            statusLabel.text = "Done ✓"
-            statusLabel.textColor = UIColor(red: 0x86/255, green: 0xef/255, blue: 0xac/255, alpha: 1)
+            statusLabel.text = "✓ Text inserted"
+            statusLabel.textColor = greenColor
         }
     }
 
     // MARK: - Actions
 
-    @objc private func globeTapped() {
-        advanceToNextInputMode()
+    @objc private func modeTapped() {
+        // Cycle through modes could be added later
+        // For now, show a hint about long-press
+        let prev = statusLabel.text
+        statusLabel.text = "Long-press to switch keyboard"
+        statusLabel.textColor = .secondaryLabel
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.statusLabel.text = prev
+        }
+    }
+
+    @objc private func switchKeyboard(_ gesture: UILongPressGestureRecognizer) {
+        if gesture.state == .began {
+            advanceToNextInputMode()
+        }
     }
 
     @objc private func dismissTapped() {
@@ -231,133 +184,106 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func micTapped() {
-        switch recordingState {
-        case .idle, .error, .done:
+        switch keyboardState {
+        case .ready, .error, .done:
             startRecording()
         case .recording:
-            stopRecordingAndTranscribe()
-        case .processing:
-            break
+            stopAndTranscribe()
         }
     }
 
-    // MARK: - Recording Flow
+    // MARK: - Recording
 
     private func startRecording() {
-        guard isFullAccessEnabled else {
-            kbLog.error("Full Access not enabled")
-            recordingState = .error("Enable Full Access in Settings → Keyboards → Fonos")
+        guard hasFullAccess else {
+            keyboardState = .error("Enable Full Access in Settings → Keyboards → Fonos")
             return
         }
 
         audioService.startCapture { [weak self] error in
             DispatchQueue.main.async {
                 if let error {
-                    kbLog.error("❌ Capture failed: \(error.localizedDescription)")
-                    self?.recordingState = .error(error.localizedDescription)
+                    kbLog.error("❌ \(error.localizedDescription)")
+                    // AVAudioRecorder doesn't work — try opening main app
+                    self?.openMainAppForRecording()
                 } else {
-                    self?.recordingState = .recording
+                    self?.keyboardState = .recording
                 }
             }
         }
     }
 
-    private func stopRecordingAndTranscribe() {
+    private func stopAndTranscribe() {
         guard let result = audioService.stopCapture() else {
-            kbLog.error("⏹ No audio captured")
-            recordingState = .error("No audio captured")
+            keyboardState = .error("No audio captured")
             return
         }
 
-        kbLog.info("⏹ Got WAV: \(result.wavData.count) bytes, file: \(result.fileURL.lastPathComponent)")
-        statusLabel.text = "Processing \(result.wavData.count / 1024)KB..."
-        recordingState = .processing
+        kbLog.info("⏹ KB: \(result.wavData.count) bytes")
+        statusLabel.text = "Processing..."
+        statusLabel.textColor = .secondaryLabel
+        micButton.isEnabled = false
 
         let stt = sttService
         let fileURL = result.fileURL
         let wavData = result.wavData
+
         Task {
             do {
-                kbLog.info("🔄 Starting KB transcription...")
                 let transcript = try await stt.transcribe(fileURL: fileURL, audioData: wavData)
-                kbLog.info("✅ KB Transcript: \(transcript.prefix(80))...")
+                kbLog.info("✅ KB: \(transcript.prefix(50))...")
                 await MainActor.run {
                     self.textDocumentProxy.insertText(transcript)
-                    self.recordingState = .done
-                    // Reset to idle after 3s
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                        if case .done = self?.recordingState {
-                            self?.recordingState = .idle
-                        }
+                    self.keyboardState = .done
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                        if case .done = self?.keyboardState { self?.keyboardState = .ready }
                     }
                 }
             } catch {
-                kbLog.error("❌ KB Transcription failed: \(error.localizedDescription)")
+                kbLog.error("❌ KB STT: \(error.localizedDescription)")
                 await MainActor.run {
-                    // Show error persistently — user must tap mic to dismiss
-                    self.recordingState = .error(error.localizedDescription)
+                    self.keyboardState = .error(error.localizedDescription)
                 }
             }
         }
     }
 
-    // MARK: - Text Insertion
+    // MARK: - Fallback: Open Main App
 
-    private func insertText(_ text: String) {
-        textDocumentProxy.insertText(text)
+    private func openMainAppForRecording() {
+        // When AVAudioRecorder doesn't work in extension, open main app
+        guard let url = URL(string: "fonos://record") else { return }
+
+        // Keyboard extensions can open URLs via the shared application
+        var responder: UIResponder? = self
+        while let r = responder {
+            if let application = r as? UIApplication {
+                application.open(url)
+                keyboardState = .error("Opened Fonos app — record there, then paste")
+                return
+            }
+            responder = r.next
+        }
+
+        // Can't open URL — show instruction
+        keyboardState = .error("Open Fonos app to record, then paste here")
     }
 
-    // MARK: - Permissions
+    // MARK: - Config
 
-    /// Check if "Allow Full Access" is enabled for this keyboard extension.
-    /// Without it, mic and network access are blocked.
     private var isFullAccessEnabled: Bool {
-        // The most reliable way to check is hasFullAccess (inherited from UIInputViewController)
-        return self.hasFullAccess
+        hasFullAccess
     }
-
-    private func requestPermissions() {
-        if isFullAccessEnabled {
-            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
-                if !granted {
-                    DispatchQueue.main.async {
-                        self?.recordingState = .error("Allow mic access in Settings")
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Config Helper
 
     private func readModeName() -> String {
         guard let data = UserDefaults.standard.data(forKey: "app_config") else {
             return "Dictate"
         }
-
-        struct MinConfig: Decodable {
-            var activeModeID: String?
-            var modeConfigs: [MinModeConfig]?
-        }
-        struct MinModeConfig: Decodable {
-            var id: String
-            var displayName: String?
-            var mode: MinMode?
-        }
-        struct MinMode: Decodable {
-            var name: String?
-        }
-
+        struct MinConfig: Decodable { var activeModeID: String? }
         guard let config = try? JSONDecoder().decode(MinConfig.self, from: data) else {
             return "Dictate"
         }
-
-        let activeID = config.activeModeID ?? "raw"
-        if let modeConfig = config.modeConfigs?.first(where: { $0.id == activeID }),
-           let name = modeConfig.displayName ?? modeConfig.mode?.name {
-            return name
-        }
-
-        return "Dictate"
+        let modeNames = ["raw": "Raw", "polish": "Polish", "formal": "Formal", "translate": "Translate"]
+        return modeNames[config.activeModeID ?? "raw"] ?? "Dictate"
     }
 }

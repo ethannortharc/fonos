@@ -2,11 +2,13 @@ import AVFoundation
 
 /// Audio capture for keyboard extension.
 /// Tries multiple approaches since keyboard extensions have sandbox restrictions.
-final class KeyboardAudioService: NSObject, @unchecked Sendable {
+final class KeyboardAudioService: NSObject, @unchecked Sendable, AVCaptureAudioDataOutputSampleBufferDelegate {
     private(set) var isRecording = false
     private var capturedData = Data()
     private var engine: AVAudioEngine?
     private var recorder: AVAudioRecorder?
+    private var captureSession: AVCaptureSession?
+    private let captureQueue = DispatchQueue(label: "com.fonos.kb.capture")
 
     struct CaptureResult {
         let fileURL: URL
@@ -45,15 +47,23 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
             return
         }
 
-        // Approach 3: AVAudioRecorder
-        if tryRecorder() {
-            print("🎙 KB: ✅ AVAudioRecorder started (approach 3)")
+        // Approach 3: AVCaptureSession (camera/capture framework — different sandbox path)
+        if tryCaptureSession() {
+            print("🎙 KB: ✅ AVCaptureSession started (approach 3)")
             isRecording = true
             completion(nil)
             return
         }
 
-        completion(makeError("All recording methods failed"))
+        // Approach 4: AVAudioRecorder
+        if tryRecorder() {
+            print("🎙 KB: ✅ AVAudioRecorder started (approach 4)")
+            isRecording = true
+            completion(nil)
+            return
+        }
+
+        completion(makeError("All recording methods failed. Check mic permission + Full Access."))
     }
 
     // MARK: - Approach 1: AVAudioEngine, no session config
@@ -119,7 +129,62 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
         }
     }
 
-    // MARK: - Approach 3: AVAudioRecorder
+    // MARK: - Approach 3: AVCaptureSession
+
+    private func tryCaptureSession() -> Bool {
+        let session = AVCaptureSession()
+
+        guard let device = AVCaptureDevice.default(for: .audio) else {
+            print("🎙 KB: CaptureSession — no audio device")
+            return false
+        }
+
+        do {
+            let input = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(input) else {
+                print("🎙 KB: CaptureSession — can't add input")
+                return false
+            }
+            session.addInput(input)
+        } catch {
+            print("🎙 KB: CaptureSession — input error: \(error.localizedDescription)")
+            return false
+        }
+
+        let output = AVCaptureAudioDataOutput()
+        guard session.canAddOutput(output) else {
+            print("🎙 KB: CaptureSession — can't add output")
+            return false
+        }
+        output.setSampleBufferDelegate(self, queue: captureQueue)
+        session.addOutput(output)
+
+        capturedData = Data()
+        session.startRunning()
+
+        if session.isRunning {
+            captureSession = session
+            return true
+        } else {
+            print("🎙 KB: CaptureSession — startRunning failed (not running)")
+            return false
+        }
+    }
+
+    // AVCaptureAudioDataOutputSampleBufferDelegate
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer) else { return }
+        let length = CMBlockBufferGetDataLength(blockBuffer)
+        var data = Data(count: length)
+        data.withUnsafeMutableBytes { ptr in
+            if let baseAddr = ptr.baseAddress {
+                CMBlockBufferCopyDataBytes(blockBuffer, atOffset: 0, dataLength: length, destination: baseAddr)
+            }
+        }
+        capturedData.append(data)
+    }
+
+    // MARK: - Approach 4: AVAudioRecorder
 
     private func tryRecorder() -> Bool {
         do {
@@ -179,6 +244,25 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
     func stopCapture() -> CaptureResult? {
         guard isRecording else { return nil }
         isRecording = false
+
+        // Stop capture session if used
+        if let cs = captureSession {
+            cs.stopRunning()
+            captureSession = nil
+
+            guard capturedData.count > 100 else {
+                print("🎙 KB: ❌ CaptureSession data too small: \(capturedData.count)")
+                return nil
+            }
+
+            // CaptureSession provides raw PCM — build WAV
+            let wavData = buildWAV(pcmData: capturedData, sampleRate: 16000)
+            let url = recordingURL
+            try? wavData.write(to: url)
+            print("🎙 KB: ✅ CaptureSession: \(capturedData.count) → \(wavData.count) WAV bytes")
+            capturedData = Data()
+            return CaptureResult(fileURL: url, wavData: wavData)
+        }
 
         // Stop engine if used
         if let eng = engine {

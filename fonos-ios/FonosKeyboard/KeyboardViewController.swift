@@ -38,12 +38,12 @@ final class KeyboardViewController: UIInputViewController {
     private let dismissButton = UIButton(type: .system)
 
     // MARK: - Colors
-
-    private let bgColor = UIColor(red: 0x1a/255.0, green: 0x19/255.0, blue: 0x17/255.0, alpha: 1)
+    // Use system colors so the keyboard blends with the host app's theme
+    private var bgColor: UIColor { UIColor.systemBackground }
     private let amberColor = UIColor(red: 0xfb/255.0, green: 0xbf/255.0, blue: 0x24/255.0, alpha: 1)
     private let redColor = UIColor(red: 0xef/255.0, green: 0x44/255.0, blue: 0x44/255.0, alpha: 1)
-    private let textColor = UIColor(red: 0xfa/255.0, green: 0xfa/255.0, blue: 0xf9/255.0, alpha: 1)
-    private let dimColor = UIColor.white.withAlphaComponent(0.5)
+    private var textColor: UIColor { UIColor.label }
+    private var dimColor: UIColor { UIColor.secondaryLabel }
 
     // MARK: - Lifecycle
 
@@ -61,10 +61,9 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - UI Setup
 
     private func setupUI() {
-        view.backgroundColor = bgColor
+        view.backgroundColor = .clear
 
-        // Container fills the view with a fixed height
-        containerView.backgroundColor = bgColor
+        containerView.backgroundColor = .clear
         containerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(containerView)
 
@@ -95,15 +94,15 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func setupModeLabel() {
-        modeLabel.font = UIFont.systemFont(ofSize: 11, weight: .medium)
-        modeLabel.textColor = dimColor
-        modeLabel.textAlignment = .center
+        modeLabel.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
+        modeLabel.textColor = amberColor
+        modeLabel.textAlignment = .left
         modeLabel.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(modeLabel)
 
         // Read mode name from config
         let modeName = readModeName()
-        modeLabel.text = modeName
+        modeLabel.text = "✦ \(modeName)"
     }
 
     private func setupMicButton() {

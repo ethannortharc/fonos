@@ -238,16 +238,23 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func stopAndTranscribe() {
-        let transcript = audioService.stopLiveRecognition()
+        let result = audioService.stopLiveRecognition()
 
-        if transcript.isEmpty {
+        // Use Apple Speech result immediately (instant)
+        let appleText = result.appleTranscript
+        if appleText.isEmpty {
             keyboardState = .error("No speech detected")
             return
         }
 
-        // Insert the recognized text directly into the active text field
-        textDocumentProxy.insertText(transcript)
-        kbLog.info("✅ KB inserted: \(transcript.prefix(50))...")
+        // Insert Apple Speech result now (instant feedback)
+        textDocumentProxy.insertText(appleText)
+        kbLog.info("✅ KB Apple: \(appleText.prefix(50))...")
+
+        // TODO: If third-party ASR is configured, send result.wavData
+        // to Whisper/Qwen3-ASR endpoint. When response arrives,
+        // delete the Apple text and insert the refined result.
+        // For now, Apple Speech result is the final result.
 
         keyboardState = .done
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in

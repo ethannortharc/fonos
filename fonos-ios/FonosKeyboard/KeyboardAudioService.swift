@@ -73,13 +73,16 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
             return
         }
 
-        // Configure audio session
+        // Configure audio session — keyboard extension MUST use:
+        // .playAndRecord (not .record) + .default mode (not .measurement)
+        // .mixWithOthers required to coexist with host app
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .measurement)
+            try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .allowBluetooth])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
+            print("🎙 KB: Session OK: rate=\(session.sampleRate)")
         } catch {
-            print("🎙 KB: Session config failed: \(error), continuing anyway...")
+            print("🎙 KB: Session failed: \(error.localizedDescription), trying engine anyway...")
         }
 
         let engine = AVAudioEngine()

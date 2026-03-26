@@ -204,8 +204,7 @@ final class KeyboardViewController: UIInputViewController {
             DispatchQueue.main.async {
                 if let error {
                     kbLog.error("❌ \(error.localizedDescription)")
-                    // AVAudioRecorder doesn't work — try opening main app
-                    self?.openMainAppForRecording()
+                    self?.keyboardState = .error("Use Fonos app to dictate → paste here")
                 } else {
                     self?.keyboardState = .recording
                 }
@@ -246,27 +245,6 @@ final class KeyboardViewController: UIInputViewController {
                 }
             }
         }
-    }
-
-    // MARK: - Fallback: Open Main App
-
-    private func openMainAppForRecording() {
-        // When AVAudioRecorder doesn't work in extension, open main app
-        guard let url = URL(string: "fonos://record") else { return }
-
-        // Keyboard extensions can open URLs via the shared application
-        var responder: UIResponder? = self
-        while let r = responder {
-            if let application = r as? UIApplication {
-                application.open(url)
-                keyboardState = .error("Opened Fonos app — record there, then paste")
-                return
-            }
-            responder = r.next
-        }
-
-        // Can't open URL — show instruction
-        keyboardState = .error("Open Fonos app to record, then paste here")
     }
 
     // MARK: - Config

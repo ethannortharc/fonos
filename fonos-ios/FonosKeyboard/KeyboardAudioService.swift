@@ -78,22 +78,32 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
                 rec.delegate = self
                 rec.isMeteringEnabled = true
 
+                // Try multiple start methods — some work where others don't
+                // Method 1: record(forDuration:) — sometimes works when record() doesn't
+                if rec.record(forDuration: 120) {
+                    recorder = rec
+                    recordStarted = true
+                    print("🎙 KB: ✅ record(forDuration:) with \(fmt.name)")
+                    break
+                }
+
+                // Method 2: prepareToRecord + record
                 if rec.prepareToRecord() && rec.record() {
                     recorder = rec
                     recordStarted = true
-                    print("🎙 KB: ✅ Recording with \(fmt.name) at \(fmtURL.lastPathComponent)")
+                    print("🎙 KB: ✅ prepare+record() with \(fmt.name)")
                     break
-                } else {
-                    print("🎙 KB: ❌ \(fmt.name) — prepare=\(rec.prepareToRecord()), record failed")
-                    rec.stop()
                 }
+
+                print("🎙 KB: ❌ \(fmt.name) — both methods failed")
+                rec.stop()
             } catch {
-                print("🎙 KB: ❌ \(fmt.name) init failed: \(error.localizedDescription)")
+                print("🎙 KB: ❌ \(fmt.name) init: \(error.localizedDescription)")
             }
         }
 
         guard recordStarted else {
-            completion(makeError("All audio formats failed. Input: \(session.isInputAvailable), rate: \(session.sampleRate)"))
+            completion(makeError("Mic unavailable in keyboard. Open Fonos app to dictate."))
             return
         }
 

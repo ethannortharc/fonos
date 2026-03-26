@@ -132,7 +132,7 @@ final class KeyboardViewController: UIInputViewController {
             micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
             micButton.isEnabled = true
-            statusLabel.text = "Tap to dictate"
+            statusLabel.text = "Tap to dictate (v3)"
             statusLabel.textColor = .secondaryLabel
 
         case .recording:
@@ -204,7 +204,8 @@ final class KeyboardViewController: UIInputViewController {
             DispatchQueue.main.async {
                 if let error {
                     kbLog.error("❌ \(error.localizedDescription)")
-                    self?.keyboardState = .error("Use Fonos app to dictate → paste here")
+                    // Show the ACTUAL error so we can debug
+                    self?.keyboardState = .error(error.localizedDescription)
                 } else {
                     self?.keyboardState = .recording
                 }

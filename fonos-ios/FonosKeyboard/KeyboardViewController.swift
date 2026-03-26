@@ -249,25 +249,37 @@ final class KeyboardViewController: UIInputViewController {
 
     private func stopRecordingAndTranscribe() {
         guard let wavData = audioService.stopCapture() else {
+            kbLog.error("⏹ No WAV data returned from recorder")
+            showError("No audio data")
             recordingState = .idle
             return
         }
 
+        kbLog.info("⏹ Got WAV data: \(wavData.count) bytes")
+        statusLabel.text = "Processing \(wavData.count / 1024)KB..."
         recordingState = .processing
 
-        // Capture the service reference to cross actor boundary safely
         let stt = sttService
         Task {
             do {
+                kbLog.info("🔄 Starting transcription...")
                 let transcript = try await stt.transcribe(audioData: wavData)
+                kbLog.info("✅ Transcript: \(transcript.prefix(50))...")
                 await MainActor.run {
-                    self.insertText(transcript)
+                    self.textDocumentProxy.insertText(transcript)
+                    self.statusLabel.text = "Done ✓"
+                    self.statusLabel.textColor = UIColor(red: 0x86/255, green: 0xef/255, blue: 0xac/255, alpha: 1)
                     self.recordingState = .idle
+                    // Reset status after 2s
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                        self?.statusLabel.text = "Ready"
+                        self?.statusLabel.textColor = self?.textColor
+                    }
                 }
             } catch {
-                kbLog.error("Transcription failed: \(error.localizedDescription)")
+                kbLog.error("❌ Transcription failed: \(error.localizedDescription)")
                 await MainActor.run {
-                    self.showError("No result")
+                    self.showError(error.localizedDescription)
                     self.recordingState = .idle
                 }
             }

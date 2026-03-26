@@ -65,10 +65,13 @@ final class KeyboardSTTService: @unchecked Sendable {
     /// Transcribe WAV audio data using the configured provider.
     func transcribe(audioData: Data) async throws -> String {
         let (provider, language, apiKey, baseURL, modelID) = resolveConfig()
+        kbSTTLog.info("🎤 KB STT: provider=\(provider), dataSize=\(audioData.count), lang=\(language ?? "auto")")
 
         if provider == "apple" {
+            kbSTTLog.info("🎤 Using Apple Speech (on-device)")
             return try await transcribeWithApple(audioData: audioData, language: language)
         } else {
+            kbSTTLog.info("🎤 Using Whisper: \(baseURL)/v1/audio/transcriptions, model=\(modelID)")
             return try await transcribeWithWhisper(
                 audioData: audioData,
                 language: language,

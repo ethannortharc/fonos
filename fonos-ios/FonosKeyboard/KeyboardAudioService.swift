@@ -1,157 +1,275 @@
 import AVFoundation
 
-/// Lightweight audio capture for keyboard extension using AVAudioRecorder.
+/// Audio capture for keyboard extension.
+/// Tries multiple approaches since keyboard extensions have sandbox restrictions.
 final class KeyboardAudioService: NSObject, @unchecked Sendable {
     private(set) var isRecording = false
+    private var capturedData = Data()
+    private var engine: AVAudioEngine?
     private var recorder: AVAudioRecorder?
-
-    private var recordingURL: URL {
-        // Use NSTemporaryDirectory explicitly (extension sandbox compatible)
-        let dir = NSTemporaryDirectory()
-        return URL(fileURLWithPath: dir).appendingPathComponent("fonos_kb.m4a")
-    }
-
-    override init() {
-        super.init()
-    }
 
     struct CaptureResult {
         let fileURL: URL
         let wavData: Data
     }
 
+    private var recordingURL: URL {
+        URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fonos_kb.wav")
+    }
+
+    override init() { super.init() }
+
     func startCapture(completion: @escaping (Error?) -> Void) {
         guard !isRecording else { completion(nil); return }
 
-        // Check mic permission
         let permission = AVAudioSession.sharedInstance().recordPermission
         guard permission == .granted else {
             completion(makeError("Mic not authorized. Enable Full Access in Settings → Keyboards → Fonos."))
             return
         }
 
-        // Configure audio session
-        let session = AVAudioSession.sharedInstance()
+        // Try approaches in order of reliability
+        // Approach 1: AVAudioEngine with NO manual session config (let engine handle it)
+        if tryAudioEngine() {
+            print("🎙 KB: ✅ AVAudioEngine started (approach 1)")
+            isRecording = true
+            completion(nil)
+            return
+        }
+
+        // Approach 2: AVAudioEngine WITH session config
+        if tryAudioEngineWithSession() {
+            print("🎙 KB: ✅ AVAudioEngine+session started (approach 2)")
+            isRecording = true
+            completion(nil)
+            return
+        }
+
+        // Approach 3: AVAudioRecorder
+        if tryRecorder() {
+            print("🎙 KB: ✅ AVAudioRecorder started (approach 3)")
+            isRecording = true
+            completion(nil)
+            return
+        }
+
+        completion(makeError("All recording methods failed"))
+    }
+
+    // MARK: - Approach 1: AVAudioEngine, no session config
+
+    private func tryAudioEngine() -> Bool {
+        let eng = AVAudioEngine()
+        let inputNode = eng.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+
+        guard format.channelCount > 0, format.sampleRate > 0 else {
+            print("🎙 KB: Engine approach 1 — invalid format: ch=\(format.channelCount), rate=\(format.sampleRate)")
+            return false
+        }
+
+        capturedData = Data()
+
+        // Install tap to capture raw audio
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+            self?.appendBuffer(buffer)
+        }
+
+        eng.prepare()
         do {
+            try eng.start()
+            engine = eng
+            return true
+        } catch {
+            print("🎙 KB: Engine approach 1 failed: \(error.localizedDescription)")
+            inputNode.removeTap(onBus: 0)
+            return false
+        }
+    }
+
+    // MARK: - Approach 2: AVAudioEngine with session
+
+    private func tryAudioEngineWithSession() -> Bool {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("🎙 KB: Engine approach 2 — session setup failed: \(error.localizedDescription)")
+            return false
+        }
+
+        let eng = AVAudioEngine()
+        let inputNode = eng.inputNode
+        capturedData = Data()
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+            self?.appendBuffer(buffer)
+        }
+
+        eng.prepare()
+        do {
+            try eng.start()
+            engine = eng
+            return true
+        } catch {
+            print("🎙 KB: Engine approach 2 failed: \(error.localizedDescription)")
+            inputNode.removeTap(onBus: 0)
+            return false
+        }
+    }
+
+    // MARK: - Approach 3: AVAudioRecorder
+
+    private func tryRecorder() -> Bool {
+        do {
+            let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .defaultToSpeaker])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            print("🎙 KB: Audio session active, sampleRate=\(session.sampleRate), inputAvailable=\(session.isInputAvailable)")
         } catch {
-            completion(makeError("Audio session: \(error.localizedDescription)"))
-            return
+            print("🎙 KB: Recorder — session setup failed: \(error.localizedDescription)")
+            return false
         }
 
-        // Remove old recording
         let url = recordingURL
         try? FileManager.default.removeItem(at: url)
-        print("🎙 KB: Recording URL: \(url.path)")
 
-        // Try multiple formats — some don't work in keyboard extension sandbox
-        let formats: [(name: String, ext: String, settings: [String: Any])] = [
-            ("AppleLossless", "caf", [
-                AVFormatIDKey: Int(kAudioFormatAppleLossless),
-                AVNumberOfChannelsKey: 1,
-                AVSampleRateKey: session.sampleRate,
-            ]),
-            ("AAC", "m4a", [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: session.sampleRate,
-                AVNumberOfChannelsKey: 1,
-            ]),
-            ("PCM-native", "wav", [
-                AVFormatIDKey: Int(kAudioFormatLinearPCM),
-                AVSampleRateKey: session.sampleRate,
-                AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16,
-                AVLinearPCMIsFloatKey: false,
-                AVLinearPCMIsBigEndianKey: false,
-            ]),
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
         ]
 
-        var recordStarted = false
-        for fmt in formats {
-            let fmtURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("fonos_kb.\(fmt.ext)")
-            try? FileManager.default.removeItem(at: fmtURL)
-
-            do {
-                let rec = try AVAudioRecorder(url: fmtURL, settings: fmt.settings)
-                rec.delegate = self
-                rec.isMeteringEnabled = true
-
-                // Try multiple start methods — some work where others don't
-                // Method 1: record(forDuration:) — sometimes works when record() doesn't
-                if rec.record(forDuration: 120) {
-                    recorder = rec
-                    recordStarted = true
-                    print("🎙 KB: ✅ record(forDuration:) with \(fmt.name)")
-                    break
-                }
-
-                // Method 2: prepareToRecord + record
-                if rec.prepareToRecord() && rec.record() {
-                    recorder = rec
-                    recordStarted = true
-                    print("🎙 KB: ✅ prepare+record() with \(fmt.name)")
-                    break
-                }
-
-                print("🎙 KB: ❌ \(fmt.name) — both methods failed")
-                rec.stop()
-            } catch {
-                print("🎙 KB: ❌ \(fmt.name) init: \(error.localizedDescription)")
+        do {
+            let rec = try AVAudioRecorder(url: url, settings: settings)
+            rec.delegate = self
+            if rec.record(forDuration: 120) {
+                recorder = rec
+                return true
             }
+            print("🎙 KB: Recorder — record() returned false")
+            return false
+        } catch {
+            print("🎙 KB: Recorder — init failed: \(error.localizedDescription)")
+            return false
         }
-
-        guard recordStarted else {
-            completion(makeError("Mic unavailable in keyboard. Open Fonos app to dictate."))
-            return
-        }
-
-        isRecording = true
-        completion(nil)
     }
+
+    // MARK: - Buffer Capture (for AVAudioEngine approaches)
+
+    private func appendBuffer(_ buffer: AVAudioPCMBuffer) {
+        // Convert to Int16 PCM data
+        guard let floatData = buffer.floatChannelData else { return }
+        let frameCount = Int(buffer.frameLength)
+        var int16Data = Data(capacity: frameCount * 2)
+        for i in 0..<frameCount {
+            let clamped = max(-1.0, min(1.0, floatData[0][i]))
+            var sample = Int16(clamped * Float(Int16.max))
+            int16Data.append(Data(bytes: &sample, count: 2))
+        }
+        capturedData.append(int16Data)
+    }
+
+    // MARK: - Stop
 
     @discardableResult
     func stopCapture() -> CaptureResult? {
         guard isRecording else { return nil }
-
-        recorder?.updateMeters()
-        let avgPower = recorder?.averagePower(forChannel: 0) ?? -160
-        let peakPower = recorder?.peakPower(forChannel: 0) ?? -160
-        let duration = recorder?.currentTime ?? 0
-        print("🎙 KB: Stop — avg=\(avgPower)dB, peak=\(peakPower)dB, duration=\(String(format: "%.1f", duration))s")
-
-        recorder?.stop()
         isRecording = false
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Stop engine if used
+        if let eng = engine {
+            eng.inputNode.removeTap(onBus: 0)
+            eng.stop()
+            engine = nil
 
-        guard let url = recorder?.url,
-              FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url),
-              data.count > 100 else {
-            print("🎙 KB: ❌ No recording file or too small")
-            return nil
+            // Build WAV from captured PCM data
+            guard capturedData.count > 100 else {
+                print("🎙 KB: ❌ Captured data too small: \(capturedData.count) bytes")
+                return nil
+            }
+
+            let wavData = buildWAV(pcmData: capturedData, sampleRate: 16000)
+            let url = recordingURL
+            try? wavData.write(to: url)
+            print("🎙 KB: ✅ Engine capture: \(capturedData.count) PCM bytes → \(wavData.count) WAV bytes")
+            capturedData = Data()
+
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            return CaptureResult(fileURL: url, wavData: wavData)
         }
 
-        print("🎙 KB: ✅ File: \(data.count) bytes at \(url.lastPathComponent)")
-        return CaptureResult(fileURL: url, wavData: data)
+        // Stop recorder if used
+        if let rec = recorder {
+            rec.stop()
+            recorder = nil
+
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+
+            guard let data = try? Data(contentsOf: recordingURL), data.count > 100 else {
+                print("🎙 KB: ❌ Recorder file too small")
+                return nil
+            }
+
+            print("🎙 KB: ✅ Recorder capture: \(data.count) bytes")
+            return CaptureResult(fileURL: recordingURL, wavData: data)
+        }
+
+        return nil
     }
 
-    private func makeError(_ message: String) -> NSError {
-        print("🎙 KB: ❌ \(message)")
-        return NSError(domain: "KeyboardAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    // MARK: - WAV Builder
+
+    private func buildWAV(pcmData: Data, sampleRate: Int) -> Data {
+        let dataSize = UInt32(pcmData.count)
+        let chunkSize = 36 + dataSize
+        var wav = Data(capacity: 44 + Int(dataSize))
+
+        // RIFF header
+        wav.append(contentsOf: "RIFF".utf8)
+        wav.append(uint32LE: chunkSize)
+        wav.append(contentsOf: "WAVE".utf8)
+
+        // fmt chunk
+        wav.append(contentsOf: "fmt ".utf8)
+        wav.append(uint32LE: 16)        // chunk size
+        wav.append(uint16LE: 1)         // PCM format
+        wav.append(uint16LE: 1)         // mono
+        wav.append(uint32LE: UInt32(sampleRate))
+        wav.append(uint32LE: UInt32(sampleRate * 2)) // byte rate
+        wav.append(uint16LE: 2)         // block align
+        wav.append(uint16LE: 16)        // bits per sample
+
+        // data chunk
+        wav.append(contentsOf: "data".utf8)
+        wav.append(uint32LE: dataSize)
+        wav.append(pcmData)
+
+        return wav
+    }
+
+    private func makeError(_ msg: String) -> NSError {
+        print("🎙 KB: ❌ \(msg)")
+        return NSError(domain: "KeyboardAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
     }
 }
 
 extension KeyboardAudioService: AVAudioRecorderDelegate {
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        print("🎙 KB: Recorder finished, success=\(flag)")
         if !flag { isRecording = false }
     }
+}
 
-    func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
-        print("🎙 KB: Encode error: \(error?.localizedDescription ?? "unknown")")
-        isRecording = false
+private extension Data {
+    mutating func append(uint16LE value: UInt16) {
+        var v = value.littleEndian
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
+    }
+    mutating func append(uint32LE value: UInt32) {
+        var v = value.littleEndian
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 }

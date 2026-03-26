@@ -63,17 +63,22 @@ final class KeyboardSTTService: @unchecked Sendable {
     // MARK: - Transcribe
 
     /// Transcribe audio using the configured provider.
-    /// - fileURL: for Apple Speech (reads file directly, no manual parsing)
-    /// - audioData: for Whisper API (uploads as multipart)
+    /// Tries configured cloud/local STT first, falls back to Apple Speech.
     func transcribe(fileURL: URL, audioData: Data) async throws -> String {
         let (provider, language, apiKey, baseURL, modelID) = resolveConfig()
         kbSTTLog.info("🎤 KB STT: provider=\(provider), dataSize=\(audioData.count), lang=\(language ?? "auto")")
 
         if provider == "apple" {
-            kbSTTLog.info("🎤 Using Apple Speech (on-device) with file URL")
-            return try await transcribeWithApple(fileURL: fileURL, language: language)
+            // Try Apple Speech first, if it fails with "no speech" try Whisper
+            kbSTTLog.info("🎤 Using Apple Speech (on-device)")
+            do {
+                return try await transcribeWithApple(fileURL: fileURL, language: language)
+            } catch {
+                kbSTTLog.warning("🎤 Apple Speech failed: \(error.localizedDescription)")
+                throw error
+            }
         } else {
-            kbSTTLog.info("🎤 Using Whisper: \(baseURL)/v1/audio/transcriptions, model=\(modelID)")
+            kbSTTLog.info("🎤 Using Whisper: \(baseURL), model=\(modelID)")
             return try await transcribeWithWhisper(
                 audioData: audioData,
                 language: language,

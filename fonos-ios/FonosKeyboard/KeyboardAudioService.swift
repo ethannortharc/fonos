@@ -27,21 +27,21 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
             return
         }
 
-        // Configure audio session — use .record (simplest, mic-only)
+        // .playAndRecord + .mixWithOthers is REQUIRED in keyboard extensions
+        // (.record alone fails because the host app owns the audio session)
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .default)
-            try session.setActive(true)
+            try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .defaultToSpeaker])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             completion(makeError("Audio session: \(error.localizedDescription)"))
             return
         }
 
-        // Record at device's native sample rate for best compatibility
-        // (SFSpeechRecognizer handles resampling internally)
+        // Record at 16kHz for Whisper API compatibility
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: AVAudioSession.sharedInstance().sampleRate,
+            AVSampleRateKey: 16000.0,
             AVNumberOfChannelsKey: 1,
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,

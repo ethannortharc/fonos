@@ -15,6 +15,8 @@ final class KeyboardViewController: UIInputViewController {
         case idle
         case recording
         case processing
+        case error(String)
+        case done
     }
 
     private var recordingState: RecordingState = .idle {
@@ -177,30 +179,45 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: - UI Update
 
     private func updateUI() {
+        let symConfig = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
         switch recordingState {
         case .idle:
             micButton.backgroundColor = amberColor
-            let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-            micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: config), for: .normal)
+            micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
+            micButton.isEnabled = true
             statusLabel.text = "Ready"
             statusLabel.textColor = textColor
 
         case .recording:
             micButton.backgroundColor = redColor
-            let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-            micButton.setImage(UIImage(systemName: "stop.fill", withConfiguration: config), for: .normal)
+            micButton.setImage(UIImage(systemName: "stop.fill", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .white
             statusLabel.text = "Recording..."
             statusLabel.textColor = redColor
 
         case .processing:
             micButton.backgroundColor = amberColor.withAlphaComponent(0.5)
-            let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-            micButton.setImage(UIImage(systemName: "ellipsis", withConfiguration: config), for: .normal)
+            micButton.setImage(UIImage(systemName: "ellipsis", withConfiguration: symConfig), for: .normal)
             micButton.tintColor = .black
-            statusLabel.text = "Processing..."
+            micButton.isEnabled = false
             statusLabel.textColor = textColor
+
+        case .error(let msg):
+            micButton.backgroundColor = amberColor
+            micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
+            micButton.tintColor = .black
+            micButton.isEnabled = true
+            statusLabel.text = "⚠ \(msg)"
+            statusLabel.textColor = redColor
+
+        case .done:
+            micButton.backgroundColor = amberColor
+            micButton.setImage(UIImage(systemName: "mic.fill", withConfiguration: symConfig), for: .normal)
+            micButton.tintColor = .black
+            micButton.isEnabled = true
+            statusLabel.text = "Done ✓"
+            statusLabel.textColor = UIColor(red: 0x86/255, green: 0xef/255, blue: 0xac/255, alpha: 1)
         }
     }
 
@@ -216,22 +233,21 @@ final class KeyboardViewController: UIInputViewController {
 
     @objc private func micTapped() {
         switch recordingState {
-        case .idle:
+        case .idle, .error, .done:
             startRecording()
         case .recording:
             stopRecordingAndTranscribe()
         case .processing:
-            break // ignore taps while processing
+            break
         }
     }
 
     // MARK: - Recording Flow
 
     private func startRecording() {
-        // Check if "Allow Full Access" is enabled (required for mic in keyboard extension)
         guard isFullAccessEnabled else {
-            showError("Enable Full Access")
-            kbLog.error("Full Access not enabled — go to Settings → Keyboards → Fonos → Allow Full Access")
+            kbLog.error("Full Access not enabled")
+            recordingState = .error("Enable Full Access in Settings → Keyboards → Fonos")
             return
         }
 
@@ -239,7 +255,7 @@ final class KeyboardViewController: UIInputViewController {
             DispatchQueue.main.async {
                 if let error {
                     kbLog.error("❌ Capture failed: \(error.localizedDescription)")
-                    self?.showError(error.localizedDescription)
+                    self?.recordingState = .error(error.localizedDescription)
                 } else {
                     self?.recordingState = .recording
                 }
@@ -250,8 +266,7 @@ final class KeyboardViewController: UIInputViewController {
     private func stopRecordingAndTranscribe() {
         guard let wavData = audioService.stopCapture() else {
             kbLog.error("⏹ No WAV data returned from recorder")
-            showError("No audio data")
-            recordingState = .idle
+            recordingState = .error("No audio captured")
             return
         }
 
@@ -262,25 +277,24 @@ final class KeyboardViewController: UIInputViewController {
         let stt = sttService
         Task {
             do {
-                kbLog.info("🔄 Starting transcription...")
+                kbLog.info("🔄 Starting KB transcription...")
                 let transcript = try await stt.transcribe(audioData: wavData)
-                kbLog.info("✅ Transcript: \(transcript.prefix(50))...")
+                kbLog.info("✅ KB Transcript: \(transcript.prefix(80))...")
                 await MainActor.run {
                     self.textDocumentProxy.insertText(transcript)
-                    self.statusLabel.text = "Done ✓"
-                    self.statusLabel.textColor = UIColor(red: 0x86/255, green: 0xef/255, blue: 0xac/255, alpha: 1)
-                    self.recordingState = .idle
-                    // Reset status after 2s
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                        self?.statusLabel.text = "Ready"
-                        self?.statusLabel.textColor = self?.textColor
+                    self.recordingState = .done
+                    // Reset to idle after 3s
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                        if case .done = self?.recordingState {
+                            self?.recordingState = .idle
+                        }
                     }
                 }
             } catch {
-                kbLog.error("❌ Transcription failed: \(error.localizedDescription)")
+                kbLog.error("❌ KB Transcription failed: \(error.localizedDescription)")
                 await MainActor.run {
-                    self.showError(error.localizedDescription)
-                    self.recordingState = .idle
+                    // Show error persistently — user must tap mic to dismiss
+                    self.recordingState = .error(error.localizedDescription)
                 }
             }
         }
@@ -290,17 +304,6 @@ final class KeyboardViewController: UIInputViewController {
 
     private func insertText(_ text: String) {
         textDocumentProxy.insertText(text)
-    }
-
-    // MARK: - Error Display
-
-    private func showError(_ message: String) {
-        statusLabel.text = message
-        statusLabel.textColor = redColor
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            self?.statusLabel.text = "Ready"
-            self?.statusLabel.textColor = self?.textColor
-        }
     }
 
     // MARK: - Permissions
@@ -313,12 +316,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func requestPermissions() {
-        // In keyboard extension, mic permission must be requested AFTER "Allow Full Access" is granted
         if isFullAccessEnabled {
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+            AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
                 if !granted {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.showError("Allow mic access")
+                    DispatchQueue.main.async {
+                        self?.recordingState = .error("Allow mic access in Settings")
                     }
                 }
             }

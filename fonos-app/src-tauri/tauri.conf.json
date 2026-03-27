@@ -1,0 +1,79 @@
+{
+  "productName": "Fonos",
+  "version": "0.1.0",
+  "identifier": "com.fonos.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Fonos",
+        "width": 800,
+        "height": 600,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "visible": false,
+        "resizable": true
+      },
+      {
+        "label": "float",
+        "title": "",
+        "url": "float.html",
+        "width": 90,
+        "height": 24,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": true,
+        "resizable": false,
+        "skipTaskbar": true,
+        "focus": false
+      },
+      {
+        "label": "agent-panel",
+        "title": "",
+        "url": "agent-panel.html",
+        "width": 340,
+        "height": 220,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
+      }
+    ],
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "resources/tray_icon.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": true,
+      "tooltip": "Fonos Voice Assistant"
+    },
+    "security": {
+      "csp": null
+    },
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "resources/icon_32x32.png",
+      "resources/icon_128x128.png",
+      "resources/icon_256x256.png",
+      "resources/icon_512x512.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

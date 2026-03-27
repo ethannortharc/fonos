@@ -1,240 +1,358 @@
 import AVFoundation
 import Speech
 
-/// Dual-track live speech recognition for keyboard extension.
+private struct UncheckedSendableBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
+/// Keyboard extension audio service with two strategies:
 ///
-/// Strategy: Apple Speech "unlocks" the audio channel and provides instant
-/// partial results. Audio buffers are simultaneously accumulated for an
-/// optional third-party ASR (Qwen3-ASR, Whisper, etc.) that produces
-/// a more accurate final result.
+/// Strategy 1: AVAudioRecorder (try first — may work with paid developer account)
+///   Records directly in keyboard extension → transcribes with SFSpeechURLRecognitionRequest.
 ///
-/// Track 1 (Apple Speech): instant partial results → shown live
-/// Track 2 (Third-party):  accumulated WAV → sent on stop → replaces result
+/// Strategy 2: App Group IPC (fallback — always works)
+///   Keyboard sends command → Main app records in background → Result via shared UserDefaults.
+///   Supports third-party STT (Whisper, OMLX) and LLM processing because the main app handles everything.
 final class KeyboardAudioService: NSObject, @unchecked Sendable {
+
+    enum Strategy {
+        case direct       // AVAudioRecorder in keyboard extension
+        case appGroup     // Main app records via App Group IPC
+    }
+
     private(set) var isRecording = false
+    private(set) var activeStrategy: Strategy?
 
-    // Engine + Speech
-    private var audioEngine: AVAudioEngine?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    // Strategy 1: Direct recording
+    private var recorder: AVAudioRecorder?
+    private var recordingURL: URL?
 
-    // Track 1: Apple Speech result
-    private var appleTranscript = ""
+    // Strategy 2: App Group IPC (file-based — UserDefaults unreliable cross-process)
+    private let groupID = "group.com.fonos.ios"
+    private var pollTimer: Timer?
 
-    // Track 2: Raw audio accumulation for third-party ASR
-    private var accumulatedPCM = Data()
-    private var captureSampleRate: Double = 16000
+    private var containerURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID)
+    }
+
+    // Callbacks
+    private var onPartialResult: ((String) -> Void)?
+    private var onStatusChange: ((String) -> Void)?
+
+    // Diagnostics
+    private(set) var diagnosticLog: [String] = []
+
+    func diag(_ msg: String) {
+        print("🎙 KB: \(msg)")
+        diagnosticLog.append(msg)
+    }
 
     override init() { super.init() }
 
-    // MARK: - Start
+    // MARK: - Start Recording
 
-    /// Start dual-track live recognition.
-    /// - `onPartialResult`: called with Apple Speech partial text (instant)
-    /// - `completion`: called when engine starts (nil = success)
-    func startLiveRecognition(
-        language: String?,
-        onPartialResult: @escaping @Sendable (String) -> Void,
-        completion: @escaping @Sendable (Error?) -> Void
+    func startRecording(
+        onPartial: @escaping (String) -> Void,
+        onStatus: @escaping (String) -> Void,
+        completion: @escaping (Error?) -> Void
     ) {
         guard !isRecording else { completion(nil); return }
+        diagnosticLog = []
+        onPartialResult = onPartial
+        onStatusChange = onStatus
 
-        // Step 1: Request mic permission
-        AVAudioSession.sharedInstance().requestRecordPermission { [self] granted in
-            guard granted else {
-                completion(makeError("Mic denied. Settings → Privacy → Microphone → Fonos"))
-                return
-            }
-            // Step 2: Request speech recognition permission
-            SFSpeechRecognizer.requestAuthorization { status in
-                DispatchQueue.main.async {
-                    guard status == .authorized else {
-                        completion(self.makeError("Speech recognition denied (status \(status.rawValue))"))
-                        return
-                    }
-                    // Step 3: Start engine + recognizer
-                    self.startEngine(language: language, onPartialResult: onPartialResult, completion: completion)
+        let session = AVAudioSession.sharedInstance()
+        let perm = session.recordPermission
+        diag("perm=\(perm == .granted ? "granted" : perm == .denied ? "DENIED" : "undetermined")")
+
+        if perm == .denied {
+            completion(makeError("Mic DENIED — Settings → Privacy → Microphone"))
+            return
+        }
+
+        // Wrap completion to satisfy Sendable requirement of requestRecordPermission
+        let completionBox = UncheckedSendableBox(completion)
+        session.requestRecordPermission { [self] granted in
+            let comp = completionBox.value
+            diag("micReq → \(granted)")
+            DispatchQueue.main.async {
+                guard granted else {
+                    comp(self.makeError("Mic denied"))
+                    return
                 }
+                self.tryDirectRecording(completion: comp)
             }
         }
     }
 
-    // MARK: - Engine Start
+    // MARK: - Strategy 1: AVAudioRecorder (Direct)
 
-    private func startEngine(
-        language: String?,
-        onPartialResult: @escaping @Sendable (String) -> Void,
-        completion: @escaping @Sendable (Error?) -> Void
-    ) {
-        let locale = language.map { Locale(identifier: $0) } ?? .current
-        guard let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
-              recognizer.isAvailable else {
-            completion(makeError("Speech recognizer unavailable"))
-            return
-        }
-
-        // Configure audio session — keyboard extension MUST use:
-        // .playAndRecord (not .record) + .default mode (not .measurement)
-        // .mixWithOthers required to coexist with host app
+    private func tryDirectRecording(completion: @escaping (Error?) -> Void) {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.mixWithOthers, .allowBluetooth])
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.mixWithOthers, .allowBluetoothHFP])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
-            print("🎙 KB: Session OK: rate=\(session.sampleRate)")
+            diag("session OK")
         } catch {
-            print("🎙 KB: Session failed: \(error.localizedDescription), trying engine anyway...")
+            diag("session err: \(error.localizedDescription)")
         }
 
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        captureSampleRate = format.sampleRate
-        print("🎙 KB: Input format: rate=\(format.sampleRate), ch=\(format.channelCount)")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("kb_rec.wav")
+        try? FileManager.default.removeItem(at: url)
+        recordingURL = url
 
-        guard format.channelCount > 0 else {
-            completion(makeError("No mic input (channels=0)"))
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+
+        do {
+            let rec = try AVAudioRecorder(url: url, settings: settings)
+            rec.isMeteringEnabled = true
+            if rec.record() {
+                recorder = rec
+                isRecording = true
+                activeStrategy = .direct
+                diag("✅ AVAudioRecorder works!")
+                completion(nil)
+                return
+            }
+            diag("recorder.record()=false")
+        } catch {
+            diag("recorder err: \(error.localizedDescription)")
+        }
+
+        // Strategy 1 failed → try Strategy 2
+        diag("→ falling back to App Group")
+        tryAppGroupRecording(completion: completion)
+    }
+
+    // MARK: - Strategy 2: App Group IPC
+
+    // MARK: - File-based IPC helpers
+
+    private func readFile(_ name: String) -> String? {
+        guard let url = containerURL?.appendingPathComponent(name) else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func writeFile(_ name: String, _ content: String) {
+        guard let url = containerURL?.appendingPathComponent(name) else { return }
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func deleteFile(_ name: String) {
+        guard let url = containerURL?.appendingPathComponent(name) else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    // MARK: - Strategy 2: App Group IPC
+
+    private func tryAppGroupRecording(completion: @escaping (Error?) -> Void) {
+        guard containerURL != nil else {
+            completion(makeError("App Group container not accessible"))
             return
         }
 
-        // Create recognition request
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        self.recognitionRequest = request
+        // Check heartbeat
+        let heartbeatStr = readFile("kb_heartbeat") ?? "0"
+        let heartbeat = Double(heartbeatStr) ?? 0
+        let age = Date().timeIntervalSince1970 - heartbeat
+        diag("heartbeat: \(Int(age))s ago")
 
-        // Reset accumulators
-        appleTranscript = ""
-        accumulatedPCM = Data()
-
-        // Install tap — dual consumer: Apple Speech + raw buffer accumulation
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            // Track 1: Feed to Apple Speech recognizer
-            request.append(buffer)
-
-            // Track 2: Accumulate raw PCM for third-party ASR
-            self?.accumulateBuffer(buffer)
+        if heartbeat == 0 || age > 30 {
+            completion(makeError("Fonos app not running.\nOpen Fonos app, keep it open, then try again."))
+            return
         }
 
-        // Start Apple Speech recognition task (Track 1)
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            if let result {
-                self?.appleTranscript = result.bestTranscription.formattedString
-                let text = result.bestTranscription.formattedString
-                DispatchQueue.main.async {
-                    onPartialResult(text)
-                }
+        // Clear old state
+        deleteFile("kb_status")
+        deleteFile("kb_partial.txt")
+        deleteFile("kb_final.txt")
+        deleteFile("kb_error.txt")
+
+        // Send start command
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName("com.fonos.ios.kb.start" as CFString),
+            nil, nil, true
+        )
+        diag("sent start notification")
+
+        // Register for Darwin notifications
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        let observer = Unmanaged.passUnretained(self).toOpaque()
+
+        CFNotificationCenterAddObserver(center, observer, { _, obs, _, _, _ in
+            guard let obs else { return }
+            Unmanaged<KeyboardAudioService>.fromOpaque(obs).takeUnretainedValue().onPartialReceived()
+        }, "com.fonos.ios.kb.partial" as CFString, nil, .deliverImmediately)
+
+        CFNotificationCenterAddObserver(center, observer, { _, obs, _, _, _ in
+            guard let obs else { return }
+            Unmanaged<KeyboardAudioService>.fromOpaque(obs).takeUnretainedValue().onResultReceived()
+        }, "com.fonos.ios.kb.result" as CFString, nil, .deliverImmediately)
+
+        // Poll files every 0.3s (backup for missed notifications)
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            self?.pollFiles()
+        }
+
+        isRecording = true
+        activeStrategy = .appGroup
+        diag("✅ App Group, waiting for main app...")
+        completion(nil)
+
+        // Timeout: if no response in 5s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.isRecording, self.activeStrategy == .appGroup else { return }
+            let status = self.readFile("kb_status") ?? ""
+            if status != "recording" && status != "processing" && status != "done" {
+                self.isRecording = false
+                self.cleanup()
+                self.onStatusChange?("error:Main app didn't respond. Open Fonos app and try again.")
             }
-            if let error {
-                print("🎙 KB: Apple Speech error: \(error.localizedDescription)")
+        }
+    }
+
+    private var resultHandled = false
+
+    private func onPartialReceived() {
+        DispatchQueue.main.async { [self] in
+            if let text = readFile("kb_partial.txt"), !text.isEmpty {
+                onPartialResult?(text)
             }
         }
+    }
 
-        // Start engine
-        engine.prepare()
-        do {
-            try engine.start()
-            audioEngine = engine
-            isRecording = true
-            print("🎙 KB: ✅ Dual-track recognition started")
-            completion(nil)
-        } catch {
-            inputNode.removeTap(onBus: 0)
-            completion(makeError("Engine: \(error.localizedDescription)"))
+    private func onResultReceived() {
+        DispatchQueue.main.async { [self] in
+            guard !resultHandled else { return }
+            let status = readFile("kb_status") ?? ""
+
+            if status == "done" {
+                resultHandled = true
+                let text = readFile("kb_final.txt") ?? ""
+                diag("✅ got result: \"\(text.prefix(40))...\"")
+                onStatusChange?("done:\(text)")
+            } else if status == "error" {
+                resultHandled = true
+                let err = readFile("kb_error.txt") ?? "Unknown error"
+                diag("❌ got error: \(err)")
+                onStatusChange?("error:\(err)")
+            }
         }
     }
 
-    // MARK: - Buffer Accumulation (Track 2)
+    private func pollFiles() {
+        guard activeStrategy == .appGroup, !resultHandled else { return }
+        let status = readFile("kb_status") ?? ""
 
-    private func accumulateBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard let floatData = buffer.floatChannelData else { return }
-        let frameCount = Int(buffer.frameLength)
-        // Convert float32 → Int16 PCM
-        for i in 0..<frameCount {
-            let clamped = max(-1.0, min(1.0, floatData[0][i]))
-            var sample = Int16(clamped * Float(Int16.max))
-            withUnsafeBytes(of: &sample) { accumulatedPCM.append(contentsOf: $0) }
+        if status == "recording" {
+            if let text = readFile("kb_partial.txt"), !text.isEmpty {
+                DispatchQueue.main.async { [self] in onPartialResult?(text) }
+            }
+        } else if status == "done" || status == "error" {
+            onResultReceived()
         }
     }
 
-    // MARK: - Stop
+    // MARK: - Stop Recording
 
-    /// Stop recognition. Returns Apple Speech transcript and WAV data for third-party ASR.
-    struct StopResult {
-        let appleTranscript: String   // Track 1: instant result from Apple Speech
-        let wavData: Data             // Track 2: raw audio for third-party ASR
-        let sampleRate: Double        // Sample rate of the WAV data
-    }
+    func stopRecording() {
+        guard isRecording else { return }
 
-    func stopLiveRecognition() -> StopResult {
-        // End recognition
-        recognitionRequest?.endAudio()
-        recognitionTask?.cancel()
-        recognitionTask = nil
-        recognitionRequest = nil
+        switch activeStrategy {
+        case .direct:
+            recorder?.stop()
+            recorder = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        // Stop engine
-        if let engine = audioEngine {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-            audioEngine = nil
+        case .appGroup:
+            // Tell main app to stop via Darwin notification
+            CFNotificationCenterPostNotification(
+                CFNotificationCenterGetDarwinNotifyCenter(),
+                CFNotificationName("com.fonos.ios.kb.stop" as CFString),
+                nil, nil, true
+            )
+            diag("sent stop to main app")
+
+        case .none:
+            break
         }
-
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
         isRecording = false
-
-        // Build WAV from accumulated PCM
-        let wavData = buildWAV(pcmData: accumulatedPCM, sampleRate: Int(captureSampleRate))
-        let result = StopResult(
-            appleTranscript: appleTranscript,
-            wavData: wavData,
-            sampleRate: captureSampleRate
-        )
-
-        print("🎙 KB: Stopped. Apple: \"\(appleTranscript.prefix(30))...\", WAV: \(wavData.count) bytes")
-
-        appleTranscript = ""
-        accumulatedPCM = Data()
-
-        return result
     }
 
-    // MARK: - WAV Builder
+    // MARK: - Transcribe (Strategy 1 only — direct recording)
 
-    private func buildWAV(pcmData: Data, sampleRate: Int) -> Data {
-        let dataSize = UInt32(pcmData.count)
-        let chunkSize = 36 + dataSize
-        var wav = Data(capacity: 44 + Int(dataSize))
+    func transcribeDirectRecording(language: String?, completion: @escaping (String?, Error?) -> Void) {
+        guard let url = recordingURL, FileManager.default.fileExists(atPath: url.path) else {
+            completion(nil, makeError("No recording file"))
+            return
+        }
 
-        wav.append(contentsOf: "RIFF".utf8)
-        appendUInt32LE(&wav, chunkSize)
-        wav.append(contentsOf: "WAVE".utf8)
-        wav.append(contentsOf: "fmt ".utf8)
-        appendUInt32LE(&wav, 16)
-        appendUInt16LE(&wav, 1)            // PCM
-        appendUInt16LE(&wav, 1)            // mono
-        appendUInt32LE(&wav, UInt32(sampleRate))
-        appendUInt32LE(&wav, UInt32(sampleRate * 2))  // byte rate
-        appendUInt16LE(&wav, 2)            // block align
-        appendUInt16LE(&wav, 16)           // bits per sample
-        wav.append(contentsOf: "data".utf8)
-        appendUInt32LE(&wav, dataSize)
-        wav.append(pcmData)
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        diag("file: \(fileSize)B")
+        guard fileSize > 100 else {
+            completion(nil, makeError("Too short (\(fileSize)B)"))
+            return
+        }
 
-        return wav
+        SFSpeechRecognizer.requestAuthorization { [self] status in
+            guard status == .authorized else {
+                completion(nil, makeError("Speech denied"))
+                return
+            }
+
+            let locale = language.map { Locale(identifier: $0) } ?? .current
+            guard let recognizer = SFSpeechRecognizer(locale: locale)
+                    ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US")) else {
+                completion(nil, makeError("No recognizer"))
+                return
+            }
+
+            let request = SFSpeechURLRecognitionRequest(url: url)
+            var done = false
+            recognizer.recognitionTask(with: request) { [self] result, error in
+                guard !done else { return }
+                if let error {
+                    done = true
+                    completion(nil, error)
+                    return
+                }
+                if let result, result.isFinal {
+                    done = true
+                    let text = result.bestTranscription.formattedString
+                    diag("transcribed: \"\(text.prefix(30))...\"")
+                    completion(text.isEmpty ? nil : text, nil)
+                }
+            }
+        }
     }
 
-    private func appendUInt16LE(_ data: inout Data, _ value: UInt16) {
-        var v = value.littleEndian
-        Swift.withUnsafeBytes(of: &v) { data.append(contentsOf: $0) }
-    }
+    // MARK: - Cleanup
 
-    private func appendUInt32LE(_ data: inout Data, _ value: UInt32) {
-        var v = value.littleEndian
-        Swift.withUnsafeBytes(of: &v) { data.append(contentsOf: $0) }
+    func cleanup() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        resultHandled = false
+
+        // Remove Darwin notification observers
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
+
+        onPartialResult = nil
+        onStatusChange = nil
     }
 
     private func makeError(_ msg: String) -> NSError {
-        print("🎙 KB: ❌ \(msg)")
+        diag("❌ \(msg)")
         return NSError(domain: "KB", code: 1, userInfo: [NSLocalizedDescriptionKey: msg])
     }
 }

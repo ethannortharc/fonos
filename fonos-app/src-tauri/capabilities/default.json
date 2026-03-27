@@ -1,0 +1,18 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for Fonos app",
+  "windows": ["main", "float"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size"
+  ]
+}

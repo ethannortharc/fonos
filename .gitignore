@@ -1,0 +1,41 @@
+fonos_service/models/
+voices.db
+__pycache__/
+.venv/
+*.pyc
+.ratchet/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Rust
+target/
+
+# Node
+node_modules/
+fonos-app/files.zip
+
+# iOS
+fonos-ios/build/
+fonos-ios/**/*.xcuserstate
+
+# Playwright
+.playwright-mcp/
+
+# Superpowers
+.superpowers/
+
+# CosyVoice
+.cosyvoice_src/
+
+# Voice refs (large audio files)
+voice_refs/
+
+# Screenshots (binary)
+*.png

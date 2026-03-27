@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:transparent;overflow:visible;-webkit-user-select:none;user-select:none;width:100%;height:100%}
+
+  #container{width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+
+  /* ── Dropdown ── */
+  #dropdown{
+    display:none;flex-direction:column;
+    background:rgba(26,25,23,0.96);
+    backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+    border:1px solid rgba(255,255,255,0.07);border-radius:14px;
+    padding:6px;margin-bottom:8px;
+    width:148px;
+  }
+  #dropdown.show{display:flex}
+
+  /* ── iOS-style drum roller ── */
+  .roller{
+    position:relative;height:96px;overflow:hidden;
+  }
+  /* Center highlight band */
+  .roller::after{
+    content:'';position:absolute;left:6px;right:6px;
+    top:50%;transform:translateY(-50%);
+    height:32px;border-radius:8px;
+    background:rgba(245,158,11,0.1);
+    border:1px solid rgba(245,158,11,0.15);
+    pointer-events:none;z-index:0;
+  }
+  /* Fade top and bottom */
+  .roller::before{
+    content:'';position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:linear-gradient(
+      rgba(26,25,23,0.96) 0%,
+      transparent 30%,
+      transparent 70%,
+      rgba(26,25,23,0.96) 100%
+    );
+  }
+
+  .roller-track{
+    position:absolute;left:0;right:0;
+    transition:transform 0.2s cubic-bezier(0.22,1,0.36,1);
+    will-change:transform;
+  }
+  .roller-item{
+    display:flex;align-items:center;gap:8px;
+    height:32px;padding:0 12px;
+    font-family:-apple-system,'SF Pro Text',sans-serif;
+    cursor:pointer;position:relative;z-index:1;
+    transition:opacity 0.15s;
+  }
+  .roller-item .m-icon{font-size:14px;line-height:1;flex-shrink:0}
+  .roller-item .m-name{font-size:11px;font-weight:500;color:rgba(255,255,255,0.3)}
+  .roller-item.center .m-name{color:rgba(251,191,36,0.95);font-weight:600}
+
+  .dd-sep{height:1px;background:rgba(255,255,255,0.04);margin:5px 6px}
+  .dd-btn{
+    display:flex;align-items:center;gap:7px;
+    padding:6px 10px;border-radius:8px;cursor:pointer;
+    font-size:11px;color:rgba(255,255,255,0.35);transition:all 0.12s;
+    font-family:-apple-system,sans-serif;font-weight:500;
+  }
+  .dd-btn:hover{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7)}
+  .dd-btn .s-icon{font-size:14px;line-height:1}
+
+  /* ── Pill ── */
+  #pill{
+    display:inline-flex;align-items:center;justify-content:center;
+    height:26px;
+    background:rgba(26,25,23,0.82);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+    border:1px solid rgba(255,255,255,0.06);border-radius:13px;
+    font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
+    transition:all 0.3s ease;cursor:pointer;
+    padding:0 10px;
+    opacity:0.4;
+  }
+  #pill:hover{background:rgba(26,25,23,0.92);border-color:rgba(255,255,255,0.1);opacity:1}
+  #pill.recording{opacity:1}
+
+  #idle{display:flex;align-items:center;justify-content:center;gap:5px}
+  .pill-dot{width:3px;height:3px;border-radius:50%;background:rgba(251,191,36,0.2);flex-shrink:0;transition:all 0.15s}
+  #pill-text{font-size:10px;font-weight:700;color:rgba(251,191,36,0.4);letter-spacing:0.5px;transition:all 0.15s;line-height:1}
+  #pill:hover #pill-text{color:rgba(251,191,36,0.65)}
+  #pill:hover .pill-dot{background:rgba(251,191,36,0.35)}
+
+  /* ── Recording ── */
+  #rec{display:none;align-items:center;gap:5px}
+  #rec-dot{width:6px;height:6px;border-radius:50%;background:#ff453a;animation:pulse 1s ease-in-out infinite;flex-shrink:0}
+  #rec-wave{width:40px;height:14px}
+  #rec-dur{font-size:9px;color:rgba(255,255,255,0.3);font-family:'SF Mono',monospace;letter-spacing:0.3px}
+
+  #pill.recording{background:rgba(26,25,23,0.92);border-color:rgba(255,69,58,0.12);cursor:default}
+  #pill.recording #idle{display:none!important}
+  #pill.recording #rec{display:flex}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="dropdown"></div>
+  <div id="pill" onclick="toggleMenu(event)">
+    <div id="idle">
+      <span class="pill-dot"></span>
+      <span id="pill-text">FONOS</span>
+      <span class="pill-dot"></span>
+    </div>
+    <div id="rec">
+      <div id="rec-dot"></div>
+      <canvas id="rec-wave" width="40" height="14"></canvas>
+      <span id="rec-dur">0s</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const BUILTIN_MODES=[
+  {id:'raw',icon:'📝',name:'Raw'},
+  {id:'clean',icon:'✨',name:'Clean'},
+  {id:'translate',icon:'🌐',name:'Translate'},
+];
+let allModes=[...BUILTIN_MODES];
+let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null;
+let rollerIdx=0; // index into circular list, maps to center slot
+
+const S=window.devicePixelRatio||2;
+function sz(w,h){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+  window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
+}
+const PH=28;
+const ITEM_H=32;
+function idleSz(){sz(90,PH);}
+function recSz(){sz(115,PH);}
+function menuSz(){
+  const dd=document.getElementById('dropdown');
+  requestAnimationFrame(()=>{sz(160,PH+dd.offsetHeight+10);});
+}
+
+function toggleMenu(e){
+  if(isRec)return;
+  e.stopPropagation();
+  const dd=document.getElementById('dropdown');
+  if(dd.classList.contains('show')){closeMenu();}
+  else{
+    // Reload modes each time menu opens — picks up newly added modes
+    loadModes().then(()=>{
+      rollerIdx=allModes.findIndex(m=>m.id===currentMode);
+      if(rollerIdx<0)rollerIdx=0;
+      renderMenu();dd.classList.add('show');menuSz();
+    });
+  }
+}
+function closeMenu(){
+  document.getElementById('dropdown').classList.remove('show');
+  idleSz();
+}
+
+// Get mode at circular index
+function modeAt(i){
+  const n=allModes.length;
+  return allModes[((i%n)+n)%n];
+}
+
+function renderMenu(){
+  const dd=document.getElementById('dropdown');dd.textContent='';
+
+  // Roller
+  const roller=document.createElement('div');roller.className='roller';
+  const track=document.createElement('div');track.className='roller-track';
+
+  function renderTrack(){
+    track.textContent='';
+    // Show 3 items: prev, current, next (circular)
+    for(let offset=-1;offset<=1;offset++){
+      const m=modeAt(rollerIdx+offset);
+      const item=document.createElement('div');
+      item.className='roller-item'+(offset===0?' center':'');
+      const icon=document.createElement('span');icon.className='m-icon';icon.textContent=m.icon;
+      const name=document.createElement('span');name.className='m-name';name.textContent=m.name;
+      item.appendChild(icon);item.appendChild(name);
+      item.onclick=ev=>{
+        ev.stopPropagation();
+        if(offset!==0){
+          rollerIdx=((rollerIdx+offset)%allModes.length+allModes.length)%allModes.length;
+          renderTrack();
+        }
+        currentMode=modeAt(rollerIdx).id;
+        saveCfg();
+        if(offset===0)setTimeout(closeMenu,150);
+      };
+      track.appendChild(item);
+    }
+    // Position track so center item is in the middle of the 96px roller
+    // 3 items × 32px = 96px, center is item[1] at y=32, roller center at y=48
+    // offset = 48 - 32 - 16 = 0 → already centered naturally
+    track.style.transform='translateY(0px)';
+  }
+  renderTrack();
+
+  // Scroll wheel — circular
+  roller.addEventListener('wheel',ev=>{
+    ev.preventDefault();
+    if(ev.deltaY>0) rollerIdx=(rollerIdx+1)%allModes.length;
+    else rollerIdx=(rollerIdx-1+allModes.length)%allModes.length;
+    currentMode=modeAt(rollerIdx).id;
+    saveCfg();
+    renderTrack();
+  },{passive:false});
+
+  roller.appendChild(track);
+  dd.appendChild(roller);
+
+  // Separator + Settings
+  const sep=document.createElement('div');sep.className='dd-sep';dd.appendChild(sep);
+  const btn=document.createElement('div');btn.className='dd-btn';
+  const bIcon=document.createElement('span');bIcon.className='s-icon';bIcon.textContent='⚙️';
+  const bText=document.createElement('span');bText.textContent='Settings';
+  btn.appendChild(bIcon);btn.appendChild(bText);
+  btn.onclick=ev=>{ev.stopPropagation();closeMenu();openSettings();};
+  dd.appendChild(btn);
+}
+
+function saveCfg(){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+  window.__TAURI_INTERNALS__.invoke('save_config',{configJson:JSON.stringify({dictation_mode:currentMode})}).catch(()=>{});
+}
+function loadCfg(){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+  window.__TAURI_INTERNALS__.invoke('get_config').then(c=>{
+    if(c&&c.dictation_mode)currentMode=c.dictation_mode;
+  }).catch(()=>{});
+}
+function loadModes(){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
+  return window.__TAURI_INTERNALS__.invoke('list_modes').then(modes=>{
+    if(Array.isArray(modes)&&modes.length>0){
+      allModes=modes.map(m=>({id:m.id,icon:m.icon||'⚙️',name:m.name}));
+    }
+  }).catch(()=>{});
+}
+function openSettings(){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+  window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'show-main-window',payload:'settings'}).catch(()=>{});
+}
+
+function startRec(){
+  if(isRec)return;isRec=true;closeMenu();
+  document.getElementById('pill').classList.add('recording');
+  document.getElementById('rec-dur').textContent='0s';
+  let t0=Date.now();
+  if(durTm)clearInterval(durTm);
+  durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
+  if(animId)cancelAnimationFrame(animId);animT=0;drawW();
+  recSz();
+}
+function stopRec(text){
+  isRec=false;
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  if(text){document.getElementById('rec-dot').style.background='#30d158';document.getElementById('rec-dot').style.animation='none';}
+  setTimeout(()=>{
+    document.getElementById('pill').classList.remove('recording');
+    document.getElementById('rec-dot').style.background='#ff453a';
+    document.getElementById('rec-dot').style.animation='';
+    idleSz();
+  },text?800:200);
+}
+function drawW(){
+  animId=requestAnimationFrame(drawW);animT+=0.04;
+  const c=document.getElementById('rec-wave').getContext('2d');
+  c.clearRect(0,0,40,14);c.beginPath();
+  for(let i=0;i<=24;i++){const x=(i/24)*40,e=Math.sin((i/24)*Math.PI),y=7+Math.sin((i/24)*Math.PI*4+animT*3)*4*e;if(i===0)c.moveTo(x,y);else c.lineTo(x,y);}
+  c.strokeStyle='rgba(251,191,36,0.5)';c.lineWidth=1.5;c.stroke();
+}
+
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#dropdown')&&!e.target.closest('#pill'))closeMenu();
+});
+// Close when window loses focus (user clicks anywhere outside the float window)
+window.addEventListener('blur',()=>{closeMenu();});
+
+function setup(){
+  if(typeof window.__TAURI_INTERNALS__==='undefined'){setTimeout(setup,500);return;}
+  const inv=window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
+  const tr=window.__TAURI_INTERNALS__.transformCallback;
+  function listen(ev,cb){inv('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(cb)}).catch(()=>{});}
+  listen('float:start',()=>startRec());
+  listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
+  loadCfg();loadModes();idleSz();
+}
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,100)):setTimeout(setup,100);
+</script>
+</body>
+</html>

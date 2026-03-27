@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+  <!-- Center dot — recording active -->
+  <circle cx="7.5" cy="11" r="3" fill="#FF3B30"/>
+
+  <!-- Inner arc -->
+  <path d="M 11.5 6.5 A 5.2 5.2 0 0 1 11.5 15.5"
+        fill="none" stroke="black" stroke-width="1.7"
+        stroke-linecap="round"/>
+
+  <!-- Outer arc -->
+  <path d="M 14.5 4 A 8.2 8.2 0 0 1 14.5 18"
+        fill="none" stroke="black" stroke-width="1.5"
+        stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1040"/>
+      <stop offset="50%" stop-color="#2d1b69"/>
+      <stop offset="100%" stop-color="#0f3d3e"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7dd3c0"/>
+      <stop offset="100%" stop-color="#4ecdc4"/>
+    </linearGradient>
+    <linearGradient id="wave2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#7c5ce0"/>
+    </linearGradient>
+    <linearGradient id="center_glow" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.85"/>
+    </linearGradient>
+    <clipPath id="roundedSquare">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+    <!-- Subtle inner shadow -->
+    <filter id="innerGlow">
+      <feGaussianBlur stdDeviation="30" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <g clip-path="url(#roundedSquare)">
+    <rect width="1024" height="1024" fill="url(#bg)"/>
+    <!-- Subtle radial highlight -->
+    <circle cx="400" cy="380" r="500" fill="white" opacity="0.03"/>
+    <circle cx="512" cy="512" r="300" fill="white" opacity="0.02"/>
+  </g>
+
+  <!-- Sound wave arcs — three concentric arcs radiating from a center point -->
+  <!-- These form the voice/sound motif -->
+  <g clip-path="url(#roundedSquare)">
+
+    <!-- Central circle — the voice source -->
+    <circle cx="380" cy="512" r="58" fill="url(#center_glow)"/>
+
+    <!-- Inner wave arc (teal) -->
+    <path d="M 500 340
+             A 200 200 0 0 1 500 684"
+          fill="none" stroke="url(#wave1)" stroke-width="52"
+          stroke-linecap="round" opacity="0.95"/>
+
+    <!-- Middle wave arc (blend) -->
+    <path d="M 580 260
+             A 300 300 0 0 1 580 764"
+          fill="none" stroke="url(#wave2)" stroke-width="46"
+          stroke-linecap="round" opacity="0.85"/>
+
+    <!-- Outer wave arc (purple, fading) -->
+    <path d="M 660 195
+             A 390 390 0 0 1 660 829"
+          fill="none" stroke="#a78bfa" stroke-width="38"
+          stroke-linecap="round" opacity="0.45"/>
+
+    <!-- Subtle accent dots -->
+    <circle cx="380" cy="512" r="22" fill="white" opacity="0.3"/>
+
+  </g>
+</svg>

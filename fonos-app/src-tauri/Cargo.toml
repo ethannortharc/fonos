@@ -1,0 +1,35 @@
+[package]
+name = "fonos-app"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# Enable this feature in CI to skip hardware-dependent tests (mic, accessibility).
+# Usage: cargo test --features ci
+ci = []
+
+[dependencies]
+fonos-core = { path = "../../fonos-core" }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+dirs = "6"
+cpal = "0.15"
+rodio = "0.19"
+libc = "0.2"
+core-graphics = "0.25"
+core-foundation = "0.10"
+arboard = "3.6.1"
+rfd = "0.15"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+[dev-dependencies]
+# Used by test_build.rs for Cargo.toml validation.
+toml = "0.8"
+# Blocking HTTP client for server health-check polling in tests.
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

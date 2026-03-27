@@ -77,7 +77,7 @@ final class KeyboardViewController: UIInputViewController {
             containerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             containerView.topAnchor.constraint(equalTo: view.topAnchor),
             containerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            containerView.heightAnchor.constraint(equalToConstant: 100),
+            containerView.heightAnchor.constraint(equalToConstant: 140),
         ])
 
         // Mode button (left) — shows current mode, long-press to switch keyboard
@@ -98,10 +98,10 @@ final class KeyboardViewController: UIInputViewController {
         containerView.addSubview(micButton)
 
         // Status label (bottom, full width)
-        statusLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        statusLabel.font = .systemFont(ofSize: 10, weight: .regular)
         statusLabel.textColor = .secondaryLabel
         statusLabel.textAlignment = .center
-        statusLabel.numberOfLines = 2
+        statusLabel.numberOfLines = 0  // unlimited — show full diagnostic
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(statusLabel)
 
@@ -218,45 +218,94 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
 
-        // Start live speech recognition — transcribes as you speak
-        audioService.startLiveRecognition(
-            language: nil,
-            onPartialResult: { [weak self] partial in
-                // Show live transcript as user speaks
-                self?.statusLabel.text = partial.isEmpty ? "Listening..." : partial
-                self?.statusLabel.textColor = .label
+        statusLabel.text = "Starting..."
+        statusLabel.textColor = .secondaryLabel
+
+        audioService.startRecording(
+            onPartial: { [weak self] text in
+                // Live partial results (from App Group → main app's Apple Speech)
+                DispatchQueue.main.async {
+                    self?.statusLabel.text = text.isEmpty ? "Listening..." : text
+                    self?.statusLabel.textColor = .label
+                }
+            },
+            onStatus: { [weak self] status in
+                // App Group result notification
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if status.hasPrefix("done:") {
+                        let text = String(status.dropFirst(5))
+                        if !text.isEmpty {
+                            self.textDocumentProxy.insertText(text)
+                            kbLog.info("✅ Inserted: \(text.prefix(50))...")
+                            self.keyboardState = .done
+                            self.autoReset()
+                        } else {
+                            self.keyboardState = .error("No speech detected")
+                        }
+                        self.audioService.cleanup()
+                    } else if status.hasPrefix("error:") {
+                        let err = String(status.dropFirst(6))
+                        self.keyboardState = .error(err)
+                        self.audioService.cleanup()
+                    }
+                }
             },
             completion: { [weak self] error in
+                guard let self else { return }
                 if let error {
-                    kbLog.error("❌ \(error.localizedDescription)")
-                    self?.keyboardState = .error(error.localizedDescription)
+                    let log = self.audioService.diagnosticLog.joined(separator: " → ")
+                    self.keyboardState = .error("\(error.localizedDescription)\n[\(log)]")
                 } else {
-                    self?.keyboardState = .recording
+                    let strategy = self.audioService.activeStrategy == .direct ? "Direct" : "App Group"
+                    self.keyboardState = .recording
+                    self.statusLabel.text = "Recording [\(strategy)]..."
+                    self.statusLabel.textColor = self.redColor
                 }
             }
         )
     }
 
     private func stopAndTranscribe() {
-        let result = audioService.stopLiveRecognition()
+        let strategy = audioService.activeStrategy
+        audioService.stopRecording()
 
-        // Use Apple Speech result immediately (instant)
-        let appleText = result.appleTranscript
-        if appleText.isEmpty {
-            keyboardState = .error("No speech detected")
-            return
+        if strategy == .direct {
+            // Direct recording: transcribe locally
+            statusLabel.text = "Processing..."
+            statusLabel.textColor = .secondaryLabel
+
+            audioService.transcribeDirectRecording(language: nil) { [weak self] text, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let text, !text.isEmpty {
+                        self.textDocumentProxy.insertText(text)
+                        kbLog.info("✅ Inserted: \(text.prefix(50))...")
+                        self.keyboardState = .done
+                        self.autoReset()
+                    } else {
+                        self.keyboardState = .error(error?.localizedDescription ?? "No speech")
+                    }
+                    self.audioService.cleanup()
+                }
+            }
+        } else {
+            // App Group: main app is processing, show status
+            keyboardState = .ready  // allow re-tap
+            statusLabel.text = "Processing (main app)..."
+            statusLabel.textColor = .secondaryLabel
+            // Result comes via onStatus callback — add timeout as safety
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self else { return }
+                if self.statusLabel.text?.contains("Processing") == true {
+                    self.keyboardState = .error("Timeout — check if Fonos app is open")
+                    self.audioService.cleanup()
+                }
+            }
         }
+    }
 
-        // Insert Apple Speech result now (instant feedback)
-        textDocumentProxy.insertText(appleText)
-        kbLog.info("✅ KB Apple: \(appleText.prefix(50))...")
-
-        // TODO: If third-party ASR is configured, send result.wavData
-        // to Whisper/Qwen3-ASR endpoint. When response arrives,
-        // delete the Apple text and insert the refined result.
-        // For now, Apple Speech result is the final result.
-
-        keyboardState = .done
+    private func autoReset() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             if case .done = self?.keyboardState { self?.keyboardState = .ready }
         }

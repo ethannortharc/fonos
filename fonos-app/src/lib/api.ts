@@ -1,0 +1,294 @@
+// Typed Tauri IPC wrappers for all 26 Fonos commands.
+// Uses @tauri-apps/api v2 — no raw __TAURI_INTERNALS__ calls.
+
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  AgentResult,
+  AppConfig,
+  DailyStat,
+  Event,
+  LlmResult,
+  ModeEntry,
+  ModelCaps,
+  SaveModeOptions,
+  SkillInfo,
+  SttResult,
+  TodaySummary,
+  TtsResult,
+  VoiceEntry,
+  VoiceList,
+} from "../types";
+
+// ─── Dictation ────────────────────────────────────────────────────────────────
+
+/** Check if a microphone is available and accessible. */
+export async function hasMicrophone(): Promise<boolean> {
+  return invoke<boolean>("has_microphone");
+}
+
+/** Start capturing audio from the microphone. */
+export async function startRecording(): Promise<void> {
+  return invoke<void>("start_recording");
+}
+
+/** Stop recording, transcribe audio, and return the result.
+ *  Pass modeOverride to use a specific mode (e.g. from Dictation view testing)
+ *  instead of config.dictation_mode (used by float pill / hotkey). */
+export async function stopRecording(modeOverride?: string): Promise<SttResult> {
+  return invoke<SttResult>("stop_recording", modeOverride ? { modeOverride } : {});
+}
+
+/** Transcribe an audio file at the given path. */
+export async function transcribeFile(path: string): Promise<string> {
+  return invoke<string>("transcribe_file", { path });
+}
+
+// ─── TTS ──────────────────────────────────────────────────────────────────────
+
+/** Synthesize speech and return raw WAV bytes as a number array. */
+export async function synthesizeSpeech(
+  text: string,
+  voice: string,
+  speed: number
+): Promise<number[]> {
+  return invoke<number[]>("synthesize_speech", { text, voice, speed });
+}
+
+/** Generate speech AND play it in one call. */
+export async function generateAndPlay(
+  text: string,
+  voice: string,
+  speed: number
+): Promise<TtsResult> {
+  return invoke<TtsResult>("generate_and_play", { text, voice, speed });
+}
+
+/** Play a WAV file from disk by path. */
+export async function playAudioFile(path: string): Promise<void> {
+  return invoke<void>("play_audio_file", { path });
+}
+
+/** Decode WAV bytes and play through the default output device. */
+export async function playSpeech(audioData: number[]): Promise<void> {
+  return invoke<void>("play_speech", { audioData });
+}
+
+/** Stop playback immediately. */
+export async function stopPlayback(): Promise<void> {
+  return invoke<void>("stop_playback");
+}
+
+/** Pause playback at the current position. */
+export async function pausePlayback(): Promise<void> {
+  return invoke<void>("pause_playback");
+}
+
+/** Resume a paused playback. */
+export async function resumePlayback(): Promise<void> {
+  return invoke<void>("resume_playback");
+}
+
+// ─── Voices ───────────────────────────────────────────────────────────────────
+
+/** List all saved voices (local storage). */
+export async function listVoices(): Promise<VoiceList> {
+  return invoke<VoiceList>("list_voices");
+}
+
+/** Clone a voice by saving audio locally. */
+export async function cloneVoice(
+  name: string,
+  audioPath: string
+): Promise<VoiceEntry> {
+  return invoke<VoiceEntry>("clone_voice", { name, audioPath });
+}
+
+/** Delete a saved voice by ID. */
+export async function deleteVoice(voiceId: string): Promise<void> {
+  return invoke<void>("delete_voice", { voiceId });
+}
+
+/** Preview a voice by playing back its saved recording. */
+export async function previewVoice(
+  voiceId: string,
+  text: string
+): Promise<void> {
+  return invoke<void>("preview_voice", { voiceId, text });
+}
+
+/** Open native file picker for audio files. Returns path or null if cancelled. */
+export async function pickAudioFile(): Promise<string | null> {
+  return invoke<string | null>("pick_audio_file");
+}
+
+/** Record audio from mic for voice cloning. Returns path to WAV file. */
+export async function recordVoiceSample(
+  durationSecs: number
+): Promise<string> {
+  return invoke<string>("record_voice_sample", { durationSecs });
+}
+
+// ─── LLM & Modes ─────────────────────────────────────────────────────────────
+
+/** Process text through the configured LLM using the specified mode. */
+export async function processWithLlm(
+  text: string,
+  mode: string
+): Promise<LlmResult> {
+  return invoke<LlmResult>("process_with_llm", { text, mode });
+}
+
+/** Probe the configured model's capabilities and cache results. */
+export async function probeModel(): Promise<ModelCaps> {
+  return invoke<ModelCaps>("probe_model");
+}
+
+/** List all modes (built-in + custom). */
+export async function listModes(): Promise<ModeEntry[]> {
+  return invoke<ModeEntry[]>("list_modes");
+}
+
+/** Save a custom mode. */
+export async function saveCustomMode(opts: SaveModeOptions): Promise<void> {
+  return invoke<void>("save_custom_mode", {
+    id: opts.id,
+    name: opts.name,
+    description: opts.description ?? "",
+    icon: opts.icon ?? "",
+    system: opts.system ?? "",
+    userTemplate: opts.user_template ?? "",
+    temperature: opts.temperature ?? 0.1,
+    model: opts.model ?? "",
+    sttModel: opts.stt_model ?? "",
+    sttPrompt: opts.stt_prompt ?? "",
+    sttTemperature: opts.stt_temperature ?? 0,
+    maxTokens: opts.max_tokens ?? 4096,
+    outputLanguage: opts.output_language ?? "auto",
+    autoPaste: opts.auto_paste !== false,
+    autoPressEnter: opts.auto_press_enter === true,
+  });
+}
+
+/** Delete a custom mode by ID. */
+export async function deleteCustomMode(id: string): Promise<void> {
+  return invoke<void>("delete_custom_mode", { id });
+}
+
+// ─── Stats & History ──────────────────────────────────────────────────────────
+
+/** Record a new event and return the row ID. */
+export async function recordEvent(
+  eventType: string,
+  inputText: string,
+  outputText: string,
+  durationSecs: number,
+  latencyMs: number,
+  mode: string,
+  model: string,
+  voice: string,
+  audioPath: string,
+  tokensIn: number | null,
+  tokensOut: number | null,
+  sessionId: string | null
+): Promise<number> {
+  return invoke<number>("record_event", {
+    eventType,
+    inputText,
+    outputText,
+    durationSecs,
+    latencyMs,
+    mode,
+    model,
+    voice,
+    audioPath,
+    tokensIn,
+    tokensOut,
+    sessionId,
+  });
+}
+
+/** Delete a single event by ID. */
+export async function deleteEvent(id: number): Promise<void> {
+  return invoke<void>("delete_event", { id });
+}
+
+/** Get daily statistics for a date range (inclusive). */
+export async function getStats(
+  dateFrom: string,
+  dateTo: string
+): Promise<DailyStat[]> {
+  return invoke<DailyStat[]>("get_stats", { dateFrom, dateTo });
+}
+
+/** Get paginated event history, optionally filtered by type. */
+export async function getHistory(
+  limit: number,
+  offset: number,
+  typeFilter: string
+): Promise<Event[]> {
+  return invoke<Event[]>("get_history", { limit, offset, typeFilter });
+}
+
+/** Get today's aggregated summary. */
+export async function getToday(): Promise<TodaySummary> {
+  return invoke<TodaySummary>("get_today");
+}
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+/** Return the current application configuration. */
+export async function getConfig(): Promise<AppConfig> {
+  return invoke<AppConfig>("get_config");
+}
+
+/** Merge the provided JSON fields into the config and persist to disk. */
+export async function saveConfig(configJson: string): Promise<void> {
+  return invoke<void>("save_config", { configJson });
+}
+
+// ─── Window ───────────────────────────────────────────────────────────────────
+
+/** Resize the float window. */
+export async function resizeFloat(
+  width: number,
+  height: number
+): Promise<void> {
+  return invoke<void>("resize_float", { width, height });
+}
+
+// ─── Agent ────────────────────────────────────────────────────────────────────
+
+/** Send text to the agent processor and get a response with skill executions. */
+export async function agentProcess(text: string): Promise<AgentResult> {
+  return invoke<AgentResult>("agent_process", { text });
+}
+
+/** Reset the agent's conversation context. */
+export async function agentReset(): Promise<void> {
+  return invoke<void>("agent_reset");
+}
+
+/** List all available skills (built-in + custom) with their enabled status. */
+export async function listSkills(): Promise<SkillInfo[]> {
+  return invoke<SkillInfo[]>("list_skills");
+}
+
+/** Enable or disable a skill by ID. */
+export async function toggleSkill(id: string, enabled: boolean): Promise<void> {
+  return invoke<void>("toggle_skill", { id, enabled });
+}
+
+/** Save a custom skill definition (JSON string). */
+export async function saveCustomSkill(jsonStr: string): Promise<void> {
+  return invoke<void>("save_custom_skill", { jsonStr });
+}
+
+/** Delete a custom skill by ID. */
+export async function deleteCustomSkill(id: string): Promise<void> {
+  return invoke<void>("delete_custom_skill", { id });
+}
+
+/** Test a skill with sample input and return the output string. */
+export async function testSkill(id: string, input: string): Promise<string> {
+  return invoke<string>("test_skill", { id, input });
+}

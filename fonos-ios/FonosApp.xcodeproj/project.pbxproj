@@ -44,6 +44,7 @@
 		WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */; };
 		WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03004AA003004AA003004A /* QD02STTParsingTests.swift */; };
 		WP04000000000000000001 /* DictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000011 /* DictationViewModel.swift */; };
+		BG01000000000000000001 /* BackgroundRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BG01000000000000000011 /* BackgroundRecordingService.swift */; };
 		WP04000000000000000002 /* INV05LLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000012 /* INV05LLMTests.swift */; };
 		WP04000000000000000003 /* QD03PromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000013 /* QD03PromptTests.swift */; };
 		WP04000000000000000004 /* QD04ErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000014 /* QD04ErrorTests.swift */; };
@@ -132,6 +133,7 @@
 		WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV04WhisperSTTTests.swift; sourceTree = "<group>"; };
 		WP03004AA003004AA003004A /* QD02STTParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD02STTParsingTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000011 /* DictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationViewModel.swift; sourceTree = "<group>"; };
+		BG01000000000000000011 /* BackgroundRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRecordingService.swift; sourceTree = "<group>"; };
 		WP04000000000000000012 /* INV05LLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV05LLMTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000013 /* QD03PromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD03PromptTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000014 /* QD04ErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD04ErrorTests.swift; sourceTree = "<group>"; };
@@ -300,6 +302,7 @@
 				AA01B001AA014D00AA014D14 /* KeychainStore.swift */,
 				WP04000000000000000011 /* DictationViewModel.swift */,
 				MP01001AA001001AA001001A /* ModelProbeService.swift */,
+				BG01000000000000000011 /* BackgroundRecordingService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -553,6 +556,7 @@
 				AA01B001AA014D00AA014D03 /* Destination.swift in Sources */,
 				AA01B001AA014D00AA014D04 /* KeychainStore.swift in Sources */,
 				WP04000000000000000001 /* DictationViewModel.swift in Sources */,
+				BG01000000000000000001 /* BackgroundRecordingService.swift in Sources */,
 				WP03001AA003001AA003001B /* FonosSTT.swift in Sources */,
 				WP06001AA006001AA006001B /* WaveformView.swift in Sources */,
 				WP06002AA006002AA006002B /* RecordButton.swift in Sources */,

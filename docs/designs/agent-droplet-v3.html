@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Agent Panel v3 — Design Preview</title>
+<style>
+  body{margin:0;background:#333;display:flex;flex-direction:column;align-items:center;gap:32px;padding:40px;font-family:system-ui}
+  .label{font-size:11px;color:rgba(255,255,255,0.3);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;text-align:center}
+  /* Simulates the Tauri window — this is what the user sees */
+  .window{
+    width:340px;
+    background:transparent;
+    position:relative;
+  }
+  /* The actual panel — NO background on the window, only on this div */
+  .droplet{
+    width:100%;
+    background:rgba(28,27,24,0.92);
+    border-radius:20px;
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:
+      0 12px 40px rgba(0,0,0,0.5),
+      0 2px 8px rgba(0,0,0,0.3),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    overflow:hidden;
+    font-family:-apple-system,system-ui,sans-serif;
+  }
+
+  /* ── Recording state ── */
+  .rec-bar{
+    display:flex;align-items:center;gap:8px;
+    padding:14px 16px;
+  }
+  @keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}
+  .rec-dot{width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite}
+  .rec-text{font-size:11px;color:rgba(255,255,255,0.35)}
+  .rec-time{font-size:10px;color:rgba(255,255,255,0.18);font-family:'SF Mono',monospace}
+  @keyframes bar{0%,100%{height:2px}50%{height:var(--h)}}
+  .wf{display:flex;align-items:flex-end;gap:2px;height:16px;margin-left:auto}
+  .wb{width:2.5px;border-radius:1.5px;background:#ef4444;animation:bar 0.55s ease-in-out infinite}
+
+  /* ── Conversation ── */
+  .conv{padding:10px 14px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
+  .row-r{display:flex;justify-content:flex-end}
+  .row-l{display:flex;justify-content:flex-start}
+  .b-user{
+    max-width:80%;border-radius:14px 14px 4px 14px;
+    padding:7px 12px;font-size:11px;line-height:1.5;color:#fafaf9;
+    background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.08);
+  }
+  .b-agent{
+    max-width:84%;border-radius:14px 14px 14px 4px;
+    padding:7px 12px;font-size:11px;line-height:1.5;color:rgba(255,255,255,0.7);
+    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.05);
+  }
+  .b-error{
+    max-width:84%;border-radius:14px 14px 14px 4px;
+    padding:7px 12px;font-size:11px;color:rgba(239,68,68,0.8);
+    background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.08);
+  }
+
+  /* Skill card */
+  .skill{
+    display:flex;align-items:center;gap:5px;
+    padding:4px 10px;border-radius:10px;
+    background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.035);
+  }
+  .s-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+  .s-name{font-size:8px;color:rgba(255,255,255,0.3)}
+  .s-cmd{font-size:8px;color:rgba(255,255,255,0.14);font-family:'SF Mono',monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .s-ms{font-size:7px;color:rgba(255,255,255,0.1);font-family:'SF Mono',monospace}
+
+  /* Thinking dots */
+  .think{
+    border-radius:14px 14px 14px 4px;
+    padding:8px 14px;display:inline-flex;gap:5px;
+    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.05);
+  }
+  .t-dot{width:4px;height:4px;border-radius:50%;background:#fbbf24;animation:pulse 1.2s ease-in-out infinite}
+
+  /* Header */
+  .hdr{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:8px 14px 6px;border-bottom:1px solid rgba(255,255,255,0.04);
+  }
+  .hdr-l{font-size:11px;color:rgba(255,255,255,0.3);font-weight:500;display:flex;align-items:center;gap:5px}
+  .hdr-r{display:flex;gap:8px}
+  .hdr-btn{font-size:9px;color:rgba(255,255,255,0.15);background:0;border:0;cursor:pointer;font-family:inherit}
+
+  /* Mic footer */
+  .mic-foot{
+    display:flex;justify-content:center;padding:8px;
+    border-top:1px solid rgba(255,255,255,0.04);
+  }
+  .mic{
+    width:30px;height:30px;border-radius:50%;border:0;cursor:pointer;
+    background:linear-gradient(135deg,#f59e0b,#d97706);
+    box-shadow:0 0 12px rgba(245,158,11,0.12);
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* Empty */
+  .empty{padding:14px;text-align:center}
+  .empty-t{font-size:10px;color:rgba(255,255,255,0.18)}
+  .chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:8px}
+  .chip{
+    font-size:8px;color:rgba(255,255,255,0.25);
+    background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);
+    border-radius:10px;padding:4px 10px;cursor:pointer;font-family:inherit;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="label">State A: Recording</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="rec-bar">
+        <div class="rec-dot"></div>
+        <span class="rec-text">Listening</span>
+        <span class="rec-time">1.2s</span>
+        <div class="wf">
+          <div class="wb" style="--h:6px;animation-delay:0s"></div>
+          <div class="wb" style="--h:12px;animation-delay:.06s"></div>
+          <div class="wb" style="--h:8px;animation-delay:.03s"></div>
+          <div class="wb" style="--h:15px;animation-delay:.09s"></div>
+          <div class="wb" style="--h:7px;animation-delay:.05s"></div>
+          <div class="wb" style="--h:13px;animation-delay:.08s"></div>
+          <div class="wb" style="--h:5px;animation-delay:.12s"></div>
+          <div class="wb" style="--h:10px;animation-delay:.02s"></div>
+          <div class="wb" style="--h:4px;animation-delay:.14s"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State B: Thinking</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="conv">
+        <div class="row-r"><div class="b-user">What's my IP address?</div></div>
+        <div class="row-l"><div class="think"><div class="t-dot"></div><div class="t-dot" style="animation-delay:200ms"></div><div class="t-dot" style="animation-delay:400ms"></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State C: Response</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="conv">
+        <div class="row-r"><div class="b-user">What's my IP address?</div></div>
+        <div class="skill">
+          <div class="s-dot" style="background:#86efac"></div>
+          <span class="s-name">shell</span>
+          <span class="s-cmd">ifconfig | grep inet</span>
+          <span class="s-ms">38ms</span>
+        </div>
+        <div class="row-l"><div class="b-agent">Your local IP is <span style="font-family:'SF Mono',monospace;color:#fbbf24;font-size:10px">192.168.1.42</span> on en0 (Wi-Fi).</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State C: Multi-turn + Blocked</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="conv">
+        <div class="row-r"><div class="b-user">What's my IP?</div></div>
+        <div class="skill"><div class="s-dot" style="background:#86efac"></div><span class="s-name">shell</span><span class="s-cmd">ifconfig | grep inet</span><span class="s-ms">38ms</span></div>
+        <div class="row-l"><div class="b-agent">Local IP: <span style="font-family:monospace;color:#fbbf24;font-size:10px">192.168.1.42</span></div></div>
+        <div class="row-r"><div class="b-user">Delete all temp files</div></div>
+        <div class="skill"><div class="s-dot" style="background:#ef4444"></div><span class="s-name" style="color:rgba(239,68,68,.5)">Blocked</span><span class="s-cmd">rm -rf /tmp/*</span></div>
+        <div class="row-l"><div class="b-agent">Can't run deletion commands for safety. Adjust in Settings > Agent.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State D: Persistent Mode (Hotkey 2)</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="hdr">
+        <span class="hdr-l"><span style="font-size:11px">&#x2728;</span> Agent</span>
+        <div class="hdr-r"><button class="hdr-btn">Clear</button><button class="hdr-btn" style="font-size:10px">&#10005;</button></div>
+      </div>
+      <div class="conv">
+        <div class="row-r"><div class="b-user">What's my IP?</div></div>
+        <div class="skill"><div class="s-dot" style="background:#86efac"></div><span class="s-name">shell</span><span class="s-cmd">ifconfig | grep inet</span><span class="s-ms">38ms</span></div>
+        <div class="row-l"><div class="b-agent">Local IP: <span style="font-family:monospace;color:#fbbf24;font-size:10px">192.168.1.42</span></div></div>
+        <div class="row-r"><div class="b-user">And the public IP?</div></div>
+        <div class="skill"><div class="s-dot" style="background:#86efac"></div><span class="s-name">shell</span><span class="s-cmd">curl -s ifconfig.me</span><span class="s-ms">420ms</span></div>
+        <div class="row-l"><div class="b-agent">Public IP: <span style="font-family:monospace;color:#fbbf24;font-size:10px">203.0.113.42</span></div></div>
+      </div>
+      <div class="mic-foot">
+        <button class="mic"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="9" y="1" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State E: Empty / Idle</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="empty">
+        <div class="empty-t">Ask anything</div>
+        <div class="chips">
+          <button class="chip">What's my IP?</button>
+          <button class="chip">Open Safari</button>
+          <button class="chip">System memory</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="label">State: Error</div>
+  <div class="window">
+    <div class="droplet">
+      <div class="conv">
+        <div class="row-r"><div class="b-user">Restart the server</div></div>
+        <div class="row-l"><div class="b-error">Agent error: No LLM profile configured. Go to Settings > Agent to set one up.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

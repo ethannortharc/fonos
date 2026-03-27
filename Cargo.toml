@@ -1,0 +1,3 @@
+[workspace]
+members = ["fonos-core", "fonos-app/src-tauri"]
+resolver = "2"

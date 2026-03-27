@@ -3,6 +3,12 @@ import SwiftData
 
 @main
 struct FonosApp: App {
+
+    init() {
+        // Register background recording service for keyboard extension IPC
+        BackgroundRecordingService.shared.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

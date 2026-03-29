@@ -10,10 +10,13 @@ pub mod agent;
 pub mod audio;
 pub mod config;
 pub mod error;
+pub mod hotkey;
 pub mod llm;
+pub mod meetings;
 pub mod modes;
 pub mod model_caps;
 pub mod stats;
+pub mod storage;
 pub mod voice_store;
 
 pub use error::Error;

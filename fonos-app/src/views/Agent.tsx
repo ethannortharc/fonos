@@ -2,6 +2,7 @@
 // Rendered by Dictation.tsx when dictationMode === "agent".
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { SparklesIcon } from "../components/Icons";
 import {
   startRecording,
   stopRecording,
@@ -173,7 +174,7 @@ function EmptyState({ onSuggestion }: { onSuggestion: (text: string) => void }) 
         className="w-16 h-16 rounded-full flex items-center justify-center"
         style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.06)" }}
       >
-        <span className="text-[28px]" style={{ opacity: 0.5 }}>✨</span>
+        <SparklesIcon size={28} className="opacity-50" />
       </div>
       <div className="text-center">
         <div className="text-[13px] text-[rgba(255,255,255,0.25)] font-medium">Ask me anything</div>

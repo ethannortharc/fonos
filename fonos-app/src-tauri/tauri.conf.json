@@ -1,7 +1,7 @@
 {
   "productName": "Fonos",
-  "version": "0.1.0",
-  "identifier": "com.fonos.app",
+  "version": "0.0.1",
+  "identifier": "com.holonex.fonos",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -49,6 +49,34 @@
         "resizable": false,
         "skipTaskbar": true,
         "center": false
+      },
+      {
+        "label": "note-panel",
+        "title": "",
+        "url": "note-panel.html",
+        "width": 320,
+        "height": 280,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
+      },
+      {
+        "label": "meeting-panel",
+        "title": "",
+        "url": "meeting-panel.html",
+        "width": 520,
+        "height": 400,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
       }
     ],
     "trayIcon": {
@@ -67,13 +95,22 @@
     "active": true,
     "targets": "all",
     "icon": [
+      "resources/icon.icns",
       "resources/icon_32x32.png",
       "resources/icon_128x128.png",
       "resources/icon_256x256.png",
-      "resources/icon_512x512.png"
+      "resources/icon_512x512.png",
+      "resources/icon_1024x1024.png"
+    ],
+    "resources": [
+      "resources/fonos-audio-capture",
+      "resources/fonos-stt-apple",
+      "resources/tray_icon.png"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "Developer ID Application: HONGBO ZHOU (SBU743JJ9S)",
+      "entitlements": "entitlements.plist"
     }
   }
 }

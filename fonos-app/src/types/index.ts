@@ -31,6 +31,26 @@ export interface AppConfig {
   agent_timeout_secs?: number;
   agent_max_turns?: number;
   agent_tts_enabled?: boolean;
+  agent_stt_profile?: string;
+  // Note fields
+  hotkey_note?: string;
+  hotkey_note_1?: string;
+  hotkey_note_2?: string;
+  hotkey_note_3?: string;
+  note_processor?: string;
+  note_stt_profile?: string;
+  note_llm_profile?: string;
+  note_prompt?: string;
+  // Notebook → hotkey bindings (container IDs)
+  notebook_hotkey_1?: number;
+  notebook_hotkey_2?: number;
+  notebook_hotkey_3?: number;
+  // Meeting fields
+  meeting_stt_profile?: string;
+  meeting_llm_profile?: string;
+  meeting_summary_prompt?: string;
+  meeting_audio_source?: string;
+  hotkey_meeting?: string;
 }
 
 /** A named model profile entry within AppConfig.model_profiles. */
@@ -42,6 +62,8 @@ export interface ModelProfile {
   api_key?: string;
   base_url?: string;
   capabilities?: string[];
+  /** STT API path: "whisper" (multipart /v1/audio/transcriptions) or "chat" (base64 audio in chat completions). Default: "whisper". */
+  stt_api?: "whisper" | "chat";
 }
 
 // ─── Modes ────────────────────────────────────────────────────────────────────

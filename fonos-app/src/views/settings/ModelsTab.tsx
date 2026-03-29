@@ -148,6 +148,7 @@ export default function ModelsTab({
       api_key: p.api_key ?? "",
       base_url: p.base_url ?? "",
       capabilities: p.capabilities ? [...p.capabilities] : [],
+      stt_api: p.stt_api ?? "whisper",
     });
     setAddingNew(false);
     setProviderPicked(true);
@@ -182,6 +183,7 @@ export default function ModelsTab({
     setSaving(true);
     try {
       let profiles: ModelProfile[];
+      const stt_api_val = editingProfile.capabilities.includes("stt") && editingProfile.stt_api === "chat" ? "chat" as const : undefined;
       if (addingNew) {
         const newProfile: ModelProfile = {
           id: `${editingProfile.provider}-${Date.now()}`,
@@ -191,6 +193,7 @@ export default function ModelsTab({
           api_key: editingProfile.api_key || undefined,
           base_url: editingProfile.base_url || undefined,
           capabilities: editingProfile.capabilities.length > 0 ? editingProfile.capabilities : undefined,
+          stt_api: stt_api_val,
         };
         profiles = [...config.model_profiles, newProfile];
       } else {
@@ -204,6 +207,7 @@ export default function ModelsTab({
                 api_key: editingProfile.api_key || undefined,
                 base_url: editingProfile.base_url || undefined,
                 capabilities: editingProfile.capabilities.length > 0 ? editingProfile.capabilities : undefined,
+                stt_api: stt_api_val,
               }
             : p
         );
@@ -365,6 +369,34 @@ export default function ModelsTab({
                     ))}
                   </div>
                 </div>
+
+                {/* STT API path selector — shown when STT capability is enabled */}
+                {editingProfile.capabilities.includes("stt") && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[rgba(255,255,255,0.4)] text-[11px]">STT API</label>
+                    <div className="flex gap-2">
+                      {([["whisper", "Whisper (multipart)"], ["chat", "Chat Completions (base64)"]] as const).map(([val, label]) => (
+                        <button
+                          key={val}
+                          onClick={() => setEditingProfile({ ...editingProfile, stt_api: val })}
+                          className={[
+                            "flex-1 px-3 py-1.5 rounded-lg text-[11px] border transition-colors",
+                            editingProfile.stt_api === val
+                              ? "bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                              : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.1)]",
+                          ].join(" ")}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-[9px] text-[rgba(255,255,255,0.2)]">
+                      {editingProfile.stt_api === "whisper"
+                        ? "Standard Whisper API (/v1/audio/transcriptions) — OpenAI, local Whisper servers"
+                        : "Send base64 audio via chat completions — OpenRouter, Gemini, Voxtral"}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex gap-2 mt-1">
                   <button

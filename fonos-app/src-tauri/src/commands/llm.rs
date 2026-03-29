@@ -231,6 +231,7 @@ pub fn save_custom_mode(
         output_language: if output_language.is_empty() { "auto".into() } else { output_language },
         auto_paste,
         auto_press_enter,
+        ..Default::default()
     });
     modes::save_custom_modes(&custom).map_err(|e| e.to_string())
 }

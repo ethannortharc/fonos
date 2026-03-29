@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { AppConfig, ModeEntry, ModelProfile } from "../../types";
 import { EMPTY_MODE } from "./constants";
+import { ModeIcon, MicIcon, BrainIcon } from "../../components/Icons";
 import type { ModeForm } from "./constants";
 
 // ─── Pipeline Step Component ─────────────────────────────────────────────────
@@ -142,7 +143,7 @@ function ModePipelineCard({
         onClick={onToggle}
         className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
       >
-        <span className="text-[15px] flex-shrink-0">{mode.icon}</span>
+        <span className="flex-shrink-0"><ModeIcon icon={mode.icon} size={15} /></span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[#fafaf9] text-[12px] font-medium">{mode.name}</span>
@@ -195,7 +196,7 @@ function ModePipelineCard({
             <PipelineStep dotColor="#fbbf24" label="Step 1: Speech to Text" isLast={!hasLlm}>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] text-[11px] text-[rgba(255,255,255,0.6)]">
-                  {"\uD83C\uDFA4"} {sttModelName}
+                  <MicIcon size={11} /> {sttModelName}
                 </span>
                 <span className={["px-1.5 py-0.5 rounded text-[8px] font-medium",
                   mode.builtin && !sttOverridden ? "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.2)]" : "bg-[rgba(245,158,11,0.1)] text-[rgba(251,191,36,0.6)]",
@@ -209,7 +210,7 @@ function ModePipelineCard({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] text-[11px] text-[rgba(255,255,255,0.6)]">
-                      {"\uD83E\uDDE0"} {llmModelName}
+                      <BrainIcon size={11} /> {llmModelName}
                     </span>
                     <span className={["px-1.5 py-0.5 rounded text-[8px] font-medium",
                       mode.builtin && !llmOverridden ? "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.2)]" : "bg-[rgba(245,158,11,0.1)] text-[rgba(251,191,36,0.6)]",
@@ -261,6 +262,88 @@ function ModePipelineCard({
 }
 
 // ─── ModesTab ────────────────────────────────────────────────────────────────
+
+// ─── Collapsible Mode Section — default mode pinned to top ────────────────────
+
+function ModeSection({
+  modes, config, expandedId, onToggle, onEdit, onDelete, onSaveMode, onCreateNew,
+}: {
+  modes: ModeEntry[];
+  config: AppConfig;
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+  onEdit: (m: ModeEntry, form: ModeForm) => void;
+  onDelete: (id: string) => void;
+  onSaveMode: (form: ModeForm) => Promise<void>;
+  onCreateNew: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Sort: default mode first, then built-in, then custom
+  const defaultMode = config.dictation_mode || "raw";
+  const sorted = [...modes].sort((a, b) => {
+    if (a.id === defaultMode) return -1;
+    if (b.id === defaultMode) return 1;
+    if (a.builtin && !b.builtin) return -1;
+    if (!a.builtin && b.builtin) return 1;
+    return 0;
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Section header — click to collapse */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex items-center gap-2 py-1"
+      >
+        <svg
+          width="10" height="10" viewBox="0 0 24 24" fill="none"
+          stroke="rgba(255,255,255,0.25)" strokeWidth="2" strokeLinecap="round"
+          className={`transition-transform duration-200 ${collapsed ? "" : "rotate-90"}`}
+        >
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+        <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold">
+          Modes
+        </span>
+        <span className="text-[9px] text-[rgba(255,255,255,0.15)]">
+          ({modes.length})
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="flex flex-col gap-2">
+          {sorted.map((m) => (
+            <div key={m.id} className="relative">
+              {m.id === defaultMode && (
+                <div className="absolute -left-1 top-2 bottom-2 w-[2px] rounded bg-[#fbbf24]" />
+              )}
+              <ModePipelineCard
+                mode={m}
+                config={config}
+                profiles={config.model_profiles}
+                expanded={expandedId === m.id}
+                onToggle={() => onToggle(m.id)}
+                onEdit={(form) => onEdit(m, form)}
+                onDelete={(id) => onDelete(id)}
+                onSaveMode={onSaveMode}
+              />
+            </div>
+          ))}
+
+          <button
+            onClick={onCreateNew}
+            className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
+          >
+            + Create Mode
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main ModesTab ───────────────────────────────────────────────────────────
 
 export default function ModesTab({
   config,
@@ -344,7 +427,7 @@ export default function ModesTab({
             )}
             {editingModeIsBuiltin && (
               <div className="flex items-center gap-2.5 px-1">
-                <span className="text-[16px]">{editingMode.icon}</span>
+                <span className="flex-shrink-0"><ModeIcon icon={editingMode.icon} size={16} /></span>
                 <div>
                   <div className="text-[12px] font-medium text-[#fafaf9]">{editingMode.name}</div>
                   <div className="text-[10px] text-[rgba(255,255,255,0.25)]">{editingMode.description}</div>
@@ -559,34 +642,21 @@ export default function ModesTab({
           </div>
         </div>
       ) : (
-        /* ── Pipeline list ── */
-        <div className="flex flex-col gap-2">
-          {modes.map((m) => (
-            <ModePipelineCard
-              key={m.id}
-              mode={m}
-              config={config}
-              profiles={config.model_profiles}
-              expanded={expandedId === m.id}
-              onToggle={() => setExpandedId(expandedId === m.id ? null : m.id)}
-              onEdit={(form) => {
-                setEditingMode(form);
-                setEditingModeIsBuiltin(m.builtin);
-                setLlmEnabled(!!(form.system || form.user_template));
-              }}
-              onDelete={(id) => { onDeleteMode(id); }}
-              onSaveMode={handleSaveModeLocal}
-            />
-          ))}
-
-          {/* Add mode button */}
-          <button
-            onClick={() => { setEditingMode({ ...EMPTY_MODE }); setEditingModeIsBuiltin(false); setLlmEnabled(true); }}
-            className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
-          >
-            + Create Mode
-          </button>
-        </div>
+        /* ── Mode list in collapsible section, default mode first ── */
+        <ModeSection
+          modes={modes}
+          config={config}
+          expandedId={expandedId}
+          onToggle={(id) => setExpandedId(expandedId === id ? null : id)}
+          onEdit={(m, form) => {
+            setEditingMode(form);
+            setEditingModeIsBuiltin(m.builtin);
+            setLlmEnabled(!!(form.system || form.user_template));
+          }}
+          onDelete={(id) => { onDeleteMode(id); }}
+          onSaveMode={handleSaveModeLocal}
+          onCreateNew={() => { setEditingMode({ ...EMPTY_MODE }); setEditingModeIsBuiltin(false); setLlmEnabled(true); }}
+        />
       )}
     </div>
   );

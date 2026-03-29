@@ -61,6 +61,97 @@ fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
+/// Position the note-panel window centered horizontally near the cursor,
+/// slightly below the macOS menu bar — mirrors agent panel placement.
+fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("note-panel") else { return };
+
+    let monitors = match panel.available_monitors() {
+        Ok(m) if !m.is_empty() => m,
+        _ => return,
+    };
+
+    let cursor = {
+        let source = core_graphics::event_source::CGEventSource::new(
+            core_graphics::event_source::CGEventSourceStateID::CombinedSessionState
+        ).expect("CGEventSource");
+        let event = core_graphics::event::CGEvent::new(source).expect("CGEvent");
+        event.location()
+    };
+
+    let target = monitors.iter().find(|m| {
+        let scale = m.scale_factor();
+        let lx = m.position().x as f64 / scale;
+        let ly = m.position().y as f64 / scale;
+        let lw = m.size().width as f64 / scale;
+        let lh = m.size().height as f64 / scale;
+        cursor.x >= lx && cursor.x < lx + lw && cursor.y >= ly && cursor.y < ly + lh
+    }).unwrap_or_else(|| &monitors[0]);
+
+    let scale = target.scale_factor();
+    let panel_w = 320.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+
+    let x = mon_x + (mon_w - panel_w) / 2.0;
+    let y = mon_y + 32.0; // Just below the macOS menu bar
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
+/// Position the meeting-panel window in the bottom-right corner of the active monitor,
+/// above the Dock — a fixed corner so it doesn't obscure the meeting app window.
+fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("meeting-panel") else { return };
+
+    let monitors = match panel.available_monitors() {
+        Ok(m) if !m.is_empty() => m,
+        _ => return,
+    };
+
+    let cursor = {
+        let source = core_graphics::event_source::CGEventSource::new(
+            core_graphics::event_source::CGEventSourceStateID::CombinedSessionState
+        ).expect("CGEventSource");
+        let event = core_graphics::event::CGEvent::new(source).expect("CGEvent");
+        event.location()
+    };
+
+    let target = monitors.iter().find(|m| {
+        let scale = m.scale_factor();
+        let lx = m.position().x as f64 / scale;
+        let ly = m.position().y as f64 / scale;
+        let lw = m.size().width as f64 / scale;
+        let lh = m.size().height as f64 / scale;
+        cursor.x >= lx && cursor.x < lx + lw && cursor.y >= ly && cursor.y < ly + lh
+    }).unwrap_or_else(|| &monitors[0]);
+
+    let scale = target.scale_factor();
+    let panel_w = 520.0_f64;
+    let panel_h = 400.0_f64;
+    let top_margin = 80.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+
+    // Right edge of panel flush with right edge of screen, near the top
+    let x = mon_x + mon_w - panel_w;
+    let y = mon_y + top_margin;
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
 fn main() {
     let config = AppConfig::load();
 
@@ -70,6 +161,28 @@ fn main() {
     let db_conn = rusqlite::Connection::open(&db_path)
         .expect("failed to open fonos.db");
     fonos_core::stats::init_db(&db_conn);
+
+    // Initialize v2 storage tables (entries, containers, FTS5) — idempotent.
+    fonos_core::storage::init_storage_db(&db_conn);
+    // Migrate legacy events table to v2 entries/containers schema (idempotent).
+    if let Err(e) = fonos_core::storage::migrate_from_history(&db_conn) {
+        eprintln!("fonos: storage migration warning: {e}");
+    }
+    // Ensure "Quick Note" notebook exists (the default notebook for notes without a specific target).
+    {
+        let has_quick: bool = db_conn.query_row(
+            "SELECT COUNT(*) FROM containers WHERE container_type='notebook' AND title='Quick Note'",
+            [], |r| r.get::<_, i64>(0)
+        ).unwrap_or(0) > 0;
+        if !has_quick {
+            let now = commands::storage::now_iso8601();
+            let _ = db_conn.execute(
+                "INSERT INTO containers (container_type, title, created_at, updated_at, metadata) VALUES ('notebook', 'Quick Note', ?1, ?1, '{}')",
+                rusqlite::params![now],
+            );
+            eprintln!("fonos: created default 'Quick Note' notebook");
+        }
+    }
 
     // ── Agent state initialization ─────────────────────────────────────────
     let agent_state = {
@@ -121,12 +234,16 @@ fn main() {
         )
     };
 
+    let meeting_state = commands::meeting::MeetingState::new();
+
     let app_state = AppState {
         audio_capture: Arc::new(Mutex::new(None)),
         audio_playback: Arc::new(Mutex::new(None)),
         config: Arc::new(Mutex::new(config)),
         db: Arc::new(Mutex::new(db_conn)),
         agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
+        meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
+        note_target: Arc::new(Mutex::new(None)),
     };
 
     tauri::Builder::default()
@@ -159,6 +276,8 @@ fn main() {
             commands::resize_float,
             commands::resize_agent_panel,
             commands::hide_agent_panel,
+            commands::hide_note_panel,
+            commands::set_note_notebook,
             // LLM commands
             commands::llm::process_with_llm,
             commands::llm::probe_model,
@@ -179,6 +298,27 @@ fn main() {
             commands::agent::save_custom_skill,
             commands::agent::delete_custom_skill,
             commands::agent::test_skill,
+            // Storage commands (v2)
+            commands::storage::list_entries,
+            commands::storage::get_entry,
+            commands::storage::update_entry,
+            commands::storage::delete_entry,
+            commands::storage::search_entries,
+            commands::storage::create_container,
+            commands::storage::list_containers,
+            commands::storage::get_container_entries,
+            commands::storage::delete_container,
+            commands::storage::update_container_metadata,
+            commands::storage::export_notebook_md,
+            commands::storage::export_notebook_json,
+            // Meeting commands
+            commands::meeting::start_meeting,
+            commands::meeting::stop_meeting,
+            commands::meeting::get_meetings,
+            commands::meeting::get_meeting_detail,
+            commands::meeting::hide_meeting_panel,
+            commands::meeting::export_meeting_md,
+            commands::meeting::export_meeting_json,
         ])
         .setup(|app| {
             // 0. Make agent-panel window fully transparent:
@@ -192,16 +332,34 @@ fn main() {
                     let _ = panel.set_background_color(Some(Color(0, 0, 0, 0)));
                     let _ = panel.set_shadow(false);
                 }
+                if let Some(panel) = app.get_webview_window("note-panel") {
+                    let _ = panel.set_background_color(Some(Color(0, 0, 0, 0)));
+                    let _ = panel.set_shadow(false);
+                }
+                if let Some(panel) = app.get_webview_window("meeting-panel") {
+                    let _ = panel.set_background_color(Some(Color(0, 0, 0, 0)));
+                    let _ = panel.set_shadow(false);
+                }
             }
 
             // 1. Global hotkeys.
             let state = app.state::<AppState>();
-            let (dictation_combo, agent_combo, agent_panel_combo) = {
+            let (dictation_combo, agent_combo, agent_panel_combo, note_combo, meeting_combo,
+                 note1_combo, note2_combo, note3_combo,
+                 note1_nb, note2_nb, note3_nb) = {
                 let config = state.config.lock().unwrap();
                 (
                     config.hotkey_dictation.clone(),
                     config.hotkey_agent.clone(),
                     config.hotkey_agent_panel.clone(),
+                    config.hotkey_note.clone(),
+                    config.hotkey_meeting.clone(),
+                    config.hotkey_note_1.clone(),
+                    config.hotkey_note_2.clone(),
+                    config.hotkey_note_3.clone(),
+                    config.notebook_hotkey_1,
+                    config.notebook_hotkey_2,
+                    config.notebook_hotkey_3,
                 )
             };
 
@@ -220,13 +378,49 @@ fn main() {
                 Ok(hk) => { hm.register(hk); any_hotkey = true; }
                 Err(e) => eprintln!("fonos: could not parse agent-panel hotkey '{}': {}", agent_panel_combo, e),
             }
+            match hotkey::HotkeyManager::parse_hotkey(&note_combo, "note") {
+                Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                Err(e) => eprintln!("fonos: could not parse note hotkey '{}': {}", note_combo, e),
+            }
+            match hotkey::HotkeyManager::parse_hotkey(&meeting_combo, "meeting") {
+                Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                Err(e) => eprintln!("fonos: could not parse meeting hotkey '{}': {}", meeting_combo, e),
+            }
+            // Notebook-specific note shortcuts (only if a notebook is bound)
+            eprintln!("fonos: note shortcuts: 1='{}' nb={}, 2='{}' nb={}, 3='{}' nb={}",
+                note1_combo, note1_nb, note2_combo, note2_nb, note3_combo, note3_nb);
+            if note1_nb > 0 && !note1_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&note1_combo, "note-1") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse note-1 hotkey '{}': {}", note1_combo, e),
+                }
+            }
+            if note2_nb > 0 && !note2_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&note2_combo, "note-2") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse note-2 hotkey '{}': {}", note2_combo, e),
+                }
+            }
+            if note3_nb > 0 && !note3_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&note3_combo, "note-3") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse note-3 hotkey '{}': {}", note3_combo, e),
+                }
+            }
 
             if any_hotkey {
                 let app_handle = app.handle().clone();
+                // Move notebook IDs into the closure so note-1/2/3 handlers can access them
+                let nb1 = note1_nb;
+                let nb2 = note2_nb;
+                let nb3 = note3_nb;
                 hm.set_callback(move |label, is_down| {
                     use tauri::Emitter;
                     let handle = app_handle.clone();
                     let label = label.to_string();
+                    let note1_nb = nb1;
+                    let note2_nb = nb2;
+                    let note3_nb = nb3;
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
                             "dictation" => {
@@ -438,6 +632,208 @@ fn main() {
                                         let _ = panel.set_focus();
                                         let _ = panel.eval("recvShow(true)");
                                     }
+                                }
+                            }
+
+                            "note" => {
+                                // Hold-to-talk for notes:
+                                // Key-down: show panel + start recording
+                                //   (if panel visible & showing result → dismiss instead)
+                                // Key-up: stop recording → show result → auto-dismiss after 2s
+                                use tauri::Manager;
+
+                                fn note_js(h: &tauri::AppHandle, js: &str) {
+                                    if let Some(panel) = h.get_webview_window("note-panel") {
+                                        let _ = panel.eval(js);
+                                    }
+                                }
+
+                                if is_down {
+                                    if let Some(panel) = handle.get_webview_window("note-panel") {
+                                        let visible = panel.is_visible().unwrap_or(false);
+                                        if !visible {
+                                            // Set default note target to Quick Note immediately (no race)
+                                            crate::commands::set_default_note_target(&handle);
+                                            // Show panel
+                                            move_note_panel_to_cursor(&handle);
+                                            let _ = panel.show();
+                                            let _ = panel.set_focus();
+                                            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                                            note_js(&handle, "recvShow()");
+                                        } else {
+                                            // Panel already visible — cancel any auto-dismiss timer,
+                                            // keep current notebook selection intact
+                                            note_js(&handle, "cancelDismiss()");
+                                        }
+                                    }
+                                    // Start recording (keep current notebook target)
+                                    note_js(&handle, "recvRecording()");
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    if let Err(e) = commands::dictation::start_recording(
+                                        handle.clone(), state, Some(true)
+                                    ).await {
+                                        eprintln!("fonos: note hotkey start error: {e}");
+                                    }
+                                } else {
+                                    // Key up: stop recording, show result, auto-dismiss
+                                    note_js(&handle, "recvRecordingStop()");
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    match commands::dictation::stop_recording(
+                                        handle.clone(), state, Some("note".to_string())
+                                    ).await {
+                                        Ok(result) => {
+                                            if result.text.is_empty() {
+                                                eprintln!("fonos: note recording empty");
+                                                // Dismiss immediately if nothing recorded
+                                                note_js(&handle, "recvDismiss()");
+                                                if let Some(panel) = handle.get_webview_window("note-panel") {
+                                                    let _ = panel.hide();
+                                                }
+                                                return;
+                                            }
+                                            eprintln!("fonos: note saved: {} chars", result.text.len());
+                                            // Show the transcribed text in the panel
+                                            let esc = result.text
+                                                .replace('\\', "\\\\")
+                                                .replace('\'', "\\'")
+                                                .replace('\n', "\\n");
+                                            note_js(&handle, &format!("recvResult('{}')", esc));
+                                            // Panel will auto-dismiss after 2s via JS timer,
+                                            // or user can press hotkey again to dismiss immediately
+                                        }
+                                        Err(e) => {
+                                            if !e.contains("not recording") {
+                                                eprintln!("fonos: note stop error: {e}");
+                                            }
+                                            note_js(&handle, "recvDismiss()");
+                                            if let Some(panel) = handle.get_webview_window("note-panel") {
+                                                let _ = panel.hide();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            "note-1" | "note-2" | "note-3" => {
+                                // Notebook-specific hold-to-talk: same as "note" but sets a specific notebook target
+                                use tauri::Manager;
+
+                                fn note_nb_js(h: &tauri::AppHandle, js: &str) {
+                                    if let Some(panel) = h.get_webview_window("note-panel") {
+                                        let _ = panel.eval(js);
+                                    }
+                                }
+
+                                // Determine which notebook ID to target
+                                let nb_id = match label.as_str() {
+                                    "note-1" => note1_nb,
+                                    "note-2" => note2_nb,
+                                    "note-3" => note3_nb,
+                                    _ => 0,
+                                };
+
+                                if is_down && nb_id > 0 {
+                                    // Set the notebook target
+                                    {
+                                        let st = handle.state::<AppState>().inner();
+                                        if let Ok(mut t) = st.note_target.lock() { *t = Some(nb_id); }
+                                    }
+                                    // Show panel + select the target notebook
+                                    if let Some(panel) = handle.get_webview_window("note-panel") {
+                                        let visible = panel.is_visible().unwrap_or(false);
+                                        if !visible {
+                                            move_note_panel_to_cursor(&handle);
+                                            let _ = panel.show();
+                                            let _ = panel.set_focus();
+                                            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                                            note_nb_js(&handle, &format!("recvShow({})", nb_id));
+                                        } else {
+                                            note_nb_js(&handle, "cancelDismiss()");
+                                            note_nb_js(&handle, &format!("selectNotebookById({})", nb_id));
+                                        }
+                                    }
+                                    note_nb_js(&handle, "recvRecording()");
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    if let Err(e) = commands::dictation::start_recording(
+                                        handle.clone(), state, Some(true)
+                                    ).await {
+                                        eprintln!("fonos: note-N hotkey start error: {e}");
+                                    }
+                                } else if !is_down {
+                                    // Key up: stop + show result + auto-dismiss
+                                    note_nb_js(&handle, "recvRecordingStop()");
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    match commands::dictation::stop_recording(
+                                        handle.clone(), state, Some("note".to_string())
+                                    ).await {
+                                        Ok(result) => {
+                                            if result.text.is_empty() {
+                                                note_nb_js(&handle, "recvDismiss()");
+                                                if let Some(panel) = handle.get_webview_window("note-panel") {
+                                                    let _ = panel.hide();
+                                                }
+                                                return;
+                                            }
+                                            let esc = result.text.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
+                                            note_nb_js(&handle, &format!("recvResult('{}')", esc));
+                                        }
+                                        Err(e) => {
+                                            if !e.contains("not recording") {
+                                                eprintln!("fonos: note-N stop error: {e}");
+                                            }
+                                            note_nb_js(&handle, "recvDismiss()");
+                                            if let Some(panel) = handle.get_webview_window("note-panel") {
+                                                let _ = panel.hide();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            "meeting" => {
+                                // Toggle meeting mode on key down only
+                                if !is_down { return; }
+                                use tauri::Manager;
+
+                                let state: tauri::State<'_, AppState> = handle.state();
+                                let is_recording = state.meeting.lock().await.recording;
+
+                                if !is_recording {
+                                    // Start meeting: position panel, show, start recording
+                                    move_meeting_panel_to_cursor(&handle);
+                                    if let Some(panel) = handle.get_webview_window("meeting-panel") {
+                                        let _ = panel.show();
+                                        let _ = panel.set_focus();
+                                        let _ = panel.eval("recvMeetingShow()");
+                                    }
+                                    let state2: tauri::State<'_, AppState> = handle.state();
+                                    match commands::meeting::start_meeting(handle.clone(), state2).await {
+                                        Ok(cid) => {
+                                            eprintln!("fonos: meeting started via hotkey, container={}", cid);
+                                        }
+                                        Err(e) => {
+                                            eprintln!("fonos: meeting start error: {e}");
+                                        }
+                                    }
+                                } else {
+                                    // Stop meeting: stop recording, hide panel after summary
+                                    let state2: tauri::State<'_, AppState> = handle.state();
+                                    match commands::meeting::stop_meeting(handle.clone(), state2).await {
+                                        Ok(_summary) => {
+                                            eprintln!("fonos: meeting stopped via hotkey");
+                                        }
+                                        Err(e) => {
+                                            eprintln!("fonos: meeting stop error: {e}");
+                                        }
+                                    }
+                                    // Hide panel after a brief delay to show summary
+                                    let handle2 = handle.clone();
+                                    tokio::spawn(async move {
+                                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                        if let Some(panel) = handle2.get_webview_window("meeting-panel") {
+                                            let _ = panel.hide();
+                                        }
+                                    });
                                 }
                             }
 

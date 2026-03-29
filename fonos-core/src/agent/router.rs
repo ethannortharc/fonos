@@ -453,14 +453,16 @@ mod test_processor_router {
 
     #[test]
     fn all_built_in_modes_classified_correctly() {
-        // "raw" → RawText, everything else → ModeResult (when LLM available).
+        // "raw" and modes with processor=="none" → RawText (no LLM post-processing).
+        // Everything else → ModeResult (requires LLM prompts).
         let modes = built_in_modes();
         for (id, mode) in &modes {
             let has_prompts = mode.system.is_some() || mode.user_template.is_some();
-            if id == "raw" {
+            let is_no_llm = id == "raw" || mode.processor == "none";
+            if is_no_llm {
                 assert!(
                     !has_prompts,
-                    "raw mode should have no prompts"
+                    "mode '{id}' with processor='none' should have no LLM prompts"
                 );
             } else {
                 assert!(

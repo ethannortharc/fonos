@@ -8,6 +8,38 @@ use std::path::PathBuf;
 
 use crate::{Error, Result};
 
+/// Where the processed text result is sent after a dictation/note recording.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputTarget {
+    /// Copy result to the system clipboard.
+    Clipboard,
+    /// Type/paste result into the currently-focused text field.
+    ActiveTextField,
+    /// Append result as a new Entry in a Container (notebook/conversation).
+    AppendToContainer,
+    /// Discard output — entry is saved to DB but not sent anywhere.
+    None,
+}
+
+impl Default for OutputTarget {
+    fn default() -> Self {
+        OutputTarget::Clipboard
+    }
+}
+
+/// The type of container to use (or create) when output_target is AppendToContainer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContainerKind {
+    /// Notebook — user-created, persists between sessions.
+    Notebook,
+    /// Conversation — auto-created per agent session.
+    Conversation,
+    /// Meeting session — auto-created per meeting recording.
+    MeetingSession,
+}
+
 /// A processing mode that defines how spoken text is transformed by an LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mode {
@@ -52,6 +84,23 @@ pub struct Mode {
     /// Whether to press Enter after pasting the result.
     #[serde(default)]
     pub auto_press_enter: bool,
+
+    // ── v2 fields ──
+    /// Where the result is sent after processing.
+    #[serde(default)]
+    pub output_target: OutputTarget,
+    /// Container type to use when output_target is AppendToContainer.
+    #[serde(default)]
+    pub container_type: Option<ContainerKind>,
+    /// Whether to automatically create a container for each session.
+    #[serde(default)]
+    pub auto_container: bool,
+    /// Whether to save the audio recording alongside the entry.
+    #[serde(default)]
+    pub save_audio: bool,
+    /// Processing pipeline identifier (e.g. "light_polish", "raw", "agent").
+    #[serde(default)]
+    pub processor: String,
 }
 
 impl Default for Mode {
@@ -71,6 +120,11 @@ impl Default for Mode {
             output_language: default_output_lang(),
             auto_paste: true,
             auto_press_enter: false,
+            output_target: OutputTarget::Clipboard,
+            container_type: None,
+            auto_container: false,
+            save_audio: false,
+            processor: String::new(),
         }
     }
 }
@@ -139,6 +193,40 @@ pub fn built_in_modes() -> BTreeMap<String, Mode> {
             "{text}"
         ).into()),
         temperature: 0.3,
+        ..Default::default()
+    });
+
+    m.insert("note".into(), Mode {
+        name: "Note".into(),
+        description: "Record a note into a notebook — lightly polished and saved.".into(),
+        icon: "📓".into(),
+        system: Some("You are a note-taking assistant. Lightly clean up spoken notes: fix grammar and remove filler words, but preserve the speaker's intent and wording.".into()),
+        user_template: Some(concat!(
+            "Lightly polish the following spoken note. ",
+            "Remove filler words and fix punctuation. Preserve the tone and intent. ",
+            "Keep the original language. Output ONLY the polished note.\n\n",
+            "{text}"
+        ).into()),
+        temperature: 0.1,
+        output_target: OutputTarget::AppendToContainer,
+        container_type: Some(ContainerKind::Notebook),
+        auto_container: true,
+        save_audio: false,
+        processor: "light_polish".into(),
+        auto_paste: false,
+        ..Default::default()
+    });
+
+    m.insert("meeting".into(), Mode {
+        name: "Meeting".into(),
+        description: "Continuous meeting recording with real-time transcript, speaker labeling, and AI summary.".into(),
+        icon: "🎙".into(),
+        output_target: OutputTarget::AppendToContainer,
+        container_type: Some(ContainerKind::MeetingSession),
+        auto_container: true,
+        save_audio: true,
+        processor: "none".into(),
+        auto_paste: false,
         ..Default::default()
     });
 

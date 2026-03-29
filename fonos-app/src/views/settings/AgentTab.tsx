@@ -180,9 +180,12 @@ interface AgentTabProps {
 }
 
 export default function AgentTab({ config, onSave }: AgentTabProps) {
-  // LLM-capable model profiles
+  // Model profiles by capability
   const llmProfiles: ModelProfile[] = (config.model_profiles ?? []).filter(
     (p) => p.capabilities && p.capabilities.includes("llm")
+  );
+  const sttProfiles: ModelProfile[] = (config.model_profiles ?? []).filter(
+    (p) => p.capabilities && p.capabilities.includes("stt")
   );
 
   // Execution state (local sliders / inputs before blur/commit)
@@ -217,6 +220,30 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
           Separate from dictation LLM. Agent needs tool-use support.
+        </div>
+      </div>
+
+      {/* ── STT Model ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-2">
+        <SectionLabel>STT Model</SectionLabel>
+        <select
+          value={config.agent_stt_profile ?? ""}
+          onChange={(e) => onSave({ agent_stt_profile: e.target.value })}
+          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          style={{
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <option value="">Default (global STT profile)</option>
+          {sttProfiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({p.model})
+            </option>
+          ))}
+        </select>
+        <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
+          STT model for agent voice input. Defaults to global STT profile if not set.
         </div>
       </div>
 

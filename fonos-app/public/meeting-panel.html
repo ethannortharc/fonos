@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none;
+  -webkit-clip-path:inset(0 round 20px);clip-path:inset(0 round 20px)}
+body{background:transparent;overflow:hidden}
+
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes bar{0%,100%{height:2px}50%{height:var(--h)}}
+@keyframes lineIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+
+::-webkit-scrollbar{width:0}
+
+#mp{
+  width:520px;
+  background:rgba(28,27,24,0.92);
+  -webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:dropIn .22s cubic-bezier(.23,1,.32,1);
+  font-family:-apple-system,system-ui,sans-serif;
+}
+
+/* ── Header ── */
+#mh{
+  flex-shrink:0;
+  padding:10px 14px 8px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex;flex-direction:column;gap:5px;
+  cursor:grab;
+}
+#mh:active{cursor:grabbing}
+#mh-row1{display:flex;align-items:center;gap:8px}
+#mt{
+  flex:1;
+  font-size:12px;
+  font-weight:500;
+  color:rgba(255,255,255,.7);
+  background:transparent;
+  border:0;
+  outline:none;
+  font-family:inherit;
+  cursor:text;
+  min-width:0;
+  -webkit-user-select:text;user-select:text;
+}
+#mt:focus{color:rgba(255,255,255,.9)}
+#mt::placeholder{color:rgba(255,255,255,.25)}
+#mh-row2{display:flex;align-items:center;gap:6px}
+#rec-dot{width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite;flex-shrink:0}
+#rec-timer{font-size:10px;color:rgba(255,255,255,.35);font-family:'SF Mono',ui-monospace,monospace}
+#type-badge{
+  font-size:9px;
+  color:rgba(255,255,255,.35);
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:8px;
+  padding:2px 7px;
+  font-weight:500;
+  flex-shrink:0;
+}
+
+/* ── Body (transcript) ── */
+#mb{
+  overflow-y:auto;
+  max-height:280px;
+  padding:10px 14px;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  position:relative;
+}
+.tr-line{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  animation:lineIn .16s ease-out;
+  flex-shrink:0;
+  min-width:0;
+}
+.tr-speaker{
+  font-size:9px;
+  font-weight:600;
+  padding:2px 7px;
+  border-radius:8px;
+  flex-shrink:0;
+  margin-top:1px;
+  line-height:1.4;
+}
+.sp-me{background:rgba(34,197,94,.15);color:rgba(134,239,172,.9);border:1px solid rgba(34,197,94,.2)}
+.sp-others{background:rgba(139,92,246,.15);color:rgba(196,181,253,.9);border:1px solid rgba(139,92,246,.2)}
+.sp-1{background:rgba(245,158,11,.12);color:rgba(251,191,36,.85);border:1px solid rgba(245,158,11,.18)}
+.sp-2{background:rgba(14,165,233,.12);color:rgba(125,211,252,.85);border:1px solid rgba(14,165,233,.18)}
+.sp-3{background:rgba(236,72,153,.12);color:rgba(249,168,212,.85);border:1px solid rgba(236,72,153,.18)}
+.sp-4{background:rgba(239,68,68,.12);color:rgba(252,165,165,.85);border:1px solid rgba(239,68,68,.18)}
+.tr-text{
+  font-size:11px;
+  color:rgba(255,255,255,.65);
+  line-height:1.5;
+  flex:1;
+  min-width:0;
+  white-space:pre-wrap;
+  word-break:break-word;
+  overflow-wrap:break-word;
+}
+.tr-ts{
+  font-size:9px;
+  color:rgba(255,255,255,.25);
+  font-family:'SF Mono',ui-monospace,monospace;
+  flex-shrink:0;
+  margin-top:2px;
+  line-height:1.4;
+  white-space:nowrap;
+}
+#mb-empty{
+  font-size:11px;
+  color:rgba(255,255,255,.15);
+  text-align:center;
+  padding:20px 0;
+}
+#mb-status{
+  font-size:11px;
+  color:rgba(245,158,11,.7);
+  text-align:center;
+  padding:12px 0;
+  display:none;
+}
+#scroll-hint{
+  position:sticky;
+  bottom:0;
+  left:0;
+  right:0;
+  text-align:center;
+  font-size:9px;
+  color:rgba(255,255,255,.3);
+  background:linear-gradient(transparent,rgba(28,27,24,.9));
+  padding:6px 0 2px;
+  cursor:pointer;
+  display:none;
+}
+#scroll-hint:hover{color:rgba(255,255,255,.5)}
+
+/* ── Footer ── */
+#mf{
+  flex-shrink:0;
+  border-top:1px solid rgba(255,255,255,.04);
+  padding:8px 14px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+#stop-btn{
+  width:32px;height:32px;
+  border-radius:50%;
+  border:0;
+  cursor:pointer;
+  background:linear-gradient(135deg,#ef4444,#dc2626);
+  box-shadow:0 0 10px rgba(239,68,68,.2);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  transition:all .12s;
+}
+#stop-btn:hover{box-shadow:0 0 16px rgba(239,68,68,.35);transform:scale(1.06)}
+#word-count{
+  font-size:10px;
+  color:rgba(255,255,255,.2);
+  font-family:'SF Mono',ui-monospace,monospace;
+  flex:1;
+}
+#wf{display:flex;align-items:flex-end;gap:2px;height:16px}
+.wb{width:2.5px;border-radius:1.5px;background:#ef4444;opacity:.4;animation:bar .55s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div id="mp">
+
+  <!-- Header (drag to move panel) -->
+  <div id="mh" data-tauri-drag-region>
+    <div id="mh-row1" data-tauri-drag-region>
+      <input id="mt" type="text" placeholder="Meeting" spellcheck="false" />
+      <span id="type-badge">Remote</span>
+    </div>
+    <div id="mh-row2" data-tauri-drag-region>
+      <div id="rec-dot"></div>
+      <span id="rec-timer">00:00</span>
+    </div>
+  </div>
+
+  <!-- Body: transcript -->
+  <div id="mb">
+    <div id="mb-empty">Recording will appear here</div>
+    <div id="mb-status">Generating summary...</div>
+    <div id="scroll-hint" onclick="scrollToBottom()">&#x2193; New content below</div>
+  </div>
+
+  <!-- Footer -->
+  <div id="mf">
+    <button id="stop-btn" onclick="iv('stop_meeting')" title="Stop recording">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="#fff"><rect x="1" y="1" width="8" height="8" rx="1.5"/></svg>
+    </button>
+    <span id="word-count">0 words</span>
+    <div id="wf">
+      <div class="wb" style="--h:6px;animation-delay:0s"></div>
+      <div class="wb" style="--h:12px;animation-delay:.06s"></div>
+      <div class="wb" style="--h:8px;animation-delay:.03s"></div>
+      <div class="wb" style="--h:15px;animation-delay:.09s"></div>
+      <div class="wb" style="--h:7px;animation-delay:.05s"></div>
+      <div class="wb" style="--h:13px;animation-delay:.08s"></div>
+      <div class="wb" style="--h:5px;animation-delay:.12s"></div>
+      <div class="wb" style="--h:9px;animation-delay:.02s"></div>
+    </div>
+  </div>
+
+</div>
+<script>
+/* ── State ── */
+var timerInterval = null;
+var startTime = 0;
+var wordCount = 0;
+var autoScroll = true;
+var lines = [];
+
+/* ── Element refs ── */
+var mtEl = document.getElementById('mt');
+var timerEl = document.getElementById('rec-timer');
+var typeBadge = document.getElementById('type-badge');
+var bodyEl = document.getElementById('mb');
+var emptyEl = document.getElementById('mb-empty');
+var statusEl = document.getElementById('mb-status');
+var scrollHintEl = document.getElementById('scroll-hint');
+var wordCountEl = document.getElementById('word-count');
+var wfBars = document.querySelectorAll('#wf .wb');
+
+/* ── Tauri IPC helpers (same pattern as agent-panel) ── */
+function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
+function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
+
+/* ── Timer ── */
+function fmtTimer(ms){
+  var total=Math.floor(ms/1000);
+  var m=Math.floor(total/60);
+  var s=total%60;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+
+function startTimer(){
+  stopTimer();
+  startTime=Date.now();
+  timerInterval=setInterval(function(){
+    timerEl.textContent=fmtTimer(Date.now()-startTime);
+  },1000);
+}
+
+function stopTimer(){
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+}
+
+/* ── Auto-scroll logic ── */
+function scrollToBottom(){
+  bodyEl.scrollTop=bodyEl.scrollHeight;
+  autoScroll=true;
+  scrollHintEl.style.display='none';
+}
+
+bodyEl.addEventListener('scroll',function(){
+  var atBottom=(bodyEl.scrollHeight-bodyEl.scrollTop-bodyEl.clientHeight)<10;
+  if(atBottom){
+    autoScroll=true;
+    scrollHintEl.style.display='none';
+  } else {
+    autoScroll=false;
+  }
+});
+
+function maybeScroll(){
+  if(autoScroll){
+    bodyEl.scrollTop=bodyEl.scrollHeight;
+    scrollHintEl.style.display='none';
+  } else {
+    scrollHintEl.style.display='block';
+  }
+}
+
+/* ── Speaker badge ── */
+var speakerColors={};
+var speakerColorIdx=0;
+var colorClasses=['sp-1','sp-2','sp-3','sp-4'];
+
+function speakerClass(speaker){
+  if(!speaker) return 'sp-1';
+  var s=String(speaker).toLowerCase();
+  if(s==='me') return 'sp-me';
+  if(s==='others'||s==='other') return 'sp-others';
+  if(speakerColors[s]) return speakerColors[s];
+  var cls=colorClasses[speakerColorIdx%colorClasses.length];
+  speakerColorIdx++;
+  speakerColors[s]=cls;
+  return cls;
+}
+
+/* ── Append transcript line ── */
+function appendLine(text,speaker,tsMs){
+  emptyEl.style.display='none';
+  var line=document.createElement('div');
+  line.className='tr-line';
+
+  var spEl=document.createElement('span');
+  spEl.className='tr-speaker '+speakerClass(speaker);
+  spEl.textContent=speaker||'';
+
+  var tsEl=document.createElement('span');
+  tsEl.className='tr-ts';
+  tsEl.textContent=tsMs!=null?fmtTimer(tsMs):'';
+
+  var txtEl=document.createElement('span');
+  txtEl.className='tr-text';
+  txtEl.textContent=text||'';
+
+  line.appendChild(spEl);
+  line.appendChild(txtEl);
+  line.appendChild(tsEl);
+
+  /* Insert before the scroll hint so it stays at the bottom */
+  bodyEl.insertBefore(line,scrollHintEl);
+  lines.push(line);
+  maybeScroll();
+}
+
+/* ── Word count ── */
+function updateWordCount(text){
+  var words=(text||'').trim().split(/\s+/).filter(function(w){return w.length>0;}).length;
+  wordCount+=words;
+  wordCountEl.textContent=wordCount+' word'+(wordCount===1?'':'s');
+}
+
+/* ── Audio level bars ── */
+function setLevel(level){
+  var l=Math.max(0,Math.min(1,level||0));
+  wfBars.forEach(function(bar,i){
+    var natural=parseFloat(bar.style.getPropertyValue('--h'))||6;
+    var driven=Math.max(2,natural*l*2);
+    /* Set opacity to reflect level rather than rewriting keyframe heights */
+    bar.style.opacity=String(0.15+l*0.7);
+    bar.style.setProperty('--h',driven+'px');
+  });
+}
+
+/* ── Reset state ── */
+function resetState(){
+  stopTimer();
+  wordCount=0;
+  wordCountEl.textContent='0 words';
+  autoScroll=true;
+  speakerColors={};
+  speakerColorIdx=0;
+  lines=[];
+  /* Remove all transcript lines */
+  var toRemove=bodyEl.querySelectorAll('.tr-line');
+  toRemove.forEach(function(el){el.parentNode.removeChild(el);});
+  emptyEl.style.display='';
+  statusEl.style.display='none';
+  scrollHintEl.style.display='none';
+  timerEl.textContent='00:00';
+}
+
+/* ── Global functions callable from Rust via WebviewWindow.evaluate_script() ── */
+
+function recvStart(title,meetingType){
+  resetState();
+  /* Set title: use provided title or generate "Meeting [date time]" */
+  if(title){
+    mtEl.value=title;
+  } else {
+    var now=new Date();
+    var pad=function(n){return n<10?'0'+n:String(n);};
+    var dateStr=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+    var timeStr=pad(now.getHours())+':'+pad(now.getMinutes());
+    mtEl.value='Meeting '+dateStr+' '+timeStr;
+  }
+  typeBadge.textContent=(meetingType&&meetingType.toLowerCase().indexOf('person')>=0)?'In-person':'Remote';
+  startTimer();
+}
+
+function recvChunk(text,speaker,timestampMs){
+  appendLine(text,speaker,timestampMs);
+  updateWordCount(text);
+}
+
+function recvStop(){
+  stopTimer();
+  /* Clear transcript lines and show status */
+  var toRemove=bodyEl.querySelectorAll('.tr-line');
+  toRemove.forEach(function(el){el.parentNode.removeChild(el);});
+  emptyEl.style.display='none';
+  statusEl.style.display='block';
+  statusEl.textContent='Generating summary...';
+  scrollHintEl.style.display='none';
+}
+
+function recvSummary(text){
+  statusEl.textContent=text||'';
+  statusEl.style.color='rgba(255,255,255,.6)';
+  setTimeout(function(){recvHide();},3000);
+}
+
+function recvHide(){
+  iv('hide_meeting_panel');
+}
+
+function recvUpdateLevel(level){
+  setLevel(level);
+}
+
+/* ── Event fallback setup (for test harness compatibility) ── */
+function setup(){
+  var t=$t();if(!t){setTimeout(setup,100);return;}
+  var tr=t.transformCallback;
+  function on(ev,fn){
+    t.invoke('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(fn)}).catch(function(x){console.error('listen:'+ev,x);});
+  }
+  on('meeting-panel:start',function(e){
+    var p=e&&e.payload||{};
+    recvStart(p.title||'',p.meeting_type||'remote');
+  });
+  on('meeting-panel:chunk',function(e){
+    var p=e&&e.payload||{};
+    recvChunk(p.text||'',p.speaker||'',p.timestamp_ms||0);
+  });
+  on('meeting-panel:stop',function(){recvStop();});
+  on('meeting-panel:summary',function(e){
+    var p=e&&e.payload||{};
+    recvSummary(p.text||'');
+  });
+  on('meeting-panel:hide',function(){recvHide();});
+  on('meeting-panel:level',function(e){
+    var p=e&&e.payload||{};
+    recvUpdateLevel(typeof p==='number'?p:(p.level||0));
+  });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(setup,40);});
+}else{
+  setTimeout(setup,40);
+}
+</script>
+</body>
+</html>

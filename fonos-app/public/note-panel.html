@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none;
+  -webkit-clip-path:inset(0 round 20px);clip-path:inset(0 round 20px)}
+body{background:transparent;overflow:hidden}
+
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes bar{0%,100%{height:2px}50%{height:var(--h)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+::-webkit-scrollbar{width:0}
+
+#np{
+  width:320px;
+  background:rgba(28,27,24,0.92);
+  -webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:dropIn .22s cubic-bezier(.23,1,.32,1);
+  font-family:-apple-system,system-ui,sans-serif;
+}
+
+header#ns{
+  flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  padding:8px 14px 6px;
+  outline:none;
+}
+.ns-label{
+  font-size:9px;
+  color:rgba(255,255,255,.2);
+  font-weight:500;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  margin-bottom:4px;
+}
+/* Drum roller: 3 rows visible, center item highlighted, top/bottom faded */
+#ns-items{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  height:72px; /* 3 x 24px rows */
+  overflow:hidden;
+  -webkit-mask-image:linear-gradient(transparent 0%,#000 30%,#000 70%,transparent 100%);
+  mask-image:linear-gradient(transparent 0%,#000 30%,#000 70%,transparent 100%);
+}
+.ns-item{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  height:24px;
+  padding:0 12px;
+  cursor:pointer;
+  transition:all .15s;
+  font-size:11px;
+  color:rgba(255,255,255,.2);
+  white-space:nowrap;
+  flex-shrink:0;
+  border:none;
+  background:none;
+}
+.ns-item.selected,.ns-item[data-selected="true"]{
+  color:#fbbf24;
+  font-size:12px;
+  font-weight:600;
+  color:rgba(245,158,11,.9);
+}
+.ns-item-icon{font-size:13px;flex-shrink:0}
+.ns-item-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ns-item-num{font-size:9px;color:rgba(255,255,255,.2);font-family:'SF Mono',ui-monospace,monospace;flex-shrink:0}
+
+main#rb{
+  flex-shrink:0;
+  padding:12px 16px;
+  border-bottom:1px solid rgba(255,255,255,.04);
+  display:flex;flex-direction:column;gap:6px;
+}
+#wf{display:flex;align-items:flex-end;gap:2px;height:16px}
+.wb{width:2.5px;border-radius:1.5px;background:#f59e0b;opacity:.4;animation:bar .55s ease-in-out infinite}
+#rh{display:flex;align-items:center;justify-content:center;padding:4px 0}
+#rh-text{font-size:11px;color:rgba(255,255,255,.25)}
+#rl{display:none;align-items:center;gap:8px}
+#rl.on{display:flex}
+#rd{width:6px;height:6px;border-radius:50%;background:#ef4444;animation:pulse 1s ease-in-out infinite;flex-shrink:0}
+#rs{font-size:11px;color:rgba(255,255,255,.35)}
+#rt{font-size:10px;color:rgba(255,255,255,.18);font-family:'SF Mono',ui-monospace,monospace}
+#conf{display:none;font-size:11px;color:rgba(245,158,11,.8);text-align:center;padding:2px 0;animation:fadeIn .15s ease-out}
+#conf.on{display:block}
+#result{display:none;padding:8px 14px;font-size:11px;line-height:1.5;color:rgba(255,255,255,.6);word-break:break-word;max-height:120px;overflow-y:auto;animation:fadeIn .15s ease-out}
+#result.on{display:block}
+
+footer#nf{
+  flex-shrink:0;
+  padding:8px 14px 10px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+#nf-icon{font-size:12px}
+#nf-name{font-size:11px;color:rgba(255,255,255,.35);font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nf-count{font-size:10px;color:rgba(255,255,255,.18);font-family:'SF Mono',ui-monospace,monospace;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="np" class="note-panel" data-testid="note-panel">
+
+  <header id="ns" data-testid="notebook-selector-header" tabindex="0">
+    <div class="ns-label">Notebook</div>
+    <div id="ns-items" data-testid="notebook-selector" role="listbox" aria-label="Select notebook">
+      <div class="ns-item selected"
+           id="ns-item-0"
+           data-testid="selector-item-quick-note"
+           role="option"
+           aria-selected="true"
+           data-selected="true"
+           data-idx="0"
+           data-id="quick-note"
+           data-name="Quick Note">
+        <span class="ns-item-icon">&#128075;</span>
+        <span class="ns-item-name">Quick Note</span>
+        <span class="ns-item-num">1</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="rb" data-testid="recording-area">
+    <div id="wf" data-testid="waveform">
+      <div class="wb" style="--h:6px;animation-delay:0s"></div>
+      <div class="wb" style="--h:12px;animation-delay:.06s"></div>
+      <div class="wb" style="--h:8px;animation-delay:.03s"></div>
+      <div class="wb" style="--h:15px;animation-delay:.09s"></div>
+      <div class="wb" style="--h:7px;animation-delay:.05s"></div>
+      <div class="wb" style="--h:13px;animation-delay:.08s"></div>
+      <div class="wb" style="--h:5px;animation-delay:.12s"></div>
+      <div class="wb" style="--h:10px;animation-delay:.02s"></div>
+    </div>
+    <div id="rh">
+      <span id="rh-text" data-testid="recording-status">Hold dictation key to record</span>
+    </div>
+    <div id="rl" data-testid="recording-indicator">
+      <div id="rd"></div>
+      <span id="rs">Listening</span>
+      <span id="rt" data-testid="recording-timer">0.0s</span>
+    </div>
+    <div id="conf"></div>
+    <div id="result"></div>
+  </main>
+
+  <footer id="nf" data-testid="note-panel-footer">
+    <span id="nf-icon">&#128203;</span>
+    <span id="nf-name" data-testid="selected-notebook-name">Quick Note</span>
+    <span id="nf-count" data-testid="entry-count">0 entries</span>
+  </footer>
+
+</div>
+<script>
+var notebooks = [];
+var selectedIdx = 0;
+var confirmedIdx = 0;
+var items = [];
+var timerInterval = null;
+var recStart = 0;
+
+var nsEl = document.getElementById('ns');
+var nsItems = document.getElementById('ns-items');
+var rlEl = document.getElementById('rl');
+var rtEl = document.getElementById('rt');
+var rhEl = document.getElementById('rh');
+var confEl = document.getElementById('conf');
+var nfName = document.getElementById('nf-name');
+var nfCount = document.getElementById('nf-count');
+
+function getTauriInternals(){
+  return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null;
+}
+function invoke(cmd,args){
+  var t=getTauriInternals();
+  return t?t.invoke(cmd,args||{}).catch(function(e){console.error(cmd,e)}):Promise.resolve(null);
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function syncItems(){
+  items = Array.from(nsItems.querySelectorAll('[data-testid^="selector-item-"]'));
+}
+
+function applySelection(idx){
+  if(items.length===0) return;
+  if(idx<0) idx=items.length-1;
+  if(idx>=items.length) idx=0;
+  selectedIdx=idx;
+  // Drum rendering: show only prev, current, next — hide all others
+  items.forEach(function(el,i){
+    var offset=i-idx;
+    // Wrap around for circular
+    if(offset>items.length/2) offset-=items.length;
+    if(offset<-items.length/2) offset+=items.length;
+    var sel=(offset===0);
+    el.setAttribute('aria-selected',sel?'true':'false');
+    el.setAttribute('data-selected',sel?'true':'false');
+    if(sel){el.classList.add('selected')}else{el.classList.remove('selected')}
+    // Show only -1, 0, +1 (3 visible items)
+    if(Math.abs(offset)<=1){
+      el.style.display='flex';
+      el.style.order=String(offset+1);
+    } else {
+      el.style.display='none';
+    }
+  });
+}
+
+function confirmSelection(){
+  confirmedIdx=selectedIdx;
+  var item=items[confirmedIdx];
+  if(!item) return;
+  var name=item.getAttribute('data-name')||'Quick Note';
+  var count=parseInt(item.getAttribute('data-entry-count')||'0',10);
+  nfName.textContent=name;
+  nfCount.textContent=count+(count===1?' entry':' entries');
+  // Tell Rust which notebook to save entries to (also called by selectNotebookById)
+  var cid=parseInt(item.getAttribute('data-id')||'0',10);
+  invoke('set_note_notebook',{container_id:cid});
+}
+
+// Select a notebook by container ID — called from Rust for notebook-specific hotkeys
+function selectNotebookById(id){
+  syncItems();
+  for(var i=0;i<items.length;i++){
+    var itemId=parseInt(items[i].getAttribute('data-id')||'0',10);
+    if(itemId===id){
+      applySelection(i);
+      confirmSelection();
+      // Scroll the selected item into view (center it in the drum)
+      items[i].scrollIntoView({block:'center',behavior:'smooth'});
+      return;
+    }
+  }
+}
+
+function rebuildNotebooks(){
+  var existing=nsItems.querySelectorAll('[data-testid^="selector-item-notebook-"]');
+  existing.forEach(function(el){el.parentNode.removeChild(el)});
+  var limit=Math.min(notebooks.length,4);
+  for(var i=0;i<limit;i++){
+    var nb=notebooks[i];
+    var div=document.createElement('div');
+    div.className='ns-item';
+    div.id='ns-item-'+(i+1);
+    div.setAttribute('data-testid','selector-item-notebook-'+nb.id);
+    div.setAttribute('role','option');
+    div.setAttribute('aria-selected','false');
+    div.setAttribute('data-selected','false');
+    div.setAttribute('data-idx',String(i+1));
+    div.setAttribute('data-id',String(nb.id));
+    div.setAttribute('data-name',nb.name);
+    div.setAttribute('data-entry-count',String(nb.entryCount||0));
+    div.innerHTML='<span class="ns-item-icon">&#128214;</span>'
+      +'<span class="ns-item-name">'+escHtml(nb.name)+'</span>'
+      +'<span class="ns-item-num">'+(i+2)+'</span>';
+    (function(div2){
+      div2.addEventListener('click',function(){
+        var idx2=parseInt(div2.getAttribute('data-idx'),10);
+        applySelection(idx2);
+        confirmSelection();
+      });
+    })(div);
+    nsItems.appendChild(div);
+  }
+  syncItems();
+  applySelection(selectedIdx<items.length?selectedIdx:0);
+}
+
+document.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='ArrowDown'){e.preventDefault();applySelection(selectedIdx+1);confirmSelection();}
+  else if(k==='ArrowUp'){e.preventDefault();applySelection(selectedIdx-1);confirmSelection();}
+  else if(k==='Enter'){e.preventDefault();confirmSelection();}
+  else if(k==='Escape'){e.preventDefault();applySelection(confirmedIdx);}
+  else if(k>='1'&&k<='5'){
+    var num=parseInt(k,10)-1;
+    if(num<items.length){applySelection(num);}
+  }
+});
+
+nsEl.addEventListener('click',function(){nsEl.focus();});
+nsEl.addEventListener('wheel',function(e){
+  e.preventDefault();
+  if(e.deltaY>0||e.deltaX>0){applySelection(selectedIdx+1);confirmSelection();}
+  else{applySelection(selectedIdx-1);confirmSelection();}
+},{passive:false});
+
+var qn=document.getElementById('ns-item-0');
+qn.addEventListener('click',function(){applySelection(0);confirmSelection();});
+
+syncItems();
+
+var pendingSelectId=0; // notebook ID to select after loading
+
+function recvShow(targetNotebookId){
+  pendingSelectId=targetNotebookId||0;
+  // Load notebooks from storage
+  invoke('list_containers',{}).then(function(data){
+    if(!data) return;
+    var nbs=(Array.isArray(data)?data:[]).filter(function(c){return c.container_type==='notebook'});
+    // Find Quick Note and put it first
+    var quickIdx=nbs.findIndex(function(c){return c.title==='Quick Note'});
+    var quickNb=quickIdx>=0?nbs.splice(quickIdx,1)[0]:null;
+    // Update Quick Note item's data-id to the real container ID
+    if(quickNb){
+      var qnEl=document.getElementById('ns-item-0');
+      if(qnEl) qnEl.setAttribute('data-id',String(quickNb.id));
+    }
+    // Show remaining notebooks
+    var mapped=nbs.map(function(c){return {id:c.id,name:c.title,entryCount:0}});
+    recvNotebooks(JSON.stringify(mapped));
+    // Now select the target notebook (or Quick Note as default)
+    if(pendingSelectId>0){
+      selectNotebookById(pendingSelectId);
+    } else if(quickNb){
+      selectNotebookById(quickNb.id);
+    }
+  }).catch(function(e){console.error('list_containers:',e)});
+}
+
+function recvHide(){}
+
+function recvRecording(){
+  rhEl.style.display='none';
+  rlEl.classList.add('on');
+  recStart=Date.now();
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval=setInterval(function(){
+    rtEl.textContent=((Date.now()-recStart)/1000).toFixed(1)+'s';
+  },100);
+}
+
+function recvRecordingStop(){
+  rlEl.classList.remove('on');
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+  rhEl.style.display='';
+}
+
+var resultEl=document.getElementById('result');
+var dismissTimer=null;
+var isShowingResult=false;
+
+function recvResult(text){
+  recvRecordingStop();
+  isShowingResult=true;
+  // Show the transcribed text
+  resultEl.textContent=text;
+  resultEl.classList.add('on');
+  // Hide the notebook selector header to make room
+  document.getElementById('ns').style.display='none';
+  // Auto-dismiss after 2 seconds
+  if(dismissTimer) clearTimeout(dismissTimer);
+  dismissTimer=setTimeout(function(){
+    recvDismiss();
+  },2000);
+}
+
+function cancelDismiss(){
+  if(dismissTimer){clearTimeout(dismissTimer);dismissTimer=null;}
+  isShowingResult=false;
+  resultEl.classList.remove('on');
+  resultEl.textContent='';
+  document.getElementById('ns').style.display='';
+}
+
+function recvDismiss(){
+  cancelDismiss();
+  invoke('hide_note_panel',{});
+}
+
+function recvEntrySaved(notebookName, entryCount){
+  recvRecordingStop();
+  nfName.textContent=notebookName;
+  var c=entryCount||0;
+  nfCount.textContent=c+(c===1?' entry':' entries');
+  confEl.textContent='Saved to '+notebookName;
+  confEl.classList.add('on');
+  setTimeout(function(){confEl.classList.remove('on');},2000);
+}
+
+function recvNotebooks(json){
+  try{
+    var data=typeof json==='string'?JSON.parse(json):json;
+    notebooks=(data||[]).slice(0,4).map(function(nb){
+      return {
+        id:nb.id||nb.container_id||String(Date.now()+Math.random()),
+        name:nb.name||nb.title||'Notebook',
+        entryCount:nb.entry_count||nb.entryCount||0
+      };
+    });
+    rebuildNotebooks();
+  }catch(e){console.error('recvNotebooks:',e);}
+}
+
+function setup(){
+  var t=getTauriInternals();
+  if(!t){setTimeout(setup,100);return;}
+  var tr=t.transformCallback;
+  function on(ev,fn){
+    t.invoke('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(fn)}).catch(function(x){console.error('listen:'+ev,x);});
+  }
+  on('note-panel:show',function(){recvShow();});
+  on('note-panel:hide',function(){recvHide();});
+  on('note-panel:recording',function(){recvRecording();});
+  on('note-panel:recording-stop',function(){recvRecordingStop();});
+  on('note-panel:entry-saved',function(e){
+    var p=e&&e.payload||{};
+    recvEntrySaved(p.notebook_name||'',p.entry_count||0);
+  });
+  on('note-panel:notebooks',function(e){
+    var p=e&&e.payload;
+    if(p) recvNotebooks(typeof p==='string'?p:JSON.stringify(p));
+  });
+}
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(setup,40);});
+}else{
+  setTimeout(setup,40);
+}
+</script>
+</body>
+</html>

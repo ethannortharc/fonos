@@ -1,6 +1,7 @@
 // Dictation view — jumping blocks + mic + drum-roller mode slider + activity.
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { MicIcon as MicSvg, TranscriptIcon, HourglassIcon, SparklesIcon, AlertIcon, PinIcon, NotebookIcon, ModeIcon } from "../components/Icons";
 import {
   hasMicrophone,
   startRecording,
@@ -9,6 +10,8 @@ import {
   listModes,
   getConfig,
 } from "../lib/api";
+import { listContainers } from "../lib/storage-api";
+import type { Container } from "../lib/storage-api";
 import type { ModeEntry, ModelProfile } from "../types";
 
 // ─── Jumping color blocks (Canvas) — only when recording ─────────────────────
@@ -182,7 +185,7 @@ function ModeDrum({
               ].join(" ")}
               style={{ opacity, transform: `scale(${scale})` }}
             >
-              <span style={{ fontSize: isCenter ? 14 : Math.max(10, 13 - dist * 1) }}>{m.icon}</span>
+              <span style={{ color: textColor }}><ModeIcon icon={m.icon} size={isCenter ? 14 : Math.max(10, 13 - dist * 1)} /></span>
               <span style={{
                 color: textColor,
                 fontSize: isCenter ? 12 : Math.max(9, 11 - dist * 0.7),
@@ -232,7 +235,7 @@ function StopIcon() {
 interface ActivityEntry {
   id: string;
   type: "recording" | "transcript" | "processing" | "result" | "error";
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   content?: string;
   model?: string;
@@ -247,6 +250,9 @@ interface ActivityEntry {
 export default function Dictation() {
   const [modes, setModes] = useState<ModeEntry[]>([]);
   const [dictationMode, setDictationMode] = useState<string>("raw");
+  const [notebooks, setNotebooks] = useState<Container[]>([]);
+  // null = Quick Note (no specific notebook), number = notebook id
+  const [selectedNotebookId, setSelectedNotebookId] = useState<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [hasMic, setHasMic] = useState<boolean | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -273,7 +279,17 @@ export default function Dictation() {
       if (sttP) setSttModel(`${sttP.name}${sttP.model ? " · " + sttP.model : ""}`);
       if (llmP) setLlmModel(`${llmP.name}${llmP.model ? " · " + llmP.model : ""}`);
     }).catch(() => {});
+    listContainers()
+      .then((all) => setNotebooks(all.filter((c) => c.container_type === "notebook")))
+      .catch(() => {});
   }, []);
+
+  // When dictationMode changes away from "note", clear the notebook selection
+  useEffect(() => {
+    if (dictationMode !== "note") {
+      setSelectedNotebookId(null);
+    }
+  }, [dictationMode]);
 
   useEffect(() => {
     if (isRecording) {
@@ -285,6 +301,21 @@ export default function Dictation() {
     }
     return () => { if (durationRef.current) clearInterval(durationRef.current); };
   }, [isRecording]);
+
+  // Select a notebook for note-mode dictation: switches mode to "note"
+  const handleSelectNotebook = useCallback(async (id: number | null) => {
+    setSelectedNotebookId(id);
+    setDictationMode("note");
+    // Tell Rust which notebook to save entries to
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      // If null (Quick Note), find Quick Note's real container ID
+      const targetId = id ?? notebooks.find((n) => n.title === "Quick Note")?.id ?? 0;
+      await invoke("set_note_notebook", { container_id: targetId });
+    } catch (e) {
+      console.error("set_note_notebook:", e);
+    }
+  }, [notebooks]);
 
   const addActivity = useCallback((entry: Omit<ActivityEntry, "id" | "timestamp">) => {
     setActivity((prev) => [...prev, { ...entry, id: `${Date.now()}-${Math.random()}`, timestamp: new Date() }]);
@@ -303,9 +334,21 @@ export default function Dictation() {
         : currentMode?.stt_model ? profileLabel(currentMode.stt_model) : sttModel;
       const actualLlm = currentMode?.model ? profileLabel(currentMode.model) : llmModel;
 
+      const notebookLabel = dictationMode === "note"
+        ? (selectedNotebookId !== null
+            ? (notebooks.find((n) => n.id === selectedNotebookId)?.title ?? "notebook")
+            : "Quick Note")
+        : undefined;
+
       setIsRecording(false);
       setProcessing(true);
-      addActivity({ type: "recording", icon: "🎙", label: "Recorded", duration: recordDuration, model: actualStt || undefined });
+      addActivity({
+        type: "recording",
+        icon: <MicSvg size={12} />,
+        label: notebookLabel ? `Recorded → ${notebookLabel}` : "Recorded",
+        duration: recordDuration,
+        model: actualStt || undefined,
+      });
       try {
         const result = await stopRecording(dictationMode);
         if (result.text) {
@@ -315,32 +358,35 @@ export default function Dictation() {
           const preprocBadge = (result.noise_removed_pct > 0.5 || Math.abs(result.gain_db) > 0.5)
             ? `HPF: -${result.noise_removed_pct.toFixed(1)}% noise | Norm: ${result.gain_db >= 0 ? "+" : ""}${result.gain_db.toFixed(1)}dB`
             : undefined;
-          addActivity({ type: "transcript", icon: "📝", label: "Transcript", content: result.text, latency: result.latency_ms, duration: result.duration_secs, model: sttDisplay || undefined, tokens: preprocBadge });
+          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: "Transcript", content: result.text, latency: result.latency_ms, duration: result.duration_secs, model: sttDisplay || undefined, tokens: preprocBadge });
           if (currentMode?.system || currentMode?.user_template) {
-            addActivity({ type: "processing", icon: "⏳", label: "Processing\u2026" });
+            addActivity({ type: "processing", icon: <HourglassIcon size={12} />, label: "Processing\u2026" });
             try {
               const llm = await processWithLlm(result.text, dictationMode);
               setActivity((prev) => {
                 const filtered = prev.filter((e) => e.type !== "processing");
                 const me = modes.find((m) => m.id === dictationMode);
-                return [...filtered, { id: `${Date.now()}-r`, timestamp: new Date(), type: "result" as const, icon: me?.icon || "✨", label: llm.mode_name || dictationMode, content: llm.processed, latency: llm.latency_ms, model: actualLlm || undefined }];
+                return [...filtered, { id: `${Date.now()}-r`, timestamp: new Date(), type: "result" as const, icon: me?.icon ? <ModeIcon icon={me.icon} size={12} /> : <SparklesIcon size={12} />, label: llm.mode_name || dictationMode, content: llm.processed, latency: llm.latency_ms, model: actualLlm || undefined }];
               });
             } catch (e: unknown) {
-              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: "⚠", label: "Error", content: e instanceof Error ? e.message : String(e) }]);
+              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) }]);
             }
           }
         } else {
-          addActivity({ type: "transcript", icon: "📝", label: "No speech detected", latency: result.latency_ms });
+          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: "No speech detected", latency: result.latency_ms });
         }
       } catch (e: unknown) {
-        addActivity({ type: "error", icon: "⚠", label: "Error", content: e instanceof Error ? e.message : String(e) });
+        addActivity({ type: "error", icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) });
       } finally { setProcessing(false); }
     } else {
       setActivity([]);
       try { await startRecording(); setIsRecording(true); }
-      catch (e: unknown) { addActivity({ type: "error", icon: "⚠", label: "Error", content: e instanceof Error ? e.message : String(e) }); }
+      catch (e: unknown) { addActivity({ type: "error", icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) }); }
     }
-  }, [isRecording, dictationMode, recordDuration, addActivity, modes, sttModel, llmModel, profiles]);
+  }, [isRecording, dictationMode, selectedNotebookId, notebooks, recordDuration, addActivity, modes, sttModel, llmModel, profiles]);
+
+  // Derive the current notebook for display in the activity label
+  const currentNotebook = notebooks.find((n) => n.id === selectedNotebookId) ?? null;
 
   return (
     <div className="flex flex-col h-full bg-[#1a1917]">
@@ -378,9 +424,63 @@ export default function Dictation() {
 
         {/* Layer 3: Horizontal drum-roller mode selector */}
         <div className="absolute bottom-0 left-0 right-0 z-[5]">
-          <ModeDrum modes={modes} current={dictationMode} onChange={setDictationMode} />
+          <ModeDrum modes={modes} current={dictationMode} onChange={(id) => {
+            setDictationMode(id);
+            // Switching away from "note" via drum clears notebook selection
+            if (id !== "note") setSelectedNotebookId(null);
+          }} />
         </div>
       </div>
+
+      {/* ── Notebooks strip (shown only when note mode is selected) ── */}
+      {dictationMode === "note" && notebooks.length > 0 && (
+        <div className="flex-shrink-0 px-4 pt-2 pb-1.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            {/* Section label */}
+            <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.2)] font-semibold flex-shrink-0 mr-0.5">
+              Notes
+            </span>
+            {/* Quick Note pill */}
+            <button
+              onClick={() => handleSelectNotebook(null)}
+              className={[
+                "flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all duration-200 border",
+                dictationMode === "note" && selectedNotebookId === null
+                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                  : "bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.55)]",
+              ].join(" ")}
+            >
+              <PinIcon size={11} />
+              <span>Quick Note</span>
+            </button>
+            {/* Notebook pills (exclude Quick Note — shown above) */}
+            {notebooks.filter((nb) => nb.title !== "Quick Note").map((nb) => (
+              <button
+                key={nb.id}
+                onClick={() => handleSelectNotebook(nb.id)}
+                className={[
+                  "flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all duration-200 border",
+                  dictationMode === "note" && selectedNotebookId === nb.id
+                    ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                    : "bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.55)]",
+                ].join(" ")}
+              >
+                <NotebookIcon size={11} />
+                <span className="max-w-[80px] truncate">{nb.title}</span>
+              </button>
+            ))}
+          </div>
+          {/* Active destination label */}
+          {dictationMode === "note" && (
+            <div className="mt-1 text-[9px] text-[rgba(255,255,255,0.2)] pl-0.5">
+              Dictating to:{" "}
+              <span className="text-[rgba(255,255,255,0.4)]">
+                {currentNotebook ? currentNotebook.title : "Quick Note"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mx-5 border-t border-[rgba(255,255,255,0.04)]" />
 
@@ -407,7 +507,9 @@ export default function Dictation() {
                     entry.type === "error" ? "bg-[#ef4444]" : entry.type === "result" ? "bg-[#fbbf24]" : entry.type === "transcript" ? "bg-[rgba(255,255,255,0.25)]" : "bg-[rgba(255,255,255,0.12)]",
                   ].join(" ")} />
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[12px]">{entry.icon}</span>
+                    <span className={["text-[12px]",
+                      entry.type === "result" ? "text-[#fbbf24]" : entry.type === "error" ? "text-[#ef4444]" : "text-[rgba(255,255,255,0.4)]",
+                    ].join(" ")}>{entry.icon}</span>
                     <span className={["text-[11px] font-medium",
                       entry.type === "result" ? "text-[#fbbf24]" : entry.type === "error" ? "text-[#ef4444]" : "text-[rgba(255,255,255,0.4)]",
                     ].join(" ")}>{entry.label}</span>

@@ -18,6 +18,8 @@ import HotkeysTab from "./settings/HotkeysTab";
 import LanguageTab from "./settings/LanguageTab";
 import AgentTab from "./settings/AgentTab";
 import SkillsTab from "./settings/SkillsTab";
+import NotesTab from "./settings/NotesTab";
+import MeetingTab from "./settings/MeetingTab";
 
 export default function Settings() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -172,32 +174,42 @@ export default function Settings() {
           />
         )}
 
-        {/* ────────────── Modes tab ────────────── */}
-        {settingsTab === "modes" && (
-          <ModesTab
-            config={config}
-            modes={modes}
-            onSaveMode={handleSaveMode}
-            onDeleteMode={handleDeleteMode}
-          />
+        {/* ────────────── Dictation tab (Modes + Language) ────────────── */}
+        {settingsTab === "dictation" && (
+          <>
+            <ModesTab
+              config={config}
+              modes={modes}
+              onSaveMode={handleSaveMode}
+              onDeleteMode={handleDeleteMode}
+            />
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
+            <LanguageTab config={config} onSave={handleSave} />
+          </>
         )}
 
-        {/* ────────────── Skills tab ────────────── */}
-        {settingsTab === "skills" && <SkillsTab />}
+        {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}
+        {settingsTab === "agent" && (
+          <>
+            <AgentTab config={config} onSave={handleSave} />
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
+            <SkillsTab />
+          </>
+        )}
+
+        {/* ────────────── Notes tab ────────────── */}
+        {settingsTab === "notes" && (
+          <NotesTab config={config} onSave={handleSave} />
+        )}
+
+        {/* ────────────── Meeting tab ────────────── */}
+        {settingsTab === "meeting" && (
+          <MeetingTab config={config} onSave={handleSave} />
+        )}
 
         {/* ────────────── Hotkeys tab ────────────── */}
         {settingsTab === "hotkeys" && (
           <HotkeysTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Language tab ────────────── */}
-        {settingsTab === "language" && (
-          <LanguageTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Agent tab ────────────── */}
-        {settingsTab === "agent" && (
-          <AgentTab config={config} onSave={handleSave} />
         )}
 
         {saving && (

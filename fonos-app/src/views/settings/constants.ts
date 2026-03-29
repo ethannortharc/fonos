@@ -1,18 +1,19 @@
 // Settings view constants and form types.
 
-export type SettingsTab = "models" | "modes" | "skills" | "hotkeys" | "language" | "agent";
+export type SettingsTab = "models" | "dictation" | "agent" | "notes" | "meeting" | "hotkeys";
 
 export const TABS: { key: SettingsTab; label: string }[] = [
   { key: "models", label: "Models" },
-  { key: "modes", label: "Modes" },
-  { key: "skills", label: "Skills" },
+  { key: "dictation", label: "Dictation" },
   { key: "agent", label: "Agent" },
+  { key: "notes", label: "Notes" },
+  { key: "meeting", label: "Meeting" },
   { key: "hotkeys", label: "Hotkeys" },
-  { key: "language", label: "Language" },
 ];
 
 export const PROVIDERS = [
   { id: "openai", label: "OpenAI", url: "https://api.openai.com" },
+  { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
   { id: "anthropic", label: "Anthropic", url: "https://api.anthropic.com" },
   { id: "google", label: "Google", url: "https://generativelanguage.googleapis.com" },
   { id: "ollama", label: "Ollama", url: "http://localhost:11434" },
@@ -98,6 +99,7 @@ export interface ModelForm {
   api_key: string;
   base_url: string;
   capabilities: string[];
+  stt_api: "whisper" | "chat";
 }
 
 export const EMPTY_MODEL: ModelForm = {
@@ -108,4 +110,5 @@ export const EMPTY_MODEL: ModelForm = {
   api_key: "",
   base_url: "",
   capabilities: [],
+  stt_api: "whisper",
 };

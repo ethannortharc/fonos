@@ -24,6 +24,7 @@ core-foundation = "0.10"
 arboard = "3.6.1"
 rfd = "0.15"
 rusqlite = { version = "0.31", features = ["bundled"] }
+base64 = "0.22"
 
 [dev-dependencies]
 # Used by test_build.rs for Cargo.toml validation.

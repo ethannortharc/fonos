@@ -66,6 +66,34 @@ pub struct AppConfig {
     pub hotkey_agent: String,
     /// Global hotkey combo for toggling the agent panel view.
     pub hotkey_agent_panel: String,
+    /// Global hotkey combo for toggling the note panel (note mode).
+    pub hotkey_note: String,
+    /// Notebook shortcut 1 hotkey combo (hold-to-talk into a specific notebook).
+    pub hotkey_note_1: String,
+    /// Notebook shortcut 2 hotkey combo.
+    pub hotkey_note_2: String,
+    /// Notebook shortcut 3 hotkey combo.
+    pub hotkey_note_3: String,
+    /// Container ID of notebook bound to shortcut 1 (0 = unbound).
+    pub notebook_hotkey_1: i64,
+    /// Container ID of notebook bound to shortcut 2 (0 = unbound).
+    pub notebook_hotkey_2: i64,
+    /// Container ID of notebook bound to shortcut 3 (0 = unbound).
+    pub notebook_hotkey_3: i64,
+
+    // ── Meeting settings ──────────────────────────────────────────────────
+
+    /// Global hotkey combo for toggling meeting mode (Option+M).
+    pub hotkey_meeting: String,
+    /// Which model profile ID to use for meeting AI summary generation.
+    /// Empty string means "fall back to `llm_profile`".
+    pub meeting_llm_profile: String,
+    /// Which model profile ID to use for meeting speech-to-text.
+    /// Empty string means "fall back to `stt_profile`".
+    pub meeting_stt_profile: String,
+    /// Custom system prompt for meeting summary generation.
+    /// Empty string uses the built-in default meeting summary prompt.
+    pub meeting_summary_prompt: String,
 }
 
 impl Default for AppConfig {
@@ -96,6 +124,17 @@ impl Default for AppConfig {
             agent_tts_enabled: false,
             hotkey_agent: "cmd+shift+a".to_string(),
             hotkey_agent_panel: "cmd+shift+g".to_string(),
+            hotkey_note: "option+n".to_string(),
+            hotkey_note_1: "option+1".to_string(),
+            hotkey_note_2: "option+2".to_string(),
+            hotkey_note_3: "option+3".to_string(),
+            notebook_hotkey_1: 0,
+            notebook_hotkey_2: 0,
+            notebook_hotkey_3: 0,
+            hotkey_meeting: "option+m".to_string(),
+            meeting_llm_profile: String::new(),
+            meeting_stt_profile: String::new(),
+            meeting_summary_prompt: String::new(),
         }
     }
 }

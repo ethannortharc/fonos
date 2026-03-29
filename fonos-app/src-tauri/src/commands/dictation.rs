@@ -15,6 +15,15 @@ use super::AppState;
 /// Prevents duplicate start/stop calls from rapid hotkey events.
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
+/// Force-reset the recording flag. Called when hiding panels to prevent
+/// a stale IS_RECORDING=true from blocking future recording sessions.
+pub fn force_reset_recording() {
+    let was_recording = IS_RECORDING.swap(false, Ordering::SeqCst);
+    if was_recording {
+        eprintln!("fonos: force-reset IS_RECORDING (was stuck at true)");
+    }
+}
+
 /// Move float pill to the monitor where the cursor is (bottom center).
 pub fn move_float_to_cursor_pub(app: &tauri::AppHandle) {
     move_float_to_monitor(app, false);
@@ -252,6 +261,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             super::ServiceConfig {
                 base_url: String::new(), api_key: String::new(),
                 model: "apple-speech".to_string(), provider: "apple".to_string(),
+                stt_api: "whisper".to_string(),
             }
         }
         Some(mode) if !mode.stt_model.is_empty() => {
@@ -298,9 +308,12 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     let model_name = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
 
-    // ── Branch: Apple on-device STT vs HTTP API ──────────────────────────────
+    // ── Branch: Apple on-device / Whisper API / Chat Completions STT ────────
     let (transcript, stt_engine) = if stt.provider == "apple" {
         transcribe_apple(&audio_path_str, &lang_code).await
+    } else if stt.stt_api == "chat" {
+        eprintln!("fonos: STT via chat completions (base64 audio)");
+        (transcribe_chat(&stt, &file_bytes, &lang_code).await, String::new())
     } else {
         (transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode).await, String::new())
     };
@@ -320,7 +333,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         eprintln!("fonos: agent mode — skipping float:stop and inject");
     }
 
-    // Record STT event to stats DB
+    // Record STT event to stats DB (legacy)
     let stats_model = if stt.provider == "apple" {
         format!("Apple Speech ({})", if stt_engine.is_empty() { "server" } else { &stt_engine })
     } else {
@@ -333,6 +346,47 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 latency_ms as i64, &dictation_mode, &stats_model, "", &audio_path_str,
                 0, 0, "",
             );
+
+            // Write to v2 unified entries table — all activity is recorded.
+            // Recent view shows everything; Notes view filters to note-only.
+            let source = match dictation_mode.as_str() {
+                "agent" => fonos_core::storage::SourceType::Agent,
+                "note" => fonos_core::storage::SourceType::Note,
+                _ => fonos_core::storage::SourceType::Dictation,
+            };
+            let entry = fonos_core::storage::Entry {
+                id: None,
+                created_at: crate::commands::storage::now_iso8601(),
+                source_type: source,
+                role: fonos_core::storage::EntryRole::User,
+                mode: dictation_mode.clone(),
+                raw_text: transcript.clone(),
+                processed_text: None,
+                container_id: if dictation_mode == "note" {
+                    // Use the notebook selected in the note panel (stored in AppState).
+                    // If no target set (race condition on first open), fall back to Quick Note.
+                    let target = state.note_target.lock().ok().and_then(|g| *g);
+                    if target.is_some() {
+                        target
+                    } else {
+                        // Find Quick Note container as fallback
+                        db.query_row(
+                            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
+                            [], |r| r.get::<_, i64>(0)
+                        ).ok()
+                    }
+                } else {
+                    None
+                },
+                audio_ref: if dictation_mode == "note" { None } else { Some(audio_path_str.clone()) },
+                metadata: serde_json::json!({
+                    "duration_secs": recording_duration,
+                    "latency_ms": latency_ms,
+                }),
+            };
+            if let Err(e) = fonos_core::storage::insert_entry(&db, &entry) {
+                eprintln!("fonos: entry write error: {e}");
+            }
         }
     }
 
@@ -499,7 +553,7 @@ fn find_apple_stt_binary() -> Option<String> {
 }
 
 /// Transcribe via HTTP POST to an OpenAI-compatible /v1/audio/transcriptions endpoint.
-async fn transcribe_http(
+pub async fn transcribe_http(
     stt: &super::ServiceConfig,
     file_bytes: &[u8],
     model_name: &str,
@@ -558,6 +612,98 @@ async fn transcribe_http(
         }
         Err(e) => {
             eprintln!("fonos: transcription failed: {e}");
+            String::new()
+        }
+    }
+}
+
+// ─── Chat-completions-based STT (OpenRouter, Gemini, Voxtral, etc.) ─────────
+
+/// Transcribe audio by sending it as base64 in a chat completions request.
+/// This path works with multimodal models that accept `input_audio` content
+/// blocks (OpenRouter, Gemini, Voxtral, GPT-Audio, etc.).
+pub async fn transcribe_chat(
+    stt: &super::ServiceConfig,
+    file_bytes: &[u8],
+    lang_code: &str,
+) -> String {
+    use base64::Engine;
+
+    let url = {
+        let base = stt.base_url.trim_end_matches('/');
+        if base.ends_with("/v1") {
+            format!("{}/chat/completions", base)
+        } else {
+            format!("{}/v1/chat/completions", base)
+        }
+    };
+
+    let audio_b64 = base64::engine::general_purpose::STANDARD.encode(file_bytes);
+
+    let lang_hint = if lang_code.is_empty() {
+        String::new()
+    } else {
+        format!(" The audio is in language code '{}'.", lang_code)
+    };
+
+    let body = serde_json::json!({
+        "model": stt.model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": format!(
+                        "Transcribe this audio exactly as spoken. Output only the transcript text, nothing else.{}",
+                        lang_hint
+                    )
+                },
+                {
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": audio_b64,
+                        "format": "wav"
+                    }
+                }
+            ]
+        }],
+        "temperature": 0.0,
+        "max_tokens": 4096
+    });
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("fonos: chat-stt client error: {e}");
+            return String::new();
+        }
+    };
+
+    let mut req = client.post(&url).json(&body);
+    if !stt.api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", stt.api_key));
+    }
+
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let json: serde_json::Value = resp.json().await.unwrap_or_default();
+            json["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            eprintln!("fonos: chat-stt error {status}: {}", body.chars().take(200).collect::<String>());
+            String::new()
+        }
+        Err(e) => {
+            eprintln!("fonos: chat-stt request failed: {e}");
             String::new()
         }
     }

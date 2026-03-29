@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import Dictation from "./views/Dictation";
 import Voice from "./views/Voice";
-import History from "./views/History";
 import Stats from "./views/Stats";
 import Settings from "./views/Settings";
+import Recent from "./views/Recent";
+import Notes from "./views/Notes";
+import Meetings from "./views/Meetings";
 
-type Tab = "dictation" | "voice" | "history" | "stats" | "settings";
+type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -20,6 +22,41 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
+    id: "recent",
+    label: "Recent",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 8v4l3 3" />
+        <circle cx="12" cy="12" r="10" />
+      </svg>
+    ),
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <polyline points="10 9 9 9 8 9" />
+      </svg>
+    ),
+  },
+  {
+    id: "meetings",
+    label: "Meetings",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    ),
+  },
+  {
     id: "voice",
     label: "Voice",
     icon: (
@@ -27,16 +64,6 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
         <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
         <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
         <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-      </svg>
-    ),
-  },
-  {
-    id: "history",
-    label: "History",
-    icon: (
-      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 8v4l3 3" />
-        <circle cx="12" cy="12" r="10" />
       </svg>
     ),
   },
@@ -83,7 +110,7 @@ export default function App() {
           const tab = typeof event.payload === "string"
             ? event.payload.replace(/"/g, "") as Tab
             : null;
-          if (tab && ["dictation", "voice", "history", "stats", "settings"].includes(tab)) {
+          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings"].includes(tab)) {
             setActiveTab(tab);
           }
         }));
@@ -126,9 +153,13 @@ export default function App() {
           </div>
 
           {/* Nav items */}
+          <div role="tablist" data-testid="app-nav" className="flex flex-col items-center gap-0.5 w-full">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.id}
+              role="tab"
+              aria-selected={activeTab === item.id}
+              data-testid={`nav-${item.id}`}
               onClick={() => setActiveTab(item.id)}
               title={item.label}
               className={[
@@ -144,6 +175,7 @@ export default function App() {
               {item.icon}
             </button>
           ))}
+          </div>
 
           {/* Spacer */}
           <div className="flex-1" />
@@ -170,9 +202,11 @@ export default function App() {
         <div className="flex-1 overflow-hidden bg-[#1a1917]">
           {activeTab === "dictation" && <Dictation />}
           {activeTab === "voice" && <Voice />}
-          {activeTab === "history" && <History />}
           {activeTab === "stats" && <Stats />}
           {activeTab === "settings" && <Settings />}
+          {activeTab === "recent" && <Recent />}
+          {activeTab === "notes" && <Notes />}
+          {activeTab === "meetings" && <Meetings />}
         </div>
       </div>
     </div>

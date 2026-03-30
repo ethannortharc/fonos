@@ -63,31 +63,44 @@ export default function GeneralTab({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <select
-            value={config.audio_input_device || "auto"}
-            onChange={(e) => onSave({ audio_input_device: e.target.value })}
-            className="flex-1 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2.5 text-[12px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer"
-          >
-            {audioInputs.map((name) => (
-              <option key={name} value={name}>
-                {name === "auto" ? "Auto Detect" : name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => listAudioInputs().then(setAudioInputs).catch(() => {})}
-            className="px-3 py-2.5 rounded-lg bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.4)] text-[10px] transition-colors flex-shrink-0"
-          >
-            Refresh
-          </button>
+        <div className="flex flex-col gap-1.5">
+          {audioInputs.map((name) => {
+            const selected = (config.audio_input_device || "auto") === name;
+            const isAuto = name === "auto";
+            return (
+              <button
+                key={name}
+                onClick={() => onSave({ audio_input_device: name })}
+                className={[
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-[11px]",
+                  selected
+                    ? "bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)]"
+                    : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)]",
+                ].join(" ")}
+              >
+                <div className={[
+                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
+                ].join(" ")} />
+                <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
+                  {isAuto ? "Auto Detect" : name}
+                </span>
+                {isAuto && (
+                  <span className="text-[8px] text-[rgba(255,255,255,0.15)] ml-auto">
+                    prefers external
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {config.audio_input_device && config.audio_input_device !== "auto" && config.audio_input_device !== "default" && (
-          <div className="text-[9px] text-[rgba(255,255,255,0.2)]">
-            Locked to "{config.audio_input_device}". If disconnected, recording will show an error.
-          </div>
-        )}
+        <button
+          onClick={() => listAudioInputs().then(setAudioInputs).catch(() => {})}
+          className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors self-start"
+        >
+          Refresh Devices
+        </button>
       </div>
 
       {/* Divider */}

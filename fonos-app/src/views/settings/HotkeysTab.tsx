@@ -136,7 +136,8 @@ export default function HotkeysTab({ config, onSave }: {
     <div className="flex flex-col gap-4">
 
       <Section label="Dictation">
-        <HotkeyRow label="Dictation" hint="(hold-to-talk)" value={config.hotkey_dictation} onChange={(v) => onSave({ hotkey_dictation: v })} />
+        <HotkeyRow label="Dictation" hint="(hold to talk)" value={config.hotkey_dictation} onChange={(v) => onSave({ hotkey_dictation: v })} />
+        <HotkeyRow label="Dictation Toggle" hint="(press to start/stop)" value={config.hotkey_dictation_toggle ?? ""} onChange={(v) => onSave({ hotkey_dictation_toggle: v })} />
         <HotkeyRow label="TTS" value={config.hotkey_tts} onChange={(v) => onSave({ hotkey_tts: v })} />
       </Section>
 

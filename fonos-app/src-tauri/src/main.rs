@@ -350,13 +350,15 @@ fn main() {
 
             // 1. Global hotkeys.
             let state = app.state::<AppState>();
-            let (dictation_combo, agent_combo, agent_panel_combo, note_combo, meeting_combo,
+            let (dictation_combo, dictation_toggle_combo,
+                 agent_combo, agent_panel_combo, note_combo, meeting_combo,
                  transform_combo,
                  note1_combo, note2_combo, note3_combo,
                  note1_nb, note2_nb, note3_nb) = {
                 let config = state.config.lock().unwrap();
                 (
                     config.hotkey_dictation.clone(),
+                    config.hotkey_dictation_toggle.clone(),
                     config.hotkey_agent.clone(),
                     config.hotkey_agent_panel.clone(),
                     config.hotkey_note.clone(),
@@ -377,6 +379,12 @@ fn main() {
             match hotkey::HotkeyManager::parse_hotkey(&dictation_combo, "dictation") {
                 Ok(hk) => { hm.register(hk); any_hotkey = true; }
                 Err(e) => eprintln!("fonos: could not parse dictation hotkey '{}': {}", dictation_combo, e),
+            }
+            if !dictation_toggle_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&dictation_toggle_combo, "dictation-toggle") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse dictation-toggle hotkey '{}': {}", dictation_toggle_combo, e),
+                }
             }
             match hotkey::HotkeyManager::parse_hotkey(&agent_combo, "agent") {
                 Ok(hk) => { hm.register(hk); any_hotkey = true; }
@@ -437,17 +445,44 @@ fn main() {
                     let note3_nb = nb3;
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
-                            "dictation" => {
-                                let state: tauri::State<'_, AppState> = handle.state();
+                            "dictation" | "dictation-toggle" => {
+                                let is_toggle = label == "dictation-toggle";
+                                eprintln!("fonos: dictation hotkey is_down={} toggle={}", is_down, is_toggle);
 
-                                if is_down {
-                                    if let Err(e) = commands::dictation::start_recording(
-                                        handle.clone(), state, None
-                                    ).await {
-                                        eprintln!("fonos: hotkey start error: {e}");
-                                        let _ = handle.emit("float:stop", "");
+                                // Hold: key_down=start, key_up=stop
+                                // Toggle: key_down only — first press=start, second press=stop
+                                if is_toggle {
+                                    if !is_down { return; }
+                                    if crate::commands::dictation::is_recording() {
+                                        eprintln!("fonos: toggle → stopping");
+                                        // fall through to stop logic
+                                    } else {
+                                        eprintln!("fonos: toggle → starting");
+                                        let state: tauri::State<'_, AppState> = handle.state();
+                                        if let Err(e) = commands::dictation::start_recording(
+                                            handle.clone(), state, None
+                                        ).await {
+                                            eprintln!("fonos: hotkey start error: {e}");
+                                            let _ = handle.emit("float:stop", "");
+                                        }
+                                        return;
                                     }
                                 } else {
+                                    if is_down {
+                                        let state: tauri::State<'_, AppState> = handle.state();
+                                        if let Err(e) = commands::dictation::start_recording(
+                                            handle.clone(), state, None
+                                        ).await {
+                                            eprintln!("fonos: hotkey start error: {e}");
+                                            let _ = handle.emit("float:stop", "");
+                                        }
+                                        return;
+                                    }
+                                }
+
+                                // ── Stop + process (hold key-up OR toggle second press) ──
+                                {
+                                    let state: tauri::State<'_, AppState> = handle.state();
                                     let state2: tauri::State<'_, AppState> = handle.state();
                                     match commands::dictation::stop_recording(
                                         handle.clone(), state, None

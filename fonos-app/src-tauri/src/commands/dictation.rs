@@ -15,6 +15,11 @@ use super::AppState;
 /// Prevents duplicate start/stop calls from rapid hotkey events.
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
+/// Check if currently recording.
+pub fn is_recording() -> bool {
+    IS_RECORDING.load(Ordering::SeqCst)
+}
+
 /// Force-reset the recording flag. Called when hiding panels to prevent
 /// a stale IS_RECORDING=true from blocking future recording sessions.
 pub fn force_reset_recording() {
@@ -136,7 +141,9 @@ pub fn list_audio_inputs() -> Result<Vec<String>, String> {
 /// When `skip_float` is true, the float pill is not moved or activated (used by agent hotkey).
 #[tauri::command]
 pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppState>, skip_float: Option<bool>) -> Result<(), String> {
-    if IS_RECORDING.swap(true, Ordering::SeqCst) {
+    let was_recording = IS_RECORDING.swap(true, Ordering::SeqCst);
+    eprintln!("fonos: start_recording called, was_recording={}, skip_float={:?}", was_recording, skip_float);
+    if was_recording {
         return Ok(()); // Already recording — ignore duplicate
     }
 

@@ -6,6 +6,7 @@
 /** Application configuration, persisted to disk as JSON. */
 export interface AppConfig {
   hotkey_dictation: string;
+  hotkey_dictation_toggle?: string;
   hotkey_tts: string;
   hotkey_agent?: string;
   hotkey_agent_panel?: string;

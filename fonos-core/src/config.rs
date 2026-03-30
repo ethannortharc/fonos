@@ -12,8 +12,10 @@ use crate::{Error, Result};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
-    /// Global hotkey combo for triggering dictation.
+    /// Global hotkey combo for hold-to-talk dictation.
     pub hotkey_dictation: String,
+    /// Global hotkey combo for toggle dictation (press to start, press to stop).
+    pub hotkey_dictation_toggle: String,
     /// Global hotkey combo for triggering TTS playback.
     pub hotkey_tts: String,
     /// Default dictation processing mode (e.g. `"raw"`, `"polish"`).
@@ -108,6 +110,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             hotkey_dictation: "cmd+shift+space".to_string(),
+            hotkey_dictation_toggle: String::new(),
             hotkey_tts: "cmd+shift+s".to_string(),
             dictation_mode: "raw".to_string(),
             default_voice: "default".to_string(),

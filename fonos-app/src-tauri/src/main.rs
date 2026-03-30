@@ -282,6 +282,7 @@ fn main() {
             // LLM commands
             commands::llm::process_with_llm,
             commands::llm::probe_model,
+            commands::llm::list_provider_models,
             commands::llm::list_modes,
             commands::llm::save_custom_mode,
             commands::llm::delete_custom_mode,

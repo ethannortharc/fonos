@@ -166,6 +166,69 @@ pub async fn probe_model(
     Ok(caps)
 }
 
+/// Query a provider's /v1/models endpoint and return available model IDs.
+#[tauri::command]
+pub async fn list_provider_models(
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let url = {
+        let base = base_url.trim_end_matches('/');
+        if base.ends_with("/v1") {
+            format!("{}/models", base)
+        } else {
+            format!("{}/v1/models", base)
+        }
+    };
+
+    eprintln!("fonos: probing models at {}", url);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("http client error: {e}"))?;
+
+    let mut req = client.get(&url);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let resp = req.send().await
+        .map_err(|e| format!("request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status, body.chars().take(200).collect::<String>()));
+    }
+
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| format!("parse error: {e}"))?;
+
+    // OpenAI format: { "data": [ { "id": "model-name", ... }, ... ] }
+    // Some servers return a flat array.
+    let models = if let Some(arr) = json["data"].as_array() {
+        arr.iter().map(|m| {
+            serde_json::json!({
+                "id": m["id"].as_str().unwrap_or(""),
+                "owned_by": m["owned_by"].as_str().unwrap_or(""),
+            })
+        }).filter(|m| !m["id"].as_str().unwrap_or("").is_empty()).collect()
+    } else if let Some(arr) = json.as_array() {
+        arr.iter().map(|m| {
+            serde_json::json!({
+                "id": m["id"].as_str().or_else(|| m["name"].as_str()).unwrap_or(""),
+                "owned_by": m["owned_by"].as_str().unwrap_or(""),
+            })
+        }).filter(|m| !m["id"].as_str().unwrap_or("").is_empty()).collect()
+    } else {
+        Vec::new()
+    };
+
+    eprintln!("fonos: found {} models", models.len());
+    Ok(models)
+}
+
 /// List all modes (built-in + custom).
 #[tauri::command]
 pub fn list_modes() -> Result<serde_json::Value, String> {

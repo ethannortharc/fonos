@@ -143,6 +143,11 @@ export async function probeModel(): Promise<ModelCaps> {
   return invoke<ModelCaps>("probe_model");
 }
 
+/** Query a provider's /v1/models endpoint to list available models. */
+export async function listProviderModels(baseUrl: string, apiKey: string): Promise<{ id: string; owned_by: string }[]> {
+  return invoke<{ id: string; owned_by: string }[]>("list_provider_models", { baseUrl, apiKey });
+}
+
 /** List all modes (built-in + custom). */
 export async function listModes(): Promise<ModeEntry[]> {
   return invoke<ModeEntry[]>("list_modes");

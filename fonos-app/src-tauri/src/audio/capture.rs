@@ -11,36 +11,70 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
-/// Find an input device by name, or fall back to the system default.
-/// If `name` is empty or "default", returns the default input device.
+/// Find an input device by name.
+///
+/// - `"auto"` or empty → probe all input devices, pick the first one that works
+///   (prefers external/USB over built-in, so plugging in a mic auto-switches)
+/// - Anything else → find that exact device. Returns `None` if not found (no fallback).
 pub fn find_input_device(name: &str) -> Option<Device> {
     let host = cpal::default_host();
-    if name.is_empty() || name == "default" {
-        return host.default_input_device();
+
+    if name.is_empty() || name == "auto" || name == "default" {
+        // Auto-detect: find the best available mic.
+        // Prefer external devices (USB, Bluetooth) over built-in.
+        if let Ok(devices) = host.input_devices() {
+            let all: Vec<Device> = devices.collect();
+            // First pass: look for non-built-in devices
+            for d in &all {
+                if let Ok(n) = d.name() {
+                    let lower = n.to_lowercase();
+                    if !lower.contains("built-in") && !lower.contains("macbook") && !lower.contains("mac mini") {
+                        if d.supported_input_configs().is_ok() {
+                            eprintln!("fonos: mic auto → {} (external)", n);
+                            return Some(d.clone());
+                        }
+                    }
+                }
+            }
+            // Second pass: any device that works
+            for d in all {
+                if d.supported_input_configs().is_ok() {
+                    if let Ok(n) = d.name() {
+                        eprintln!("fonos: mic auto → {} (fallback)", n);
+                    }
+                    return Some(d);
+                }
+            }
+        }
+        // Last resort
+        let dev = host.default_input_device();
+        if let Some(ref d) = dev {
+            if let Ok(n) = d.name() {
+                eprintln!("fonos: mic auto → {} (system default)", n);
+            }
+        }
+        return dev;
     }
-    // Try exact match first, then substring match
+
+    // Strict match: find exactly the device the user chose. No fallback.
     if let Ok(devices) = host.input_devices() {
-        let all: Vec<Device> = devices.collect();
-        for d in &all {
+        for d in devices {
             if let Ok(n) = d.name() {
-                if n == name { return Some(d.clone()); }
-            }
-        }
-        // Fallback: substring match (device names can have suffixes)
-        for d in all {
-            if let Ok(n) = d.name() {
-                if n.contains(name) || name.contains(&n) { return Some(d); }
+                if n == name {
+                    eprintln!("fonos: mic selected → {}", n);
+                    return Some(d);
+                }
             }
         }
     }
-    // Last resort: default
-    host.default_input_device()
+    eprintln!("fonos: mic '{}' not found (disconnected?)", name);
+    None
 }
 
 /// List all available input device names.
 pub fn list_input_devices() -> Vec<String> {
     let host = cpal::default_host();
-    let mut names = vec!["default".to_string()];
+    let mut names = vec!["auto".to_string()];
     if let Ok(devices) = host.input_devices() {
         for d in devices {
             if let Ok(name) = d.name() {

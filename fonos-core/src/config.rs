@@ -112,7 +112,7 @@ impl Default for AppConfig {
             dictation_mode: "raw".to_string(),
             default_voice: "default".to_string(),
             tts_speed: 1.0,
-            audio_input_device: "default".to_string(),
+            audio_input_device: "auto".to_string(),
             audio_output_device: "default".to_string(),
             show_floating_indicator: true,
             stt_language: "auto".to_string(),

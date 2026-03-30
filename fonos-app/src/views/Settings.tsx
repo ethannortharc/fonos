@@ -12,10 +12,10 @@ import {
 import type { AppConfig, ModeEntry } from "../types";
 import { TABS } from "./settings/constants";
 import type { SettingsTab, ModeForm } from "./settings/constants";
+import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
 import ModesTab from "./settings/ModesTab";
 import HotkeysTab from "./settings/HotkeysTab";
-import LanguageTab from "./settings/LanguageTab";
 import AgentTab from "./settings/AgentTab";
 import SkillsTab from "./settings/SkillsTab";
 import NotesTab from "./settings/NotesTab";
@@ -28,7 +28,7 @@ export default function Settings() {
   const [error, setError] = useState<string>("");
 
   // Tab state
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("models");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
 
   const loadAll = useCallback(async () => {
     try {
@@ -165,6 +165,11 @@ export default function Settings() {
           ))}
         </div>
 
+        {/* ────────────── General tab ────────────── */}
+        {settingsTab === "general" && (
+          <GeneralTab config={config} onSave={handleSave} />
+        )}
+
         {/* ────────────── Models tab ────────────── */}
         {settingsTab === "models" && (
           <ModelsTab
@@ -174,18 +179,14 @@ export default function Settings() {
           />
         )}
 
-        {/* ────────────── Dictation tab (Modes + Language) ────────────── */}
+        {/* ────────────── Dictation tab (Modes) ────────────── */}
         {settingsTab === "dictation" && (
-          <>
-            <ModesTab
-              config={config}
-              modes={modes}
-              onSaveMode={handleSaveMode}
-              onDeleteMode={handleDeleteMode}
-            />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
-            <LanguageTab config={config} onSave={handleSave} />
-          </>
+          <ModesTab
+            config={config}
+            modes={modes}
+            onSaveMode={handleSaveMode}
+            onDeleteMode={handleDeleteMode}
+          />
         )}
 
         {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}

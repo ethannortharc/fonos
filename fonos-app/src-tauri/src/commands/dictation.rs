@@ -126,6 +126,12 @@ pub fn has_microphone() -> Result<bool, String> {
     Ok(device.supported_input_configs().is_ok())
 }
 
+/// List all available audio input devices.
+#[tauri::command]
+pub fn list_audio_inputs() -> Result<Vec<String>, String> {
+    Ok(crate::audio::capture::list_input_devices())
+}
+
 /// Start capturing audio from the microphone (local only, no network).
 /// When `skip_float` is true, the float pill is not moved or activated (used by agent hotkey).
 #[tauri::command]
@@ -134,15 +140,21 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
         return Ok(()); // Already recording — ignore duplicate
     }
 
-    // Check for microphone and permission
-    use cpal::traits::{DeviceTrait, HostTrait};
-    let host = cpal::default_host();
-    match host.default_input_device() {
+    // Read selected device from config
+    let device_name = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        config.audio_input_device.clone()
+    };
+
+    // Check device availability
+    use crate::audio::capture::find_input_device;
+    match find_input_device(&device_name) {
         None => {
             IS_RECORDING.store(false, Ordering::SeqCst);
             return Err("No microphone found. Connect an audio input device.".into());
         }
         Some(dev) => {
+            use cpal::traits::DeviceTrait;
             if dev.supported_input_configs().is_err() {
                 IS_RECORDING.store(false, Ordering::SeqCst);
                 return Err("Microphone permission denied. Grant access in System Settings > Privacy > Microphone.".into());
@@ -153,10 +165,9 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
     let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
 
     // Always create a fresh AudioCapture — the old one may reference a
-    // disconnected device. This costs ~1ms and guarantees the current
-    // default input device is used.
+    // disconnected device or the user may have changed the device setting.
     *guard = None;
-    let capture = AudioCapture::new().map_err(|e| {
+    let capture = AudioCapture::with_device(&device_name).map_err(|e| {
         IS_RECORDING.store(false, Ordering::SeqCst);
         format!("mic init failed: {e}")
     })?;

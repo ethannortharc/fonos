@@ -1,8 +1,9 @@
 // Settings view constants and form types.
 
-export type SettingsTab = "models" | "dictation" | "agent" | "notes" | "meeting" | "hotkeys";
+export type SettingsTab = "general" | "models" | "dictation" | "agent" | "notes" | "meeting" | "hotkeys";
 
 export const TABS: { key: SettingsTab; label: string }[] = [
+  { key: "general", label: "General" },
   { key: "models", label: "Models" },
   { key: "dictation", label: "Dictation" },
   { key: "agent", label: "Agent" },

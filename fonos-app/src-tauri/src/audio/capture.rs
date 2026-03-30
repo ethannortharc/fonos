@@ -9,7 +9,49 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, Stream, StreamConfig};
+use cpal::{Device, SampleFormat, Stream, StreamConfig};
+
+/// Find an input device by name, or fall back to the system default.
+/// If `name` is empty or "default", returns the default input device.
+pub fn find_input_device(name: &str) -> Option<Device> {
+    let host = cpal::default_host();
+    if name.is_empty() || name == "default" {
+        return host.default_input_device();
+    }
+    // Try exact match first, then substring match
+    if let Ok(devices) = host.input_devices() {
+        let all: Vec<Device> = devices.collect();
+        for d in &all {
+            if let Ok(n) = d.name() {
+                if n == name { return Some(d.clone()); }
+            }
+        }
+        // Fallback: substring match (device names can have suffixes)
+        for d in all {
+            if let Ok(n) = d.name() {
+                if n.contains(name) || name.contains(&n) { return Some(d); }
+            }
+        }
+    }
+    // Last resort: default
+    host.default_input_device()
+}
+
+/// List all available input device names.
+pub fn list_input_devices() -> Vec<String> {
+    let host = cpal::default_host();
+    let mut names = vec!["default".to_string()];
+    if let Ok(devices) = host.input_devices() {
+        for d in devices {
+            if let Ok(name) = d.name() {
+                if !name.is_empty() {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names
+}
 
 /// Target sample rate for all captured audio.
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
@@ -170,6 +212,8 @@ pub struct AudioCapture {
     state: Arc<Mutex<CaptureState>>,
     /// Actual sample rate of the device (stored for reference).
     sample_rate: u32,
+    /// Device name to use (empty or "default" = system default).
+    device_name: String,
 }
 
 // Safety: `cpal::Stream` is not `Send` by default on some platforms, but we
@@ -185,26 +229,28 @@ impl AudioCapture {
     /// This does **not** start recording; call [`start`](AudioCapture::start)
     /// to begin streaming audio.
     pub fn new() -> Result<Self, CaptureError> {
-        let host = cpal::default_host();
+        Self::with_device("")
+    }
 
-        let device = host
-            .default_input_device()
+    /// Create a new `AudioCapture` using a specific device by name.
+    /// Pass empty string or "default" for the system default device.
+    pub fn with_device(device_name: &str) -> Result<Self, CaptureError> {
+        let device = find_input_device(device_name)
             .ok_or(CaptureError::NoInputDevice)?;
 
-        // Pick the best supported config: prefer f32, then i16, then i32.
-        // We'll take whatever sample rate the device offers — resampling
-        // happens in the callback.
+        if let Ok(name) = device.name() {
+            eprintln!("fonos: AudioCapture using device: {}", name);
+        }
+
         let supported_configs = device
             .supported_input_configs()
             .map_err(CaptureError::SupportedConfigsError)?;
 
-        // Collect all configs and rank them.
         let mut configs: Vec<cpal::SupportedStreamConfigRange> = supported_configs.collect();
         if configs.is_empty() {
             return Err(CaptureError::NoSupportedConfig);
         }
 
-        // Sort by preference: f32 > i16 > i32, then by channel count (prefer mono).
         configs.sort_by_key(|c| {
             let fmt_rank = match c.sample_format() {
                 SampleFormat::F32 => 0,
@@ -212,23 +258,20 @@ impl AudioCapture {
                 SampleFormat::I32 => 2,
                 _ => 3,
             };
-            let ch_rank = (c.channels() as i32 - 1).abs(); // prefer 1 channel
+            let ch_rank = (c.channels() as i32 - 1).abs();
             (fmt_rank, ch_rank)
         });
 
         let chosen_range = &configs[0];
 
-        // Request the sample rate closest to TARGET_SAMPLE_RATE within the
-        // supported range.
         let desired_rate = cpal::SampleRate(TARGET_SAMPLE_RATE);
         let clamped_rate = desired_rate
             .0
             .clamp(chosen_range.min_sample_rate().0, chosen_range.max_sample_rate().0);
-        let sample_rate = cpal::SampleRate(clamped_rate);
 
         let config = StreamConfig {
             channels: chosen_range.channels(),
-            sample_rate,
+            sample_rate: cpal::SampleRate(clamped_rate),
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -244,6 +287,7 @@ impl AudioCapture {
             _stream: None,
             state,
             sample_rate: device_sample_rate,
+            device_name: device_name.to_string(),
         })
     }
 
@@ -260,9 +304,7 @@ impl AudioCapture {
             }
         }
 
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
+        let device = find_input_device(&self.device_name)
             .ok_or(CaptureError::NoInputDevice)?;
 
         let supported_configs = device

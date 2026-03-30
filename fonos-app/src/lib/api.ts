@@ -138,6 +138,11 @@ export async function processWithLlm(
   return invoke<LlmResult>("process_with_llm", { text, mode });
 }
 
+/** List all available audio input devices. */
+export async function listAudioInputs(): Promise<string[]> {
+  return invoke<string[]>("list_audio_inputs");
+}
+
 /** Probe the configured model's capabilities and cache results. */
 export async function probeModel(): Promise<ModelCaps> {
   return invoke<ModelCaps>("probe_model");

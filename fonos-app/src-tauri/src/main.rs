@@ -255,6 +255,7 @@ fn main() {
             commands::config::save_config,
             // Dictation commands
             commands::dictation::has_microphone,
+            commands::dictation::list_audio_inputs,
             commands::dictation::start_recording,
             commands::dictation::stop_recording,
             commands::dictation::transcribe_file,

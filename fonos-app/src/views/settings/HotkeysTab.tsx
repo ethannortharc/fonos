@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { NotebookIcon } from "../../components/Icons";
+import { listModes } from "../../lib/api";
+import type { ModeEntry } from "../../types";
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig } from "../../types";
@@ -121,11 +123,13 @@ export default function HotkeysTab({ config, onSave }: {
   config: AppConfig; onSave: (updates: Partial<AppConfig>) => void;
 }) {
   const [notebooks, setNotebooks] = useState<Container[]>([]);
+  const [modes, setModes] = useState<ModeEntry[]>([]);
 
   useEffect(() => {
     listContainers()
       .then((all) => setNotebooks(all.filter((c) => c.container_type === "notebook")))
       .catch(() => {});
+    listModes().then(setModes).catch(() => {});
   }, []);
 
   return (
@@ -188,6 +192,25 @@ export default function HotkeysTab({ config, onSave }: {
           <div className="border-t border-[rgba(255,255,255,0.04)]" />
           <Section label="Meeting">
             <HotkeyRow label="Meeting" hint="(toggle)" value={config.hotkey_meeting} onChange={(v) => onSave({ hotkey_meeting: v })} />
+          </Section>
+
+          <Section label="Quick Transform">
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-[rgba(255,255,255,0.4)] min-w-[120px]">Transform</span>
+              <HotkeyInput value={config.hotkey_transform ?? ""} onChange={(v) => onSave({ hotkey_transform: v })} />
+              <select
+                value={config.transform_mode ?? "polish"}
+                onChange={(e) => onSave({ transform_mode: e.target.value })}
+                className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none flex-1 min-w-[100px]"
+              >
+                {modes.filter((m) => m.system || m.user_template).map((m) => (
+                  <option key={m.id} value={m.id}>{m.icon} {m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="text-[9px] text-[rgba(255,255,255,0.15)] mt-1 pl-[132px]">
+              Select text → press hotkey → mode's LLM step processes it → result replaces selection
+            </div>
           </Section>
         </>
       )}

@@ -244,6 +244,7 @@ fn main() {
         agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
         meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
         note_target: Arc::new(Mutex::new(None)),
+        agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
     };
 
     tauri::Builder::default()
@@ -298,6 +299,9 @@ fn main() {
             commands::agent::save_custom_skill,
             commands::agent::delete_custom_skill,
             commands::agent::test_skill,
+            // Selection commands
+            commands::selection::grab_selection,
+            commands::selection::replace_selection,
             // Storage commands (v2)
             commands::storage::list_entries,
             commands::storage::get_entry,
@@ -345,6 +349,7 @@ fn main() {
             // 1. Global hotkeys.
             let state = app.state::<AppState>();
             let (dictation_combo, agent_combo, agent_panel_combo, note_combo, meeting_combo,
+                 transform_combo,
                  note1_combo, note2_combo, note3_combo,
                  note1_nb, note2_nb, note3_nb) = {
                 let config = state.config.lock().unwrap();
@@ -354,6 +359,7 @@ fn main() {
                     config.hotkey_agent_panel.clone(),
                     config.hotkey_note.clone(),
                     config.hotkey_meeting.clone(),
+                    config.hotkey_transform.clone(),
                     config.hotkey_note_1.clone(),
                     config.hotkey_note_2.clone(),
                     config.hotkey_note_3.clone(),
@@ -385,6 +391,12 @@ fn main() {
             match hotkey::HotkeyManager::parse_hotkey(&meeting_combo, "meeting") {
                 Ok(hk) => { hm.register(hk); any_hotkey = true; }
                 Err(e) => eprintln!("fonos: could not parse meeting hotkey '{}': {}", meeting_combo, e),
+            }
+            if !transform_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&transform_combo, "transform") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse transform hotkey '{}': {}", transform_combo, e),
+                }
             }
             // Notebook-specific note shortcuts (only if a notebook is bound)
             eprintln!("fonos: note shortcuts: 1='{}' nb={}, 2='{}' nb={}, 3='{}' nb={}",
@@ -514,6 +526,14 @@ fn main() {
                                 }
 
                                 if is_down {
+                                    // ── Grab selected text BEFORE showing panel (original app still focused) ──
+                                    let sel = commands::selection::grab_selection().await.ok();
+                                    let sel_store = {
+                                        let state: tauri::State<'_, AppState> = handle.state();
+                                        Arc::clone(&state.agent_selection)
+                                    };
+                                    *sel_store.lock().await = sel;
+
                                     // Stop any TTS still playing from previous interaction
                                     {
                                         let state: tauri::State<'_, AppState> = handle.state();
@@ -537,6 +557,14 @@ fn main() {
                                     }
                                 } else {
                                     agent_js(&handle, "recvRecordingStop()");
+
+                                    // Retrieve the selection context stashed on key-down
+                                    let sel_load = {
+                                        let state: tauri::State<'_, AppState> = handle.state();
+                                        Arc::clone(&state.agent_selection)
+                                    };
+                                    let sel = sel_load.lock().await.take();
+
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     match commands::dictation::stop_recording(handle.clone(), state, Some("agent".to_string())).await {
                                         Ok(result) => {
@@ -546,26 +574,62 @@ fn main() {
                                                 return;
                                             }
 
+                                            // Build agent prompt: prepend selection context if any
+                                            let has_selection = sel.as_ref().map(|s| !s.text.is_empty()).unwrap_or(false);
+                                            let agent_prompt = if let Some(ref s) = sel {
+                                                if !s.text.is_empty() {
+                                                    format!(
+                                                        "[Selected text from {}]:\n\"\"\"\n{}\n\"\"\"\n\nUser instruction: {}",
+                                                        s.app_name, s.text, transcript
+                                                    )
+                                                } else {
+                                                    transcript.clone()
+                                                }
+                                            } else {
+                                                transcript.clone()
+                                            };
+
+                                            // Show the user message (just the spoken part).
+                                            // Use serde_json to produce safe JS string literals
+                                            // (handles quotes, backslashes, newlines, unicode).
                                             eprintln!("fonos: agent user-message: {}", &transcript);
-                                            let esc = transcript.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
-                                            agent_js(&handle, &format!("recvUserMessage('{}')", esc));
+                                            if has_selection {
+                                                let sel_ref = sel.as_ref().unwrap();
+                                                let preview: String = sel_ref.text.chars().take(120).collect();
+                                                let sel_j = serde_json::to_string(&preview).unwrap_or_default();
+                                                let app_j = serde_json::to_string(&sel_ref.app_name).unwrap_or_default();
+                                                agent_js(&handle, &format!(
+                                                    "recvSelection({}, {})",
+                                                    sel_j, app_j
+                                                ));
+                                            }
+                                            let tx_j = serde_json::to_string(&transcript).unwrap_or_default();
+                                            agent_js(&handle, &format!("recvUserMessage({})", tx_j));
                                             agent_js(&handle, "recvThinking()");
 
                                             let state2: tauri::State<'_, AppState> = handle.state();
-                                            match commands::agent::agent_process(state2, transcript).await {
+                                            match commands::agent::agent_process(state2, agent_prompt).await {
                                                 Ok(agent_result) => {
                                                     for exec in &agent_result.skill_executions {
-                                                        let p = serde_json::to_string(&exec.params).unwrap_or_default()
-                                                            .replace('\\', "\\\\").replace('\'', "\\'");
-                                                        let n = exec.skill_name.replace('\'', "\\'");
+                                                        let p_j = serde_json::to_string(&exec.params).unwrap_or("\"\"".into());
+                                                        let n_j = serde_json::to_string(&exec.skill_name).unwrap_or_default();
                                                         agent_js(&handle, &format!(
-                                                            "recvSkillExec('{}','{}',{},{})",
-                                                            n, p, exec.latency_ms, exec.blocked
+                                                            "recvSkillExec({},{},{},{})",
+                                                            n_j, p_j, exec.latency_ms, exec.blocked
                                                         ));
                                                     }
-                                                    let r = agent_result.response_text
-                                                        .replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
-                                                    agent_js(&handle, &format!("recvResponse('{}')", r));
+                                                    let r_j = serde_json::to_string(&agent_result.response_text).unwrap_or_default();
+                                                    agent_js(&handle, &format!("recvResponse({})", r_j));
+
+                                                    // Auto-replace: switch focus back to the original app
+                                                    // and paste the result. Cmd+V silently fails if the
+                                                    // target isn't an editable field.
+                                                    if has_selection && !agent_result.response_text.is_empty() {
+                                                        let replace_text = agent_result.response_text.clone();
+                                                        let target_app = sel.as_ref().map(|s| s.app_name.clone());
+                                                        let _ = commands::selection::replace_selection(replace_text, target_app).await;
+                                                        eprintln!("fonos: auto-replaced selection in {:?}", sel.as_ref().map(|s| &s.app_name));
+                                                    }
 
                                                     let (tts_enabled, tts_voice, tts_speed) = {
                                                         let state3: tauri::State<'_, AppState> = handle.state();
@@ -834,6 +898,84 @@ fn main() {
                                             let _ = panel.hide();
                                         }
                                     });
+                                }
+                            }
+
+                            "transform" => {
+                                // Quick transform: grab selection → mode's LLM step → paste back.
+                                // Reuses dictation mode definitions — only applies step 2 (LLM).
+                                if !is_down { return; }
+
+                                // 1. Grab selection while the original app has focus
+                                let sel = match commands::selection::grab_selection().await {
+                                    Ok(s) if !s.text.is_empty() => s,
+                                    _ => {
+                                        eprintln!("fonos: transform — no text selected");
+                                        return;
+                                    }
+                                };
+
+                                eprintln!("fonos: transform — {} chars from {}", sel.text.len(), sel.app_name);
+
+                                // 2. Look up the configured mode and build LLM prompt
+                                let (mode_id, translate_target) = {
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    let cfg = state.config.lock().unwrap();
+                                    let mid = if cfg.transform_mode.is_empty() { "polish".to_string() } else { cfg.transform_mode.clone() };
+                                    (mid, cfg.translate_target.clone())
+                                };
+
+                                let all_modes = fonos_core::modes::all_modes();
+                                let mode_def = match all_modes.get(&mode_id) {
+                                    Some(m) => m.clone(),
+                                    None => {
+                                        eprintln!("fonos: transform — mode '{}' not found", mode_id);
+                                        return;
+                                    }
+                                };
+
+                                // Build messages using the mode's system prompt + user_template
+                                let user_template = mode_def.user_template.as_deref().unwrap_or("{text}");
+                                let mut user_text = user_template.replace("{text}", &sel.text);
+                                if user_text.contains("{target_lang}") {
+                                    let target = if translate_target.is_empty() { "English" } else { &translate_target };
+                                    user_text = user_text.replace("{target_lang}", target);
+                                }
+
+                                let mut messages = Vec::new();
+                                if let Some(ref sys) = mode_def.system {
+                                    messages.push(serde_json::json!({"role": "system", "content": sys}));
+                                }
+                                messages.push(serde_json::json!({"role": "user", "content": user_text}));
+
+                                // 3. Resolve LLM service — mode override → global default
+                                let svc = {
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    if !mode_def.model.is_empty() {
+                                        commands::get_service_config_for_profile(&state, &mode_def.model)
+                                    } else {
+                                        commands::get_service_config(&state, "llm")
+                                    }
+                                };
+
+                                eprintln!("fonos: transform mode={} provider={} model={}", mode_id, svc.provider, svc.model);
+
+                                let result = match svc.provider.as_str() {
+                                    "anthropic" => fonos_core::llm::call_anthropic(&svc.api_key, &svc.model, &messages, mode_def.temperature, mode_def.max_tokens).await,
+                                    "google" => fonos_core::llm::call_google(&svc.api_key, &svc.model, &messages, mode_def.temperature, mode_def.max_tokens).await,
+                                    _ => fonos_core::llm::call_openai_compatible(&svc.api_key, &svc.model, &svc.base_url, &messages, mode_def.temperature, mode_def.max_tokens, &svc.provider).await,
+                                };
+
+                                match result {
+                                    Ok(resp) if !resp.text.is_empty() => {
+                                        eprintln!("fonos: transform — result {} chars, replacing", resp.text.len());
+                                        let _ = commands::selection::replace_selection(
+                                            resp.text,
+                                            Some(sel.app_name),
+                                        ).await;
+                                    }
+                                    Ok(_) => eprintln!("fonos: transform — LLM returned empty"),
+                                    Err(e) => eprintln!("fonos: transform — LLM error: {e}"),
                                 }
                             }
 

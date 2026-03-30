@@ -94,6 +94,14 @@ pub struct AppConfig {
     /// Custom system prompt for meeting summary generation.
     /// Empty string uses the built-in default meeting summary prompt.
     pub meeting_summary_prompt: String,
+
+    // ── Quick transform settings ─────────────────────────────────────────
+
+    /// Global hotkey for quick-transform: select text → apply mode's LLM step → replace.
+    pub hotkey_transform: String,
+    /// Which dictation mode to use for quick-transform (e.g. "polish", "formal", "translate").
+    /// Uses the mode's system prompt + user_template as the LLM processing step.
+    pub transform_mode: String,
 }
 
 impl Default for AppConfig {
@@ -135,6 +143,8 @@ impl Default for AppConfig {
             meeting_llm_profile: String::new(),
             meeting_stt_profile: String::new(),
             meeting_summary_prompt: String::new(),
+            hotkey_transform: "cmd+shift+t".to_string(),
+            transform_mode: "polish".to_string(),
         }
     }
 }

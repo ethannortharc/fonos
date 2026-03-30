@@ -256,6 +256,24 @@ export async function resizeFloat(
   return invoke<void>("resize_float", { width, height });
 }
 
+// ─── Selection ───────────────────────────────────────────────────────────────
+
+export interface SelectionContext {
+  text: string;
+  app_name: string;
+  editable: boolean;
+}
+
+/** Grab the currently selected text from the frontmost app (Cmd+C under the hood). */
+export async function grabSelection(): Promise<SelectionContext> {
+  return invoke<SelectionContext>("grab_selection");
+}
+
+/** Replace the current selection in the target app with new text (Cmd+V). */
+export async function replaceSelection(text: string, targetApp?: string): Promise<void> {
+  return invoke<void>("replace_selection", { text, targetApp });
+}
+
 // ─── Agent ────────────────────────────────────────────────────────────────────
 
 /** Send text to the agent processor and get a response with skill executions. */

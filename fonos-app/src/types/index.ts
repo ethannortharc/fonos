@@ -51,6 +51,9 @@ export interface AppConfig {
   meeting_summary_prompt?: string;
   meeting_audio_source?: string;
   hotkey_meeting?: string;
+  // Quick transform
+  hotkey_transform?: string;
+  transform_mode?: string;
 }
 
 /** A named model profile entry within AppConfig.model_profiles. */

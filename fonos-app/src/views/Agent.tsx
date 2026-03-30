@@ -10,8 +10,11 @@ import {
   agentReset,
   getConfig,
   generateAndPlay,
+  grabSelection,
+  replaceSelection,
 } from "../lib/api";
 import type { SkillExecution } from "../types";
+import type { SelectionContext } from "../lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +24,10 @@ interface ConversationMessage {
   text: string;
   skillExecutions?: SkillExecution[];
   timestamp: Date;
+  /** Attached when the user had text selected before speaking. */
+  selectionContext?: SelectionContext;
+  /** If true, this agent response can be used to replace the original selection. */
+  canReplace?: boolean;
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -111,18 +118,32 @@ function SkillCard({ skill }: { skill: SkillExecution }) {
 
 // ─── Chat bubble ─────────────────────────────────────────────────────────────
 
-function ChatBubble({ message }: { message: ConversationMessage }) {
+function ChatBubble({ message, onReplace }: { message: ConversationMessage; onReplace?: (text: string) => void }) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
 
   if (isUser) {
     return (
       <div className="flex justify-end mb-3 animate-slide-up">
-        <div
-          className="max-w-[75%] rounded-[12px] rounded-br-[4px] px-3 py-2 text-[12px] leading-relaxed text-[#fafaf9]"
-          style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.06)" }}
-        >
-          {message.text}
+        <div className="max-w-[75%] flex flex-col gap-1">
+          {/* Show selected text context if present */}
+          {message.selectionContext && message.selectionContext.text && (
+            <div
+              className="rounded-[8px] px-2.5 py-1.5 text-[10px] leading-relaxed text-[rgba(255,255,255,0.3)]"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.04)" }}
+            >
+              <span className="text-[8px] uppercase tracking-wider text-[rgba(255,255,255,0.15)] block mb-0.5">
+                Selected from {message.selectionContext.app_name}
+              </span>
+              <span className="text-[rgba(255,255,255,0.35)] line-clamp-3">{message.selectionContext.text}</span>
+            </div>
+          )}
+          <div
+            className="rounded-[12px] rounded-br-[4px] px-3 py-2 text-[12px] leading-relaxed text-[#fafaf9]"
+            style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.06)" }}
+          >
+            {message.text}
+          </div>
         </div>
       </div>
     );
@@ -142,6 +163,7 @@ function ChatBubble({ message }: { message: ConversationMessage }) {
   }
 
   // Agent message — may include skill execution cards before the bubble
+  const [replaced, setReplaced] = useState(false);
   return (
     <>
       {message.skillExecutions && message.skillExecutions.length > 0 && (
@@ -152,11 +174,34 @@ function ChatBubble({ message }: { message: ConversationMessage }) {
         </div>
       )}
       <div className="flex justify-start mb-3 animate-slide-up">
-        <div
-          className="max-w-[80%] rounded-[12px] rounded-bl-[4px] px-3 py-2 text-[12px] leading-relaxed text-[rgba(255,255,255,0.7)]"
-          style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}
-        >
-          {message.text}
+        <div className="max-w-[80%] flex flex-col gap-1">
+          <div
+            className="rounded-[12px] rounded-bl-[4px] px-3 py-2 text-[12px] leading-relaxed text-[rgba(255,255,255,0.7)]"
+            style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}
+          >
+            {message.text}
+          </div>
+          {message.canReplace && onReplace && !replaced && (
+            <div className="flex gap-1.5 pl-1">
+              <button
+                onClick={() => { onReplace(message.text); setReplaced(true); }}
+                className="text-[9px] px-2 py-0.5 rounded-md text-[#fbbf24] hover:text-[#fde68a] transition-colors"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.12)" }}
+              >
+                Replace
+              </button>
+              <button
+                onClick={() => { navigator.clipboard.writeText(message.text); }}
+                className="text-[9px] px-2 py-0.5 rounded-md text-[rgba(255,255,255,0.25)] hover:text-[rgba(255,255,255,0.5)] transition-colors"
+                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+              >
+                Copy
+              </button>
+            </div>
+          )}
+          {replaced && (
+            <span className="text-[9px] text-[rgba(134,239,172,0.6)] pl-1">Replaced</span>
+          )}
         </div>
       </div>
     </>
@@ -250,23 +295,35 @@ export default function AgentView({ messages, onMessagesChange }: AgentViewProps
     return full;
   }, [messages, onMessagesChange]);
 
-  const processText = useCallback(async (text: string) => {
-    // Add user message
-    const updatedMessages: ConversationMessage[] = [
-      ...messages,
-      { id: `${Date.now()}-u`, role: "user", text, timestamp: new Date() },
-    ];
+  // Track selection context grabbed at recording start
+  const selectionRef = useRef<SelectionContext | null>(null);
+
+  const processText = useCallback(async (text: string, selection?: SelectionContext) => {
+    // Build the prompt: if there's selected text, prepend it as context
+    let agentPrompt = text;
+    if (selection && selection.text) {
+      agentPrompt = `[Selected text from ${selection.app_name}]:\n"""\n${selection.text}\n"""\n\nUser instruction: ${text}`;
+    }
+
+    // Add user message (with selection context for UI display)
+    const userMsg: ConversationMessage = {
+      id: `${Date.now()}-u`, role: "user", text, timestamp: new Date(),
+      selectionContext: selection && selection.text ? selection : undefined,
+    };
+    const updatedMessages: ConversationMessage[] = [...messages, userMsg];
     onMessagesChange(updatedMessages);
     setIsProcessing(true);
 
     try {
-      const result = await agentProcess(text);
+      const result = await agentProcess(agentPrompt);
       const agentMsg: ConversationMessage = {
         id: `${Date.now()}-a`,
         role: "agent",
         text: result.response_text,
         skillExecutions: result.skill_executions,
         timestamp: new Date(),
+        // Enable Replace button if the source was editable and there was a selection
+        canReplace: !!(selection && selection.text && selection.editable),
       };
       onMessagesChange([...updatedMessages, agentMsg]);
       // Speak the response if TTS is enabled
@@ -284,7 +341,7 @@ export default function AgentView({ messages, onMessagesChange }: AgentViewProps
     } finally {
       setIsProcessing(false);
     }
-  }, [messages, onMessagesChange]);
+  }, [messages, onMessagesChange, ttsEnabled]);
 
   const handleMicClick = useCallback(async () => {
     if (isProcessing) return;
@@ -295,15 +352,19 @@ export default function AgentView({ messages, onMessagesChange }: AgentViewProps
       try {
         const result = await stopRecording(undefined);
         if (result.text && result.text.trim()) {
-          await processText(result.text.trim());
+          await processText(result.text.trim(), selectionRef.current ?? undefined);
         }
       } catch (e: unknown) {
         addMessage({ role: "error", text: e instanceof Error ? e.message : String(e) });
       } finally {
         setIsProcessing(false);
+        selectionRef.current = null;
       }
     } else {
       try {
+        // Grab selected text from the frontmost app BEFORE we take focus
+        const sel = await grabSelection();
+        selectionRef.current = sel.text ? sel : null;
         await startRecording();
         setIsRecording(true);
       } catch (e: unknown) {
@@ -323,7 +384,7 @@ export default function AgentView({ messages, onMessagesChange }: AgentViewProps
 
   const handleSuggestion = useCallback((text: string) => {
     if (isProcessing || isRecording) return;
-    processText(text);
+    processText(text, undefined);
   }, [isProcessing, isRecording, processText]);
 
   return (
@@ -370,7 +431,7 @@ export default function AgentView({ messages, onMessagesChange }: AgentViewProps
         ) : (
           <>
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg} />
+              <ChatBubble key={msg.id} message={msg} onReplace={(text) => replaceSelection(text)} />
             ))}
             {isProcessing && <ThinkingIndicator />}
           </>

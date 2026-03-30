@@ -42,6 +42,16 @@ body{background:transparent;overflow:hidden}
 .bu{max-width:80%;border-radius:14px 14px 4px 14px;padding:7px 12px;font-size:11px;line-height:1.5;color:#fafaf9;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.08);animation:msgIn .14s ease-out;white-space:pre-wrap}
 .ba{max-width:84%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11px;line-height:1.5;color:rgba(255,255,255,.7);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);animation:msgIn .14s ease-out;white-space:pre-wrap}
 .be{max-width:84%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11px;color:rgba(239,68,68,.8);background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.08);white-space:pre-wrap}
+.bs{max-width:80%;border-radius:8px;padding:5px 10px;font-size:9px;line-height:1.4;color:rgba(255,255,255,.3);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.04);animation:msgIn .14s ease-out}
+.bs .sl{font-size:7px;color:rgba(255,255,255,.15);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:2px}
+.bs .st{color:rgba(255,255,255,.35);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.rb{display:inline-flex;gap:4px;margin-top:4px}
+.rb button{font-size:8px;padding:2px 8px;border-radius:6px;border:1px solid;cursor:pointer;font-family:inherit;transition:all .1s}
+.rb .rp{color:#fbbf24;background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.12)}
+.rb .rp:hover{background:rgba(245,158,11,.15)}
+.rb .rc{color:rgba(255,255,255,.25);background:rgba(255,255,255,.02);border-color:rgba(255,255,255,.05)}
+.rb .rc:hover{color:rgba(255,255,255,.5)}
+.rd-ok{font-size:8px;color:rgba(134,239,172,.6);margin-top:3px}
 
 .sk{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:10px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.035);animation:msgIn .14s ease-out}
 .sd{width:5px;height:5px;border-radius:50%;flex-shrink:0}
@@ -109,8 +119,26 @@ function render(){
 }
 function mk(m){
   var w=document.createElement('div');
-  if(m.t==='u'){w.className='ru';var b=document.createElement('div');b.className='bu';b.textContent=m.x;w.appendChild(b)}
-  else if(m.t==='a'){w.className='ra';var b=document.createElement('div');b.className='ba';b.textContent=m.x;w.appendChild(b)}
+  if(m.t==='sel'){
+    w.className='ru';
+    var b=document.createElement('div');b.className='bs';
+    var sl=document.createElement('span');sl.className='sl';sl.textContent='Selected from '+m.app;
+    var st=document.createElement('span');st.className='st';st.textContent=m.x;
+    b.append(sl,st);w.appendChild(b);
+  }
+  else if(m.t==='u'){w.className='ru';var b=document.createElement('div');b.className='bu';b.textContent=m.x;w.appendChild(b)}
+  else if(m.t==='a'){
+    w.className='ra';
+    var col=document.createElement('div');col.style.cssText='max-width:84%;display:flex;flex-direction:column;gap:3px';
+    var b=document.createElement('div');b.className='ba';b.textContent=m.x;
+    col.appendChild(b);
+    var btns=document.createElement('div');btns.className='rb';
+    var cpb=document.createElement('button');cpb.className='rc';cpb.textContent='Copy';
+    cpb.onclick=function(){navigator.clipboard.writeText(m.x);cpb.textContent='Copied';setTimeout(function(){cpb.textContent='Copy'},1200)};
+    btns.appendChild(cpb);
+    col.appendChild(btns);
+    w.appendChild(col);
+  }
   else if(m.t==='e'){w.className='ra';var b=document.createElement('div');b.className='be';b.textContent=m.x;w.appendChild(b)}
   else if(m.t==='s'){
     var c=document.createElement('div');c.className='sk';
@@ -168,7 +196,8 @@ function recvRecordingStop(){hideRec()}
 function recvUserMessage(text){M.push({t:'u',x:text});hideRec();render();showTk()}
 function recvThinking(){showTk()}
 function recvSkillExec(name,params,ms,blocked){M.push({t:'s',sn:name||'',pm:params||'',ms:ms,bl:!!blocked});render()}
-function recvResponse(text){hideTk();M.push({t:'a',x:text});ma=false;mb.classList.remove('act');render()}
+function recvSelection(text,app){M.push({t:'sel',x:text,app:app||''});render()}
+function recvResponse(text,canReplace){hideTk();M.push({t:'a',x:text,rep:!!canReplace});ma=false;mb.classList.remove('act');render()}
 function recvError(text){hideTk();M.push({t:'e',x:text||'Error'});render()}
 function recvDismiss(){hide()}
 function recvShow(persistent){show(!!persistent)}

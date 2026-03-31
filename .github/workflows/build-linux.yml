@@ -7,7 +7,14 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,13 +87,13 @@ jobs:
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
-          name: fonos-deb
+          name: fonos-deb-${{ matrix.arch }}
           path: target/release/bundle/deb/*.deb
 
       - name: Upload RPM
         uses: actions/upload-artifact@v4
         with:
-          name: fonos-rpm
+          name: fonos-rpm-${{ matrix.arch }}
           path: target/release/bundle/rpm/*.rpm
 
       - name: Upload to release (if tagged)

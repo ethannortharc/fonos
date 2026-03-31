@@ -158,6 +158,7 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
 }
 
 /// Build all hotkey configs from the current app config.
+#[cfg(target_os = "macos")]
 fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     let mut configs = Vec::new();
     let mut try_add = |combo: &str, label: &str| {
@@ -1235,9 +1236,10 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Fonos app")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::Reopen { .. } = event {
-                if let Some(w) = app_handle.get_webview_window("main") {
+        .run(|_app_handle, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                if let Some(w) = _app_handle.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.unminimize();
                     let _ = w.set_focus();

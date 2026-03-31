@@ -62,7 +62,7 @@ struct DictateIntent: AppIntent {
 
 // MARK: - Shortcuts Provider
 
-/// Registers the intent as an app shortcut so it appears automatically in Shortcuts.
+/// Registers intents as app shortcuts so they appear automatically in Shortcuts.
 struct FonosShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -74,6 +74,15 @@ struct FonosShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Dictate",
             systemImageName: "mic.fill"
+        )
+        AppShortcut(
+            intent: RecordNoteIntent(),
+            phrases: [
+                "Record a note in \(.applicationName)",
+                "Take a note with \(.applicationName)"
+            ],
+            shortTitle: "Record Note",
+            systemImageName: "note.text"
         )
     }
 }

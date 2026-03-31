@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::process::Command;
 
-const WORKSPACE: &str = "/Users/ethan/Projects/design/fonos/fonos-app";
+const WORKSPACE: &str = "/Users/ethan/Projects/design/fonos/fonos-desktop";
 
 // ---------------------------------------------------------------------------
 // INV-01 Level 1: Static config file validation

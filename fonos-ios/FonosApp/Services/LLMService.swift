@@ -10,6 +10,7 @@ enum LLMError: LocalizedError, Equatable {
     case parseError
     case serverError(statusCode: Int)
     case notConfigured
+    case requestFailed
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,8 @@ enum LLMError: LocalizedError, Equatable {
             "Server error (HTTP \(code))."
         case .notConfigured:
             "LLM provider not configured."
+        case .requestFailed:
+            "LLM request failed."
         }
     }
 }

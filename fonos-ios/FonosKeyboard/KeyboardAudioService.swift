@@ -81,7 +81,9 @@ final class KeyboardAudioService: NSObject, @unchecked Sendable {
                     comp(self.makeError("Mic denied"))
                     return
                 }
-                self.tryDirectRecording(completion: comp)
+                // Skip direct recording — keyboard extensions can't capture audio,
+                // and trying activates an audio session that KILLS the main app's recorder.
+                self.tryAppGroupRecording(completion: comp)
             }
         }
     }

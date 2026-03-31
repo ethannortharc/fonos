@@ -557,7 +557,7 @@ fn find_apple_stt_binary() -> Option<String> {
         }
         // 3. Development paths relative to CWD
         v.push(std::path::PathBuf::from(format!("src-tauri/resources/{name}")));
-        v.push(std::path::PathBuf::from(format!("fonos-app/src-tauri/resources/{name}")));
+        v.push(std::path::PathBuf::from(format!("fonos-desktop/src-tauri/resources/{name}")));
         v
     };
     for c in &candidates {

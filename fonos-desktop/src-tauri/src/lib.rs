@@ -3,3 +3,4 @@
 pub mod audio;
 pub mod commands;
 pub mod injection;
+pub mod platform;

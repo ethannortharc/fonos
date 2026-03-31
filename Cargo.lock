@@ -1283,7 +1283,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "fonos-app"
+name = "fonos-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dirs",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "screencapturekit",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "fonos-desktop"
 version = "0.1.0"
 dependencies = [
  "arboard",
@@ -1300,26 +1316,11 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "signal-hook",
  "tauri",
  "tauri-build",
  "tokio",
  "toml 0.8.23",
-]
-
-[[package]]
-name = "fonos-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dirs",
- "reqwest 0.12.28",
- "rusqlite",
- "screencapturekit",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -4239,6 +4240,16 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
 
 [[package]]
 name = "signal-hook-registry"

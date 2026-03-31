@@ -4,6 +4,7 @@ mod audio;
 mod commands;
 mod hotkey;
 mod injection;
+mod platform;
 mod skills;
 
 use commands::AppState;
@@ -346,6 +347,22 @@ fn main() {
                     let _ = panel.set_background_color(Some(Color(0, 0, 0, 0)));
                     let _ = panel.set_shadow(false);
                 }
+            }
+
+            // 0. SIGUSR2 handler — toggle dictation from external scripts / window managers.
+            #[cfg(unix)]
+            {
+                use tauri::Emitter;
+                let sig_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    use signal_hook::iterator::Signals;
+                    let mut signals = Signals::new(&[signal_hook::consts::SIGUSR2])
+                        .expect("failed to register SIGUSR2 handler");
+                    for _ in signals.forever() {
+                        eprintln!("fonos: SIGUSR2 received — toggling dictation");
+                        let _ = sig_handle.emit("signal:toggle-dictation", ());
+                    }
+                });
             }
 
             // 1. Global hotkeys.

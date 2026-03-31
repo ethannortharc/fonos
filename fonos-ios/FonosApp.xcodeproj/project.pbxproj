@@ -72,6 +72,26 @@
 		KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12002AA012002AA012002A /* KeyboardAudioService.swift */; };
 		KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12003AA012003AA012003A /* KeyboardSTTService.swift */; };
 		KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KB12004AA012004AA012004A /* FonosKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		UI13001AA013001AA013001B /* FonosAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UI13001AA013001AA013001A /* FonosAppUITests.swift */; };
+		WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON001AA001AA001001A /* NoteContainer.swift */; };
+		WP01VON002AA002AA002001B /* NoteEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON002AA002AA002001A /* NoteEntry.swift */; };
+		WP01VON003AA003AA003001B /* NoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON003AA003AA003001A /* NoteService.swift */; };
+		WP01VON004AA004AA004001B /* NoteINV01ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */; };
+		WP01VON005AA005AA005001B /* NoteINV13ContainerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */; };
+		WP01VON006AA006AA006001B /* NoteQD03SyncFriendlyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */; };
+		WP03VON001AA001AA001001B /* NoteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON001AA001AA001001A /* NoteViewModel.swift */; };
+		WP03VON002AA002AA002001B /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON002AA002AA002001A /* NotesView.swift */; };
+		WP03VON003AA003AA003001B /* NotebookDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON003AA003AA003001A /* NotebookDetailView.swift */; };
+		WP03VON004AA004AA004001B /* RecordNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON004AA004AA004001A /* RecordNoteSheet.swift */; };
+		WP03VON005AA005AA005001B /* NoteINV03TabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */; };
+		WP03VON006AA006AA006001B /* NoteINV06RecordFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */; };
+		WP03VON007AA007AA007001B /* NoteINV11NoAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */; };
+		WP04VON001AA001AA001001B /* RecordNoteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON001AA001AA001001A /* RecordNoteIntent.swift */; };
+		WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON002AA002AA002001A /* DeepLinkRouter.swift */; };
+		WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON003AA003AA003001A /* NotebookSettingsView.swift */; };
+		WP04VON004AA004AA004001B /* NoteINV08NotebookConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */; };
+		WP04VON005AA005AA005001B /* NoteINV09IntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */; };
+		WP04VON006AA006AA006001B /* NoteINV10DeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -88,6 +108,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = KB12005AA012005AA012005C /* FonosKeyboard */;
 			remoteInfo = FonosKeyboard;
+		};
+		UI13002AA013002AA013002C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 11F387A36EAB42D7B29216FC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E63F5454DE64F8A84201298;
+			remoteInfo = FonosApp;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -163,6 +190,27 @@
 		KB12004AA012004AA012004A /* FonosKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FonosKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		KB12006AA012006AA012006A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		KB12007AA012007AA012007A /* FonosKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosKeyboard.entitlements; sourceTree = "<group>"; };
+		UI13001AA013001AA013001A /* FonosAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppUITests.swift; sourceTree = "<group>"; };
+		UI13003AA013003AA013003A /* FonosAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		WP01VON001AA001AA001001A /* NoteContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContainer.swift; sourceTree = "<group>"; };
+		WP01VON002AA002AA002001A /* NoteEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEntry.swift; sourceTree = "<group>"; };
+		WP01VON003AA003AA003001A /* NoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteService.swift; sourceTree = "<group>"; };
+		WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV01ModelTests.swift; sourceTree = "<group>"; };
+		WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV13ContainerTests.swift; sourceTree = "<group>"; };
+		WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteQD03SyncFriendlyTests.swift; sourceTree = "<group>"; };
+		WP03VON001AA001AA001001A /* NoteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteViewModel.swift; sourceTree = "<group>"; };
+		WP03VON002AA002AA002001A /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		WP03VON003AA003AA003001A /* NotebookDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDetailView.swift; sourceTree = "<group>"; };
+		WP03VON004AA004AA004001A /* RecordNoteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteSheet.swift; sourceTree = "<group>"; };
+		WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV03TabTests.swift; sourceTree = "<group>"; };
+		WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV06RecordFlowTests.swift; sourceTree = "<group>"; };
+		WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV11NoAudioTests.swift; sourceTree = "<group>"; };
+		WP04VON001AA001AA001001A /* RecordNoteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteIntent.swift; sourceTree = "<group>"; };
+		WP04VON002AA002AA002001A /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
+		WP04VON003AA003AA003001A /* NotebookSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSettingsView.swift; sourceTree = "<group>"; };
+		WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV08NotebookConfigTests.swift; sourceTree = "<group>"; };
+		WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV09IntentTests.swift; sourceTree = "<group>"; };
+		WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV10DeepLinkTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,6 +235,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		UI13004AA013004AA013004C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -199,6 +254,10 @@
 				50BA9D99CDBC44ABA7E645A2 /* SettingsView.swift */,
 				WP07001AA007001AA007001A /* ModePicker.swift */,
 				WP08004AA008004AA008004A /* DestinationPicker.swift */,
+				WP03VON002AA002AA002001A /* NotesView.swift */,
+				WP03VON003AA003AA003001A /* NotebookDetailView.swift */,
+				WP04VON003AA003AA003001A /* NotebookSettingsView.swift */,
+				WP03VON004AA004AA004001A /* RecordNoteSheet.swift */,
 				WP06000AA006000AA006000C /* Components */,
 				WP08000AA008000AA008000C /* SettingsView */,
 			);
@@ -214,6 +273,8 @@
 				AA01B001AA014D00AA014D12 /* ModelProfile.swift */,
 				AA01B001AA014D00AA014D13 /* Destination.swift */,
 				WP11001AA011001AA011001A /* ModeConfig.swift */,
+				WP01VON001AA001AA001001A /* NoteContainer.swift */,
+				WP01VON002AA002AA002001A /* NoteEntry.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -246,6 +307,15 @@
 				WP06004AA006004AA006004A /* INV11OfflineTests.swift */,
 				WP10001AA010001AA010001A /* QD06BundleSizeTests.swift */,
 				WP10002AA010002AA010002A /* QD07SwiftLintTests.swift */,
+				WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */,
+				WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */,
+				WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */,
+				WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */,
+				WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */,
+				WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */,
+				WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */,
+				WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */,
+				WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -256,6 +326,7 @@
 				BAC7AF7161324CE4AF50AD41 /* FonosApp.app */,
 				6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */,
 				KB12004AA012004AA012004A /* FonosKeyboard.appex */,
+				UI13003AA013003AA013003A /* FonosAppUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -274,6 +345,7 @@
 			isa = PBXGroup;
 			children = (
 				663C34A9CC884E40AD59B711 /* FonosApp.swift */,
+				WP04VON002AA002AA002001A /* DeepLinkRouter.swift */,
 				1A3615C7390D4D119843D0DD /* Models */,
 				B0035A133D264734A9D8ABFA /* Services */,
 				125C680D279A4D5CB0E5B54D /* Views */,
@@ -303,6 +375,8 @@
 				WP04000000000000000011 /* DictationViewModel.swift */,
 				MP01001AA001001AA001001A /* ModelProbeService.swift */,
 				BG01000000000000000011 /* BackgroundRecordingService.swift */,
+				WP01VON003AA003AA003001A /* NoteService.swift */,
+				WP03VON001AA001AA001001A /* NoteViewModel.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -315,6 +389,7 @@
 				WP09010AA009010AA009010C /* FonosIntents */,
 				KB12000AA012000AA012000C /* FonosKeyboard */,
 				3E090E64BBAA4232B8A4810E /* FonosAppTests */,
+				UI13005AA013005AA013005C /* FonosAppUITests */,
 				4BD34BCD0DE7417A847A0D6B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -367,8 +442,17 @@
 			children = (
 				WP09003AA009003AA009003A /* DictateIntent.swift */,
 				WP09004AA009004AA009004A /* FonosIntents.swift */,
+				WP04VON001AA001AA001001A /* RecordNoteIntent.swift */,
 			);
 			path = FonosIntents;
+			sourceTree = "<group>";
+		};
+		UI13005AA013005AA013005C /* FonosAppUITests */ = {
+			isa = PBXGroup;
+			children = (
+				UI13001AA013001AA013001A /* FonosAppUITests.swift */,
+			);
+			path = FonosAppUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -427,6 +511,23 @@
 			productReference = 6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		UI13006AA013006AA013006C /* FonosAppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = UI13009AA013009AA013009C /* Build configuration list for PBXNativeTarget "FonosAppUITests" */;
+			buildPhases = (
+				UI13007AA013007AA013007C /* Sources */,
+				UI13004AA013004AA013004C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				UI13008AA013008AA013008C /* PBXTargetDependency */,
+			);
+			name = FonosAppUITests;
+			productName = FonosAppUITests;
+			productReference = UI13003AA013003AA013003A /* FonosAppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -465,6 +566,7 @@
 				7E63F5454DE64F8A84201298 /* FonosApp */,
 				C4780AAF578C46BFBB87A7AA /* FonosAppTests */,
 				KB12005AA012005AA012005C /* FonosKeyboard */,
+				UI13006AA013006AA013006C /* FonosAppUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -531,6 +633,15 @@
 				WP06004AA006004AA006004B /* INV11OfflineTests.swift in Sources */,
 				WP10001AA010001AA010001B /* QD06BundleSizeTests.swift in Sources */,
 				WP10002AA010002AA010002B /* QD07SwiftLintTests.swift in Sources */,
+				WP01VON004AA004AA004001B /* NoteINV01ModelTests.swift in Sources */,
+				WP01VON005AA005AA005001B /* NoteINV13ContainerTests.swift in Sources */,
+				WP01VON006AA006AA006001B /* NoteQD03SyncFriendlyTests.swift in Sources */,
+				WP03VON005AA005AA005001B /* NoteINV03TabTests.swift in Sources */,
+				WP03VON006AA006AA006001B /* NoteINV06RecordFlowTests.swift in Sources */,
+				WP03VON007AA007AA007001B /* NoteINV11NoAudioTests.swift in Sources */,
+				WP04VON004AA004AA004001B /* NoteINV08NotebookConfigTests.swift in Sources */,
+				WP04VON005AA005AA005001B /* NoteINV09IntentTests.swift in Sources */,
+				WP04VON006AA006AA006001B /* NoteINV10DeepLinkTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -573,6 +684,16 @@
 				WP09002AA009002AA009002B /* FonosLiveActivity.swift in Sources */,
 				WP09003AA009003AA009003B /* DictateIntent.swift in Sources */,
 				WP09004AA009004AA009004B /* FonosIntents.swift in Sources */,
+				WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */,
+				WP01VON002AA002AA002001B /* NoteEntry.swift in Sources */,
+				WP01VON003AA003AA003001B /* NoteService.swift in Sources */,
+				WP03VON001AA001AA001001B /* NoteViewModel.swift in Sources */,
+				WP03VON002AA002AA002001B /* NotesView.swift in Sources */,
+				WP03VON003AA003AA003001B /* NotebookDetailView.swift in Sources */,
+				WP03VON004AA004AA004001B /* RecordNoteSheet.swift in Sources */,
+				WP04VON001AA001AA001001B /* RecordNoteIntent.swift in Sources */,
+				WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */,
+				WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -583,6 +704,14 @@
 				KB12001AA012001AA012001B /* KeyboardViewController.swift in Sources */,
 				KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */,
 				KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		UI13007AA013007AA013007C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				UI13001AA013001AA013001B /* FonosAppUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -598,6 +727,11 @@
 			isa = PBXTargetDependency;
 			target = KB12005AA012005AA012005C /* FonosKeyboard */;
 			targetProxy = KB12010AA012010AA012010C /* PBXContainerItemProxy */;
+		};
+		UI13008AA013008AA013008C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E63F5454DE64F8A84201298 /* FonosApp */;
+			targetProxy = UI13002AA013002AA013002C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -861,6 +995,40 @@
 			};
 			name = Release;
 		};
+		UI13010AA013010AA013010C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = FonosApp;
+			};
+			name = Debug;
+		};
+		UI13011AA013011AA013011C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fonos.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = FonosApp;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -896,6 +1064,15 @@
 			buildConfigurations = (
 				KB12015AA012015AA012015C /* Debug */,
 				KB12016AA012016AA012016C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		UI13009AA013009AA013009C /* Build configuration list for PBXNativeTarget "FonosAppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				UI13010AA013010AA013010C /* Debug */,
+				UI13011AA013011AA013011C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

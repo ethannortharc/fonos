@@ -19,7 +19,7 @@ target/
 
 # Node
 node_modules/
-fonos-app/files.zip
+fonos-desktop/files.zip
 
 # iOS
 fonos-ios/build/
@@ -39,3 +39,4 @@ voice_refs/
 
 # Screenshots (binary)
 *.png
+.claude/worktrees/

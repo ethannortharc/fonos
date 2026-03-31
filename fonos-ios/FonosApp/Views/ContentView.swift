@@ -1,7 +1,25 @@
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
     @StateObject private var dictationViewModel = DictationViewModel()
+    private let noteService: NoteService
+    @StateObject private var noteViewModel: NoteViewModel
+
+    init(modelContainer: ModelContainer) {
+        let service = NoteService(modelContainer: modelContainer)
+        self.noteService = service
+        self._noteViewModel = StateObject(wrappedValue: NoteViewModel(noteService: service))
+    }
+
+    /// Convenience init for previews/tests — uses in-memory container.
+    init() {
+        let container = try! ModelContainer(
+            for: NoteContainer.self, NoteEntry.self, DictationSession.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        self.init(modelContainer: container)
+    }
 
     var body: some View {
         TabView {
@@ -15,11 +33,15 @@ struct ContentView: View {
                     Label("History", systemImage: "clock.fill")
                 }
 
+            NotesView(noteService: noteService, noteViewModel: noteViewModel)
+                .tabItem {
+                    Label("Notes", systemImage: "note.text")
+                }
+
             SettingsView(config: Binding(
                 get: { dictationViewModel.config },
                 set: { newConfig in
                     dictationViewModel.config = newConfig
-                    // Persist to standard UserDefaults
                     if let data = try? JSONEncoder().encode(newConfig) {
                         UserDefaults.standard.set(data, forKey: "app_config")
                     }
@@ -42,5 +64,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: DictationSession.self, inMemory: true)
+        .modelContainer(for: [DictationSession.self, NoteContainer.self, NoteEntry.self], inMemory: true)
 }

@@ -107,7 +107,7 @@ fn test_cold_start_time() {
     // Reference sketch:
     //
     // let start = Instant::now();
-    // let mut child = Command::new("./target/debug/fonos-app")
+    // let mut child = Command::new("./target/debug/fonos-desktop")
     //     .stdout(Stdio::piped())
     //     .spawn()
     //     .expect("QD-03: failed to spawn Fonos app");
@@ -203,7 +203,7 @@ fn test_memory_footprint() {
 
     // Reference sketch:
     //
-    // let mut child = Command::new("./target/debug/fonos-app")
+    // let mut child = Command::new("./target/debug/fonos-desktop")
     //     .spawn()
     //     .expect("INV-12: failed to spawn Fonos app");
     //

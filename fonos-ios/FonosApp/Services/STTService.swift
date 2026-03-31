@@ -7,7 +7,7 @@ private let sttLog = Logger(subsystem: "com.fonos.ios", category: "STT")
 // MARK: - STTProvider Protocol
 
 /// Protocol all STT provider implementations must conform to.
-protocol STTProvider: Sendable {
+protocol STTProvider {
     func transcribe(audioData: Data, language: String?) async throws -> String
 }
 
@@ -23,6 +23,7 @@ enum STTError: LocalizedError, Equatable {
     case parseError
     case networkUnavailable
     case recognizerError(String)
+    case transcriptionFailed
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +35,7 @@ enum STTError: LocalizedError, Equatable {
         case .parseError:             "Failed to parse the server response."
         case .networkUnavailable:     "Network unavailable. Check your connection."
         case .recognizerError(let m): "Recognizer error: \(m)"
+        case .transcriptionFailed:    "Transcription failed."
         }
     }
 }

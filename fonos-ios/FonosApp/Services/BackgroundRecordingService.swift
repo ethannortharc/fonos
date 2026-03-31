@@ -61,10 +61,49 @@ final class BackgroundRecordingService: NSObject, @unchecked Sendable {
         // Start continuous recording — runs in background with audio background mode
         startContinuousRecording()
 
-        // Heartbeat
+        // Heartbeat — also checks recorder health
         writeFile("kb_heartbeat", "\(Date().timeIntervalSince1970)")
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.writeFile("kb_heartbeat", "\(Date().timeIntervalSince1970)")
+            guard let self else { return }
+            self.writeFile("kb_heartbeat", "\(Date().timeIntervalSince1970)")
+            // Try to resume if recorder died (resume works, new record doesn't from background)
+            if let rec = self.recorder, !rec.isRecording, !self.isKeyboardRecording {
+                if rec.record() {
+                    bgLog.info("🎙 BG: Recorder auto-resumed")
+                }
+                // If resume fails, will restart when app is foregrounded
+            }
+        }
+
+        // Restart recorder when app comes to foreground
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            if self.recorder == nil || self.recorder?.isRecording != true {
+                bgLog.info("🎙 BG: App foregrounded, restarting recorder")
+                self.startContinuousRecording()
+            }
+        }
+
+        // Handle audio interruptions (phone calls, other apps)
+        NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let self,
+                  let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+            if type == .began {
+                bgLog.info("🎙 BG: Audio interrupted")
+            } else if type == .ended {
+                bgLog.info("🎙 BG: Interruption ended")
+                try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+                // Resume EXISTING recorder (don't create new — new fails from background)
+                if let rec = self.recorder, rec.record() {
+                    bgLog.info("🎙 BG: ✅ Recorder resumed after interruption")
+                } else {
+                    bgLog.warning("🎙 BG: Resume failed, will restart when app foregrounded")
+                    // Can't start new recorder from background — will restart on foreground
+                }
+            }
         }
 
         bgLog.info("✅ BackgroundRecordingService registered")
@@ -143,23 +182,15 @@ final class BackgroundRecordingService: NSObject, @unchecked Sendable {
 
             writeStatus("processing")
 
-            // DON'T stop the recorder — it keeps running for next use!
-            // Read the file and extract the segment
-            guard let url = containerURL("kb_continuous.wav") else {
-                writeError("No WAV file")
-                endBackgroundTask()
-                return
-            }
-
-            // Pause recorder briefly to safely read the file
-            rec.pause()
-            guard let fullData = try? Data(contentsOf: url) else {
-                rec.record()  // resume
+            // Recorder keeps running — DON'T pause or stop it!
+            // Reading the file while recording is safe because WAV is sequential
+            // and we only read bytes up to endTime (already captured above).
+            guard let url = containerURL("kb_continuous.wav"),
+                  let fullData = try? Data(contentsOf: url) else {
                 writeError("Cannot read WAV")
                 endBackgroundTask()
                 return
             }
-            rec.record()  // resume continuous recording
 
             let wavData = extractWAVSegment(fullData, from: recordingStartTime, to: endTime, sampleRate: 16000)
             bgLog.info("🎙 BG: Extracted segment: \(wavData.count) bytes")

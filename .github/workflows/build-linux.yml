@@ -41,11 +41,52 @@ jobs:
         working-directory: fonos-desktop
         run: npm ci
 
-      - name: Create placeholder resources (macOS-only binaries not needed on Linux)
+      - name: Create placeholder resources
         run: |
+          # macOS-only binaries not needed on Linux
           touch fonos-desktop/src-tauri/resources/fonos-audio-capture
           touch fonos-desktop/src-tauri/resources/fonos-stt-apple
-          touch fonos-desktop/src-tauri/resources/tray_icon.png
+          # Generate app icons from the .icns if PNGs are missing (gitignored)
+          cd fonos-desktop/src-tauri/resources
+          if [ ! -s tray_icon.png ]; then
+            # Create a minimal 32x32 orange circle PNG as tray icon
+            convert -size 32x32 xc:transparent -fill '#f59e0b' -draw 'circle 16,16 16,2' tray_icon.png 2>/dev/null || \
+            python3 -c "
+          import struct, zlib
+          def png(w,h):
+              raw=b''
+              for y in range(h):
+                  raw+=b'\x00'
+                  for x in range(w):
+                      dx,dy=x-w//2,y-h//2
+                      if dx*dx+dy*dy<(w//2)*(h//2):raw+=b'\xf5\x9e\x0b\xff'
+                      else:raw+=b'\x00\x00\x00\x00'
+              c=zlib.compress(raw)
+              ihdr=struct.pack('>IIBBBBB',w,h,8,6,0,0,0)
+              def chunk(t,d):return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
+              return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',ihdr)+chunk(b'IDAT',c)+chunk(b'IEND',b'')
+          open('tray_icon.png','wb').write(png(32,32))
+          "
+          fi
+          for size in 32 128 256 512 1024; do
+            f="icon_\${size}x\${size}.png"
+            if [ ! -s "\$f" ]; then
+              python3 -c "
+          import struct, zlib
+          def png(w,h):
+              raw=b''
+              for y in range(h):
+                  raw+=b'\x00'
+                  for x in range(w):
+                      raw+=b'\xf5\x9e\x0b\xff'
+              c=zlib.compress(raw)
+              ihdr=struct.pack('>IIBBBBB',w,h,8,6,0,0,0)
+              def chunk(t,d):return struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff)
+              return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',ihdr)+chunk(b'IDAT',c)+chunk(b'IEND',b'')
+          open('\$f','wb').write(png(\$size,\$size))
+          "
+            fi
+          done
 
       - name: Build Tauri app (deb + rpm)
         working-directory: fonos-desktop

@@ -27,7 +27,7 @@ pub struct HotkeyConfig {
 
 /// Manages global hotkey registration via CGEvent tap.
 pub struct HotkeyManager {
-    hotkeys: Vec<HotkeyConfig>,
+    hotkeys: Arc<Mutex<Vec<HotkeyConfig>>>,
     callback: Arc<Mutex<Option<Box<dyn Fn(&str, bool) + Send>>>>,
     running: Arc<Mutex<bool>>,
 }
@@ -37,7 +37,7 @@ impl HotkeyManager {
     /// Create a new, empty hotkey manager.
     pub fn new() -> Self {
         HotkeyManager {
-            hotkeys: Vec::new(),
+            hotkeys: Arc::new(Mutex::new(Vec::new())),
             callback: Arc::new(Mutex::new(None)),
             running: Arc::new(Mutex::new(false)),
         }
@@ -76,9 +76,22 @@ impl HotkeyManager {
         })
     }
 
-    /// Register a hotkey. Must be called before [`start`](Self::start).
+    /// Register a hotkey. Can be called before or after [`start`](Self::start).
     pub fn register(&mut self, config: HotkeyConfig) {
-        self.hotkeys.push(config);
+        self.hotkeys.lock().unwrap().push(config);
+    }
+
+    /// Get a clone of the shared hotkeys Arc for external reload.
+    pub fn hotkeys_ref(&self) -> Arc<Mutex<Vec<HotkeyConfig>>> {
+        Arc::clone(&self.hotkeys)
+    }
+
+    /// Replace all registered hotkeys at runtime (for hot-reload).
+    pub fn replace_hotkeys(&self, new_hotkeys: Vec<HotkeyConfig>) {
+        let mut guard = self.hotkeys.lock().unwrap();
+        guard.clear();
+        guard.extend(new_hotkeys);
+        eprintln!("fonos: hotkeys reloaded ({} bindings)", guard.len());
     }
 
     /// Set the callback that fires when a registered hotkey is pressed or released.
@@ -104,12 +117,11 @@ impl HotkeyManager {
             *r = true;
         }
 
-        let hotkeys = self.hotkeys.clone();
+        let hotkeys = Arc::clone(&self.hotkeys);
         let callback = Arc::clone(&self.callback);
         let running = Arc::clone(&self.running);
 
         std::thread::spawn(move || {
-            let hotkeys_snap = hotkeys;
             // Track held state per hotkey to suppress key-repeat events
             let held: Arc<Mutex<std::collections::HashSet<String>>> =
                 Arc::new(Mutex::new(std::collections::HashSet::new()));
@@ -133,12 +145,14 @@ impl HotkeyManager {
 
                     let is_down = matches!(event_type, CGEventType::KeyDown);
 
+                    // Snapshot hotkeys (clone the small vec to avoid holding the lock)
+                    let hk_snap: Vec<HotkeyConfig> = hotkeys.lock().unwrap().clone();
+
                     let mut held_set = held_clone.lock().unwrap();
 
                     // On keyup: if this keycode is held by any hotkey, release it
-                    // (regardless of current modifiers — user may release Cmd before the key)
                     if !is_down {
-                        for hk in &hotkeys_snap {
+                        for hk in &hk_snap {
                             if keycode == hk.keycode && held_set.contains(&hk.label) {
                                 held_set.remove(&hk.label);
                                 drop(held_set);
@@ -147,7 +161,6 @@ impl HotkeyManager {
                                         cb(&hk.label, false);
                                     }
                                 }
-                                // Consume the event to prevent system beep
                                 return CallbackResult::Drop;
                             }
                         }
@@ -156,7 +169,7 @@ impl HotkeyManager {
                     }
 
                     // On keydown: check if modifiers + key match a registered hotkey
-                    for hk in &hotkeys_snap {
+                    for hk in &hk_snap {
                         if keycode == hk.keycode && active_mods == hk.modifiers {
                             if held_set.contains(&hk.label) {
                                 // Already held — suppress key repeat

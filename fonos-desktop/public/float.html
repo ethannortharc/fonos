@@ -103,6 +103,33 @@
   #pill.recording #idle{display:none!important}
   #pill.recording #rec{display:flex}
 
+  /* ── Processing ── */
+  #proc{display:none;align-items:center;gap:5px}
+  #proc-dots{display:flex;gap:3px}
+  .pd{width:4px;height:4px;border-radius:50%;background:#fbbf24;animation:pulse 1.2s ease-in-out infinite}
+  #proc-label{font-size:9px;color:rgba(251,191,36,0.5);font-family:-apple-system,sans-serif}
+
+  #pill.processing{background:rgba(26,25,23,0.92);border-color:rgba(251,191,36,0.08);cursor:default;opacity:1}
+  #pill.processing #idle{display:none!important}
+  #pill.processing #proc{display:flex}
+
+  /* ── Result (success / error) ── */
+  #result{display:none;align-items:center;gap:4px}
+  #result-icon{font-size:10px;line-height:1}
+  #result-text{font-size:9px;font-family:-apple-system,sans-serif}
+
+  #pill.success{background:rgba(26,25,23,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
+  #pill.success #idle{display:none!important}
+  #pill.success #result{display:flex}
+  #pill.success #result-icon{color:#86efac}
+  #pill.success #result-text{color:rgba(134,239,172,0.6)}
+
+  #pill.error{background:rgba(26,25,23,0.92);border-color:rgba(239,68,68,0.12);cursor:default;opacity:1}
+  #pill.error #idle{display:none!important}
+  #pill.error #result{display:flex}
+  #pill.error #result-icon{color:#ef4444}
+  #pill.error #result-text{color:rgba(239,68,68,0.6)}
+
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 </style>
 </head>
@@ -114,6 +141,14 @@
       <span class="pill-dot"></span>
       <span id="pill-text">FONOS</span>
       <span class="pill-dot"></span>
+    </div>
+    <div id="proc">
+      <div id="proc-dots"><div class="pd"></div><div class="pd" style="animation-delay:.2s"></div><div class="pd" style="animation-delay:.4s"></div></div>
+      <span id="proc-label">Processing</span>
+    </div>
+    <div id="result">
+      <span id="result-icon"></span>
+      <span id="result-text"></span>
     </div>
     <div id="rec">
       <div id="rec-dot"></div>
@@ -286,17 +321,35 @@ function startRec(){
   if(animId)cancelAnimationFrame(animId);animT=0;drawW();
   recSz();
 }
+function showProcessing(){
+  isRec=false;
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  var p=document.getElementById('pill');
+  p.classList.remove('recording','success','error');
+  p.classList.add('processing');
+  sz(110,PH);
+}
 function stopRec(text){
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  if(text){document.getElementById('rec-dot').style.background='#30d158';document.getElementById('rec-dot').style.animation='none';}
+  var p=document.getElementById('pill');
+  p.classList.remove('recording','processing');
+  if(text){
+    document.getElementById('result-icon').textContent='\u2713';
+    document.getElementById('result-text').textContent='Done';
+    p.classList.add('success');
+  } else {
+    document.getElementById('result-icon').textContent='\u2717';
+    document.getElementById('result-text').textContent='No speech';
+    p.classList.add('error');
+  }
+  sz(90,PH);
   setTimeout(()=>{
-    document.getElementById('pill').classList.remove('recording');
-    document.getElementById('rec-dot').style.background='#ff453a';
-    document.getElementById('rec-dot').style.animation='';
+    p.classList.remove('success','error');
     idleSz();
-  },text?800:200);
+  },1200);
 }
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;
@@ -318,6 +371,7 @@ function setup(){
   const tr=window.__TAURI_INTERNALS__.transformCallback;
   function listen(ev,cb){inv('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(cb)}).catch(()=>{});}
   listen('float:start',()=>startRec());
+  listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   loadCfg();loadModes();idleSz();
 }

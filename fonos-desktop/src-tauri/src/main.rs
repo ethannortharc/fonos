@@ -153,6 +153,29 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
+/// Build all hotkey configs from the current app config.
+fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
+    let mut configs = Vec::new();
+    let mut try_add = |combo: &str, label: &str| {
+        if combo.is_empty() { return; }
+        match hotkey::HotkeyManager::parse_hotkey(combo, label) {
+            Ok(hk) => configs.push(hk),
+            Err(e) => eprintln!("fonos: could not parse {} hotkey '{}': {}", label, combo, e),
+        }
+    };
+    try_add(&config.hotkey_dictation, "dictation");
+    try_add(&config.hotkey_dictation_toggle, "dictation-toggle");
+    try_add(&config.hotkey_agent, "agent");
+    try_add(&config.hotkey_agent_panel, "agent-panel");
+    try_add(&config.hotkey_note, "note");
+    try_add(&config.hotkey_meeting, "meeting");
+    try_add(&config.hotkey_transform, "transform");
+    if config.notebook_hotkey_1 > 0 { try_add(&config.hotkey_note_1, "note-1"); }
+    if config.notebook_hotkey_2 > 0 { try_add(&config.hotkey_note_2, "note-2"); }
+    if config.notebook_hotkey_3 > 0 { try_add(&config.hotkey_note_3, "note-3"); }
+    configs
+}
+
 fn main() {
     let config = AppConfig::load();
 
@@ -1038,9 +1061,25 @@ fn main() {
                     });
                 });
 
+                // Get a handle to the hotkeys for live reload
+                let hotkeys_arc = hm.hotkeys_ref();
+
                 if let Err(e) = hm.start() {
                     eprintln!("fonos: hotkey registration failed: {}", e);
                 }
+
+                // Listen for hotkey config changes and reload bindings
+                let reload_handle = app.handle().clone();
+                let reload_hotkeys = hotkeys_arc;
+                app.listen("hotkey:reload", move |_| {
+                    let state: tauri::State<'_, AppState> = reload_handle.state();
+                    let config = state.config.lock().unwrap();
+                    let new_configs = build_hotkey_configs(&config);
+                    let mut guard = reload_hotkeys.lock().unwrap();
+                    guard.clear();
+                    guard.extend(new_configs);
+                    eprintln!("fonos: hotkeys hot-reloaded ({} bindings)", guard.len());
+                });
             }
 
             // 2. Position float window at primary screen bottom center (above Dock).

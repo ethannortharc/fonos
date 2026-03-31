@@ -1,6 +1,6 @@
 {
   "productName": "Fonos",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "identifier": "com.holonex.fonos",
   "build": {
     "frontendDist": "../dist",

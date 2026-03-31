@@ -16,6 +16,7 @@ pub fn get_config(state: tauri::State<'_, AppState>) -> Result<serde_json::Value
 /// ignored. The full updated config is returned.
 #[tauri::command]
 pub fn save_config(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     config_json: String,
 ) -> Result<(), String> {
@@ -44,8 +45,21 @@ pub fn save_config(
         .map_err(|e| format!("failed to save config: {e}"))?;
 
 
+    // Check if any hotkey-related fields changed.
+    let hotkey_changed = updates.as_object().map_or(false, |u| {
+        u.keys().any(|k| k.starts_with("hotkey_"))
+    });
+
     // Update in-memory state.
     *guard = updated;
+    drop(guard); // release lock before emitting
+
+    // If hotkeys changed, notify the hotkey manager to re-register.
+    if hotkey_changed {
+        use tauri::Emitter;
+        eprintln!("fonos: hotkey config changed — emitting reload signal");
+        let _ = app.emit("hotkey:reload", ());
+    }
 
     Ok(())
 }

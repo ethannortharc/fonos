@@ -230,6 +230,12 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     let recording_duration = all_samples.len() as f64 / 16000.0;
 
+    // Immediately signal the float pill to switch from recording → processing
+    {
+        use tauri::Emitter;
+        let _ = app.emit("float:processing", ());
+    }
+
     if all_samples.is_empty() {
         return Ok(SttResult {
             text: String::new(),

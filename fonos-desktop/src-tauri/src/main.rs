@@ -476,10 +476,12 @@ fn main() {
                 let nb1 = note1_nb;
                 let nb2 = note2_nb;
                 let nb3 = note3_nb;
-                // Toggle debounce: track key-down timestamp for long-press detection
-                let toggle_down_at: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
-                const TOGGLE_HOLD_MS: u128 = 800; // must hold >800ms to trigger
-                let toggle_ts = Arc::clone(&toggle_down_at);
+                // Toggle state: generation counter + last action time for debounce
+                let toggle_gen: Arc<std::sync::atomic::AtomicU64> = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                let toggle_last_action: Arc<Mutex<std::time::Instant>> = Arc::new(Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(10)));
+                const TOGGLE_DELAY_MS: u64 = 500; // hold 500ms to trigger
+                let tg_gen = Arc::clone(&toggle_gen);
+                let tg_last = Arc::clone(&toggle_last_action);
                 hm.set_callback(move |label, is_down| {
                     use tauri::Emitter;
                     let handle = app_handle.clone();
@@ -487,7 +489,8 @@ fn main() {
                     let note1_nb = nb1;
                     let note2_nb = nb2;
                     let note3_nb = nb3;
-                    let toggle_down = Arc::clone(&toggle_ts);
+                    let gen = Arc::clone(&tg_gen);
+                    let last_action = Arc::clone(&tg_last);
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
                             "dictation" | "dictation-toggle" => {
@@ -507,39 +510,94 @@ fn main() {
                                     }
                                     // key_up → fall through to stop logic
                                 } else {
-                                    // Toggle mode: long-press to trigger.
-                                    // key_down → record timestamp
-                                    // key_up → check if held long enough (>800ms)
-                                    if is_down {
-                                        *toggle_down.lock().unwrap() = Some(std::time::Instant::now());
+                                    // Toggle mode: hold for 500ms to trigger (fires while held).
+                                    // key_down → increment generation, spawn delayed check
+                                    // key_up → increment generation (cancels pending)
+                                    // Debounce: ignore if <500ms since last action
+                                    use std::sync::atomic::Ordering;
+
+                                    if !is_down {
+                                        // Key released — cancel any pending delayed trigger
+                                        gen.fetch_add(1, Ordering::SeqCst);
                                         return;
                                     }
-                                    // key_up: check hold duration
-                                    let held_ms = {
-                                        let mut guard = toggle_down.lock().unwrap();
-                                        let ms = guard.map(|t| t.elapsed().as_millis()).unwrap_or(0);
-                                        *guard = None;
-                                        ms
-                                    };
-                                    if held_ms < TOGGLE_HOLD_MS {
-                                        eprintln!("fonos: toggle tap too short ({}ms < {}ms), ignoring", held_ms, TOGGLE_HOLD_MS);
-                                        return;
-                                    }
-                                    eprintln!("fonos: toggle long-press {}ms", held_ms);
-                                    if crate::commands::dictation::is_recording() {
-                                        eprintln!("fonos: toggle → stopping");
-                                        // fall through to stop logic
-                                    } else {
-                                        eprintln!("fonos: toggle → starting");
-                                        let state: tauri::State<'_, AppState> = handle.state();
-                                        if let Err(e) = commands::dictation::start_recording(
-                                            handle.clone(), state, None
-                                        ).await {
-                                            eprintln!("fonos: hotkey start error: {e}");
-                                            let _ = handle.emit("float:stop", "");
+
+                                    // Key down — check debounce
+                                    {
+                                        let last = last_action.lock().unwrap();
+                                        if last.elapsed().as_millis() < TOGGLE_DELAY_MS as u128 {
+                                            eprintln!("fonos: toggle debounce — too soon since last action");
+                                            return;
                                         }
-                                        return;
                                     }
+
+                                    // Increment generation and spawn a delayed check
+                                    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+                                    let gen2 = Arc::clone(&gen);
+                                    let last2 = Arc::clone(&last_action);
+                                    let h2 = handle.clone();
+                                    tokio::spawn(async move {
+                                        tokio::time::sleep(std::time::Duration::from_millis(TOGGLE_DELAY_MS)).await;
+
+                                        // Check if generation still matches (key hasn't been released/re-pressed)
+                                        if gen2.load(Ordering::SeqCst) != my_gen {
+                                            eprintln!("fonos: toggle cancelled (key released before {}ms)", TOGGLE_DELAY_MS);
+                                            return;
+                                        }
+
+                                        // Record action time for debounce
+                                        *last2.lock().unwrap() = std::time::Instant::now();
+
+                                        if crate::commands::dictation::is_recording() {
+                                            eprintln!("fonos: toggle → stopping");
+                                            let state: tauri::State<'_, AppState> = h2.state();
+                                            let state2: tauri::State<'_, AppState> = h2.state();
+                                            match commands::dictation::stop_recording(h2.clone(), state, None).await {
+                                                Ok(result) => {
+                                                    if result.text.is_empty() {
+                                                        let _ = h2.emit("float:stop", "");
+                                                    } else {
+                                                        let mode = {
+                                                            let cfg = state2.config.lock().unwrap();
+                                                            cfg.dictation_mode.clone()
+                                                        };
+                                                        let has_llm = {
+                                                            let all = fonos_core::modes::all_modes();
+                                                            all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
+                                                        };
+                                                        if has_llm {
+                                                            match commands::llm::process_with_llm(state2, result.text, mode).await {
+                                                                Ok(llm) => {
+                                                                    if !llm.processed.is_empty() && llm.auto_paste {
+                                                                        let _ = crate::injection::inject_text(&llm.processed);
+                                                                    }
+                                                                    let _ = h2.emit("float:stop", &llm.processed);
+                                                                }
+                                                                Err(e) => {
+                                                                    eprintln!("fonos: toggle LLM error: {e}");
+                                                                    let _ = h2.emit("float:stop", "");
+                                                                }
+                                                            }
+                                                        } else {
+                                                            let _ = h2.emit("float:stop", &result.text);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("fonos: toggle stop error: {e}");
+                                                    let _ = h2.emit("float:stop", "");
+                                                }
+                                            }
+                                        } else {
+                                            eprintln!("fonos: toggle → starting");
+                                            let state: tauri::State<'_, AppState> = h2.state();
+                                            if let Err(e) = commands::dictation::start_recording(h2.clone(), state, None).await {
+                                                eprintln!("fonos: toggle start error: {e}");
+                                                let _ = h2.emit("float:stop", "");
+                                            }
+                                        }
+                                    });
+                                    return;
                                 }
 
                                 // ── Stop + process (hold key-up OR toggle second press) ──

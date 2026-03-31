@@ -10,7 +10,7 @@ ci = []
 
 [dependencies]
 fonos-core = { path = "../../fonos-core" }
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
@@ -19,8 +19,6 @@ dirs = "6"
 cpal = "0.15"
 rodio = "0.19"
 libc = "0.2"
-core-graphics = "0.25"
-core-foundation = "0.10"
 arboard = "3.6.1"
 rfd = "0.15"
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -28,6 +26,10 @@ base64 = "0.22"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.25"
+core-foundation = "0.10"
 
 [dev-dependencies]
 # Used by test_build.rs for Cargo.toml validation.

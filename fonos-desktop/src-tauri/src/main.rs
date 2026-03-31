@@ -2,6 +2,7 @@
 
 mod audio;
 mod commands;
+#[cfg(target_os = "macos")]
 mod hotkey;
 mod injection;
 mod platform;
@@ -15,6 +16,7 @@ use tauri::menu::{Menu, MenuItem};
 
 /// Position the agent-panel window centered horizontally near the cursor,
 /// slightly above the vertical center of the screen.
+#[cfg(target_os = "macos")]
 fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("agent-panel") else { return };
@@ -64,6 +66,7 @@ fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
 
 /// Position the note-panel window centered horizontally near the cursor,
 /// slightly below the macOS menu bar — mirrors agent panel placement.
+#[cfg(target_os = "macos")]
 fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("note-panel") else { return };
@@ -108,6 +111,7 @@ fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
 
 /// Position the meeting-panel window in the bottom-right corner of the active monitor,
 /// above the Dock — a fixed corner so it doesn't obscure the meeting app window.
+#[cfg(target_os = "macos")]
 fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("meeting-panel") else { return };
@@ -388,7 +392,9 @@ fn main() {
                 });
             }
 
-            // 1. Global hotkeys.
+            // 1. Global hotkeys (macOS uses CGEventTap; Linux TODO: use global-shortcut plugin).
+            #[cfg(target_os = "macos")]
+            {
             let state = app.state::<AppState>();
             let (dictation_combo, dictation_toggle_combo,
                  agent_combo, agent_panel_combo, note_combo, meeting_combo,
@@ -1162,7 +1168,10 @@ fn main() {
                 });
             }
 
+            } // end #[cfg(target_os = "macos")] hotkey block
+
             // 2. Position float window at primary screen bottom center (above Dock).
+            #[cfg(target_os = "macos")]
             commands::dictation::move_float_to_primary_pub(app.handle());
 
             // 3. Tray menu.

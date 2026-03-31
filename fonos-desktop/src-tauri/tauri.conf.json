@@ -103,9 +103,9 @@
       "resources/icon_1024x1024.png"
     ],
     "resources": [
+      "resources/tray_icon.png",
       "resources/fonos-audio-capture",
-      "resources/fonos-stt-apple",
-      "resources/tray_icon.png"
+      "resources/fonos-stt-apple"
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",

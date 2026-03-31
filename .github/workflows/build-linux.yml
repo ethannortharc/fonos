@@ -1,0 +1,81 @@
+name: Build Linux Packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libasound2-dev \
+            rpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Install frontend dependencies
+        working-directory: fonos-desktop
+        run: npm ci
+
+      - name: Create placeholder resources (macOS-only binaries not needed on Linux)
+        run: |
+          touch fonos-desktop/src-tauri/resources/fonos-audio-capture
+          touch fonos-desktop/src-tauri/resources/fonos-stt-apple
+          touch fonos-desktop/src-tauri/resources/tray_icon.png
+
+      - name: Build Tauri app (deb + rpm)
+        working-directory: fonos-desktop
+        run: cargo tauri build --bundles deb,rpm
+
+      - name: List build artifacts
+        run: |
+          echo "=== DEB ==="
+          find target/release/bundle/deb -name "*.deb" -exec ls -lh {} \;
+          echo "=== RPM ==="
+          find target/release/bundle/rpm -name "*.rpm" -exec ls -lh {} \;
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonos-deb
+          path: target/release/bundle/deb/*.deb
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonos-rpm
+          path: target/release/bundle/rpm/*.rpm
+
+      - name: Upload to release (if tagged)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          for f in target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm; do
+            gh release upload "$TAG_NAME" "$f" --clobber
+          done

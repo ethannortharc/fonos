@@ -60,27 +60,40 @@ unsafe fn simulate_cmd_key(key_code: u16) {
 // Key codes: 0x08 = 'c', 0x09 = 'v'
 
 /// Get the name of the frontmost application.
+#[cfg(target_os = "macos")]
 fn frontmost_app() -> String {
     Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to get name of first application process whose frontmost is true",
-        ])
+        .args(["-e", "tell application \"System Events\" to get name of first application process whose frontmost is true"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default()
 }
 
-/// Activate a named application (bring it to front).
-fn activate_app(name: &str) {
-    let script = format!(
-        "tell application \"{}\" to activate",
-        name.replace('"', "\\\"")
-    );
-    let _ = Command::new("osascript")
-        .args(["-e", &script])
-        .output();
+#[cfg(target_os = "linux")]
+fn frontmost_app() -> String {
+    Command::new("xdotool").args(["getactivewindow", "getwindowname"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
 }
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn frontmost_app() -> String { String::new() }
+
+/// Activate a named application (bring it to front).
+#[cfg(target_os = "macos")]
+fn activate_app(name: &str) {
+    let script = format!("tell application \"{}\" to activate", name.replace('"', "\\\""));
+    let _ = Command::new("osascript").args(["-e", &script]).output();
+}
+
+#[cfg(target_os = "linux")]
+fn activate_app(name: &str) {
+    let _ = Command::new("xdotool").args(["search", "--name", name, "windowactivate"]).output();
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn activate_app(_name: &str) {}
 
 /// Grab the currently selected text from the frontmost application.
 ///
@@ -100,10 +113,12 @@ pub async fn grab_selection() -> Result<SelectionContext, String> {
 
     let app_name = frontmost_app();
 
-    // Small delay then simulate Cmd+C via CGEvent
+    // Simulate Copy: Cmd+C (macOS) or Ctrl+C (Linux)
     std::thread::sleep(std::time::Duration::from_millis(30));
     #[cfg(target_os = "macos")]
     unsafe { simulate_cmd_key(0x08); } // 0x08 = 'c'
+    #[cfg(target_os = "linux")]
+    { let _ = Command::new("xdotool").args(["key", "--clearmodifiers", "ctrl+c"]).output(); }
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     let text = clipboard.get_text().unwrap_or_default();
@@ -152,9 +167,11 @@ pub async fn replace_selection(text: String, target_app: Option<String>) -> Resu
         }
     }
 
-    // Cmd+V via CGEvent
+    // Simulate Paste: Cmd+V (macOS) or Ctrl+V (Linux)
     #[cfg(target_os = "macos")]
     unsafe { simulate_cmd_key(0x09); } // 0x09 = 'v'
+    #[cfg(target_os = "linux")]
+    { let _ = Command::new("xdotool").args(["key", "--clearmodifiers", "ctrl+v"]).output(); }
 
     // Wait for paste to complete, then restore
     std::thread::sleep(std::time::Duration::from_millis(100));

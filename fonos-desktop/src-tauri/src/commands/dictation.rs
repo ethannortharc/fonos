@@ -39,9 +39,10 @@ pub fn move_float_to_primary_pub(app: &tauri::AppHandle) {
     move_float_to_monitor(app, true);
 }
 
-/// Position the float pill at bottom-center of a monitor, above the Dock.
-/// If `primary` is true, uses the primary monitor. Otherwise, uses the monitor
-/// where the mouse cursor currently is.
+/// Position the float pill at bottom-center of a monitor.
+/// On macOS: uses CGEvent for cursor position and Dock clearance.
+/// On Linux: uses the primary monitor, centered at bottom.
+#[cfg(target_os = "macos")]
 fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
     let Some(float_win) = app.get_webview_window("float") else { return };
 
@@ -102,6 +103,27 @@ fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
     let _ = float_win.set_position(tauri::PhysicalPosition::new(
         (x * scale) as i32,
         (y * scale) as i32,
+    ));
+}
+
+/// Linux fallback: center on primary monitor, near bottom.
+#[cfg(not(target_os = "macos"))]
+fn move_float_to_monitor(app: &tauri::AppHandle, _primary: bool) {
+    let Some(float_win) = app.get_webview_window("float") else { return };
+    let monitors = match float_win.available_monitors() {
+        Ok(m) if !m.is_empty() => m,
+        _ => return,
+    };
+    let target = &monitors[0];
+    let scale = target.scale_factor();
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+    let mon_h = target.size().height as f64 / scale;
+    let x = mon_x + (mon_w - 90.0) / 2.0;
+    let y = mon_y + mon_h - 28.0 - 60.0; // 60px from bottom
+    let _ = float_win.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32, (y * scale) as i32,
     ));
 }
 

@@ -476,6 +476,10 @@ fn main() {
                 let nb1 = note1_nb;
                 let nb2 = note2_nb;
                 let nb3 = note3_nb;
+                // Toggle debounce: track key-down timestamp for long-press detection
+                let toggle_down_at: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+                const TOGGLE_HOLD_MS: u128 = 800; // must hold >800ms to trigger
+                let toggle_ts = Arc::clone(&toggle_down_at);
                 hm.set_callback(move |label, is_down| {
                     use tauri::Emitter;
                     let handle = app_handle.clone();
@@ -483,21 +487,15 @@ fn main() {
                     let note1_nb = nb1;
                     let note2_nb = nb2;
                     let note3_nb = nb3;
+                    let toggle_down = Arc::clone(&toggle_ts);
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
                             "dictation" | "dictation-toggle" => {
                                 let is_toggle = label == "dictation-toggle";
-                                eprintln!("fonos: dictation hotkey is_down={} toggle={}", is_down, is_toggle);
 
-                                // Hold: key_down=start, key_up=stop
-                                // Toggle: key_down only — first press=start, second press=stop
-                                if is_toggle {
-                                    if !is_down { return; }
-                                    if crate::commands::dictation::is_recording() {
-                                        eprintln!("fonos: toggle → stopping");
-                                        // fall through to stop logic
-                                    } else {
-                                        eprintln!("fonos: toggle → starting");
+                                // Hold mode: key_down=start, key_up=stop
+                                if !is_toggle {
+                                    if is_down {
                                         let state: tauri::State<'_, AppState> = handle.state();
                                         if let Err(e) = commands::dictation::start_recording(
                                             handle.clone(), state, None
@@ -507,8 +505,32 @@ fn main() {
                                         }
                                         return;
                                     }
+                                    // key_up → fall through to stop logic
                                 } else {
+                                    // Toggle mode: long-press to trigger.
+                                    // key_down → record timestamp
+                                    // key_up → check if held long enough (>800ms)
                                     if is_down {
+                                        *toggle_down.lock().unwrap() = Some(std::time::Instant::now());
+                                        return;
+                                    }
+                                    // key_up: check hold duration
+                                    let held_ms = {
+                                        let mut guard = toggle_down.lock().unwrap();
+                                        let ms = guard.map(|t| t.elapsed().as_millis()).unwrap_or(0);
+                                        *guard = None;
+                                        ms
+                                    };
+                                    if held_ms < TOGGLE_HOLD_MS {
+                                        eprintln!("fonos: toggle tap too short ({}ms < {}ms), ignoring", held_ms, TOGGLE_HOLD_MS);
+                                        return;
+                                    }
+                                    eprintln!("fonos: toggle long-press {}ms", held_ms);
+                                    if crate::commands::dictation::is_recording() {
+                                        eprintln!("fonos: toggle → stopping");
+                                        // fall through to stop logic
+                                    } else {
+                                        eprintln!("fonos: toggle → starting");
                                         let state: tauri::State<'_, AppState> = handle.state();
                                         if let Err(e) = commands::dictation::start_recording(
                                             handle.clone(), state, None

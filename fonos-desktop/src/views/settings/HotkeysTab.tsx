@@ -1,6 +1,6 @@
 // Hotkeys tab — organized into sections with notebook selector for note shortcuts.
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { NotebookIcon } from "../../components/Icons";
 import { listModes } from "../../lib/api";
 import type { ModeEntry } from "../../types";
@@ -14,6 +14,7 @@ function HotkeyInput({ value, onChange, placeholder }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   const [capturing, setCapturing] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!capturing) return;
@@ -26,20 +27,26 @@ function HotkeyInput({ value, onChange, placeholder }: {
     if (e.key && !["Meta", "Control", "Alt", "Shift"].includes(e.key)) {
       parts.push(e.key.toLowerCase());
     }
-    if (parts.length > 1) { onChange(parts.join("+")); setCapturing(false); }
+    if (parts.length > 1) {
+      onChange(parts.join("+"));
+      setCapturing(false);
+      // Blur to allow re-clicking the same input
+      ref.current?.blur();
+    }
   }, [capturing, onChange]);
 
   return (
     <input
+      ref={ref}
       type="text"
       value={capturing ? "Press hotkey..." : value}
       readOnly
-      onFocus={() => setCapturing(true)}
+      onClick={() => { setCapturing(true); ref.current?.focus(); }}
       onBlur={() => setCapturing(false)}
       onKeyDown={handleKeyDown}
       placeholder={placeholder ?? "Click to set"}
       className={[
-        "bg-[rgba(255,255,255,0.03)] border rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none font-mono",
+        "bg-[rgba(255,255,255,0.03)] border rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none font-mono cursor-pointer",
         capturing ? "border-[rgba(245,158,11,0.3)]" : "border-[rgba(255,255,255,0.06)]",
       ].join(" ")}
       style={{ width: 140 }}

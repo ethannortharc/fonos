@@ -375,10 +375,7 @@ fn main() {
                     let _ = panel.set_background_color(Some(Color(0, 0, 0, 0)));
                     let _ = panel.set_shadow(false);
                 }
-                // Ensure main window is visible (prevents white screen on some Macs)
-                if let Some(main_win) = app.get_webview_window("main") {
-                    let _ = main_win.show();
-                }
+                // Main window starts hidden — user opens it via tray icon or dock click.
             }
 
             // 0. SIGUSR2 handler — toggle dictation from external scripts / window managers.

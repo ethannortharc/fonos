@@ -99,6 +99,11 @@ const SIDEBAR_ICON = (
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dictation");
   const [collapsed, setCollapsed] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    import("@tauri-apps/api/app").then((m) => m.getVersion()).then(setAppVersion).catch(() => {});
+  }, []);
 
   // Listen for navigation events from float pill / tray
   useEffect(() => {
@@ -196,6 +201,11 @@ export default function App() {
           >
             {SETTINGS_ICON}
           </button>
+
+          {/* Version */}
+          {appVersion && (
+            <span className="text-[7px] text-[rgba(255,255,255,0.1)] mt-1 flex-shrink-0">v{appVersion}</span>
+          )}
         </div>
 
         {/* Content area */}

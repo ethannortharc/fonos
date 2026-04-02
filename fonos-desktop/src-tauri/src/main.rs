@@ -276,7 +276,15 @@ fn main() {
         agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
     };
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Register global-shortcut plugin on Linux
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    }
+
+    builder
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             // Config commands
@@ -1171,6 +1179,115 @@ fn main() {
             }
 
             } // end #[cfg(target_os = "macos")] hotkey block
+
+            // 1b. Linux global shortcuts via tauri-plugin-global-shortcut.
+            #[cfg(target_os = "linux")]
+            {
+                use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+                use tauri::Emitter;
+
+                let state = app.state::<AppState>();
+                let config = state.config.lock().unwrap();
+                let combos: Vec<(String, String)> = vec![
+                    (config.hotkey_dictation.clone(), "dictation".into()),
+                    (config.hotkey_dictation_toggle.clone(), "dictation-toggle".into()),
+                ];
+                drop(config);
+
+                // Convert fonos hotkey format (cmd+shift+a) to Tauri shortcut format (CommandOrControl+Shift+A)
+                fn to_tauri_shortcut(combo: &str) -> Option<String> {
+                    if combo.is_empty() { return None; }
+                    let parts: Vec<&str> = combo.split('+').collect();
+                    let converted: Vec<String> = parts.iter().map(|p| {
+                        match p.to_lowercase().as_str() {
+                            "cmd" | "command" => "CommandOrControl".into(),
+                            "ctrl" | "control" => "Control".into(),
+                            "shift" => "Shift".into(),
+                            "alt" | "opt" | "option" => "Alt".into(),
+                            "space" => "Space".into(),
+                            other => {
+                                let mut c = other.chars();
+                                match c.next() {
+                                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                                    None => other.into(),
+                                }
+                            }
+                        }
+                    }).collect();
+                    Some(converted.join("+"))
+                }
+
+                let app_handle = app.handle().clone();
+                for (combo, label) in combos {
+                    if let Some(tauri_combo) = to_tauri_shortcut(&combo) {
+                        match tauri_combo.parse::<Shortcut>() {
+                            Ok(shortcut) => {
+                                let lbl = label.clone();
+                                let h = app_handle.clone();
+                                if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
+                                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                                        let handle = h.clone();
+                                        let label = lbl.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            eprintln!("fonos: linux shortcut '{}' pressed", label);
+                                            let is_toggle = label == "dictation-toggle";
+                                            if is_toggle {
+                                                if crate::commands::dictation::is_recording() {
+                                                    let state: tauri::State<'_, AppState> = handle.state();
+                                                    match commands::dictation::stop_recording(handle.clone(), state, None).await {
+                                                        Ok(result) => {
+                                                            if result.text.is_empty() {
+                                                                let _ = handle.emit("float:stop", "");
+                                                            } else {
+                                                                let _ = handle.emit("float:stop", &result.text);
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            eprintln!("fonos: linux stop error: {e}");
+                                                            let _ = handle.emit("float:stop", "");
+                                                        }
+                                                    }
+                                                } else {
+                                                    let state: tauri::State<'_, AppState> = handle.state();
+                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                                        eprintln!("fonos: linux start error: {e}");
+                                                        let _ = handle.emit("float:stop", "");
+                                                    }
+                                                }
+                                            } else {
+                                                // Hold mode on Linux: toggle behavior (no key-up events from global shortcut)
+                                                if crate::commands::dictation::is_recording() {
+                                                    let state: tauri::State<'_, AppState> = handle.state();
+                                                    match commands::dictation::stop_recording(handle.clone(), state, None).await {
+                                                        Ok(result) => {
+                                                            let _ = handle.emit("float:stop", if result.text.is_empty() { "" } else { &result.text });
+                                                        }
+                                                        Err(e) => {
+                                                            eprintln!("fonos: linux stop error: {e}");
+                                                            let _ = handle.emit("float:stop", "");
+                                                        }
+                                                    }
+                                                } else {
+                                                    let state: tauri::State<'_, AppState> = handle.state();
+                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                                        eprintln!("fonos: linux start error: {e}");
+                                                        let _ = handle.emit("float:stop", "");
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                }) {
+                                    eprintln!("fonos: failed to register linux shortcut '{}': {e}", combo);
+                                } else {
+                                    eprintln!("fonos: registered linux shortcut '{}' → {}", combo, label);
+                                }
+                            }
+                            Err(e) => eprintln!("fonos: invalid shortcut '{}': {e}", tauri_combo),
+                        }
+                    }
+                }
+            }
 
             // 2. Position float window at primary screen bottom center (above Dock).
             #[cfg(target_os = "macos")]

@@ -28,6 +28,8 @@ pub fn inject_text(text: &str) -> Result<InjectionMethod, String> {
 pub fn press_enter() {
     #[cfg(target_os = "macos")]
     unsafe { simulate_key(0x24, false); } // 0x24 = Return key
+    #[cfg(target_os = "linux")]
+    { let _ = std::process::Command::new("xdotool").args(["key", "Return"]).output(); }
 }
 
 /// Simulate a single key press (down + up) with optional Command modifier.
@@ -146,10 +148,16 @@ impl TextInjector {
         // Give the clipboard a moment to be available system-wide.
         std::thread::sleep(Duration::from_millis(30));
 
-        // Simulate Cmd+V.
+        // Simulate paste: Cmd+V (macOS) or Ctrl+V via xdotool (Linux).
         #[cfg(target_os = "macos")]
         {
             unsafe { simulate_key(0x09, true) }; // 0x09 = 'v'
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdotool")
+                .args(["key", "--clearmodifiers", "ctrl+v"])
+                .output();
         }
 
         // Wait for the paste to complete before restoring clipboard.

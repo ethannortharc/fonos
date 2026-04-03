@@ -157,6 +157,57 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
+/// Stop dictation, run LLM if needed, inject text at cursor, emit float:stop.
+/// Shared by macOS and Linux hotkey handlers.
+async fn stop_and_process_dictation(handle: tauri::AppHandle) {
+    use tauri::Emitter;
+    let state: tauri::State<'_, commands::AppState> = handle.state();
+    let state2: tauri::State<'_, commands::AppState> = handle.state();
+    match commands::dictation::stop_recording(handle.clone(), state, None).await {
+        Ok(result) => {
+            if !result.text.is_empty() {
+                let mode = {
+                    let cfg = state2.config.lock().unwrap();
+                    cfg.dictation_mode.clone()
+                };
+                let has_llm = {
+                    let all = fonos_core::modes::all_modes();
+                    all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
+                };
+                if has_llm {
+                    match commands::llm::process_with_llm(state2, result.text, mode).await {
+                        Ok(llm_result) => {
+                            if !llm_result.processed.is_empty() && llm_result.auto_paste {
+                                let _ = crate::injection::inject_text(&llm_result.processed);
+                                if llm_result.auto_press_enter {
+                                    std::thread::sleep(std::time::Duration::from_millis(50));
+                                    crate::injection::press_enter();
+                                }
+                            }
+                            let _ = handle.emit("float:stop", &llm_result.processed);
+                        }
+                        Err(e) => {
+                            eprintln!("fonos: LLM error: {e}");
+                            let _ = handle.emit("float:stop", "");
+                        }
+                    }
+                } else {
+                    // Raw mode — injection already handled in stop_recording
+                    let _ = handle.emit("float:stop", &result.text);
+                }
+            } else {
+                let _ = handle.emit("float:stop", "");
+            }
+        }
+        Err(e) => {
+            if !e.contains("not recording") {
+                eprintln!("fonos: stop error: {e}");
+            }
+            let _ = handle.emit("float:stop", "");
+        }
+    }
+}
+
 /// Build all hotkey configs from the current app config.
 #[cfg(target_os = "macos")]
 fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
@@ -1230,49 +1281,14 @@ fn main() {
                                         let label = lbl.clone();
                                         tauri::async_runtime::spawn(async move {
                                             eprintln!("fonos: linux shortcut '{}' pressed", label);
-                                            let is_toggle = label == "dictation-toggle";
-                                            if is_toggle {
-                                                if crate::commands::dictation::is_recording() {
-                                                    let state: tauri::State<'_, AppState> = handle.state();
-                                                    match commands::dictation::stop_recording(handle.clone(), state, None).await {
-                                                        Ok(result) => {
-                                                            if result.text.is_empty() {
-                                                                let _ = handle.emit("float:stop", "");
-                                                            } else {
-                                                                let _ = handle.emit("float:stop", &result.text);
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            eprintln!("fonos: linux stop error: {e}");
-                                                            let _ = handle.emit("float:stop", "");
-                                                        }
-                                                    }
-                                                } else {
-                                                    let state: tauri::State<'_, AppState> = handle.state();
-                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                        eprintln!("fonos: linux start error: {e}");
-                                                        let _ = handle.emit("float:stop", "");
-                                                    }
-                                                }
+                                            // Both hold and toggle work as toggle on Linux
+                                            if crate::commands::dictation::is_recording() {
+                                                stop_and_process_dictation(handle).await;
                                             } else {
-                                                // Hold mode on Linux: toggle behavior (no key-up events from global shortcut)
-                                                if crate::commands::dictation::is_recording() {
-                                                    let state: tauri::State<'_, AppState> = handle.state();
-                                                    match commands::dictation::stop_recording(handle.clone(), state, None).await {
-                                                        Ok(result) => {
-                                                            let _ = handle.emit("float:stop", if result.text.is_empty() { "" } else { &result.text });
-                                                        }
-                                                        Err(e) => {
-                                                            eprintln!("fonos: linux stop error: {e}");
-                                                            let _ = handle.emit("float:stop", "");
-                                                        }
-                                                    }
-                                                } else {
-                                                    let state: tauri::State<'_, AppState> = handle.state();
-                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                        eprintln!("fonos: linux start error: {e}");
-                                                        let _ = handle.emit("float:stop", "");
-                                                    }
+                                                let state: tauri::State<'_, AppState> = handle.state();
+                                                if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                                    eprintln!("fonos: linux start error: {e}");
+                                                    let _ = handle.emit("float:stop", "");
                                                 }
                                             }
                                         });

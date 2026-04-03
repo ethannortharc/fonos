@@ -106,7 +106,8 @@ fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
     ));
 }
 
-/// Linux fallback: center on primary monitor, near bottom.
+/// Linux/Windows fallback: center on primary monitor, near bottom.
+/// Uses physical pixels directly (Tauri on Linux reports physical).
 #[cfg(not(target_os = "macos"))]
 fn move_float_to_monitor(app: &tauri::AppHandle, _primary: bool) {
     let Some(float_win) = app.get_webview_window("float") else { return };
@@ -116,15 +117,18 @@ fn move_float_to_monitor(app: &tauri::AppHandle, _primary: bool) {
     };
     let target = &monitors[0];
     let scale = target.scale_factor();
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
-    let x = mon_x + (mon_w - 90.0) / 2.0;
-    let y = mon_y + mon_h - 28.0 - 60.0; // 60px from bottom
-    let _ = float_win.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32, (y * scale) as i32,
-    ));
+    // Use physical pixels for position (Tauri Linux uses physical coords)
+    let mon_x = target.position().x as f64;
+    let mon_y = target.position().y as f64;
+    let mon_w = target.size().width as f64;
+    let mon_h = target.size().height as f64;
+    let pill_w = 90.0 * scale;
+    let pill_h = 28.0 * scale;
+    let taskbar = 48.0 * scale; // approximate Linux taskbar height
+    let x = mon_x + (mon_w - pill_w) / 2.0;
+    let y = mon_y + mon_h - pill_h - taskbar;
+    eprintln!("fonos: float pill position: ({}, {}) monitor: {}x{} scale={}", x, y, mon_w, mon_h, scale);
+    let _ = float_win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
 }
 
 #[derive(Serialize)]

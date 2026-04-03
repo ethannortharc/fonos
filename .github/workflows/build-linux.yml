@@ -51,8 +51,9 @@ jobs:
         working-directory: fonos-desktop
         run: npm ci
 
-      - name: Create placeholder resources
+      - name: Create placeholder resources (macOS-only binaries)
         run: |
+          # macOS Swift helpers — not needed on Linux, just need to exist for bundler
           touch fonos-desktop/src-tauri/resources/fonos-audio-capture
           touch fonos-desktop/src-tauri/resources/fonos-stt-apple
           python3 -c "

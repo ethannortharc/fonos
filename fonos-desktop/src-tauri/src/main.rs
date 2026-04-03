@@ -1303,10 +1303,59 @@ fn main() {
                         }
                     }
                 }
+
+                // Hot-reload: unregister all + re-register with new config
+                let reload_handle = app.handle().clone();
+                app.listen("hotkey:reload", move |_| {
+                    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+                    use tauri::Emitter;
+
+                    let h = reload_handle.clone();
+                    eprintln!("fonos: linux hotkey reload — re-registering");
+                    let _ = h.global_shortcut().unregister_all();
+
+                    let state: tauri::State<'_, AppState> = h.state();
+                    let config = state.config.lock().unwrap();
+                    let combos: Vec<(String, String)> = vec![
+                        (config.hotkey_dictation.clone(), "dictation".into()),
+                        (config.hotkey_dictation_toggle.clone(), "dictation-toggle".into()),
+                    ];
+                    drop(config);
+
+                    for (combo, label) in combos {
+                        if let Some(tauri_combo) = to_tauri_shortcut(&combo) {
+                            if let Ok(shortcut) = tauri_combo.parse::<Shortcut>() {
+                                let lbl = label.clone();
+                                let h2 = h.clone();
+                                if let Err(e) = h.global_shortcut().on_shortcut(shortcut, move |_app, _sc, event| {
+                                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                                        let handle = h2.clone();
+                                        let l = lbl.clone();
+                                        tauri::async_runtime::spawn(async move {
+                                            eprintln!("fonos: linux shortcut '{}' pressed (reloaded)", l);
+                                            if crate::commands::dictation::is_recording() {
+                                                stop_and_process_dictation(handle).await;
+                                            } else {
+                                                let state: tauri::State<'_, AppState> = handle.state();
+                                                if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                                    eprintln!("fonos: linux start error: {e}");
+                                                    let _ = handle.emit("float:stop", "");
+                                                }
+                                            }
+                                        });
+                                    }
+                                }) {
+                                    eprintln!("fonos: reload shortcut '{}' failed: {e}", combo);
+                                } else {
+                                    eprintln!("fonos: reloaded linux shortcut '{}' → {}", combo, label);
+                                }
+                            }
+                        }
+                    }
+                });
             }
 
-            // 2. Position float window at primary screen bottom center (above Dock).
-            #[cfg(target_os = "macos")]
+            // 2. Position float window at bottom center of primary screen.
             commands::dictation::move_float_to_primary_pub(app.handle());
 
             // 3. Tray menu.

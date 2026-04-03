@@ -151,6 +151,21 @@ Remap all keyboard shortcuts. Click a hotkey field and press your desired key co
 ### Agent
 LLM model, system prompt, temperature, max tokens, allowed/blocked commands, and TTS toggle.
 
+## Linux Requirements
+
+Fonos on Linux requires these system packages for full functionality:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install xdotool
+
+# Fedora/RHEL
+sudo dnf install xdotool
+```
+
+- **xdotool** — required for text injection (paste at cursor) and keyboard simulation. Without it, dictation will transcribe but cannot insert text into other applications.
+- On Wayland desktops, `xdotool` works under XWayland. For native Wayland, `wtype` is an alternative (future support planned).
+
 ## License
 
 Private repository. All rights reserved.

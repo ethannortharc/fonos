@@ -104,6 +104,7 @@
     ],
     "resources": [
       "resources/tray_icon.png",
+      "resources/tray_icon_light.png",
       "resources/fonos-audio-capture",
       "resources/fonos-stt-apple"
     ],

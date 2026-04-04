@@ -158,7 +158,7 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
 }
 
 /// Stop dictation, run LLM if needed, inject text at cursor, emit float:stop.
-/// Shared by macOS and Linux hotkey handlers.
+/// Re-centers the float pill after completion.
 async fn stop_and_process_dictation(handle: tauri::AppHandle) {
     use tauri::Emitter;
     let state: tauri::State<'_, commands::AppState> = handle.state();
@@ -206,6 +206,9 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
             let _ = handle.emit("float:stop", "");
         }
     }
+    // Re-center the float pill (prevents drift from resize_float calls)
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    commands::dictation::move_float_to_primary_pub(&handle);
 }
 
 /// Build all hotkey configs from the current app config.
@@ -1276,12 +1279,16 @@ fn main() {
                                 let lbl = label.clone();
                                 let h = app_handle.clone();
                                 if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
-                                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                                        let handle = h.clone();
-                                        let label = lbl.clone();
+                                    let handle = h.clone();
+                                    let label = lbl.clone();
+                                    let is_toggle = label == "dictation-toggle";
+                                    let pressed = event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed;
+
+                                    if is_toggle {
+                                        // Toggle: only react to press
+                                        if !pressed { return; }
                                         tauri::async_runtime::spawn(async move {
-                                            eprintln!("fonos: linux shortcut '{}' pressed", label);
-                                            // Both hold and toggle work as toggle on Linux
+                                            eprintln!("fonos: linux toggle '{}'", label);
                                             if crate::commands::dictation::is_recording() {
                                                 stop_and_process_dictation(handle).await;
                                             } else {
@@ -1289,6 +1296,25 @@ fn main() {
                                                 if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
                                                     eprintln!("fonos: linux start error: {e}");
                                                     let _ = handle.emit("float:stop", "");
+                                                }
+                                            }
+                                        });
+                                    } else {
+                                        // Hold-to-talk: press=start, release=stop
+                                        tauri::async_runtime::spawn(async move {
+                                            if pressed {
+                                                eprintln!("fonos: linux hold '{}' down", label);
+                                                if !crate::commands::dictation::is_recording() {
+                                                    let state: tauri::State<'_, AppState> = handle.state();
+                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                                        eprintln!("fonos: linux start error: {e}");
+                                                        let _ = handle.emit("float:stop", "");
+                                                    }
+                                                }
+                                            } else {
+                                                eprintln!("fonos: linux hold '{}' up", label);
+                                                if crate::commands::dictation::is_recording() {
+                                                    stop_and_process_dictation(handle).await;
                                                 }
                                             }
                                         });
@@ -1328,22 +1354,28 @@ fn main() {
                                 let lbl = label.clone();
                                 let h2 = h.clone();
                                 if let Err(e) = h.global_shortcut().on_shortcut(shortcut, move |_app, _sc, event| {
-                                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                                        let handle = h2.clone();
-                                        let l = lbl.clone();
-                                        tauri::async_runtime::spawn(async move {
-                                            eprintln!("fonos: linux shortcut '{}' pressed (reloaded)", l);
+                                    let handle = h2.clone();
+                                    let l = lbl.clone();
+                                    let is_toggle = l == "dictation-toggle";
+                                    let pressed = event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed;
+                                    if is_toggle && !pressed { return; }
+                                    tauri::async_runtime::spawn(async move {
+                                        if is_toggle || !pressed {
+                                            // toggle press or hold release → stop
                                             if crate::commands::dictation::is_recording() {
                                                 stop_and_process_dictation(handle).await;
-                                            } else {
+                                            }
+                                        } else {
+                                            // hold press → start
+                                            if !crate::commands::dictation::is_recording() {
                                                 let state: tauri::State<'_, AppState> = handle.state();
                                                 if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
                                                     eprintln!("fonos: linux start error: {e}");
                                                     let _ = handle.emit("float:stop", "");
                                                 }
                                             }
-                                        });
-                                    }
+                                        }
+                                    });
                                 }) {
                                     eprintln!("fonos: reload shortcut '{}' failed: {e}", combo);
                                 } else {
@@ -1372,6 +1404,17 @@ fn main() {
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(menu))?;
                 tray.set_show_menu_on_left_click(true)?;
+
+                // On Linux, use light icon for dark panel backgrounds
+                #[cfg(target_os = "linux")]
+                {
+                    use tauri::image::Image;
+                    if let Ok(icon) = Image::from_path("resources/tray_icon_light.png")
+                        .or_else(|_| Image::from_path("/usr/lib/Fonos/resources/tray_icon_light.png"))
+                    {
+                        let _ = tray.set_icon(Some(icon));
+                    }
+                }
 
                 let app_handle_menu = app.handle().clone();
                 tray.on_menu_event(move |_tray, event| {

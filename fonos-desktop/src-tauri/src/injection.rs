@@ -67,9 +67,23 @@ impl TextInjector {
         Self
     }
 
-    /// Inject text at the current cursor position via clipboard paste (Cmd+V).
-    /// This works universally — browsers, terminals, editors, chat apps.
+    /// Inject text at the current cursor position.
+    /// macOS: clipboard paste (Cmd+V). Linux: xdotool type (universal).
     pub fn inject(&self, text: &str) -> Result<InjectionMethod, String> {
+        #[cfg(target_os = "linux")]
+        {
+            // xdotool type works in terminals, editors, and GUI apps
+            let result = std::process::Command::new("xdotool")
+                .args(["type", "--clearmodifiers", "--delay", "0", "--", text])
+                .output();
+            match result {
+                Ok(out) if out.status.success() => return Ok(InjectionMethod::ClipboardPaste),
+                _ => {
+                    eprintln!("fonos: xdotool type failed, falling back to clipboard paste");
+                    // Fall through to clipboard paste
+                }
+            }
+        }
         self.clipboard_paste_injection(text)?;
         Ok(InjectionMethod::ClipboardPaste)
     }
@@ -148,15 +162,17 @@ impl TextInjector {
         // Give the clipboard a moment to be available system-wide.
         std::thread::sleep(Duration::from_millis(30));
 
-        // Simulate paste: Cmd+V (macOS) or Ctrl+V via xdotool (Linux).
+        // Simulate paste: Cmd+V (macOS) or xdotool (Linux).
         #[cfg(target_os = "macos")]
         {
             unsafe { simulate_key(0x09, true) }; // 0x09 = 'v'
         }
         #[cfg(target_os = "linux")]
         {
+            // Ctrl+Shift+V works in terminals; Ctrl+V works in GUI apps.
+            // Try both with a small delay — the app will only respond to one.
             let _ = std::process::Command::new("xdotool")
-                .args(["key", "--clearmodifiers", "ctrl+v"])
+                .args(["key", "--clearmodifiers", "ctrl+shift+v"])
                 .output();
         }
 

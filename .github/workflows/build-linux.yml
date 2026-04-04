@@ -70,7 +70,7 @@ jobs:
                   return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
               return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', c) + chunk(b'IEND', b'')
           d = 'fonos-desktop/src-tauri/resources'
-          for name, size in [('tray_icon', 32), ('icon_32x32', 32), ('icon_128x128', 128), ('icon_256x256', 256), ('icon_512x512', 512), ('icon_1024x1024', 1024)]:
+          for name, size in [('tray_icon', 32), ('tray_icon_light', 32), ('icon_32x32', 32), ('icon_128x128', 128), ('icon_256x256', 256), ('icon_512x512', 512), ('icon_1024x1024', 1024)]:
               p = os.path.join(d, name + '.png')
               if not os.path.exists(p) or os.path.getsize(p) == 0:
                   open(p, 'wb').write(make_png(size, size))

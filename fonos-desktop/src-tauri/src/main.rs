@@ -175,6 +175,9 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
                 };
                 if has_llm {
+                    // Keep float in processing state while LLM runs
+                    // (overrides the premature float:stop from stop_recording)
+                    let _ = handle.emit("float:processing", ());
                     match commands::llm::process_with_llm(state2, result.text, mode).await {
                         Ok(llm_result) => {
                             if !llm_result.processed.is_empty() && llm_result.auto_paste {

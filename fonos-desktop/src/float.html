@@ -100,6 +100,10 @@
   #pill.recording #idle{display:none!important}
   #pill.recording #rec{display:flex}
 
+  #pill.processing{background:rgba(26,25,23,0.92);border-color:rgba(245,158,11,0.12);cursor:default;opacity:1}
+  #pill.processing #idle{display:none!important}
+  #pill.processing #rec{display:flex}
+
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 </style>
 </head>
@@ -127,7 +131,7 @@ const BUILTIN_MODES=[
   {id:'translate',icon:'🌐',name:'Translate'},
 ];
 let allModes=[...BUILTIN_MODES];
-let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null;
+let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null,stopTm=null;
 let rollerIdx=0; // index into circular list, maps to center slot
 
 const S=window.devicePixelRatio||2;
@@ -261,13 +265,30 @@ function startRec(){
   if(animId)cancelAnimationFrame(animId);animT=0;drawW();
   recSz();
 }
-function stopRec(text){
+function showProcessing(){
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
+  const pill=document.getElementById('pill');
+  pill.classList.remove('recording');
+  pill.classList.add('processing');
+  document.getElementById('rec-dot').style.background='#f59e0b';
+  document.getElementById('rec-dot').style.animation='pulse 0.8s ease-in-out infinite';
+  document.getElementById('rec-wave').style.display='none';
+  document.getElementById('rec-dur').textContent='···';
+  sz(65,PH);
+}
+function stopRec(text){
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  isRec=false;
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  document.getElementById('rec-wave').style.display='';
   if(text){document.getElementById('rec-dot').style.background='#30d158';document.getElementById('rec-dot').style.animation='none';}
-  setTimeout(()=>{
-    document.getElementById('pill').classList.remove('recording');
+  stopTm=setTimeout(()=>{
+    stopTm=null;
+    document.getElementById('pill').classList.remove('recording','processing');
     document.getElementById('rec-dot').style.background='#ff453a';
     document.getElementById('rec-dot').style.animation='';
     idleSz();
@@ -293,6 +314,7 @@ function setup(){
   const tr=window.__TAURI_INTERNALS__.transformCallback;
   function listen(ev,cb){inv('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(cb)}).catch(()=>{});}
   listen('float:start',()=>startRec());
+  listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   loadCfg();loadModes();idleSz();
 }

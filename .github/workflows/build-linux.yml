@@ -11,6 +11,7 @@ permissions:
 jobs:
   build-linux:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: ubuntu-22.04
@@ -106,6 +107,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          # Create release if it doesn't exist yet (first matrix job to reach here creates it)
+          gh release view "$TAG_NAME" >/dev/null 2>&1 || \
+            gh release create "$TAG_NAME" --title "Fonos $TAG_NAME" --generate-notes
           for f in target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm; do
             gh release upload "$TAG_NAME" "$f" --clobber
           done

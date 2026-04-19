@@ -29,6 +29,50 @@ final class NoteService {
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
+        Self.runBackfill(modelContainer: modelContainer)
+    }
+
+    // MARK: - v1 → v2 Backfill
+
+    private static let backfillFlagKey = "notebookConfig.migrated.v2"
+
+    /// Runs once on first NoteService init for a given install. Translates
+    /// `processingMode` + `customPrompt` into `systemPrompt`. Idempotent — guarded
+    /// by a UserDefaults flag.
+    static func runBackfill(modelContainer: ModelContainer, flagKey: String = backfillFlagKey) {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: flagKey) { return }
+
+        let context = modelContainer.mainContext
+        guard let notebooks = try? context.fetch(FetchDescriptor<NoteContainer>()) else {
+            defaults.set(true, forKey: flagKey)
+            return
+        }
+
+        var changed = false
+        for nb in notebooks where nb.systemPrompt.isEmpty {
+            let seed = backfillPrompt(processingMode: nb.processingMode, customPrompt: nb.customPrompt)
+            if !seed.isEmpty {
+                nb.systemPrompt = seed
+                nb.updatedAt = Date()
+                changed = true
+            }
+        }
+        if changed { try? context.save() }
+        defaults.set(true, forKey: flagKey)
+    }
+
+    private static func backfillPrompt(processingMode: String, customPrompt: String?) -> String {
+        switch processingMode {
+        case "raw":
+            return ""
+        case "polish", "light_polish":
+            return NotebookTemplate.polish.systemPromptSeed
+        case "summarize":
+            return NotebookTemplate.meetingNotes.systemPromptSeed
+        default:
+            return customPrompt ?? ""
+        }
     }
 
     /// Convenience initializer with an in-memory container (for tests and export-only usage).

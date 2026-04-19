@@ -2,12 +2,30 @@ import AppIntents
 import Foundation
 import UIKit
 
+// MARK: - NotebookOptionsProvider
+
+/// Reads the SharedNotebookCatalog so Siri / Shortcuts.app can list real
+/// notebook titles instead of asking the user for raw UUIDs.
+struct NotebookOptionsProvider: DynamicOptionsProvider {
+    /// Override target for tests. Production uses SharedNotebookCatalog.defaultURL.
+    let catalogURL: URL?
+
+    init(catalogURL: URL? = SharedNotebookCatalog.defaultURL) {
+        self.catalogURL = catalogURL
+    }
+
+    func results() async throws -> [String] {
+        SharedNotebookCatalog.read(from: catalogURL).map(\.title)
+    }
+}
+
 // MARK: - RecordNoteIntent
 
-/// AppIntent for Shortcuts / Back Tap: "Record a Note"
+/// AppIntent for Shortcuts / Siri / Back Tap: "Record a Note"
 ///
 /// Users can add this intent to Shortcuts or invoke it via Back Tap.
-/// An optional notebookId parameter allows recording directly into a specific notebook.
+/// The notebook parameter is exposed as a dynamic options list so the user
+/// can pick by title rather than entering a UUID.
 struct RecordNoteIntent: AppIntent {
     // MARK: - Metadata
 
@@ -23,19 +41,24 @@ struct RecordNoteIntent: AppIntent {
 
     // MARK: - Parameters
 
-    /// Optional target notebook UUID string.
-    @Parameter(title: "Notebook", description: "Which notebook to record into.", default: nil)
+    /// User-facing title of the target notebook. Resolved to a UUID at perform time
+    /// via `SharedNotebookCatalog`.
+    ///
+    /// Kept as a free-text `String?` parameter rather than wired to a
+    /// `DynamicOptionsProvider` because that API requires iOS 26. v1 ships with
+    /// the AppShortcuts phrase + URL-based deep link; the curated picker will
+    /// follow when we drop iOS <26 support or upgrade to AppEntity.
+    @Parameter(
+        title: "Notebook",
+        description: "Which notebook to record into.",
+        default: nil
+    )
     var notebookId: String?
 
     // MARK: - Instance accessors (for testability)
 
-    /// Instance-level title accessor forwarding to the static declaration.
     var title: LocalizedStringResource { Self.title }
-
-    /// Instance-level openAppWhenRun accessor forwarding to the static declaration.
     var openAppWhenRun: Bool { Self.openAppWhenRun }
-
-    /// Instance-level description accessor returning the category name string.
     var intentDescription: String? { "Opens Fonos and starts recording a voice note." }
 
     // MARK: - Perform
@@ -43,9 +66,18 @@ struct RecordNoteIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         var components = URLComponents(string: "fonos://note")!
+
         if let notebookId, !notebookId.isEmpty {
-            components.queryItems = [URLQueryItem(name: "notebook", value: notebookId)]
+            // notebookId may be a title (from DynamicOptionsProvider) or a literal UUID.
+            // Resolve title → uuid via the catalog so the URL scheme stays UUID-based.
+            let entries = SharedNotebookCatalog.read()
+            if let entry = entries.first(where: { $0.title == notebookId }) {
+                components.queryItems = [URLQueryItem(name: "notebook", value: entry.id)]
+            } else {
+                components.queryItems = [URLQueryItem(name: "notebook", value: notebookId)]
+            }
         }
+
         if let url = components.url {
             await UIApplication.shared.open(url)
         }

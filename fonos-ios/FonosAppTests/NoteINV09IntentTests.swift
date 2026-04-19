@@ -79,4 +79,37 @@ struct NoteINV09IntentTests {
         requiresAppIntent(RecordNoteIntent.self)
         #expect(Bool(true)) // sentinel
     }
+
+    // MARK: - v2: AppShortcuts registration & Notebook options provider
+
+    @Test("FonosShortcuts.appShortcuts registers at least two intents (Dictate + RecordNote)")
+    func appShortcutsRegistration() {
+        // The collection's count is the only public surface — phrases is internal.
+        // Both DictateIntent and RecordNoteIntent should be wired up.
+        let count = FonosShortcuts.appShortcuts.reduce(into: 0) { acc, _ in acc += 1 }
+        #expect(count >= 2)
+    }
+
+    @Test("NotebookOptionsProvider returns titles read from SharedNotebookCatalog")
+    func optionsProviderReadsCatalog() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("opts-test-\(UUID().uuidString).json")
+        try SharedNotebookCatalog.write([
+            SharedNotebookCatalog.Entry(id: "id1", title: "Work"),
+            SharedNotebookCatalog.Entry(id: "id2", title: "Personal")
+        ], to: url)
+
+        let provider = NotebookOptionsProvider(catalogURL: url)
+        let titles = try await provider.results()
+        #expect(titles.sorted() == ["Personal", "Work"])
+    }
+
+    @Test("NotebookOptionsProvider returns empty array when catalog file is missing")
+    func optionsProviderEmptyWhenMissing() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-\(UUID().uuidString).json")
+        let provider = NotebookOptionsProvider(catalogURL: url)
+        let titles = try await provider.results()
+        #expect(titles.isEmpty)
+    }
 }

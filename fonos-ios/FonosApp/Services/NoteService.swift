@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import AppIntents
 
 /// Errors thrown by NoteService.
 enum NoteServiceError: LocalizedError, Equatable {
@@ -37,12 +38,16 @@ final class NoteService {
 
     /// Write the current notebook list to the shared App Group catalog so the
     /// FonosIntents code (AppShortcuts / DynamicOptionsProvider) sees an
-    /// up-to-date list without booting the SwiftData stack.
+    /// up-to-date list without booting the SwiftData stack. Also nudges
+    /// Siri / Shortcuts.app to refresh suggested phrases.
     private func syncCatalog() {
         let entries = allNotebooks().map {
             SharedNotebookCatalog.Entry(id: $0.id.uuidString, title: $0.title)
         }
         try? SharedNotebookCatalog.write(entries)
+        if #available(iOS 16.4, *) {
+            FonosShortcuts.updateAppShortcutParameters()
+        }
     }
 
     // MARK: - v1 → v2 Backfill

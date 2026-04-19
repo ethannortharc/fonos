@@ -217,4 +217,72 @@ struct NoteINV08NotebookConfigTests {
         let fetchedB = all.first(where: { $0.id == notebookB.id })
         #expect(fetchedB?.processingMode == "raw")
     }
+
+    // MARK: - v2 fields
+
+    @Test("New v2 fields default to expected values")
+    func newFieldDefaults() throws {
+        let modelContainer = try makeConfigTestContainer()
+        let service = NoteService(modelContainer: modelContainer)
+        let nb = service.createNotebook(title: "Defaults")
+        #expect(nb.systemPrompt == "")
+        #expect(nb.sttLanguage == nil)
+        #expect(nb.outputLanguage == nil)
+        #expect(nb.showRawInline == false)
+        #expect(nb.siriPhrase == nil)
+    }
+
+    @Test("v2 fields persist via updateNotebookConfigV2")
+    func v2FieldsPersist() throws {
+        let modelContainer = try makeConfigTestContainer()
+        let service = NoteService(modelContainer: modelContainer)
+        let nb = service.createNotebook(title: "Persist")
+        service.updateNotebookConfigV2(
+            nb.id,
+            systemPrompt: "Be terse.",
+            sttLanguage: .some("zh-CN"),
+            outputLanguage: .some("en-US"),
+            sttModelOverride: nil,
+            llmModelOverride: nil,
+            showRawInline: true,
+            siriPhrase: .some("Note to Persist")
+        )
+        let fetched = try modelContainer.mainContext
+            .fetch(FetchDescriptor<NoteContainer>())
+            .first(where: { $0.id == nb.id })
+        #expect(fetched?.systemPrompt == "Be terse.")
+        #expect(fetched?.sttLanguage == "zh-CN")
+        #expect(fetched?.outputLanguage == "en-US")
+        #expect(fetched?.showRawInline == true)
+        #expect(fetched?.siriPhrase == "Note to Persist")
+    }
+
+    @Test("updateNotebookConfigV2 leaves unspecified fields untouched")
+    func v2PartialUpdate() throws {
+        let modelContainer = try makeConfigTestContainer()
+        let service = NoteService(modelContainer: modelContainer)
+        let nb = service.createNotebook(title: "Partial")
+        service.updateNotebookConfigV2(nb.id, systemPrompt: "First.")
+        service.updateNotebookConfigV2(nb.id, sttLanguage: .some("ja-JP"))
+
+        let fetched = try modelContainer.mainContext
+            .fetch(FetchDescriptor<NoteContainer>())
+            .first(where: { $0.id == nb.id })
+        #expect(fetched?.systemPrompt == "First.") // preserved
+        #expect(fetched?.sttLanguage == "ja-JP")    // updated
+    }
+
+    @Test("updateNotebookConfigV2 can clear sttLanguage with .some(nil)")
+    func v2ClearLanguage() throws {
+        let modelContainer = try makeConfigTestContainer()
+        let service = NoteService(modelContainer: modelContainer)
+        let nb = service.createNotebook(title: "Clear")
+        service.updateNotebookConfigV2(nb.id, sttLanguage: .some("zh-CN"))
+        service.updateNotebookConfigV2(nb.id, sttLanguage: .some(nil))
+
+        let fetched = try modelContainer.mainContext
+            .fetch(FetchDescriptor<NoteContainer>())
+            .first(where: { $0.id == nb.id })
+        #expect(fetched?.sttLanguage == nil)
+    }
 }

@@ -271,9 +271,9 @@ final class NoteService {
 
     // MARK: - Per-notebook Configuration
 
-    /// Updates the per-notebook configuration fields on a NoteContainer.
-    ///
-    /// Only non-nil parameters are written; pass nil to clear an optional field.
+    /// v1 update — kept for the existing tests that still touch
+    /// `processingMode` / `customPrompt`. Runtime no longer reads these fields;
+    /// the v0.2.0 backfill consolidates them into `systemPrompt`.
     func updateNotebookConfig(
         _ id: UUID,
         processingMode: String? = nil,
@@ -291,6 +291,38 @@ final class NoteService {
         notebook.llmModelOverride = llmModelOverride
         notebook.customPrompt = customPrompt
         notebook.updatedAt = Date()
+        try? context.save()
+    }
+
+    // MARK: - Per-notebook Configuration (v2)
+
+    /// v2 config update — operates on the new fields.
+    ///
+    /// Each parameter is a double-optional so callers can distinguish
+    /// "leave unchanged" (`nil`) from "clear to nil" (`.some(nil)`).
+    func updateNotebookConfigV2(
+        _ id: UUID,
+        systemPrompt: String? = nil,
+        sttLanguage: String?? = nil,
+        outputLanguage: String?? = nil,
+        sttModelOverride: String?? = nil,
+        llmModelOverride: String?? = nil,
+        showRawInline: Bool? = nil,
+        siriPhrase: String?? = nil
+    ) {
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<NoteContainer>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let nb = try? context.fetch(descriptor).first else { return }
+        if let systemPrompt { nb.systemPrompt = systemPrompt }
+        if let sttLanguage { nb.sttLanguage = sttLanguage }
+        if let outputLanguage { nb.outputLanguage = outputLanguage }
+        if let sttModelOverride { nb.sttModelOverride = sttModelOverride }
+        if let llmModelOverride { nb.llmModelOverride = llmModelOverride }
+        if let showRawInline { nb.showRawInline = showRawInline }
+        if let siriPhrase { nb.siriPhrase = siriPhrase }
+        nb.updatedAt = Date()
         try? context.save()
     }
 }

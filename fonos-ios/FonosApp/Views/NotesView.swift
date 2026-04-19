@@ -69,8 +69,11 @@ struct NotesView: View {
             .sheet(isPresented: $showNewNotebookSheet, onDismiss: reloadNotebooks) {
                 NewNotebookSheet(
                     title: $newNotebookTitle,
-                    onCreate: { title in
-                        noteService.createNotebook(title: title)
+                    onCreate: { title, template in
+                        let nb = noteService.createNotebook(title: title)
+                        if !template.systemPromptSeed.isEmpty {
+                            noteService.updateNotebookConfigV2(nb.id, systemPrompt: template.systemPromptSeed)
+                        }
                         showNewNotebookSheet = false
                         reloadNotebooks()
                     },
@@ -180,19 +183,48 @@ private struct NotebookCard: View {
 
 private struct NewNotebookSheet: View {
     @Binding var title: String
-    let onCreate: (String) -> Void
+    let onCreate: (String, NotebookTemplate) -> Void
     let onCancel: () -> Void
+
+    @State private var selectedTemplate: NotebookTemplate = .raw
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(hex: "#1a1917").ignoresSafeArea()
-                VStack(spacing: 20) {
-                    TextField("Notebook name", text: $title)
-                        .textFieldStyle(.roundedBorder)
-                        .padding()
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Notebook Name")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(hex: "#fafaf9").opacity(0.5))
+                            .textCase(.uppercase)
+                        TextField("Notebook name", text: $title)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Starting Template")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Color(hex: "#fafaf9").opacity(0.5))
+                            .textCase(.uppercase)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(NotebookTemplate.allCases) { tpl in
+                                    templateChip(tpl)
+                                }
+                            }
+                        }
+                        Text(selectedTemplate.systemPromptSeed.isEmpty
+                             ? "No LLM processing (raw transcripts only)."
+                             : selectedTemplate.systemPromptSeed)
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "#fafaf9").opacity(0.5))
+                            .padding(.top, 4)
+                    }
+
                     Spacer()
                 }
+                .padding(20)
             }
             .navigationTitle("New Notebook")
             .navigationBarTitleDisplayMode(.inline)
@@ -201,12 +233,38 @@ private struct NewNotebookSheet: View {
                     Button("Cancel") { onCancel() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { onCreate(title) }
+                    Button("Create") { onCreate(title, selectedTemplate) }
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func templateChip(_ tpl: NotebookTemplate) -> some View {
+        let isSelected = tpl == selectedTemplate
+        return Button {
+            selectedTemplate = tpl
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: tpl.symbolName)
+                    .font(.system(size: 12, weight: .medium))
+                Text(tpl.displayName)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundColor(isSelected ? Color(hex: "#1a1917") : Color(hex: "#fafaf9"))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color(hex: "#fbbf24") : Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isSelected ? Color.clear : Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

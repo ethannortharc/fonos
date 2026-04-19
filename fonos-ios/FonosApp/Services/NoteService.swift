@@ -30,6 +30,19 @@ final class NoteService {
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         Self.runBackfill(modelContainer: modelContainer)
+        syncCatalog()
+    }
+
+    // MARK: - Catalog sync
+
+    /// Write the current notebook list to the shared App Group catalog so the
+    /// FonosIntents code (AppShortcuts / DynamicOptionsProvider) sees an
+    /// up-to-date list without booting the SwiftData stack.
+    private func syncCatalog() {
+        let entries = allNotebooks().map {
+            SharedNotebookCatalog.Entry(id: $0.id.uuidString, title: $0.title)
+        }
+        try? SharedNotebookCatalog.write(entries)
     }
 
     // MARK: - v1 → v2 Backfill
@@ -134,6 +147,7 @@ final class NoteService {
         let context = modelContainer.mainContext
         context.insert(notebook)
         try? context.save()
+        syncCatalog()
         return notebook
     }
 
@@ -147,6 +161,7 @@ final class NoteService {
         notebook.title = newTitle
         notebook.updatedAt = Date()
         try? context.save()
+        syncCatalog()
     }
 
     /// Deletes a notebook. Throws if it's the Quick Note notebook.
@@ -161,6 +176,7 @@ final class NoteService {
         }
         context.delete(notebook)
         try? context.save()
+        syncCatalog()
     }
 
     /// Fetches all notebooks sorted by updatedAt descending.

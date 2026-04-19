@@ -17,6 +17,11 @@ private final class MockSpeechRecognizer: SpeechRecognizerProtocol, @unchecked S
     var stubbedAuthStatus: SFSpeechRecognizerAuthorizationStatus = .authorized
     var stubbedTranscript: String? = "hello world"
     var stubbedError: Error?
+    var lastLocaleSet: Locale?
+
+    func updateLocale(_ locale: Locale) {
+        lastLocaleSet = locale
+    }
 
     func requestAuthorization(_ handler: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void) {
         handler(stubbedAuthStatus)
@@ -114,6 +119,18 @@ struct INV03AppleSTTTests {
         let result = try await stt.transcribe(buffer: dummyBuffer, language: "fr-FR")
         #expect(!result.isEmpty)
         #expect(stt.lastUsedLocale?.identifier == "fr-FR")
+    }
+
+    @Test("AppleSTT calls updateLocale on the recognizer (not just lastUsedLocale)")
+    func languageActuallyAppliedToRecognizer() async throws {
+        // Regression: prior bug stored language in lastUsedLocale (a test field)
+        // but never reconfigured the SFSpeechRecognizer. Result: zh-CN audio
+        // was recognized using the device's en-US locale, producing garbage.
+        let mock = MockSpeechRecognizer()
+        mock.stubbedTranscript = "你好"
+        let stt = AppleSTT(recognizer: mock)
+        _ = try await stt.transcribe(buffer: makeDummyBuffer(), language: "zh-CN")
+        #expect(mock.lastLocaleSet?.identifier == "zh-CN")
     }
 
     // --- Recognizer error propagation ---

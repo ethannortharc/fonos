@@ -31,7 +31,30 @@ final class NoteService {
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         Self.runBackfill(modelContainer: modelContainer)
+        Self.runShowRawInlineDefault(modelContainer: modelContainer)
         syncCatalog()
+    }
+
+    // MARK: - One-shot: flip showRawInline default for existing notebooks
+
+    private static let showRawInlineMigrationKey = "notebookConfig.showRawInline.defaultedTrue.v2"
+
+    /// First launch after we changed the default for `showRawInline` from
+    /// false → true: flip the existing rows so users can immediately see the
+    /// raw STT transcript without hunting for the setting. Idempotent.
+    static func runShowRawInlineDefault(modelContainer: ModelContainer, flagKey: String = showRawInlineMigrationKey) {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: flagKey) { return }
+        let context = modelContainer.mainContext
+        if let notebooks = try? context.fetch(FetchDescriptor<NoteContainer>()) {
+            var changed = false
+            for nb in notebooks where nb.showRawInline == false {
+                nb.showRawInline = true
+                changed = true
+            }
+            if changed { try? context.save() }
+        }
+        defaults.set(true, forKey: flagKey)
     }
 
     // MARK: - Catalog sync

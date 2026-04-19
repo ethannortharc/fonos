@@ -60,6 +60,9 @@ protocol SpeechRecognizerProtocol: Sendable {
     /// Real recognizers provide `nil`; mocks provide the expected result.
     var stubbedTranscript: String? { get }
 
+    /// Switch the underlying recognizer to a new locale. Default no-op for mocks.
+    func updateLocale(_ locale: Locale)
+
     func requestAuthorization(_ handler: @escaping (SFSpeechRecognizerAuthorizationStatus) -> Void)
     func recognize(request: SFSpeechAudioBufferRecognitionRequest,
                    resultHandler: @escaping (SFSpeechRecognitionResult?, Error?) -> Void) -> SFSpeechRecognitionTask
@@ -69,6 +72,9 @@ extension SpeechRecognizerProtocol {
     /// Returns `stubbedTranscript ?? ""`.
     /// Called by AppleSTT when the recognize callback fires with (nil, nil).
     func transcribeSync() -> String { stubbedTranscript ?? "" }
+
+    /// Default no-op so test mocks don't need to implement locale switching.
+    func updateLocale(_ locale: Locale) {}
 }
 
 // MARK: - RealSpeechRecognizer
@@ -138,10 +144,17 @@ final class AppleSTT: STTProvider, @unchecked Sendable {
 
     // MARK: - Buffer-based transcription (test-facing API)
 
-    /// Transcribes audio data, setting `lastUsedLocale` from the `language` parameter.
+    /// Transcribes audio data, setting `lastUsedLocale` from the `language` parameter
+    /// AND switching the underlying SFSpeechRecognizer to that locale so non-system
+    /// languages (e.g. notebook configured for zh-CN on an en-US device) are
+    /// actually recognized — not just recorded as "intended".
     func transcribe(buffer audioData: Data, language: String?) async throws -> String {
-        // Record the locale for test inspection.
-        lastUsedLocale = language.map { Locale(identifier: $0) } ?? .current
+        let targetLocale = language.map { Locale(identifier: $0) } ?? .current
+        lastUsedLocale = targetLocale
+        // The previous bug: this line was missing. lastUsedLocale was being set
+        // for test introspection but the actual recognizer kept its init-time
+        // locale (.current), so per-notebook language overrides had no effect.
+        recognizer.updateLocale(targetLocale)
 
         return try await withCheckedThrowingContinuation { continuation in
             recognizer.requestAuthorization { [recognizer = self.recognizer] status in

@@ -34,8 +34,11 @@ final class NoteContainer {
     /// BCP-47 locale id for the LLM output. nil = follow `sttLanguage`.
     var outputLanguage: String?
 
-    /// When true, EntryRow shows the raw STT transcript inline below the processed text.
-    var showRawInline: Bool = false
+    /// When true, EntryRow shows the raw STT transcript inline below the processed
+    /// text. Default `true` so users can see exactly what STT heard, separately
+    /// from what the LLM produced — invaluable for debugging "what I said != what
+    /// got saved" issues.
+    var showRawInline: Bool = true
 
     /// Optional per-notebook Siri phrase override. nil = "Record to {title}".
     var siriPhrase: String?
@@ -56,7 +59,7 @@ final class NoteContainer {
         systemPrompt: String = "",
         sttLanguage: String? = nil,
         outputLanguage: String? = nil,
-        showRawInline: Bool = false,
+        showRawInline: Bool = true,
         siriPhrase: String? = nil
     ) {
         self.id = id

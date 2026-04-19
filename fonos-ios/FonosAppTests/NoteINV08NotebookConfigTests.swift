@@ -228,7 +228,9 @@ struct NoteINV08NotebookConfigTests {
         #expect(nb.systemPrompt == "")
         #expect(nb.sttLanguage == nil)
         #expect(nb.outputLanguage == nil)
-        #expect(nb.showRawInline == false)
+        // Default flipped to true so users immediately see what STT heard,
+        // separately from what the LLM produced.
+        #expect(nb.showRawInline == true)
         #expect(nb.siriPhrase == nil)
     }
 

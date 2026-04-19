@@ -81,7 +81,7 @@ struct NotebookDetailView: View {
     private var entriesList: some View {
         List {
             ForEach(entries, id: \.id) { entry in
-                EntryRow(entry: entry)
+                EntryRow(entry: entry, showRawInline: notebook.showRawInline)
                     .listRowBackground(Color(hex: "#1a1917"))
                     .listRowSeparatorTint(Color(hex: "#fafaf9").opacity(0.08))
             }
@@ -107,6 +107,12 @@ struct NotebookDetailView: View {
 
 private struct EntryRow: View {
     let entry: NoteEntry
+    let showRawInline: Bool
+
+    private var hasDistinctRaw: Bool {
+        guard let processed = entry.processedText else { return false }
+        return processed != entry.rawText
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -124,14 +130,28 @@ private struct EntryRow: View {
                 .lineLimit(4)
                 .multilineTextAlignment(.leading)
 
-            if let processed = entry.processedText, processed != entry.rawText {
+            if showRawInline && hasDistinctRaw {
                 Text(entry.rawText)
                     .font(.system(size: 12))
                     .foregroundColor(Color(hex: "#fafaf9").opacity(0.35))
-                    .lineLimit(2)
+                    .lineLimit(4)
             }
         }
         .padding(.vertical, 8)
+        .contextMenu {
+            if hasDistinctRaw {
+                Button {
+                    UIPasteboard.general.string = entry.rawText
+                } label: {
+                    Label("Copy raw transcript", systemImage: "doc.on.doc")
+                }
+            }
+            Button {
+                UIPasteboard.general.string = entry.processedText ?? entry.rawText
+            } label: {
+                Label("Copy text", systemImage: "doc.on.doc.fill")
+            }
+        }
     }
 
     private var modeBadge: some View {

@@ -159,3 +159,76 @@ final class LLMService: Sendable {
         return content
     }
 }
+
+// MARK: - Note Pipeline
+
+extension LLMService {
+    /// Note-pipeline entry point. Bypasses the `Mode` enum (which is for Dictation)
+    /// and uses the per-notebook NotebookLLMConfig directly.
+    ///
+    /// Output-language injection: when `config.outputLanguage` is non-nil, prepends
+    /// `Always respond in {lang}.` followed by a blank line to the system prompt.
+    /// Prefix placement gives the strongest steering for chat models.
+    func processNote(text: String, config: NotebookLLMConfig) async throws -> String {
+        let composedSystem = Self.composeSystemPrompt(
+            user: config.systemPrompt,
+            outputLanguage: config.outputLanguage
+        )
+        let modelToUse = config.modelOverride ?? modelID
+
+        var requestBody: [String: Any] = [
+            "model": modelToUse,
+            "messages": [
+                ["role": "system", "content": composedSystem],
+                ["role": "user", "content": text]
+            ],
+            "max_completion_tokens": 1024
+        ]
+        if !modelToUse.hasPrefix("o") {
+            requestBody["temperature"] = 0.3
+        }
+
+        guard let url = URL(string: "\(baseURL)/v1/chat/completions") else {
+            throw LLMError.networkUnavailable
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: requestBody)
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            switch urlError.code {
+            case .timedOut: throw LLMError.timeout
+            case .notConnectedToInternet, .networkConnectionLost: throw LLMError.networkUnavailable
+            default: throw LLMError.networkUnavailable
+            }
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LLMError.parseError
+        }
+        switch httpResponse.statusCode {
+        case 200: break
+        case 401: throw LLMError.authenticationFailed
+        default: throw LLMError.serverError(statusCode: httpResponse.statusCode)
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let first = choices.first,
+              let msg = first["message"] as? [String: Any],
+              let content = msg["content"] as? String else {
+            throw LLMError.parseError
+        }
+        return content
+    }
+
+    static func composeSystemPrompt(user: String, outputLanguage: String?) -> String {
+        guard let lang = outputLanguage, !lang.isEmpty else { return user }
+        return "Always respond in \(lang).\n\n\(user)"
+    }
+}

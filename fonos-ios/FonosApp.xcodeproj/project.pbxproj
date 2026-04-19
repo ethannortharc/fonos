@@ -37,17 +37,43 @@
 		AA01B001AA014D00AA014D06 /* INV09ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D16 /* INV09ConfigTests.swift */; };
 		AA01B001AA014D00AA014D07 /* INV10HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA01B001AA014D00AA014D17 /* INV10HistoryTests.swift */; };
 		BB02001BB002001BB002001B /* INV02AudioCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */; };
+		BG01000000000000000001 /* BackgroundRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BG01000000000000000011 /* BackgroundRecordingService.swift */; };
 		CC07001CC007001CC007001B /* INV07TextRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC07001CC007001CC007001A /* INV07TextRouterTests.swift */; };
 		CC08001CC008001CC008001B /* INV08URLSchemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */; };
+		KB12001AA012001AA012001B /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12001AA012001AA012001A /* KeyboardViewController.swift */; };
+		KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12002AA012002AA012002A /* KeyboardAudioService.swift */; };
+		KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12003AA012003AA012003A /* KeyboardSTTService.swift */; };
+		KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KB12004AA012004AA012004A /* FonosKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP01001AA001001AA001001A /* ModelProbeService.swift */; };
+		UI13001AA013001AA013001B /* FonosAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UI13001AA013001AA013001A /* FonosAppUITests.swift */; };
+		FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */; };
+		WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON001AA001AA001001A /* NoteContainer.swift */; };
+		WP01VON002AA002AA002001B /* NoteEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON002AA002AA002001A /* NoteEntry.swift */; };
+		WP01VON003AA003AA003001B /* NoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON003AA003AA003001A /* NoteService.swift */; };
+		WP01VON004AA004AA004001B /* NoteINV01ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */; };
+		WP01VON005AA005AA005001B /* NoteINV13ContainerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */; };
+		WP01VON006AA006AA006001B /* NoteQD03SyncFriendlyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */; };
 		WP03001AA003001AA003001B /* FonosSTT.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03001AA003001AA003001A /* FonosSTT.swift */; };
 		WP03002AA003002AA003002B /* INV03AppleSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */; };
 		WP03003AA003003AA003003B /* INV04WhisperSTTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */; };
 		WP03004AA003004AA003004B /* QD02STTParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03004AA003004AA003004A /* QD02STTParsingTests.swift */; };
+		WP03VON001AA001AA001001B /* NoteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON001AA001AA001001A /* NoteViewModel.swift */; };
+		WP03VON002AA002AA002001B /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON002AA002AA002001A /* NotesView.swift */; };
+		WP03VON003AA003AA003001B /* NotebookDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON003AA003AA003001A /* NotebookDetailView.swift */; };
+		WP03VON004AA004AA004001B /* RecordNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON004AA004AA004001A /* RecordNoteSheet.swift */; };
+		WP03VON005AA005AA005001B /* NoteINV03TabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */; };
+		WP03VON006AA006AA006001B /* NoteINV06RecordFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */; };
+		WP03VON007AA007AA007001B /* NoteINV11NoAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */; };
 		WP04000000000000000001 /* DictationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000011 /* DictationViewModel.swift */; };
-		BG01000000000000000001 /* BackgroundRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BG01000000000000000011 /* BackgroundRecordingService.swift */; };
 		WP04000000000000000002 /* INV05LLMTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000012 /* INV05LLMTests.swift */; };
 		WP04000000000000000003 /* QD03PromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000013 /* QD03PromptTests.swift */; };
 		WP04000000000000000004 /* QD04ErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04000000000000000014 /* QD04ErrorTests.swift */; };
+		WP04VON001AA001AA001001B /* RecordNoteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON001AA001AA001001A /* RecordNoteIntent.swift */; };
+		WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON002AA002AA002001A /* DeepLinkRouter.swift */; };
+		WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON003AA003AA003001A /* NotebookSettingsView.swift */; };
+		WP04VON004AA004AA004001B /* NoteINV08NotebookConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */; };
+		WP04VON005AA005AA005001B /* NoteINV09IntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */; };
+		WP04VON006AA006AA006001B /* NoteINV10DeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */; };
 		WP06001AA006001AA006001B /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06001AA006001AA006001A /* WaveformView.swift */; };
 		WP06002AA006002AA006002B /* RecordButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06002AA006002AA006002A /* RecordButton.swift */; };
 		WP06003AA006003AA006003B /* INV01BuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP06003AA006003AA006003A /* INV01BuildTests.swift */; };
@@ -67,31 +93,6 @@
 		WP11001AA011001AA011001B /* ModeConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11001AA011001AA011001A /* ModeConfig.swift */; };
 		WP11002AA011002AA011002B /* ModelsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11002AA011002AA011002A /* ModelsTab.swift */; };
 		WP11003AA011003AA011003B /* ModesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP11003AA011003AA011003A /* ModesTab.swift */; };
-		MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP01001AA001001AA001001A /* ModelProbeService.swift */; };
-		KB12001AA012001AA012001B /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12001AA012001AA012001A /* KeyboardViewController.swift */; };
-		KB12002AA012002AA012002B /* KeyboardAudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12002AA012002AA012002A /* KeyboardAudioService.swift */; };
-		KB12003AA012003AA012003B /* KeyboardSTTService.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB12003AA012003AA012003A /* KeyboardSTTService.swift */; };
-		KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KB12004AA012004AA012004A /* FonosKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		UI13001AA013001AA013001B /* FonosAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UI13001AA013001AA013001A /* FonosAppUITests.swift */; };
-		WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON001AA001AA001001A /* NoteContainer.swift */; };
-		WP01VON002AA002AA002001B /* NoteEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON002AA002AA002001A /* NoteEntry.swift */; };
-		WP01VON003AA003AA003001B /* NoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON003AA003AA003001A /* NoteService.swift */; };
-		WP01VON004AA004AA004001B /* NoteINV01ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */; };
-		WP01VON005AA005AA005001B /* NoteINV13ContainerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */; };
-		WP01VON006AA006AA006001B /* NoteQD03SyncFriendlyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */; };
-		WP03VON001AA001AA001001B /* NoteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON001AA001AA001001A /* NoteViewModel.swift */; };
-		WP03VON002AA002AA002001B /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON002AA002AA002001A /* NotesView.swift */; };
-		WP03VON003AA003AA003001B /* NotebookDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON003AA003AA003001A /* NotebookDetailView.swift */; };
-		WP03VON004AA004AA004001B /* RecordNoteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON004AA004AA004001A /* RecordNoteSheet.swift */; };
-		WP03VON005AA005AA005001B /* NoteINV03TabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */; };
-		WP03VON006AA006AA006001B /* NoteINV06RecordFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */; };
-		WP03VON007AA007AA007001B /* NoteINV11NoAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */; };
-		WP04VON001AA001AA001001B /* RecordNoteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON001AA001AA001001A /* RecordNoteIntent.swift */; };
-		WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON002AA002AA002001A /* DeepLinkRouter.swift */; };
-		WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON003AA003AA003001A /* NotebookSettingsView.swift */; };
-		WP04VON004AA004AA004001B /* NoteINV08NotebookConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */; };
-		WP04VON005AA005AA005001B /* NoteINV09IntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */; };
-		WP04VON006AA006AA006001B /* NoteINV10DeepLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,7 +107,7 @@
 			isa = PBXContainerItemProxy;
 			containerPortal = 11F387A36EAB42D7B29216FC /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = KB12005AA012005AA012005C /* FonosKeyboard */;
+			remoteGlobalIDString = KB12005AA012005AA012005C;
 			remoteInfo = FonosKeyboard;
 		};
 		UI13002AA013002AA013002C /* PBXContainerItemProxy */ = {
@@ -117,6 +118,20 @@
 			remoteInfo = FonosApp;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		KB12012AA012012AA012012C /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		50BA9D99CDBC44ABA7E645A1 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
@@ -153,17 +168,46 @@
 		AA01B001AA014D00AA014D18 /* FonosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosApp.entitlements; sourceTree = "<group>"; };
 		BAC7AF7161324CE4AF50AD41 /* FonosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FonosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB02001BB002001BB002001A /* INV02AudioCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV02AudioCaptureTests.swift; sourceTree = "<group>"; };
+		BG01000000000000000011 /* BackgroundRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRecordingService.swift; sourceTree = "<group>"; };
 		CC07001CC007001CC007001A /* INV07TextRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV07TextRouterTests.swift; sourceTree = "<group>"; };
 		CC08001CC008001CC008001A /* INV08URLSchemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV08URLSchemeTests.swift; sourceTree = "<group>"; };
+		KB12001AA012001AA012001A /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		KB12002AA012002AA012002A /* KeyboardAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAudioService.swift; sourceTree = "<group>"; };
+		KB12003AA012003AA012003A /* KeyboardSTTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSTTService.swift; sourceTree = "<group>"; };
+		KB12004AA012004AA012004A /* FonosKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FonosKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		KB12006AA012006AA012006A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KB12007AA012007AA012007A /* FonosKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosKeyboard.entitlements; sourceTree = "<group>"; };
+		MP01001AA001001AA001001A /* ModelProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProbeService.swift; sourceTree = "<group>"; };
+		UI13001AA013001AA013001A /* FonosAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppUITests.swift; sourceTree = "<group>"; };
+		UI13003AA013003AA013003A /* FonosAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookTemplate.swift; sourceTree = "<group>"; };
+		WP01VON001AA001AA001001A /* NoteContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContainer.swift; sourceTree = "<group>"; };
+		WP01VON002AA002AA002001A /* NoteEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEntry.swift; sourceTree = "<group>"; };
+		WP01VON003AA003AA003001A /* NoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteService.swift; sourceTree = "<group>"; };
+		WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV01ModelTests.swift; sourceTree = "<group>"; };
+		WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV13ContainerTests.swift; sourceTree = "<group>"; };
+		WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteQD03SyncFriendlyTests.swift; sourceTree = "<group>"; };
 		WP03001AA003001AA003001A /* FonosSTT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosSTT.swift; sourceTree = "<group>"; };
 		WP03002AA003002AA003002A /* INV03AppleSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV03AppleSTTTests.swift; sourceTree = "<group>"; };
 		WP03003AA003003AA003003A /* INV04WhisperSTTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV04WhisperSTTTests.swift; sourceTree = "<group>"; };
 		WP03004AA003004AA003004A /* QD02STTParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD02STTParsingTests.swift; sourceTree = "<group>"; };
+		WP03VON001AA001AA001001A /* NoteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteViewModel.swift; sourceTree = "<group>"; };
+		WP03VON002AA002AA002001A /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		WP03VON003AA003AA003001A /* NotebookDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDetailView.swift; sourceTree = "<group>"; };
+		WP03VON004AA004AA004001A /* RecordNoteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteSheet.swift; sourceTree = "<group>"; };
+		WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV03TabTests.swift; sourceTree = "<group>"; };
+		WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV06RecordFlowTests.swift; sourceTree = "<group>"; };
+		WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV11NoAudioTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000011 /* DictationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationViewModel.swift; sourceTree = "<group>"; };
-		BG01000000000000000011 /* BackgroundRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRecordingService.swift; sourceTree = "<group>"; };
 		WP04000000000000000012 /* INV05LLMTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV05LLMTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000013 /* QD03PromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD03PromptTests.swift; sourceTree = "<group>"; };
 		WP04000000000000000014 /* QD04ErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QD04ErrorTests.swift; sourceTree = "<group>"; };
+		WP04VON001AA001AA001001A /* RecordNoteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteIntent.swift; sourceTree = "<group>"; };
+		WP04VON002AA002AA002001A /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
+		WP04VON003AA003AA003001A /* NotebookSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSettingsView.swift; sourceTree = "<group>"; };
+		WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV08NotebookConfigTests.swift; sourceTree = "<group>"; };
+		WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV09IntentTests.swift; sourceTree = "<group>"; };
+		WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV10DeepLinkTests.swift; sourceTree = "<group>"; };
 		WP06001AA006001AA006001A /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		WP06002AA006002AA006002A /* RecordButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordButton.swift; sourceTree = "<group>"; };
 		WP06003AA006003AA006003A /* INV01BuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = INV01BuildTests.swift; sourceTree = "<group>"; };
@@ -183,34 +227,6 @@
 		WP11001AA011001AA011001A /* ModeConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeConfig.swift; sourceTree = "<group>"; };
 		WP11002AA011002AA011002A /* ModelsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTab.swift; sourceTree = "<group>"; };
 		WP11003AA011003AA011003A /* ModesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModesTab.swift; sourceTree = "<group>"; };
-		MP01001AA001001AA001001A /* ModelProbeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProbeService.swift; sourceTree = "<group>"; };
-		KB12001AA012001AA012001A /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
-		KB12002AA012002AA012002A /* KeyboardAudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAudioService.swift; sourceTree = "<group>"; };
-		KB12003AA012003AA012003A /* KeyboardSTTService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardSTTService.swift; sourceTree = "<group>"; };
-		KB12004AA012004AA012004A /* FonosKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FonosKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		KB12006AA012006AA012006A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		KB12007AA012007AA012007A /* FonosKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FonosKeyboard.entitlements; sourceTree = "<group>"; };
-		UI13001AA013001AA013001A /* FonosAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppUITests.swift; sourceTree = "<group>"; };
-		UI13003AA013003AA013003A /* FonosAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		WP01VON001AA001AA001001A /* NoteContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContainer.swift; sourceTree = "<group>"; };
-		WP01VON002AA002AA002001A /* NoteEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEntry.swift; sourceTree = "<group>"; };
-		WP01VON003AA003AA003001A /* NoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteService.swift; sourceTree = "<group>"; };
-		WP01VON004AA004AA004001A /* NoteINV01ModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV01ModelTests.swift; sourceTree = "<group>"; };
-		WP01VON005AA005AA005001A /* NoteINV13ContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV13ContainerTests.swift; sourceTree = "<group>"; };
-		WP01VON006AA006AA006001A /* NoteQD03SyncFriendlyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteQD03SyncFriendlyTests.swift; sourceTree = "<group>"; };
-		WP03VON001AA001AA001001A /* NoteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteViewModel.swift; sourceTree = "<group>"; };
-		WP03VON002AA002AA002001A /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
-		WP03VON003AA003AA003001A /* NotebookDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookDetailView.swift; sourceTree = "<group>"; };
-		WP03VON004AA004AA004001A /* RecordNoteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteSheet.swift; sourceTree = "<group>"; };
-		WP03VON005AA005AA005001A /* NoteINV03TabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV03TabTests.swift; sourceTree = "<group>"; };
-		WP03VON006AA006AA006001A /* NoteINV06RecordFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV06RecordFlowTests.swift; sourceTree = "<group>"; };
-		WP03VON007AA007AA007001A /* NoteINV11NoAudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV11NoAudioTests.swift; sourceTree = "<group>"; };
-		WP04VON001AA001AA001001A /* RecordNoteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordNoteIntent.swift; sourceTree = "<group>"; };
-		WP04VON002AA002AA002001A /* DeepLinkRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLinkRouter.swift; sourceTree = "<group>"; };
-		WP04VON003AA003AA003001A /* NotebookSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookSettingsView.swift; sourceTree = "<group>"; };
-		WP04VON004AA004AA004001A /* NoteINV08NotebookConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV08NotebookConfigTests.swift; sourceTree = "<group>"; };
-		WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV09IntentTests.swift; sourceTree = "<group>"; };
-		WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV10DeepLinkTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -275,6 +291,7 @@
 				WP11001AA011001AA011001A /* ModeConfig.swift */,
 				WP01VON001AA001AA001001A /* NoteContainer.swift */,
 				WP01VON002AA002AA002001A /* NoteEntry.swift */,
+				FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -406,6 +423,14 @@
 			path = FonosKeyboard;
 			sourceTree = "<group>";
 		};
+		UI13005AA013005AA013005C /* FonosAppUITests */ = {
+			isa = PBXGroup;
+			children = (
+				UI13001AA013001AA013001A /* FonosAppUITests.swift */,
+			);
+			path = FonosAppUITests;
+			sourceTree = "<group>";
+		};
 		WP06000AA006000AA006000C /* Components */ = {
 			isa = PBXGroup;
 			children = (
@@ -447,14 +472,6 @@
 			path = FonosIntents;
 			sourceTree = "<group>";
 		};
-		UI13005AA013005AA013005C /* FonosAppUITests */ = {
-			isa = PBXGroup;
-			children = (
-				UI13001AA013001AA013001A /* FonosAppUITests.swift */,
-			);
-			path = FonosAppUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -477,23 +494,6 @@
 			productReference = BAC7AF7161324CE4AF50AD41 /* FonosApp.app */;
 			productType = "com.apple.product-type.application";
 		};
-		KB12005AA012005AA012005C /* FonosKeyboard */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = KB12008AA012008AA012008C /* Build configuration list for PBXNativeTarget "FonosKeyboard" */;
-			buildPhases = (
-				KB12013AA012013AA012013C /* Sources */,
-				KB12014AA012014AA012014C /* Resources */,
-				KB12011AA012011AA012011C /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = FonosKeyboard;
-			productName = FonosKeyboard;
-			productReference = KB12004AA012004AA012004A /* FonosKeyboard.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 		C4780AAF578C46BFBB87A7AA /* FonosAppTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AA402CDB1EA844939DDAC1FA /* Build configuration list for PBXNativeTarget "FonosAppTests" */;
@@ -510,6 +510,23 @@
 			productName = FonosAppTests;
 			productReference = 6FA1E3408A1E47AF91355F0B /* FonosAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		KB12005AA012005AA012005C /* FonosKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KB12008AA012008AA012008C /* Build configuration list for PBXNativeTarget "FonosKeyboard" */;
+			buildPhases = (
+				KB12013AA012013AA012013C /* Sources */,
+				KB12014AA012014AA012014C /* Resources */,
+				KB12011AA012011AA012011C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FonosKeyboard;
+			productName = FonosKeyboard;
+			productReference = KB12004AA012004AA012004A /* FonosKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		UI13006AA013006AA013006C /* FonosAppUITests */ = {
 			isa = PBXNativeTarget;
@@ -570,20 +587,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		KB12012AA012012AA012012C /* Embed App Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				KB12004AA012004AA012004B /* FonosKeyboard.appex in Embed App Extensions */,
-			);
-			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		0F9785A3998649D9893B90F7 /* Resources */ = {
@@ -694,6 +697,7 @@
 				WP04VON001AA001AA001001B /* RecordNoteIntent.swift in Sources */,
 				WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */,
 				WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */,
+				FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -769,6 +773,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
@@ -931,6 +936,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
@@ -1000,6 +1006,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
@@ -1017,6 +1024,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SBU743JJ9S;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;

@@ -47,6 +47,8 @@
 		MP01001AA001001AA001001B /* ModelProbeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = MP01001AA001001AA001001A /* ModelProbeService.swift */; };
 		UI13001AA013001AA013001B /* FonosAppUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UI13001AA013001AA013001A /* FonosAppUITests.swift */; };
 		FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */; };
+		FE0002AA0002AA0002AA0002 /* NotebookPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */; };
+		FE0007AA0007AA0007AA0002 /* NotebookPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */; };
 		WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON001AA001AA001001A /* NoteContainer.swift */; };
 		WP01VON002AA002AA002001B /* NoteEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON002AA002AA002001A /* NoteEntry.swift */; };
 		WP01VON003AA003AA003001B /* NoteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON003AA003AA003001A /* NoteService.swift */; };
@@ -182,6 +184,8 @@
 		UI13001AA013001AA013001A /* FonosAppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FonosAppUITests.swift; sourceTree = "<group>"; };
 		UI13003AA013003AA013003A /* FonosAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FonosAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookTemplate.swift; sourceTree = "<group>"; };
+		FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPipeline.swift; sourceTree = "<group>"; };
+		FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPipelineTests.swift; sourceTree = "<group>"; };
 		WP01VON001AA001AA001001A /* NoteContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContainer.swift; sourceTree = "<group>"; };
 		WP01VON002AA002AA002001A /* NoteEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteEntry.swift; sourceTree = "<group>"; };
 		WP01VON003AA003AA003001A /* NoteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteService.swift; sourceTree = "<group>"; };
@@ -336,6 +340,7 @@
 				WP04VON005AA005AA005001A /* NoteINV09IntentTests.swift */,
 				WP04VON006AA006AA006001A /* NoteINV10DeepLinkTests.swift */,
 				FE0006AA0006AA0006AA0001 /* NoteINV14BackfillTests.swift */,
+				FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -397,6 +402,7 @@
 				BG01000000000000000011 /* BackgroundRecordingService.swift */,
 				WP01VON003AA003AA003001A /* NoteService.swift */,
 				WP03VON001AA001AA001001A /* NoteViewModel.swift */,
+				FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -649,6 +655,7 @@
 				WP04VON005AA005AA005001B /* NoteINV09IntentTests.swift in Sources */,
 				WP04VON006AA006AA006001B /* NoteINV10DeepLinkTests.swift in Sources */,
 				FE0006AA0006AA0006AA0002 /* NoteINV14BackfillTests.swift in Sources */,
+				FE0007AA0007AA0007AA0002 /* NotebookPipelineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -702,6 +709,7 @@
 				WP04VON002AA002AA002001B /* DeepLinkRouter.swift in Sources */,
 				WP04VON003AA003AA003001B /* NotebookSettingsView.swift in Sources */,
 				FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */,
+				FE0002AA0002AA0002AA0002 /* NotebookPipeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -49,6 +49,8 @@
 		FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */; };
 		FE0002AA0002AA0002AA0002 /* NotebookPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */; };
 		FE0003AA0003AA0003AA0002 /* SupportedLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0003AA0003AA0003AA0001 /* SupportedLocale.swift */; };
+		FE0004AA0004AA0004AA0002 /* SharedNotebookCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0004AA0004AA0004AA0001 /* SharedNotebookCatalog.swift */; };
+		FE0009AA0009AA0009AA0002 /* SharedNotebookCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0009AA0009AA0009AA0001 /* SharedNotebookCatalogTests.swift */; };
 		FE0007AA0007AA0007AA0002 /* NotebookPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */; };
 		FE0008AA0008AA0008AA0002 /* NoteINV15LLMNoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0008AA0008AA0008AA0001 /* NoteINV15LLMNoteTests.swift */; };
 		WP01VON001AA001AA001001B /* NoteContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = WP01VON001AA001AA001001A /* NoteContainer.swift */; };
@@ -188,6 +190,8 @@
 		FE0001AA0001AA0001AA0001 /* NotebookTemplate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookTemplate.swift; sourceTree = "<group>"; };
 		FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPipeline.swift; sourceTree = "<group>"; };
 		FE0003AA0003AA0003AA0001 /* SupportedLocale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportedLocale.swift; sourceTree = "<group>"; };
+		FE0004AA0004AA0004AA0001 /* SharedNotebookCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedNotebookCatalog.swift; sourceTree = "<group>"; };
+		FE0009AA0009AA0009AA0001 /* SharedNotebookCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedNotebookCatalogTests.swift; sourceTree = "<group>"; };
 		FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotebookPipelineTests.swift; sourceTree = "<group>"; };
 		FE0008AA0008AA0008AA0001 /* NoteINV15LLMNoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteINV15LLMNoteTests.swift; sourceTree = "<group>"; };
 		WP01VON001AA001AA001001A /* NoteContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteContainer.swift; sourceTree = "<group>"; };
@@ -347,6 +351,7 @@
 				FE0006AA0006AA0006AA0001 /* NoteINV14BackfillTests.swift */,
 				FE0007AA0007AA0007AA0001 /* NotebookPipelineTests.swift */,
 				FE0008AA0008AA0008AA0001 /* NoteINV15LLMNoteTests.swift */,
+				FE0009AA0009AA0009AA0001 /* SharedNotebookCatalogTests.swift */,
 			);
 			path = FonosAppTests;
 			sourceTree = "<group>";
@@ -409,6 +414,7 @@
 				WP01VON003AA003AA003001A /* NoteService.swift */,
 				WP03VON001AA001AA001001A /* NoteViewModel.swift */,
 				FE0002AA0002AA0002AA0001 /* NotebookPipeline.swift */,
+				FE0004AA0004AA0004AA0001 /* SharedNotebookCatalog.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -663,6 +669,7 @@
 				FE0006AA0006AA0006AA0002 /* NoteINV14BackfillTests.swift in Sources */,
 				FE0007AA0007AA0007AA0002 /* NotebookPipelineTests.swift in Sources */,
 				FE0008AA0008AA0008AA0002 /* NoteINV15LLMNoteTests.swift in Sources */,
+				FE0009AA0009AA0009AA0002 /* SharedNotebookCatalogTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -718,6 +725,7 @@
 				FE0001AA0001AA0001AA0002 /* NotebookTemplate.swift in Sources */,
 				FE0002AA0002AA0002AA0002 /* NotebookPipeline.swift in Sources */,
 				FE0003AA0003AA0003AA0002 /* SupportedLocale.swift in Sources */,
+				FE0004AA0004AA0004AA0002 /* SharedNotebookCatalog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

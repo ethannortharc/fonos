@@ -238,6 +238,17 @@ final class NoteService {
         entriesForNotebook(containerId).count
     }
 
+    // MARK: - Lookup
+
+    /// Returns the notebook with the given id, or nil if it doesn't exist.
+    func notebook(id: UUID) -> NoteContainer? {
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<NoteContainer>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try? context.fetch(descriptor).first
+    }
+
     // MARK: - Export
 
     /// ISO-8601 date formatter for export timestamps.

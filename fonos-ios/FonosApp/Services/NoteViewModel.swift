@@ -12,6 +12,19 @@ protocol NoteLLMProvider: AnyObject {
     func process(text: String, prompt: String?) async throws -> String
 }
 
+extension NoteLLMProvider {
+    /// Default adapter for callers that have a NotebookLLMConfig but only
+    /// the legacy `process(text:prompt:)` method to call. Composes the
+    /// system prompt the same way LLMService.composeSystemPrompt does so
+    /// the test mocks see exactly what production sees.
+    func process(text: String, config: NotebookLLMConfig) async throws -> String {
+        let prompt = LLMService.composeSystemPrompt(
+            user: config.systemPrompt, outputLanguage: config.outputLanguage
+        )
+        return try await process(text: text, prompt: prompt)
+    }
+}
+
 // MARK: - NoteViewModel
 
 /// Orchestrates the recording → transcription → storage pipeline for voice notes.
@@ -134,7 +147,7 @@ final class NoteViewModel: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func stopRecording(to containerId: UUID, mode: String) {
+    func stopRecording(to containerId: UUID) {
         guard case .recording = recordingState else { return }
         stopLevelPolling()
 
@@ -142,50 +155,61 @@ final class NoteViewModel: ObservableObject, @unchecked Sendable {
         recordingState = .processing
 
         Task {
-            await recordAndStore(to: containerId, mode: mode, audioData: wavData)
+            await recordAndStore(to: containerId, audioData: wavData)
         }
     }
 
-    // MARK: - Core Pipeline
+    /// Backwards-compat wrapper. Old call sites passing `mode` are ignored —
+    /// the runtime now derives behavior from the notebook's systemPrompt.
+    func stopRecording(to containerId: UUID, mode: String) {
+        stopRecording(to: containerId)
+    }
 
-    /// Transcribe audio, optionally apply LLM, then persist a NoteEntry.
-    /// Called directly by tests with injected audioData.
-    /// Never throws — errors are swallowed (no entry created on STT failure).
-    func recordAndStore(to containerId: UUID, mode: String, audioData: Data) async {
-        // Capture providers on main actor before crossing isolation boundaries
+    // MARK: - Core Pipeline (v2)
+
+    /// Transcribe audio, optionally apply LLM (when systemPrompt is non-empty),
+    /// then persist a NoteEntry. Driven entirely by the per-notebook config.
+    func recordAndStore(to containerId: UUID, audioData: Data) async {
         let stt = resolvedSTT
         let llm = resolvedLLM
 
+        guard let notebook = noteService.notebook(id: containerId) else {
+            recordingState = .error(message: "Notebook not found.")
+            return
+        }
+        let resolved = NotebookPipeline.resolve(notebook)
+
         do {
-            let rawText = try await withCheckedThrowingContinuation { continuation in
+            let rawText = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                 Task {
                     do {
-                        let text = try await stt.transcribe(audioData: audioData, language: nil)
-                        continuation.resume(returning: text)
+                        let text = try await stt.transcribe(
+                            audioData: audioData,
+                            language: resolved.sttLanguage
+                        )
+                        cont.resume(returning: text)
                     } catch {
-                        continuation.resume(throwing: error)
+                        cont.resume(throwing: error)
                     }
                 }
             }
 
             var processedText: String? = nil
-
-            if mode != "raw", let llmProvider = llm {
+            if let llmConfig = resolved.llm, let llmProvider = llm {
                 do {
-                    let result = try await withCheckedThrowingContinuation { continuation in
+                    let result = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                         Task {
                             do {
-                                let text = try await llmProvider.process(text: rawText, prompt: nil)
-                                continuation.resume(returning: text)
+                                let text = try await llmProvider.process(text: rawText, config: llmConfig)
+                                cont.resume(returning: text)
                             } catch {
-                                continuation.resume(throwing: error)
+                                cont.resume(throwing: error)
                             }
                         }
                     }
                     processedText = result
                 } catch {
-                    noteVMLog.warning("LLM processing failed, using raw transcript: \(error.localizedDescription)")
-                    processedText = nil
+                    noteVMLog.warning("LLM processing failed, using raw: \(error.localizedDescription)")
                 }
             }
 
@@ -193,14 +217,20 @@ final class NoteViewModel: ObservableObject, @unchecked Sendable {
                 to: containerId,
                 rawText: rawText,
                 processedText: processedText,
-                mode: mode
+                mode: resolved.llm == nil ? "raw" : "llm",
+                language: resolved.sttLanguage
             )
-
             recordingState = .done
         } catch {
             noteVMLog.error("STT transcription failed: \(error.localizedDescription)")
             recordingState = .error(message: error.localizedDescription)
         }
+    }
+
+    /// Backwards-compat wrapper. Old `mode` argument is ignored; behavior is now
+    /// derived from the notebook's systemPrompt.
+    func recordAndStore(to containerId: UUID, mode: String, audioData: Data) async {
+        await recordAndStore(to: containerId, audioData: audioData)
     }
 
     // MARK: - Audio Level Polling
@@ -225,16 +255,24 @@ final class NoteViewModel: ObservableObject, @unchecked Sendable {
 
 // MARK: - LLMService Adapter
 
-/// Wraps LLMService to conform to NoteLLMProvider.
-/// Uses .raw mode (no transformation) as a base; prompt is ignored for the note pipeline.
+/// Bridges LLMService into the NoteLLMProvider protocol used by NoteViewModel.
+/// Production path uses `processNote` directly so the per-notebook
+/// systemPrompt and outputLanguage actually take effect.
 private final class LLMServiceNoteAdapter: NoteLLMProvider {
     private let service: LLMService
 
-    init(service: LLMService) {
-        self.service = service
+    init(service: LLMService) { self.service = service }
+
+    /// Legacy entry point — only reached when something calls the old
+    /// (text:prompt:) signature directly. We synthesize a NotebookLLMConfig
+    /// so all paths converge through processNote.
+    func process(text: String, prompt: String?) async throws -> String {
+        let cfg = NotebookLLMConfig(systemPrompt: prompt ?? "", outputLanguage: nil, modelOverride: nil)
+        return try await service.processNote(text: text, config: cfg)
     }
 
-    func process(text: String, prompt: String?) async throws -> String {
-        try await service.process(text: text, mode: .polish)
+    /// v2 path used by NoteViewModel.recordAndStore.
+    func process(text: String, config: NotebookLLMConfig) async throws -> String {
+        try await service.processNote(text: text, config: config)
     }
 }

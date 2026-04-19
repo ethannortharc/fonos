@@ -99,11 +99,12 @@ struct NoteINV06RecordFlowTests {
 
     // MARK: - Happy path: light_polish mode
 
-    @Test("Record flow with light_polish mode stores both raw and processed text")
+    @Test("Record flow with non-empty systemPrompt stores both raw and processed text")
     func recordFlowLightPolishMode() async throws {
         let modelContainer = try makeRecordFlowContainer()
         let noteService = NoteService(modelContainer: modelContainer)
         let notebook = noteService.createNotebook(title: "Polish Notebook")
+        noteService.updateNotebookConfigV2(notebook.id, systemPrompt: "Polish.")
 
         let sttMock = MockSTTProvider(transcript: "um yeah so i think we need to ship")
         let llmMock = MockLLMProvider(processedText: "We need to ship.")
@@ -115,7 +116,6 @@ struct NoteINV06RecordFlowTests {
 
         await viewModel.recordAndStore(
             to: notebook.id,
-            mode: "light_polish",
             audioData: Data(repeating: 0, count: 64)
         )
 
@@ -123,16 +123,17 @@ struct NoteINV06RecordFlowTests {
         #expect(entries.count == 1)
         #expect(entries.first?.rawText == "um yeah so i think we need to ship")
         #expect(entries.first?.processedText == "We need to ship.")
-        #expect(entries.first?.mode == "light_polish")
+        #expect(entries.first?.mode == "llm")
     }
 
     // MARK: - LLM is called exactly once per recording
 
-    @Test("Record flow calls LLM provider exactly once for non-raw mode")
+    @Test("Record flow calls LLM provider exactly once when systemPrompt is non-empty")
     func llmCalledOnce() async throws {
         let modelContainer = try makeRecordFlowContainer()
         let noteService = NoteService(modelContainer: modelContainer)
         let notebook = noteService.createNotebook(title: "Call Count Test")
+        noteService.updateNotebookConfigV2(notebook.id, systemPrompt: "Summarize.")
 
         let sttMock = MockSTTProvider(transcript: "test input")
         let llmMock = MockLLMProvider(processedText: "test output")
@@ -144,7 +145,6 @@ struct NoteINV06RecordFlowTests {
 
         await viewModel.recordAndStore(
             to: notebook.id,
-            mode: "summarize",
             audioData: Data(repeating: 0, count: 64)
         )
 
@@ -184,6 +184,7 @@ struct NoteINV06RecordFlowTests {
         let modelContainer = try makeRecordFlowContainer()
         let noteService = NoteService(modelContainer: modelContainer)
         let notebook = noteService.createNotebook(title: "LLM Fallback Notebook")
+        noteService.updateNotebookConfigV2(notebook.id, systemPrompt: "Polish.")
 
         let sttMock = MockSTTProvider(transcript: "raw fallback text")
         let llmMock = MockLLMProvider(shouldThrow: true)
@@ -195,7 +196,6 @@ struct NoteINV06RecordFlowTests {
 
         await viewModel.recordAndStore(
             to: notebook.id,
-            mode: "light_polish",
             audioData: Data(repeating: 0, count: 64)
         )
 
@@ -203,6 +203,60 @@ struct NoteINV06RecordFlowTests {
         // Entry must still be created using raw transcript as fallback
         #expect(entries.count == 1)
         #expect(entries.first?.rawText == "raw fallback text")
+    }
+
+    // MARK: - v2 pipeline coverage
+
+    /// Captures the language hint passed to STT so tests can assert it propagates.
+    private final class CapturingSTT: STTProvider, @unchecked Sendable {
+        var lastLanguage: String?
+        var stub: String = "raw transcript"
+        func transcribe(audioData: Data, language: String?) async throws -> String {
+            lastLanguage = language
+            return stub
+        }
+    }
+
+    @Test("recordAndStore forwards notebook.sttLanguage to STT")
+    func sttLanguageForwarded() async throws {
+        let mc = try makeRecordFlowContainer()
+        let service = NoteService(modelContainer: mc)
+        let nb = service.createNotebook(title: "ZH")
+        service.updateNotebookConfigV2(nb.id, sttLanguage: .some("zh-CN"))
+
+        let stt = CapturingSTT()
+        let vm = NoteViewModel(noteService: service, sttProvider: stt, llmProvider: nil)
+        await vm.recordAndStore(to: nb.id, audioData: Data())
+
+        #expect(stt.lastLanguage == "zh-CN")
+    }
+
+    @Test("recordAndStore skips LLM when systemPrompt is empty (Raw notebook)")
+    func emptyPromptSkipsLLM() async throws {
+        let mc = try makeRecordFlowContainer()
+        let service = NoteService(modelContainer: mc)
+        let nb = service.createNotebook(title: "Raw")
+        // systemPrompt defaults to ""
+
+        let llm = MockLLMProvider(processedText: "should not be called")
+        let vm = NoteViewModel(noteService: service, sttProvider: CapturingSTT(), llmProvider: llm)
+        await vm.recordAndStore(to: nb.id, audioData: Data())
+
+        #expect(llm.callCount == 0)
+    }
+
+    @Test("recordAndStore invokes LLM when systemPrompt is non-empty")
+    func nonEmptyPromptInvokesLLM() async throws {
+        let mc = try makeRecordFlowContainer()
+        let service = NoteService(modelContainer: mc)
+        let nb = service.createNotebook(title: "Polish")
+        service.updateNotebookConfigV2(nb.id, systemPrompt: "Polish.")
+
+        let llm = MockLLMProvider(processedText: "polished")
+        let vm = NoteViewModel(noteService: service, sttProvider: CapturingSTT(), llmProvider: llm)
+        await vm.recordAndStore(to: nb.id, audioData: Data())
+
+        #expect(llm.callCount == 1)
     }
 
     // MARK: - containerId propagation

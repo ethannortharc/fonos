@@ -104,10 +104,7 @@ struct RecordNoteSheet: View {
 
     private var stopButton: some View {
         Button {
-            noteViewModel.stopRecording(
-                to: notebook.id,
-                mode: notebook.processingMode
-            )
+            noteViewModel.stopRecording(to: notebook.id)
             stopTimer()
         } label: {
             ZStack {

@@ -120,7 +120,9 @@ pub fn resize_agent_panel(app: tauri::AppHandle, width: u32, height: u32) -> Res
     Ok(())
 }
 
-/// Resize the float window and adjust position so the pill stays at the bottom of the screen.
+/// Resize the float window, keeping it horizontally centered on its current monitor
+/// and pinned to the same bottom edge. Uses absolute monitor center rather than
+/// relative offsets to prevent rounding drift across resize cycles.
 #[tauri::command]
 pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<(), String> {
     use tauri::Manager;
@@ -128,9 +130,27 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
         let old_size = w.outer_size().map_err(|e| e.to_string())?;
         let old_pos = w.outer_position().map_err(|e| e.to_string())?;
 
+        // Keep the same bottom edge
         let bottom = old_pos.y + old_size.height as i32;
         let new_y = bottom - height as i32;
-        let new_x = old_pos.x + (old_size.width as i32 - width as i32) / 2;
+
+        // Find the monitor the pill is currently on and center horizontally on it
+        let center_x = old_pos.x + old_size.width as i32 / 2;
+        let new_x = if let Ok(monitors) = w.available_monitors() {
+            monitors.iter()
+                .find(|m| {
+                    let mx = m.position().x;
+                    let mw = m.size().width as i32;
+                    center_x >= mx && center_x < mx + mw
+                })
+                .map(|m| {
+                    // Absolute center on this monitor
+                    m.position().x + (m.size().width as i32 - width as i32) / 2
+                })
+                .unwrap_or_else(|| old_pos.x + (old_size.width as i32 - width as i32) / 2)
+        } else {
+            old_pos.x + (old_size.width as i32 - width as i32) / 2
+        };
 
         w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
             .map_err(|e| e.to_string())?;

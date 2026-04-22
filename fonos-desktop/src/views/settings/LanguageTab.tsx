@@ -1,4 +1,4 @@
-// Language tab — multi-select STT languages, single-select translate target.
+// Language tab — single-select STT language, single-select translate target.
 
 import { useState } from "react";
 import type { AppConfig } from "../../types";
@@ -16,87 +16,37 @@ export default function LanguageTab({
   const [showAllStt, setShowAllStt] = useState(false);
   const [showAllTranslate, setShowAllTranslate] = useState(false);
 
-  // Parse multi-select STT languages (comma-separated in config)
-  const sttSelected = config.stt_language
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const sttCurrent = config.stt_language || "auto";
 
-  const toggleSttLang = (code: string) => {
-    if (code === "auto") {
-      onSave({ stt_language: "auto" });
-      return;
-    }
-    let next = sttSelected.filter((c) => c !== "auto");
-    if (next.includes(code)) {
-      next = next.filter((c) => c !== code);
-    } else {
-      next.push(code);
-    }
-    if (next.length === 0) next = ["auto"];
-    onSave({ stt_language: next.join(",") });
+  const selectSttLang = (code: string) => {
+    onSave({ stt_language: code });
   };
 
-  // Sort: selected first, then frequent, then rest
   const sttFrequent = LANGUAGES.filter((l) => FREQUENT_CODES.includes(l.code));
   const sttRest = LANGUAGES.filter((l) => !FREQUENT_CODES.includes(l.code));
   const sttVisible = showAllStt ? [...sttFrequent, ...sttRest] : sttFrequent;
 
-  // Move selected to front (except auto which stays first)
-  const selectedLangs = sttVisible.filter(
-    (l) => sttSelected.includes(l.code) && l.code !== "auto"
-  );
-  const unselectedLangs = sttVisible.filter(
-    (l) => !sttSelected.includes(l.code) && l.code !== "auto"
-  );
-  const autoLang = LANGUAGES.find((l) => l.code === "auto")!;
-  const sttOrdered = [autoLang, ...selectedLangs, ...unselectedLangs];
-
   return (
     <div className="flex flex-col gap-5">
-      {/* STT Languages -- multi-select */}
+      {/* STT Language -- single-select */}
       <div className="flex flex-col gap-2.5">
         <div>
           <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">
             Speech Recognition
           </div>
           <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            Select one or more languages you speak. Multiple selections enable auto-switching.
+            Select your spoken language. Use Auto for mixed-language speech.
           </div>
         </div>
 
-        {/* Selected tags */}
-        {!sttSelected.includes("auto") && sttSelected.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {sttSelected.map((code) => {
-              const lang = LANGUAGES.find((l) => l.code === code);
-              if (!lang) return null;
-              return (
-                <span
-                  key={code}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(245,158,11,0.12)] text-[#fbbf24] text-[11px] font-medium"
-                >
-                  {lang.flag} {lang.label}
-                  <button
-                    onClick={() => toggleSttLang(code)}
-                    className="ml-0.5 text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24]"
-                  >
-                    {"\u2715"}
-                  </button>
-                </span>
-              );
-            })}
-          </div>
-        )}
-
         {/* Language grid */}
         <div className="grid grid-cols-3 gap-1.5">
-          {sttOrdered.map((lang) => {
-            const selected = sttSelected.includes(lang.code);
+          {sttVisible.map((lang) => {
+            const selected = sttCurrent === lang.code;
             return (
               <button
                 key={lang.code}
-                onClick={() => toggleSttLang(lang.code)}
+                onClick={() => selectSttLang(lang.code)}
                 className={[
                   "flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-all",
                   selected

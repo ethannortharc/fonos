@@ -325,13 +325,11 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     };
     eprintln!("fonos: STT provider={} endpoint={} model={}", stt.provider, stt.base_url, stt.model);
 
-    // Convert language to ISO 639-1 / BCP-47 code
+    // Convert language name to ISO 639-1 / BCP-47 code
     let lang_code = {
-        let langs: Vec<&str> = stt_language.split(',').map(|s| s.trim())
-            .filter(|s| !s.is_empty() && *s != "auto").collect();
-        if langs.is_empty() { String::new() } else {
-            let lang_lower = langs[0].to_lowercase();
-            match lang_lower.as_str() {
+        let lang = stt_language.trim();
+        if lang.is_empty() || lang == "auto" { String::new() } else {
+            match lang.to_lowercase().as_str() {
                 "chinese"    => "zh",
                 "english"    => "en",
                 "japanese"   => "ja",

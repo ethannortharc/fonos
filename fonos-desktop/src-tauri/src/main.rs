@@ -209,9 +209,6 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
             let _ = handle.emit("float:stop", "");
         }
     }
-    // Re-center the float pill (prevents drift from resize_float calls)
-    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-    commands::dictation::move_float_to_primary_pub(&handle);
 }
 
 /// Build all hotkey configs from the current app config.

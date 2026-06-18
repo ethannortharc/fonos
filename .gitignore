@@ -47,3 +47,6 @@ voice_refs/
 
 # Claude Code / local agent session data
 .claude/
+
+# Internal planning docs — kept local, not published
+docs/

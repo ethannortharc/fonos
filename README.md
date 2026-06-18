@@ -168,4 +168,4 @@ sudo dnf install xdotool
 
 ## License
 
-Private repository. All rights reserved.
+[MIT](LICENSE) © Ethan

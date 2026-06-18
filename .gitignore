@@ -24,6 +24,7 @@ fonos-desktop/files.zip
 # iOS
 fonos-ios/build/
 fonos-ios/**/*.xcuserstate
+fonos-ios/**/xcuserdata/
 
 # Playwright
 .playwright-mcp/
@@ -39,4 +40,10 @@ voice_refs/
 
 # Screenshots (binary)
 *.png
-.claude/worktrees/
+
+# Stray build artifacts (compiled binaries — never commit)
+/test_async2
+/fonos-ios/main
+
+# Claude Code / local agent session data
+.claude/

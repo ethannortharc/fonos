@@ -1,170 +1,155 @@
 # Fonos
 
-A voice-first AI assistant for macOS. Record, transcribe, process, and organize speech with customizable modes, multi-provider support, and real-time meeting capture.
+**A voice-first AI assistant for macOS and Linux.** Hold a hotkey, talk, and Fonos transcribes your speech, runs it through the AI model and prompt *you* choose, and drops the result wherever you need it — your clipboard, the cursor, a notebook, or a live meeting transcript.
 
-## Install
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
+![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
 
-Download **Fonos_0.0.1_aarch64.dmg** from the [latest release](https://github.com/holonexai/fonos/releases), open it, and drag Fonos to Applications. Requires macOS 13.0+ on Apple Silicon.
+<!--
+  TODO: add a screenshot or short demo GIF here — it makes a huge difference for a voice app.
+  Drop the file in e.g. assets/demo.gif, then replace the line below with:  ![Fonos](assets/demo.gif)
+-->
+<p align="center"><sub>↑ screenshot / demo GIF goes here</sub></p>
 
-Signed and notarized by Apple. No Gatekeeper workaround needed.
-
-## Quick Start
-
-1. Open Fonos. It sits in the menu bar with a floating pill overlay.
-2. Hold **Cmd+Shift+Space** to record. Release to stop.
-3. Your speech is transcribed and processed by the selected mode.
-4. The result is copied to your clipboard (or routed to your configured destination).
+Fonos is **open source and provider-agnostic**: bring your own API keys for OpenAI, Anthropic, Google, OpenRouter and more — or run everything locally with Ollama or LM Studio. Your keys and your transcripts stay on your machine.
 
 ## Features
 
-### Dictation
+### 🎙️ Dictation
+Press-and-hold to record, release to process. Each *mode* is a transcription plus an optional LLM pass with its own prompt.
 
-The primary interface. Press-and-hold to record, release to process.
+- Built-in modes: **Raw** (verbatim), **Polish** (natural writing), **Formal**, **Translate**, **Clean** (filler removal).
+- Unlimited **custom modes** — your own system prompt, template, temperature, model override, and auto-paste behavior.
+- Live activity feed with model + latency, animated waveform, and a horizontal mode selector.
 
-- **Mode drum-roller** — swipe horizontally to switch modes. The center mode is active.
-- **Activity feed** — live timeline showing recordings, transcripts, LLM results, and errors with model info and latency.
-- **Waveform visualization** — animated bars during recording.
+### 📓 Voice Notes
+Organize recordings into notebooks.
 
-Built-in modes:
+- **Quick Note** catch-all plus unlimited custom notebooks, each with its own STT/LLM model, processing mode, and prompt.
+- Bind up to 3 notebooks to dedicated hotkeys; capture from a compact floating panel.
+- Export any notebook to Markdown or JSON.
 
-| Mode | Description |
-|------|-------------|
-| **Raw** | Direct transcription, no processing |
-| **Polish** | Natural writing with emotion and tone preserved |
-| **Formal** | Professional business writing |
-| **Translate** | Translate to a configured target language |
-| **Clean** | Speech-to-writing with filler removal |
-
-Create unlimited custom modes with your own system prompts, templates, temperature, model overrides, and auto-paste behavior.
-
-### Voice Notes
-
-Organize voice recordings into notebooks.
-
-- **Quick Note** — default catch-all notebook, always available.
-- **Custom notebooks** — create as many as you need, each with its own STT model, LLM model, processing mode (raw / light polish / summarize), and prompt.
-- **Notebook hotkeys** — bind up to 3 notebooks to dedicated shortcuts for one-tap capture.
-- **Export** — Markdown or JSON export per notebook.
-- **Floating note panel** — a compact overlay with a drum-roller notebook selector. Hold the hotkey to record, release to save.
-
-### Meeting Capture
-
+### 👥 Meeting Capture
 Real-time transcription with separate speaker channels.
 
-- **Dual audio capture** — microphone (your voice) and system audio (remote participants via ScreenCaptureKit) are transcribed independently.
-- **Speaker labels** — "Me" for mic, "Audio" for system audio. Each 10-second chunk is transcribed on its own for clean results.
-- **Live transcript panel** — draggable floating panel (520px, right-aligned) showing timestamped speaker entries as they arrive.
-- **AI summary** — when you stop the meeting, an LLM generates a summary with key points, action items, and decisions.
-- **Action item checkboxes** — rendered inline in the summary view. Check them off as you complete tasks.
+- **Dual capture** — your mic and system audio (remote participants, via ScreenCaptureKit) are transcribed independently.
+- Live timestamped transcript panel, plus an **AI summary** with key points, decisions, and checkable action items when you stop.
 
-### Agent
-
+### 🤖 Agent
 Voice-driven AI conversations with tool execution.
 
-- Hold **Cmd+Shift+A** to speak to the agent.
-- Responses stream in real-time with thinking indicators.
-- Configurable system prompt, temperature, max tokens.
-- Skill execution with allowed/blocked command lists.
-- Optional TTS — the agent can speak its responses.
+- Hold a hotkey to talk; responses stream with thinking indicators.
+- Skill execution with allow/block command lists; optional spoken (TTS) replies.
 
-### Voice (TTS)
+### 🔊 Voice (TTS & cloning)
+- Type or paste text, pick a voice, adjust speed (0.5×–2×), and synthesize.
+- **Clone a voice** from a 3–10s recording or an uploaded clip.
 
-Text-to-speech synthesis and voice cloning.
+### 📊 Stats & Recent
+- Usage over 7 / 30 / 90 days: words dictated, session counts, estimated time saved.
+- A unified, filterable timeline across dictation, agent, notes, and meetings.
 
-- Type or paste text, select a voice, adjust speed (0.5x - 2.0x), and generate.
-- **Clone voices** — record a 3-10 second sample or upload an audio file to create a custom voice.
+## Install
 
-### Stats
+### macOS
+Download the latest **`.dmg`** from [Releases](https://github.com/ethannortharc/fonos/releases/latest), open it, and drag Fonos to Applications. **Apple Silicon, macOS 13.0+.** Signed and notarized — no Gatekeeper workaround needed.
 
-Track your usage over 7, 30, or 90 day periods.
+### Linux
+Download the **`.deb`** or **`.rpm`** (amd64 / arm64) from [Releases](https://github.com/ethannortharc/fonos/releases/latest):
 
-- **Daily word count** — bar chart of STT words per day.
-- **Session count** — today and period totals.
-- **Time saved** — estimated time savings from voice input vs. typing.
-- **Breakdown** — STT words, TTS words, LLM tokens.
+```bash
+sudo apt install ./fonos_*.deb    # Debian / Ubuntu
+sudo dnf install ./fonos-*.rpm    # Fedora / RHEL
+```
 
-### Recent
+Text injection (paste-at-cursor) needs **`xdotool`** (`sudo apt install xdotool`). On Wayland it works via XWayland.
 
-A unified timeline of all entries across dictation, agent, notes, and meetings. Filter by source type. Paginated with 20 entries per page.
+## Build from source
 
-## Keyboard Shortcuts
+**Prerequisites**
 
-All shortcuts are configurable in Settings > Hotkeys.
+- [Rust](https://rustup.rs) (stable) and the Tauri CLI — `cargo install tauri-cli --version "^2"`
+- [Node.js](https://nodejs.org) 20+
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`) — provides `swiftc` for the Speech / ScreenCaptureKit helpers
+- **Linux:** the system packages listed in [`.github/workflows/build-linux.yml`](.github/workflows/build-linux.yml) (`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libasound2-dev`, …)
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+Shift+Space` | Dictation (hold to talk) |
-| `Cmd+Shift+S` | Text-to-speech |
-| `Cmd+Shift+A` | Agent (hold to talk) |
-| `Cmd+Shift+G` | Toggle agent panel |
-| `Option+N` | Note panel (hold to talk) |
-| `Cmd+Shift+M` | Toggle meeting capture |
-| `Option+1/2/3` | Quick notebook shortcuts |
+**Run it**
 
-## Floating Pill
+```bash
+git clone https://github.com/ethannortharc/fonos.git
+cd fonos/fonos-desktop
+npm ci
+cargo tauri dev          # hot-reloading dev build
+```
 
-When the main window is not focused, a compact floating pill overlay stays on screen:
+**Package a release** — `.app` / `.dmg` on macOS, `.deb` / `.rpm` on Linux:
 
-- Shows the current mode with a drum-roller selector.
-- Displays recording state with a red pulse, waveform, and elapsed timer.
-- Click to switch modes or access settings.
+```bash
+cargo tauri build
+```
+
+The compiled macOS helper binaries are checked in, so builds work out of the box. To rebuild them after editing the Swift sources:
+
+```bash
+./src-tauri/swift/build.sh   # macOS only
+```
 
 ## Providers
 
-Fonos supports multiple STT, TTS, and LLM providers. Configure them in Settings > Models.
+Configure any mix in **Settings → Models** — set global defaults, then override per-mode or per-notebook.
 
 | Provider | Type | Notes |
 |----------|------|-------|
-| **OpenAI** | STT, TTS, LLM | Whisper, GPT-4o, TTS-1 |
-| **OpenRouter** | STT, LLM | 18 audio-capable models via chat completions (Gemini, Voxtral, GPT-Audio) |
+| **OpenAI** | STT · TTS · LLM | Whisper, GPT-4o, TTS-1 |
+| **OpenRouter** | STT · LLM | Audio-capable models (Gemini, Voxtral, GPT-Audio) via chat completions |
 | **Anthropic** | LLM | Claude models |
 | **Google** | LLM | Gemini models |
-| **Ollama** | STT, LLM | Local models (localhost:11434) |
-| **LM Studio** | LLM | Local models (localhost:1234) |
-| **OMLX** | STT, LLM | Local models (localhost:8000) |
+| **Ollama** | STT · LLM | Local (`localhost:11434`) |
+| **LM Studio** | LLM | Local (`localhost:1234`) |
+| **OMLX** | STT · LLM | Local (`localhost:8000`) |
 | **Custom** | Any | Any OpenAI-compatible endpoint |
 
-### Dual-Path STT
+STT supports two API paths: **Whisper** multipart upload, or **chat-completions** base64 audio for multimodal models.
 
-When adding a model with STT capability, choose the API path:
+## Keyboard shortcuts
 
-- **Whisper** (default) — multipart upload to `/v1/audio/transcriptions`. Works with OpenAI, Ollama, any Whisper-compatible server.
-- **Chat Completions** — base64 audio in chat messages. Works with OpenRouter, Gemini, Voxtral, GPT-Audio, and other multimodal models.
+All remappable in **Settings → Hotkeys**.
 
-## Settings
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+Shift+Space` | Dictation (hold) |
+| `Cmd+Shift+S` | Text-to-speech |
+| `Cmd+Shift+A` | Agent (hold) |
+| `Cmd+Shift+G` | Toggle agent panel |
+| `Option+N` | Note panel (hold) |
+| `Cmd+Shift+M` | Toggle meeting capture |
+| `Option+1/2/3` | Quick notebooks |
 
-### Models
-Register model profiles with provider, API key, base URL, and capabilities (STT/TTS/LLM). Set global defaults for each service. Per-mode and per-notebook overrides are supported.
+## Repository layout
 
-### Dictation
-Configure built-in and custom modes. Each mode shows its processing pipeline: STT model (step 1) and LLM model (step 2). Set STT language and translation target language.
+Fonos is a monorepo. This README covers the **desktop app**.
 
-### Notes
-Per-notebook configuration: processing mode, STT/LLM model overrides, and custom processing prompts.
+| Path | What it is |
+|------|------------|
+| [`fonos-desktop/`](fonos-desktop) | The Tauri desktop app — Rust backend + React / TypeScript UI. |
+| [`fonos-core/`](fonos-core) | Platform-independent Rust crate: provider clients (STT/TTS/LLM), modes, meetings, storage, agent, stats. Shared by the apps. |
+| [`fonos-ios/`](fonos-ios) | SwiftUI companion app for iOS (app + keyboard extension + widget + App Intents). |
 
-### Meeting
-Audio source selection, STT/LLM model for transcription and summary, and summary prompt template.
+## Tech stack
 
-### Hotkeys
-Remap all keyboard shortcuts. Click a hotkey field and press your desired key combination.
+**Desktop:** Tauri 2 · Rust · React 19 · TypeScript · Vite · Tailwind CSS · SQLite (`rusqlite`). macOS speech and system-audio capture run through small Swift helpers built on `Speech` and `ScreenCaptureKit`.
 
-### Agent
-LLM model, system prompt, temperature, max tokens, allowed/blocked commands, and TTS toggle.
+## Contributing
 
-## Linux Requirements
-
-Fonos on Linux requires these system packages for full functionality:
+Issues and pull requests are welcome. Run the tests with:
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install xdotool
-
-# Fedora/RHEL
-sudo dnf install xdotool
+cargo test                              # Rust (core + desktop)
+cd fonos-desktop && npm run test:e2e    # Playwright end-to-end
 ```
 
-- **xdotool** — required for text injection (paste at cursor) and keyboard simulation. Without it, dictation will transcribe but cannot insert text into other applications.
-- On Wayland desktops, `xdotool` works under XWayland. For native Wayland, `wtype` is an alternative (future support planned).
+Some desktop tests need microphone / accessibility permissions. Please keep changes focused and match the surrounding style.
 
 ## License
 

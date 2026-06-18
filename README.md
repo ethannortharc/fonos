@@ -1,18 +1,48 @@
 # Fonos
 
-**A voice-first AI assistant for macOS and Linux.** Hold a hotkey, talk, and Fonos transcribes your speech, runs it through the AI model and prompt *you* choose, and drops the result wherever you need it — your clipboard, the cursor, a notebook, or a live meeting transcript.
+**A voice terminal for macOS and Linux.** Inspired by Whisper Flow and Taplines, Fonos lets you hold a hotkey, speak naturally, and send the result to the place you actually need it: the cursor, clipboard, a notebook, a meeting transcript, text-to-speech, or an AI agent.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
 
-<!--
-  TODO: add a screenshot or short demo GIF here — it makes a huge difference for a voice app.
-  Drop the file in e.g. assets/demo.gif, then replace the line below with:  ![Fonos](assets/demo.gif)
--->
-<p align="center"><sub>↑ screenshot / demo GIF goes here</sub></p>
+![Fonos demo](assets/demo/fonos-demo.gif)
 
-Fonos is **open source and provider-agnostic**: bring your own API keys for OpenAI, Anthropic, Google, OpenRouter and more — or run everything locally with Ollama or LM Studio. Your keys and your transcripts stay on your machine.
+Fonos is **open source, local-first, and provider-agnostic**. Bring your own API keys for OpenAI, Anthropic, Google, OpenRouter, and more, or run locally with Ollama / LM Studio. Your keys, transcripts, notebooks, and meeting notes stay on your machine.
+
+## What it does
+
+- **Dictate anywhere:** press-and-hold to record, release to transcribe, then optionally clean, rewrite, translate, or paste.
+- **Stay out of the main window:** global hotkeys summon floating controls, so most captures happen without opening the full app.
+- **Turn speech into structured notes:** route voice captures into notebooks with custom prompts and export to Markdown or JSON.
+- **Capture meetings:** record mic + system audio as separate speaker channels, then generate an AI summary with decisions and action items.
+- **Configure your own model stack:** mix cloud and local STT, LLM, and TTS providers per mode, notebook, or workflow.
+- **Use your voice as an agent input:** talk to an AI agent with allow/block lists for tool execution.
+
+## Hotkey-first floating controls
+
+Fonos is designed to live under your shortcuts, not as a window you constantly manage. Use the global hotkeys to bring up small, contextual surfaces:
+
+- **Float pill:** appears near the cursor for dictation, recording state, processing state, and quick mode switching.
+- **Mode roller:** switch between Raw, Polish, Translate, Note, or custom modes without opening Settings.
+- **Note panel:** pick a notebook and capture directly into it from a compact floating panel.
+- **Agent panel:** talk to the agent or act on selected text, with tool execution shown inline.
+
+![Floating controls](assets/screenshots/floating-controls.png)
+
+## Screenshots
+
+| Dictation activity | Recent timeline |
+|---|---|
+| ![Dictation activity](assets/screenshots/dictation-result.png) | ![Recent timeline](assets/screenshots/recent.png) |
+
+| Voice notes | Meeting summary |
+|---|---|
+| ![Voice notes](assets/screenshots/notes.png) | ![Meeting summary](assets/screenshots/meeting-summary.png) |
+
+| Model setup |
+|---|
+| ![Model setup](assets/screenshots/models.png) |
 
 ## Features
 
@@ -128,13 +158,14 @@ All remappable in **Settings → Hotkeys**.
 
 ## Repository layout
 
-Fonos is a monorepo. This README covers the **desktop app**.
+Fonos is a monorepo. This README focuses on the **desktop app**.
 
 | Path | What it is |
 |------|------------|
 | [`fonos-desktop/`](fonos-desktop) | The Tauri desktop app — Rust backend + React / TypeScript UI. |
 | [`fonos-core/`](fonos-core) | Platform-independent Rust crate: provider clients (STT/TTS/LLM), modes, meetings, storage, agent, stats. Shared by the apps. |
 | [`fonos-ios/`](fonos-ios) | SwiftUI companion app for iOS (app + keyboard extension + widget + App Intents). |
+| [`assets/`](assets) | README screenshots and demo media. |
 
 ## Tech stack
 

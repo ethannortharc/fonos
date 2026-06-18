@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#171512"/>
+      <stop offset="1" stop-color="#0d0c0b"/>
+    </linearGradient>
+    <radialGradient id="glow1" cx="18%" cy="18%" r="36%">
+      <stop offset="0" stop-color="#f59e0b" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="82%" cy="15%" r="30%">
+      <stop offset="0" stop-color="#86efac" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#86efac" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="26" stdDeviation="24" flood-color="#000" flood-opacity="0.42"/>
+    </filter>
+    <style>
+      .ui{font-family:Arial,Helvetica,sans-serif}
+      .mono{font-family:Menlo,monospace}
+      .muted{fill:rgba(255,255,255,.45)}
+      .soft{fill:rgba(255,255,255,.28)}
+      .tiny{font-size:11px}.small{font-size:13px}.body{font-size:14px}.head{font-size:34px;font-weight:760}.kicker{font-size:11px;font-weight:800;letter-spacing:2px}.label{font-size:10px;font-weight:800;letter-spacing:1.2px}.pillText{font-size:10px;font-weight:800;letter-spacing:.8px}.panelTitle{font-size:13px;font-weight:700}.caption{font-size:12px;line-height:1.5}.hotkey{font-size:11px;font-weight:700}
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect width="1280" height="720" fill="url(#glow1)"/>
+  <rect width="1280" height="720" fill="url(#glow2)"/>
+
+  <g class="ui" transform="translate(76 50)">
+    <text class="kicker" fill="#fbbf24" opacity=".72">HOTKEY-FIRST WORKFLOW</text>
+    <text class="head" x="0" y="48" fill="#fff">Use Fonos without opening the app</text>
+    <text class="body muted" x="0" y="82">Global shortcuts summon small floating controls for dictation, notes,</text>
+    <text class="body muted" x="0" y="106">meetings, voice, and the agent. The main window is for setup and review.</text>
+  </g>
+
+  <g class="ui" filter="url(#shadow)" transform="translate(88 252)">
+    <rect width="470" height="316" rx="28" fill="rgba(255,255,255,.035)" stroke="rgba(255,255,255,.07)"/>
+    <text x="32" y="276" class="small muted">Dictation pill appears under your cursor</text>
+    <rect x="32" y="248" width="152" height="25" rx="12.5" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.2)"/>
+    <text x="44" y="265" class="hotkey" fill="#fbbf24">Cmd Shift Space</text>
+
+    <g transform="translate(160 26)">
+      <rect width="148" height="142" rx="14" fill="rgba(26,25,23,.96)" stroke="rgba(255,255,255,.08)"/>
+      <rect x="12" y="39" width="124" height="32" rx="8" fill="rgba(245,158,11,.1)" stroke="rgba(245,158,11,.16)"/>
+      <text x="24" y="27" class="small soft">Raw</text>
+      <text x="24" y="59" class="small" fill="#fbbf24" font-weight="700">Polish</text>
+      <text x="24" y="91" class="small soft">Translate</text>
+      <line x1="12" y1="108" x2="136" y2="108" stroke="rgba(255,255,255,.06)"/>
+      <text x="24" y="129" class="small soft">Settings</text>
+      <circle cx="113" cy="55" r="3" fill="#fbbf24" opacity=".7"/>
+    </g>
+
+    <g transform="translate(179 206)">
+      <rect width="90" height="26" rx="13" fill="rgba(26,25,23,.86)" stroke="rgba(255,255,255,.08)"/>
+      <circle cx="15" cy="13" r="3" fill="#fbbf24" opacity=".35"/>
+      <text x="28" y="17" class="pillText" fill="#fbbf24" opacity=".66">FONOS</text>
+      <circle cx="75" cy="13" r="3" fill="#fbbf24" opacity=".35"/>
+    </g>
+
+    <g transform="translate(165 242)">
+      <rect width="118" height="26" rx="13" fill="rgba(26,25,23,.94)" stroke="rgba(255,69,58,.16)"/>
+      <circle cx="16" cy="13" r="4" fill="#ff453a"/>
+      <rect x="31" y="9" width="3" height="8" rx="1.5" fill="#fbbf24" opacity=".75"/>
+      <rect x="37" y="5" width="3" height="16" rx="1.5" fill="#fbbf24" opacity=".75"/>
+      <rect x="43" y="7" width="3" height="12" rx="1.5" fill="#fbbf24" opacity=".75"/>
+      <rect x="49" y="4" width="3" height="18" rx="1.5" fill="#fbbf24" opacity=".75"/>
+      <rect x="55" y="8" width="3" height="10" rx="1.5" fill="#fbbf24" opacity=".75"/>
+      <text x="72" y="17" class="tiny mono soft">2.4s</text>
+    </g>
+  </g>
+
+  <g class="ui" filter="url(#shadow)" transform="translate(650 96)">
+    <g>
+      <rect x="0" y="78" width="320" height="252" rx="20" fill="rgba(28,27,24,.92)" stroke="rgba(255,255,255,.08)"/>
+      <line x1="0" y1="166" x2="320" y2="166" stroke="rgba(255,255,255,.06)"/>
+      <line x1="0" y1="250" x2="320" y2="250" stroke="rgba(255,255,255,.045)"/>
+      <text x="16" y="105" class="label soft">NOTEBOOK</text>
+      <text x="111" y="130" class="small soft">Quick Note · 8</text>
+      <text x="95" y="154" class="small" fill="#fbbf24" font-weight="700">Product Ideas · 3</text>
+      <text x="96" y="180" class="small soft">Language Practice · 5</text>
+      <rect x="16" y="198" width="3" height="6" rx="1.5" fill="#f59e0b" opacity=".6"/><rect x="23" y="190" width="3" height="18" rx="1.5" fill="#f59e0b" opacity=".7"/><rect x="30" y="195" width="3" height="12" rx="1.5" fill="#f59e0b" opacity=".7"/><rect x="37" y="188" width="3" height="22" rx="1.5" fill="#f59e0b" opacity=".7"/><rect x="44" y="196" width="3" height="10" rx="1.5" fill="#f59e0b" opacity=".7"/>
+      <circle cx="22" cy="228" r="4" fill="#ef4444"/>
+      <text x="36" y="232" class="small soft">Listening</text>
+      <text x="101" y="232" class="tiny mono soft">1.8s</text>
+      <rect x="16" y="262" width="288" height="45" rx="10" fill="rgba(255,255,255,.035)" stroke="rgba(255,255,255,.05)"/>
+      <text x="28" y="284" class="tiny muted">Save an idea directly into the selected notebook,</text>
+      <text x="28" y="300" class="tiny muted">then export it later as Markdown or JSON.</text>
+      <text x="16" y="352" class="small soft">Option N opens the note panel</text>
+    </g>
+
+    <g transform="translate(220 0)">
+      <rect width="340" height="286" rx="20" fill="rgba(28,27,24,.92)" stroke="rgba(255,255,255,.08)"/>
+      <line x1="0" y1="35" x2="340" y2="35" stroke="rgba(255,255,255,.045)"/>
+      <text x="16" y="23" class="panelTitle soft">Agent</text>
+      <text x="284" y="23" class="tiny soft">Clear</text>
+      <rect x="102" y="55" width="206" height="54" rx="14" fill="rgba(245,158,11,.12)" stroke="rgba(245,158,11,.1)"/>
+      <text x="118" y="77" class="tiny" fill="#fafaf9">Summarize selected text and</text>
+      <text x="118" y="93" class="tiny" fill="#fafaf9">open the notes panel.</text>
+      <rect x="18" y="124" width="304" height="30" rx="10" fill="rgba(255,255,255,.025)" stroke="rgba(255,255,255,.04)"/>
+      <circle cx="34" cy="139" r="4" fill="#86efac"/><text x="48" y="143" class="tiny soft">selection.read</text><text x="276" y="143" class="tiny mono soft">42ms</text>
+      <rect x="18" y="162" width="304" height="30" rx="10" fill="rgba(255,255,255,.025)" stroke="rgba(255,255,255,.04)"/>
+      <circle cx="34" cy="177" r="4" fill="#86efac"/><text x="48" y="181" class="tiny soft">app.open Notes</text><text x="276" y="181" class="tiny mono soft">88ms</text>
+      <rect x="18" y="205" width="245" height="46" rx="14" fill="rgba(255,255,255,.045)" stroke="rgba(255,255,255,.055)"/>
+      <text x="34" y="226" class="tiny muted">Done. I summarized it and opened</text>
+      <text x="34" y="242" class="tiny muted">Notes so you can save it.</text>
+      <circle cx="170" cy="270" r="15" fill="#d97706"/><circle cx="170" cy="270" r="15" fill="#f59e0b" opacity=".55"/>
+      <text x="151" y="324" class="small soft">Cmd Shift A opens agent</text>
+    </g>
+
+    <text x="0" y="410" class="body muted">Floating surfaces stay small and contextual: the pill chooses modes,</text>
+    <text x="0" y="432" class="body muted">the note panel targets notebooks, and the agent panel acts on selected text.</text>
+    <rect x="0" y="456" width="112" height="26" rx="13" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.16)"/><text x="14" y="473" class="hotkey" fill="#fbbf24">Option N notes</text>
+    <rect x="122" y="456" width="128" height="26" rx="13" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.16)"/><text x="136" y="473" class="hotkey" fill="#fbbf24">Cmd Shift A agent</text>
+    <rect x="260" y="456" width="138" height="26" rx="13" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.16)"/><text x="274" y="473" class="hotkey" fill="#fbbf24">Cmd Shift M meeting</text>
+  </g>
+</svg>

@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
 
-![Fonos demo](assets/demo/fonos-demo.gif)
+![Fonos hotkey-first voice workflow](assets/hero/fonos-hotkey-hero.png)
 
 Fonos is **open source, local-first, and provider-agnostic**. Bring your own API keys for OpenAI, Anthropic, Google, OpenRouter, and more, or run locally with Ollama / LM Studio. Your keys, transcripts, notebooks, and meeting notes stay on your machine.
 

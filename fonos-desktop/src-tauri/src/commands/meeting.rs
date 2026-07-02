@@ -366,7 +366,16 @@ pub async fn start_meeting(
                     provider: "openai".to_string(),
                     stt_api: "whisper".to_string(),
                 };
-                let transcript = transcribe_http(&svc, &file_bytes, &stt_model, "", None).await;
+                // A meeting streams many chunks; a single failed chunk shouldn't
+                // abort the session. Log and skip it (per-chunk error surfacing
+                // would be a separate meetings-UI concern).
+                let transcript = match transcribe_http(&svc, &file_bytes, &stt_model, "", None).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("fonos: meeting chunk #{local_counter} STT error: {e}");
+                        continue;
+                    }
+                };
 
                 if transcript.is_empty() { continue; }
 

@@ -351,6 +351,20 @@ function stopRec(text){
     idleSz();
   },1200);
 }
+function showError(msg){
+  // STT (or pipeline) failure — show it instead of leaving the pill spinning.
+  isRec=false;
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  var p=document.getElementById('pill');
+  p.classList.remove('recording','processing','success');
+  document.getElementById('result-icon').textContent='✗';
+  document.getElementById('result-text').textContent='STT error';
+  p.classList.add('error');
+  if(msg)console.error('fonos float: '+msg);
+  sz(96,PH);
+  setTimeout(()=>{p.classList.remove('error');idleSz();},2600);
+}
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;
   const c=document.getElementById('rec-wave').getContext('2d');
@@ -373,6 +387,7 @@ function setup(){
   listen('float:start',()=>startRec());
   listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
+  listen('float:error',e=>showError(e&&e.payload?e.payload:''));
   loadCfg();loadModes();idleSz();
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,100)):setTimeout(setup,100);

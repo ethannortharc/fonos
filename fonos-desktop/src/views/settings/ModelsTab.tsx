@@ -1,7 +1,7 @@
 // Models tab — default service dropdowns, model registry list, add/edit form.
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listProviderModels } from "../../lib/api";
+import { listProviderModels, testStt } from "../../lib/api";
 import type { AppConfig, ModelProfile } from "../../types";
 import { PROVIDERS, CAP_BADGE, EMPTY_MODEL } from "./constants";
 import type { ModelForm } from "./constants";
@@ -119,6 +119,18 @@ export default function ModelsTab({
   const [probedModels, setProbedModels] = useState<{ id: string; owned_by: string; caps: string[]; checked: boolean; stt_api: "whisper" | "chat" }[]>([]);
   const [probingModels, setProbingModels] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [sttTest, setSttTest] = useState<{ id: string; status: "testing" | "ok" | "err"; msg: string } | null>(null);
+
+  // Send a silent probe clip to a model's STT endpoint to confirm it works.
+  const handleTestStt = async (id: string) => {
+    setSttTest({ id, status: "testing", msg: "" });
+    try {
+      const msg = await testStt(id);
+      setSttTest({ id, status: "ok", msg });
+    } catch (e: unknown) {
+      setSttTest({ id, status: "err", msg: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
   // Auto-detect capabilities from model name
   const guessCaps = (id: string): string[] => {
@@ -580,6 +592,30 @@ export default function ModelsTab({
                           {cap}
                         </span>
                       ))}
+                      {p.capabilities?.includes("stt") && (
+                        <>
+                          {sttTest?.id === p.id && (
+                            <span
+                              title={sttTest.msg}
+                              className={[
+                                "text-[9px] max-w-[160px] truncate",
+                                sttTest.status === "ok" ? "text-[rgba(134,239,172,0.7)]"
+                                  : sttTest.status === "err" ? "text-[rgba(239,68,68,0.7)]"
+                                  : "text-[rgba(255,255,255,0.3)]",
+                              ].join(" ")}
+                            >
+                              {sttTest.status === "testing" ? "Testing…" : sttTest.status === "ok" ? "✓ OK" : "✗ Failed"}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleTestStt(p.id)}
+                            disabled={sttTest?.id === p.id && sttTest.status === "testing"}
+                            className="text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] text-[11px] px-1.5 transition-colors disabled:opacity-50"
+                          >
+                            Test
+                          </button>
+                        </>
+                      )}
                       <button
                         onClick={() => startEditModel(p)}
                         className="text-[rgba(255,255,255,0.25)] hover:text-[rgba(255,255,255,0.5)] text-[11px] px-1.5 transition-colors"

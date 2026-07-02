@@ -100,6 +100,16 @@ fn activate_app(_name: &str) {}
 /// Flow: save clipboard → Cmd+C via CGEvent → read clipboard → restore.
 #[tauri::command]
 pub async fn grab_selection() -> Result<SelectionContext, String> {
+    // The whole sequence is blocking (clipboard I/O, CGEvent posting, and the
+    // short settle sleeps between keystrokes) with no await points, so run it on
+    // a blocking thread rather than stalling a tokio worker.
+    tokio::task::spawn_blocking(grab_selection_blocking)
+        .await
+        .map_err(|e| format!("grab_selection task failed: {e}"))?
+}
+
+/// Blocking implementation of [`grab_selection`]; runs on a dedicated thread.
+fn grab_selection_blocking() -> Result<SelectionContext, String> {
     use arboard::Clipboard;
 
     let mut clipboard = Clipboard::new()
@@ -173,8 +183,9 @@ pub async fn replace_selection(text: String, target_app: Option<String>) -> Resu
     #[cfg(target_os = "linux")]
     { let _ = Command::new("xdotool").args(["key", "--clearmodifiers", "ctrl+v"]).output(); }
 
-    // Wait for paste to complete, then restore
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Wait for paste to complete, then restore. Async sleep so the tokio
+    // worker isn't blocked while other hotkey events are pending.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     if let Some(ref prev) = saved {
         let _ = clipboard.set_text(prev);
     }

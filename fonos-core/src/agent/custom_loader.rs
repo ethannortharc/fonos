@@ -29,10 +29,12 @@ use std::{
     fs,
     path::Path,
     pin::Pin,
+    sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
 
+use super::safety::CommandSafetyFilter;
 use super::skill::{Skill, SkillOutput, SkillParam};
 
 // ─── Config structs ───────────────────────────────────────────────────────────
@@ -102,9 +104,24 @@ pub struct CustomSkill {
     pub config: CustomSkillConfig,
     /// Pre-built list of [`SkillParam`] derived from [`CustomSkillConfig::parameters`].
     params: Vec<SkillParam>,
+    /// Optional safety filter applied to `shell`-type skills before execution.
+    ///
+    /// When present, the fully-substituted command is checked against the same
+    /// [`CommandSafetyFilter`] that guards the built-in shell skill, so a custom
+    /// skill cannot become an unguarded shell-execution backdoor.
+    safety: Option<Arc<CommandSafetyFilter>>,
 }
 
 impl CustomSkill {
+    /// Attach a [`CommandSafetyFilter`] used to vet `shell`-type executions.
+    ///
+    /// Without a filter, `shell` skills run their substituted command directly;
+    /// production callers should always attach one.
+    pub fn with_safety(mut self, safety: Arc<CommandSafetyFilter>) -> Self {
+        self.safety = Some(safety);
+        self
+    }
+
     /// Create a new [`CustomSkill`] from a [`CustomSkillConfig`].
     pub fn new(config: CustomSkillConfig) -> Self {
         // Build the params list once at construction time so that `parameters()`
@@ -122,7 +139,7 @@ impl CustomSkill {
         // Sort by name for stable ordering (HashMap iteration order is arbitrary).
         params.sort_by(|a, b| a.name.cmp(&b.name));
 
-        Self { config, params }
+        Self { config, params, safety: None }
     }
 
     /// Substitute `{key}` placeholders in `template` with values from `params`.
@@ -171,6 +188,18 @@ impl CustomSkill {
     async fn execute_shell(&self, params: serde_json::Value) -> crate::Result<SkillOutput> {
         let command_template = self.config.command.as_deref().unwrap_or("");
         let command = Self::substitute(command_template, &params);
+
+        // Vet the fully-substituted command against the safety filter. This is
+        // the same guard the built-in shell skill uses, and it runs *after*
+        // parameter substitution so LLM-supplied values can't inject past it.
+        if let Some(safety) = &self.safety {
+            if let Err(blocked) = safety.check(&command) {
+                return Err(crate::Error::Agent(format!(
+                    "Command blocked: {}. Adjust safety rules in Agent Settings if needed.",
+                    blocked
+                )));
+            }
+        }
 
         let output = tokio::process::Command::new("sh")
             .arg("-c")
@@ -306,6 +335,18 @@ impl Skill for CustomSkill {
 /// - `dir` exists but contains no `*.json` files, or
 /// - every `*.json` file is invalid.
 pub fn load_custom_skills(dir: &Path) -> Vec<Box<dyn Skill + Send + Sync>> {
+    load_custom_skills_with_safety(dir, None)
+}
+
+/// Load all custom skills, attaching `safety` to every `shell`-type skill.
+///
+/// Behaves exactly like [`load_custom_skills`], but the given
+/// [`CommandSafetyFilter`] (when `Some`) is applied to each loaded skill so its
+/// shell executions are vetted. Production callers should pass `Some(filter)`.
+pub fn load_custom_skills_with_safety(
+    dir: &Path,
+    safety: Option<Arc<CommandSafetyFilter>>,
+) -> Vec<Box<dyn Skill + Send + Sync>> {
     // If the directory does not exist or cannot be read, return empty.
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -362,7 +403,11 @@ pub fn load_custom_skills(dir: &Path) -> Vec<Box<dyn Skill + Send + Sync>> {
             }
         };
 
-        skills.push(Box::new(CustomSkill::new(config)));
+        let mut skill = CustomSkill::new(config);
+        if let Some(filter) = &safety {
+            skill = skill.with_safety(Arc::clone(filter));
+        }
+        skills.push(Box::new(skill));
     }
 
     skills
@@ -644,6 +689,39 @@ mod tests {
             "output should contain echoed message; got: {}",
             output.output
         );
+    }
+
+    /// A custom shell skill with a safety filter blocks injected commands.
+    #[tokio::test]
+    async fn test_custom_skill_shell_safety_blocks_injection() {
+        let config: CustomSkillConfig =
+            serde_json::from_str(shell_skill_json()).expect("valid json");
+        let skill = CustomSkill::new(config)
+            .with_safety(Arc::new(CommandSafetyFilter::default()));
+
+        // `echo {message}` with an injected `; rm -rf ~` must be blocked by the
+        // metacharacter guard rather than executed.
+        let err = skill
+            .execute(serde_json::json!({"message": "hi; rm -rf ~"}))
+            .await
+            .expect_err("injected command should be blocked");
+        assert!(
+            err.to_string().contains("blocked"),
+            "expected a blocked error, got: {err}"
+        );
+    }
+
+    /// Without a safety filter attached, the same skill still runs (opt-in).
+    #[tokio::test]
+    async fn test_custom_skill_shell_no_safety_still_runs() {
+        let config: CustomSkillConfig =
+            serde_json::from_str(shell_skill_json()).expect("valid json");
+        let skill = CustomSkill::new(config);
+        let output = skill
+            .execute(serde_json::json!({"message": "world"}))
+            .await
+            .expect("execute should succeed without a filter");
+        assert!(output.output.contains("world"));
     }
 
     /// Default values are applied when a parameter is omitted from execute().

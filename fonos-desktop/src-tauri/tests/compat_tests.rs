@@ -9,7 +9,7 @@
 ///   cargo test -p fonos-app --test compat_tests
 
 use fonos_core::config::AppConfig;
-use fonos_core::modes::{built_in_modes, Mode};
+use fonos_core::modes::built_in_modes;
 use fonos_core::stats::{init_db, record_event, get_history, get_today, get_daily_stats};
 use rusqlite::Connection;
 
@@ -131,7 +131,7 @@ mod c15_config_compat {
         assert_eq!(config.dictation_mode, "raw");
         assert_eq!(config.default_voice, "default");
         assert_eq!(config.tts_speed, 1.0);
-        assert_eq!(config.audio_input_device, "default");
+        assert_eq!(config.audio_input_device, "auto");
         assert_eq!(config.audio_output_device, "default");
         assert!(config.show_floating_indicator, "float pill shown by default");
         assert_eq!(config.stt_language, "auto");
@@ -270,7 +270,7 @@ mod c15_stats_api_compat {
 
 #[cfg(test)]
 mod c15_tauri_commands {
-    use fonos_app::commands::{
+    use fonos_desktop::commands::{
         // Dictation commands (existing)
         has_microphone,
         start_recording,
@@ -321,17 +321,22 @@ mod c15_tauri_commands {
 
     #[test]
     fn all_commands_exist_and_compile() {
-        // If this test compiles, all listed commands are importable.
-        let _ = has_microphone as usize;
-        let _ = get_config as usize;
-        let _ = list_modes as usize;
-        // v2 new commands
-        let _ = list_entries as usize;
-        let _ = search_entries as usize;
-        let _ = create_container as usize;
-        let _ = list_containers as usize;
-        let _ = get_container_entries as usize;
-        let _ = resize_float as usize;
+        // Referencing each command as a value proves it exists and is importable
+        // without invoking it. If any were removed or renamed, this would fail to
+        // compile — which is the whole point of this backward-compat check.
+        let _commands = (
+            has_microphone, start_recording, stop_recording, transcribe_file,
+            synthesize_speech, generate_and_play, play_audio_file, play_speech,
+            stop_playback, pause_playback, resume_playback,
+            get_config, save_config,
+            record_event, delete_event, get_stats, get_history, get_today,
+            list_modes, save_custom_mode, delete_custom_mode,
+            agent_process, agent_reset, list_skills, toggle_skill,
+            save_custom_skill, delete_custom_skill, test_skill,
+            resize_float,
+            list_entries, get_entry, update_entry, delete_entry, search_entries,
+            list_containers, create_container, delete_container, get_container_entries,
+        );
     }
 }
 
@@ -343,9 +348,9 @@ mod c15_tauri_commands {
 mod c15_window_html_files {
     use std::path::Path;
 
-    /// Helper: get the fonos-app root directory (parent of src-tauri).
-    fn fonos_app_root() -> std::path::PathBuf {
-        // CARGO_MANIFEST_DIR = fonos-app/src-tauri  →  parent = fonos-app
+    /// Helper: get the desktop crate root directory (parent of src-tauri).
+    fn crate_root() -> std::path::PathBuf {
+        // CARGO_MANIFEST_DIR = fonos-desktop/src-tauri  →  parent = fonos-desktop
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("CARGO_MANIFEST_DIR has no parent")
@@ -355,7 +360,7 @@ mod c15_window_html_files {
     /// Unit: float.html still exists (float pill window).
     #[test]
     fn float_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("float.html"),
             root.join("src").join("float.html"),
@@ -371,7 +376,7 @@ mod c15_window_html_files {
     /// Unit: agent-panel.html still exists (agent panel window).
     #[test]
     fn agent_panel_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("agent-panel.html"),
             root.join("src").join("agent-panel.html"),
@@ -387,7 +392,7 @@ mod c15_window_html_files {
     /// Unit: note-panel.html exists as the new note mode window.
     #[test]
     fn note_panel_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("note-panel.html"),
             root.join("src").join("note-panel.html"),

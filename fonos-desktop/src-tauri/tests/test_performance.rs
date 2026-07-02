@@ -52,8 +52,8 @@ fn test_hotkey_to_recording_latency() {
 
     // Reference implementation sketch:
     //
-    // use fonos_app::hotkey::HotkeyManager;
-    // use fonos_app::audio::capture;
+    // use fonos_desktop::hotkey::HotkeyManager;
+    // use fonos_desktop::audio::capture;
     // use std::sync::{Arc, Mutex};
     //
     // let timestamps: Arc<Mutex<Vec<Instant>>> = Arc::new(Mutex::new(Vec::new()));
@@ -141,7 +141,7 @@ fn test_server_ready_time() {
     }
 
     let port = free_port();
-    let mut child = Command::new("uv")
+    let child = Command::new("uv")
         .args([
             "run",
             "uvicorn",

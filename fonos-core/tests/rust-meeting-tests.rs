@@ -22,10 +22,7 @@
 use fonos_core::config::AppConfig;
 use fonos_core::hotkey::parse_hotkey;
 use fonos_core::modes::{built_in_modes, ContainerKind, OutputTarget};
-use fonos_core::storage::{
-    init_storage_db, insert_container, insert_entry, Container, ContainerType, Entry, EntryRole,
-    SourceType,
-};
+use fonos_core::storage::init_storage_db;
 use rusqlite::Connection;
 use std::time::Instant;
 
@@ -1138,7 +1135,6 @@ mod m09_summary_generation {
 
 #[cfg(test)]
 mod m10_openrouter {
-    use super::*;
     use fonos_core::meetings::openrouter::{openrouter_base_url, resolve_provider_base_url};
 
     /// Unit: openrouter_base_url() returns the correct API base URL.
@@ -1431,10 +1427,7 @@ mod m15_backward_compatibility {
     /// Static: Existing storage public API is still importable.
     #[test]
     fn existing_storage_api_compiles() {
-        use fonos_core::storage::{
-            ContainerType, Entry, EntryRole, SourceType, init_storage_db, insert_entry,
-            insert_container,
-        };
+        use fonos_core::storage::{ContainerType, EntryRole, SourceType};
         let conn = open_db();
         // Verify the main types exist and can be constructed.
         let _: SourceType = SourceType::Dictation;

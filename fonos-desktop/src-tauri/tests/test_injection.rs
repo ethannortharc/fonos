@@ -111,7 +111,7 @@ fn test_injection_unicode_text() {
 #[test]
 #[cfg(not(feature = "ci"))]
 fn test_injection_ax_real() {
-    use fonos_app::injection;
+    use fonos_desktop::injection;
 
     let test_string = "fonos_test_injection_marker";
     // inject_text tries AX first, then falls back to clipboard paste.

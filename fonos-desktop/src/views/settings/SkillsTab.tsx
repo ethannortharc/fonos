@@ -6,6 +6,7 @@ import {
   listSkills,
   toggleSkill,
   saveCustomSkill,
+  getCustomSkill,
   deleteCustomSkill,
   testSkill,
 } from "../../lib/api";
@@ -785,24 +786,45 @@ export default function SkillsTab() {
           key={skill.id}
           skill={skill}
           onToggle={(enabled) => handleToggle(skill.id, enabled)}
-          onEdit={() => {
+          onEdit={async () => {
             if (skill.builtin) {
               // Show read-only detail view for built-in skills
               setDetailSkill(skill);
-            } else {
-              // Pre-fill form from skill info for editing custom skills
+              return;
+            }
+            // Load the full stored definition so the edit form keeps the real
+            // command / params / template instead of overwriting them with blanks.
+            try {
+              const cfg = await getCustomSkill(skill.id);
+              const skillType: SkillForm["skillType"] =
+                cfg.skill_type === "http" || cfg.skill_type === "script"
+                  ? cfg.skill_type
+                  : "shell";
+              const command =
+                skillType === "http"
+                  ? cfg.url ?? ""
+                  : skillType === "script"
+                  ? cfg.script ?? ""
+                  : cfg.command ?? "";
+              const params: ParamRow[] = Object.entries(cfg.parameters ?? {}).map(
+                ([name, def]) => ({
+                  name,
+                  description: def?.description ?? "",
+                  defaultVal: def?.default ?? "",
+                })
+              );
               setEditingSkill({
-                icon: skillIcon(skill.skill_type, skill.name),
-                id: skill.id,
-                name: skill.name,
-                description: skill.description,
-                skillType: (skill.skill_type === "http" || skill.skill_type === "script")
-                  ? skill.skill_type
-                  : "shell",
-                command: "",
-                params: [],
-                responseTemplate: "{output}",
+                icon: cfg.icon || skillIcon(cfg.skill_type, cfg.name),
+                id: cfg.name,
+                name: cfg.name,
+                description: cfg.description,
+                skillType,
+                command,
+                params,
+                responseTemplate: cfg.response_template ?? "{output}",
               });
+            } catch (e: unknown) {
+              setError(e instanceof Error ? e.message : String(e));
             }
           }}
           onDelete={() => handleDelete(skill.id)}

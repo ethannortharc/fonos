@@ -1,24 +1,26 @@
-//! Text injection into focused UI elements via AXUIElement; clipboard paste as fallback.
+//! Text injection at the cursor position.
+//!
+//! macOS uses a clipboard-paste sequence (save clipboard → set text → Cmd+V →
+//! restore clipboard); Linux uses `xdotool type`. Both *insert at the cursor*
+//! and preserve the field's surrounding text. The Accessibility API is
+//! deliberately not used here: `AXUIElementSetAttributeValue(AXValue, …)`
+//! *replaces the entire field's contents* rather than inserting at the cursor,
+//! which would clobber whatever the user already typed.
 
 use std::time::Duration;
 
-/// Which injection method was ultimately used.
+/// Which injection method was used.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InjectionMethod {
-    /// Direct AXUIElement value setting succeeded.
-    Accessibility,
-    /// Clipboard paste (Cmd+V) was used as fallback.
+    /// A simulated paste / type sequence (Cmd+V on macOS, `xdotool` on Linux).
     ClipboardPaste,
 }
 
 /// Injects `text` at the current cursor position.
 ///
-/// Tries the macOS Accessibility API first. If that fails (permission not
-/// granted or the focused element does not expose a settable value), it falls
-/// back to a clipboard-paste sequence (save clipboard → set text → Cmd+V →
-/// restore clipboard).
-///
-/// Returns the method that succeeded, or an error string.
+/// Uses a simulated paste (macOS) or `xdotool type` (Linux) so the text is
+/// inserted at the cursor without overwriting surrounding content. Returns the
+/// method used, or an error string.
 pub fn inject_text(text: &str) -> Result<InjectionMethod, String> {
     let injector = TextInjector::new();
     injector.inject(text)
@@ -88,63 +90,7 @@ impl TextInjector {
         Ok(InjectionMethod::ClipboardPaste)
     }
 
-    /// Try AXUIElement-based injection (direct value setting).
-    fn try_ax_injection(&self, text: &str) -> Result<(), String> {
-        #[cfg(target_os = "macos")]
-        {
-            use std::ptr;
-
-            // Safety: These are raw C API calls to the macOS Accessibility framework.
-            // We follow the Core Foundation memory management rules (Get rule vs Create rule).
-            unsafe {
-                // Obtain the system-wide AXUIElement.
-                let system_element = ax_sys::AXUIElementCreateSystemWide();
-                if system_element.is_null() {
-                    return Err("AXUIElementCreateSystemWide returned null".into());
-                }
-
-                // Get the focused UI element.
-                let mut focused: ax_sys::AXUIElementRef = ptr::null_mut();
-                let attr_name = ax_sys::cf_string("AXFocusedUIElement");
-                let err = ax_sys::AXUIElementCopyAttributeValue(
-                    system_element,
-                    attr_name,
-                    &mut focused as *mut _ as *mut ax_sys::CFTypeRef,
-                );
-                ax_sys::CFRelease(system_element as ax_sys::CFTypeRef);
-                ax_sys::CFRelease(attr_name as ax_sys::CFTypeRef);
-
-                if err != 0 || focused.is_null() {
-                    return Err(format!("Could not get focused element (err={})", err));
-                }
-
-                // Set kAXValueAttribute to the new text.
-                let value_attr = ax_sys::cf_string("AXValue");
-                let cf_text = ax_sys::cf_string_from_str(text);
-                let set_err = ax_sys::AXUIElementSetAttributeValue(
-                    focused,
-                    value_attr,
-                    cf_text as ax_sys::CFTypeRef,
-                );
-                ax_sys::CFRelease(focused as ax_sys::CFTypeRef);
-                ax_sys::CFRelease(value_attr as ax_sys::CFTypeRef);
-                ax_sys::CFRelease(cf_text as ax_sys::CFTypeRef);
-
-                if set_err != 0 {
-                    return Err(format!("AXUIElementSetAttributeValue failed (err={})", set_err));
-                }
-
-                Ok(())
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = text;
-            Err("AX injection only supported on macOS".into())
-        }
-    }
-
-    /// Fallback: copy to clipboard, simulate Cmd+V, restore clipboard.
+    /// Copy to clipboard, simulate Cmd+V, restore clipboard.
     fn clipboard_paste_injection(&self, text: &str) -> Result<(), String> {
         use arboard::Clipboard;
 
@@ -187,18 +133,6 @@ impl TextInjector {
 
         Ok(())
     }
-
-    /// Check if the focused element supports AX value setting.
-    fn focused_element_supports_value(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            unsafe { ax_sys::focused_element_has_settable_value() }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -218,98 +152,4 @@ extern "C" {
     fn CGEventPost(tap: u32, event: *mut std::ffi::c_void);
 
     fn CFRelease(cf: *mut std::ffi::c_void);
-}
-
-// ---------------------------------------------------------------------------
-// Thin wrappers over macOS AX / CF C APIs
-// ---------------------------------------------------------------------------
-
-#[cfg(target_os = "macos")]
-mod ax_sys {
-    use std::ffi::{c_char, c_void, CString};
-    use std::ptr;
-
-    pub type CFTypeRef = *mut c_void;
-    pub type CFStringRef = *mut c_void;
-    pub type AXUIElementRef = *mut c_void;
-    pub type AXError = i32;
-
-    #[link(name = "ApplicationServices", kind = "framework")]
-    extern "C" {
-        pub fn AXUIElementCreateSystemWide() -> AXUIElementRef;
-        pub fn AXUIElementCopyAttributeValue(
-            element: AXUIElementRef,
-            attribute: CFStringRef,
-            value: *mut CFTypeRef,
-        ) -> AXError;
-        pub fn AXUIElementSetAttributeValue(
-            element: AXUIElementRef,
-            attribute: CFStringRef,
-            value: CFTypeRef,
-        ) -> AXError;
-        pub fn AXIsProcessTrusted() -> bool;
-        pub fn CFRelease(cf: CFTypeRef);
-    }
-
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFStringCreateWithCString(
-            alloc: CFTypeRef,
-            c_str: *const c_char,
-            encoding: u32,
-        ) -> CFStringRef;
-    }
-
-    // kCFStringEncodingUTF8 = 0x08000100
-    const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
-
-    /// Create a CFStringRef from a static &str (UTF-8).
-    pub fn cf_string(s: &str) -> CFStringRef {
-        let c = CString::new(s).expect("null byte in attribute name");
-        unsafe {
-            CFStringCreateWithCString(ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
-        }
-    }
-
-    /// Create a CFStringRef from an arbitrary &str (UTF-8).
-    pub fn cf_string_from_str(s: &str) -> CFStringRef {
-        // For strings that may contain null bytes we would need a different API,
-        // but injection text is not expected to contain null bytes.
-        let c = CString::new(s).unwrap_or_else(|_| CString::new("<null>").unwrap());
-        unsafe {
-            CFStringCreateWithCString(ptr::null_mut(), c.as_ptr(), K_CF_STRING_ENCODING_UTF8)
-        }
-    }
-
-    /// Returns true if the focused element exposes a settable AXValue and the
-    /// process has Accessibility permission.
-    pub unsafe fn focused_element_has_settable_value() -> bool {
-        if !AXIsProcessTrusted() {
-            return false;
-        }
-
-        // Try to copy the focused element; if that works, assume it supports
-        // value-setting (the actual set may still fail, handled in try_ax_injection).
-        let system_element = AXUIElementCreateSystemWide();
-        if system_element.is_null() {
-            return false;
-        }
-
-        let attr = cf_string("AXFocusedUIElement");
-        let mut focused: CFTypeRef = std::ptr::null_mut();
-        let err = AXUIElementCopyAttributeValue(
-            system_element,
-            attr,
-            &mut focused as *mut CFTypeRef,
-        );
-        CFRelease(system_element as CFTypeRef);
-        CFRelease(attr as CFTypeRef);
-
-        if err != 0 || focused.is_null() {
-            return false;
-        }
-
-        CFRelease(focused);
-        true
-    }
 }

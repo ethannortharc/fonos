@@ -131,7 +131,7 @@ mod c15_config_compat {
         assert_eq!(config.dictation_mode, "raw");
         assert_eq!(config.default_voice, "default");
         assert_eq!(config.tts_speed, 1.0);
-        assert_eq!(config.audio_input_device, "default");
+        assert_eq!(config.audio_input_device, "auto");
         assert_eq!(config.audio_output_device, "default");
         assert!(config.show_floating_indicator, "float pill shown by default");
         assert_eq!(config.stt_language, "auto");
@@ -270,7 +270,7 @@ mod c15_stats_api_compat {
 
 #[cfg(test)]
 mod c15_tauri_commands {
-    use fonos_app::commands::{
+    use fonos_desktop::commands::{
         // Dictation commands (existing)
         has_microphone,
         start_recording,
@@ -343,9 +343,9 @@ mod c15_tauri_commands {
 mod c15_window_html_files {
     use std::path::Path;
 
-    /// Helper: get the fonos-app root directory (parent of src-tauri).
-    fn fonos_app_root() -> std::path::PathBuf {
-        // CARGO_MANIFEST_DIR = fonos-app/src-tauri  →  parent = fonos-app
+    /// Helper: get the desktop crate root directory (parent of src-tauri).
+    fn crate_root() -> std::path::PathBuf {
+        // CARGO_MANIFEST_DIR = fonos-desktop/src-tauri  →  parent = fonos-desktop
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("CARGO_MANIFEST_DIR has no parent")
@@ -355,7 +355,7 @@ mod c15_window_html_files {
     /// Unit: float.html still exists (float pill window).
     #[test]
     fn float_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("float.html"),
             root.join("src").join("float.html"),
@@ -371,7 +371,7 @@ mod c15_window_html_files {
     /// Unit: agent-panel.html still exists (agent panel window).
     #[test]
     fn agent_panel_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("agent-panel.html"),
             root.join("src").join("agent-panel.html"),
@@ -387,7 +387,7 @@ mod c15_window_html_files {
     /// Unit: note-panel.html exists as the new note mode window.
     #[test]
     fn note_panel_html_exists() {
-        let root = fonos_app_root();
+        let root = crate_root();
         let candidates = [
             root.join("public").join("note-panel.html"),
             root.join("src").join("note-panel.html"),

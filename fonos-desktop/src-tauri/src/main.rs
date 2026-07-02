@@ -5,7 +5,6 @@ mod commands;
 #[cfg(target_os = "macos")]
 mod hotkey;
 mod injection;
-mod platform;
 mod skills;
 
 use commands::AppState;

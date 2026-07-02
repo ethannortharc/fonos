@@ -120,7 +120,7 @@ fn test_hotkey_event_dispatch() {
 
     // Reference implementation sketch:
     //
-    // use fonos_app::hotkey::HotkeyManager;
+    // use fonos_desktop::hotkey::HotkeyManager;
     // use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
     //
     // let triggered = Arc::new(AtomicBool::new(false));

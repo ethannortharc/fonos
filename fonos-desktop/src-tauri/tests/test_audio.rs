@@ -78,7 +78,7 @@ fn test_pcm_chunk_size_200ms() {
 #[test]
 #[cfg(not(feature = "ci"))]
 fn test_audio_capture_produces_samples() {
-    use fonos_app::audio::capture::AudioCapture;
+    use fonos_desktop::audio::capture::AudioCapture;
     use std::time::Duration;
 
     let mut cap = AudioCapture::new().expect("INV-05: failed to open audio device");

@@ -6,7 +6,6 @@ import type {
   AgentResult,
   AppConfig,
   DailyStat,
-  Event,
   LlmResult,
   ModeEntry,
   ModelCaps,
@@ -217,26 +216,12 @@ export async function recordEvent(
   });
 }
 
-/** Delete a single event by ID. */
-export async function deleteEvent(id: number): Promise<void> {
-  return invoke<void>("delete_event", { id });
-}
-
 /** Get daily statistics for a date range (inclusive). */
 export async function getStats(
   dateFrom: string,
   dateTo: string
 ): Promise<DailyStat[]> {
   return invoke<DailyStat[]>("get_stats", { dateFrom, dateTo });
-}
-
-/** Get paginated event history, optionally filtered by type. */
-export async function getHistory(
-  limit: number,
-  offset: number,
-  typeFilter: string
-): Promise<Event[]> {
-  return invoke<Event[]>("get_history", { limit, offset, typeFilter });
 }
 
 /** Get today's aggregated summary. */
@@ -309,6 +294,24 @@ export async function toggleSkill(id: string, enabled: boolean): Promise<void> {
 /** Save a custom skill definition (JSON string). */
 export async function saveCustomSkill(jsonStr: string): Promise<void> {
   return invoke<void>("save_custom_skill", { jsonStr });
+}
+
+/** Full stored definition of a custom skill, as persisted in its JSON file. */
+export interface CustomSkillConfig {
+  name: string;
+  description: string;
+  icon?: string | null;
+  skill_type: string;
+  command?: string | null;
+  url?: string | null;
+  script?: string | null;
+  parameters: Record<string, { description: string; default?: string | null }>;
+  response_template?: string | null;
+}
+
+/** Fetch a custom skill's full definition so an edit form can be pre-filled. */
+export async function getCustomSkill(id: string): Promise<CustomSkillConfig> {
+  return invoke<CustomSkillConfig>("get_custom_skill", { id });
 }
 
 /** Delete a custom skill by ID. */

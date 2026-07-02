@@ -10,11 +10,14 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use std::sync::Arc;
+
 use fonos_core::agent::custom_loader::{load_custom_skills_typed, CustomSkillConfig};
 use fonos_core::agent::processor::{AgentProcessor, AgentResult, HttpLlmCaller};
 use fonos_core::agent::registry::SkillRegistry;
 use fonos_core::agent::context::ConversationContext;
 use fonos_core::agent::fast_path::FastPathMatcher;
+use fonos_core::agent::safety::CommandSafetyFilter;
 use fonos_core::llm::ServiceConfig;
 
 use super::AppState;
@@ -74,6 +77,9 @@ pub struct AgentState {
     /// Names of skills that were registered from built-in desktop skill code
     /// (used to populate the `builtin` field in [`SkillInfo`]).
     pub builtin_skill_names: Vec<String>,
+    /// Safety filter applied to shell-type skills; re-attached when custom
+    /// skills are reloaded so they stay vetted after an edit.
+    pub safety: Arc<CommandSafetyFilter>,
 }
 
 impl AgentState {
@@ -85,6 +91,7 @@ impl AgentState {
         system_prompt: String,
         timeout_secs: u64,
         builtin_skill_names: Vec<String>,
+        safety: Arc<CommandSafetyFilter>,
     ) -> Self {
         Self {
             registry,
@@ -93,6 +100,7 @@ impl AgentState {
             system_prompt,
             timeout_secs,
             builtin_skill_names,
+            safety,
         }
     }
 }
@@ -266,15 +274,31 @@ pub async fn save_custom_skill(
 
     // Reload the skill from the file and update the registry.
     let mut agent = state.agent.lock().await;
+    let safety = Arc::clone(&agent.safety);
     let skills = load_custom_skills_typed(&skills_dir);
     for skill in skills {
         if skill.config.name == config.name {
-            agent.registry.register(Box::new(skill));
+            // Re-attach the safety filter so shell skills stay vetted.
+            agent.registry.register(Box::new(skill.with_safety(Arc::clone(&safety))));
             break;
         }
     }
 
     Ok(())
+}
+
+/// Return the full stored definition of a custom skill so the UI can edit it
+/// without losing its command / parameters / response template.
+///
+/// `list_skills` only reports a summary; this reads the skill's JSON file so an
+/// edit form can be pre-filled with the real values instead of blanks.
+#[tauri::command]
+pub async fn get_custom_skill(id: String) -> Result<CustomSkillConfig, String> {
+    let skills_dir = fonos_core::config::AppConfig::config_dir().join("skills");
+    let path = skills_dir.join(format!("{}.json", sanitize_skill_name(&id)));
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Cannot read skill '{}': {e}", id))?;
+    serde_json::from_str(&contents).map_err(|e| format!("Invalid skill JSON: {e}"))
 }
 
 /// Delete a custom skill by its name/ID.

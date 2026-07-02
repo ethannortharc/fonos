@@ -477,7 +477,14 @@ pub fn search_entries(conn: &Connection, query: &str, limit: i64) -> Result<Vec<
 
 /// Fallback substring search via SQL LIKE for short queries (< 3 chars).
 fn search_entries_like(conn: &Connection, query: &str, limit: i64) -> Result<Vec<Entry>> {
-    let pattern = format!("%{query}%");
+    // Escape LIKE wildcards so a query containing `%` or `_` (or the escape
+    // char `\`) is matched literally rather than treated as a pattern. This
+    // pairs with the `ESCAPE '\\'` clause below.
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%{escaped}%");
 
     let mut stmt = conn.prepare(
         "SELECT id, created_at, source_type, role, mode, raw_text, processed_text,
@@ -566,6 +573,15 @@ pub fn migrate_from_history(conn: &Connection) -> Result<()> {
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| Error::Database(format!("migrate collect events: {e}")))?;
 
+    // Wrap all inserts + the rename in a single transaction. Without this, each
+    // insert_container/insert_entry is its own implicit (fsync'd) transaction,
+    // so migrating a long-time user's thousands of legacy events would block
+    // startup for seconds-to-minutes. A closure lets `?` short-circuit while we
+    // still COMMIT on success / ROLLBACK on failure.
+    conn.execute_batch("BEGIN")
+        .map_err(|e| Error::Database(format!("migrate begin: {e}")))?;
+
+    let migrate = || -> Result<()> {
     // Group agent sessions by session_id to create Conversation containers
     use std::collections::HashMap;
     let mut session_container_map: HashMap<String, i64> = HashMap::new();
@@ -653,7 +669,21 @@ pub fn migrate_from_history(conn: &Connection) -> Result<()> {
     conn.execute_batch("ALTER TABLE events RENAME TO history_backup")
         .map_err(|e| Error::Database(format!("migrate rename: {e}")))?;
 
-    Ok(())
+        Ok(())
+    };
+
+    match migrate() {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| Error::Database(format!("migrate commit: {e}")))?;
+            Ok(())
+        }
+        Err(e) => {
+            // Best-effort rollback; surface the original error either way.
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
 }
 
 // ─── Export ───────────────────────────────────────────────

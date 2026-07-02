@@ -273,7 +273,7 @@ fn main() {
         use fonos_core::agent::context::ConversationContext;
         use fonos_core::agent::fast_path::FastPathMatcher;
         use fonos_core::agent::safety::{CommandSafetyConfig, CommandSafetyFilter};
-        use fonos_core::agent::custom_loader::load_custom_skills;
+        use fonos_core::agent::custom_loader::load_custom_skills_with_safety;
         use commands::agent::AgentState;
 
         // Build the safety filter from config (merge defaults with user customizations).
@@ -293,10 +293,12 @@ fn main() {
             .map(|si| si.name.clone())
             .collect();
 
-        // Load custom skills from the app data directory.
+        // Load custom skills from the app data directory. The safety filter is
+        // attached so custom `shell` skills are vetted just like the built-in one.
         let skills_dir = AppConfig::config_dir().join("skills");
         if skills_dir.exists() {
-            let custom_skills = load_custom_skills(&skills_dir);
+            let custom_skills =
+                load_custom_skills_with_safety(&skills_dir, Some(Arc::clone(&safety)));
             for skill in custom_skills {
                 registry.register(skill);
             }
@@ -314,6 +316,7 @@ fn main() {
             system_prompt,
             timeout_secs,
             builtin_skill_names,
+            Arc::clone(&safety),
         )
     };
 
@@ -390,6 +393,7 @@ fn main() {
             commands::agent::list_skills,
             commands::agent::toggle_skill,
             commands::agent::save_custom_skill,
+            commands::agent::get_custom_skill,
             commands::agent::delete_custom_skill,
             commands::agent::test_skill,
             // Selection commands

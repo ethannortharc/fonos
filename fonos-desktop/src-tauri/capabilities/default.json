@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default capabilities for Fonos app",
-  "windows": ["main", "float"],
+  "windows": ["main", "float", "agent-panel", "note-panel", "meeting-panel"],
   "permissions": [
     "core:default",
     "core:event:default",

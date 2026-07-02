@@ -138,10 +138,21 @@ function ModePipelineCard({
 
   return (
     <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)] transition-colors">
-      {/* Compact header — always visible */}
-      <button
+      {/* Compact header — always visible. A div (not a button) so the Edit /
+          Delete action buttons can nest inside without invalid button-in-button
+          markup; keyboard support is added explicitly. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
         onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left cursor-pointer"
       >
         <span className="flex-shrink-0"><ModeIcon icon={mode.icon} size={15} /></span>
         <div className="flex-1 min-w-0">
@@ -186,7 +197,7 @@ function ModePipelineCard({
             >{"\u2715"}</button>
           </div>
         )}
-      </button>
+      </div>
 
       {/* Expanded pipeline detail */}
       {expanded && (

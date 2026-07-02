@@ -32,8 +32,6 @@ use fonos_core::storage::{
     get_containers,
     get_container_entries,
     migrate_from_history,
-    export_notebook_markdown,
-    export_notebook_json,
     Entry,
     EntryRole,
     SourceType,
@@ -41,7 +39,7 @@ use fonos_core::storage::{
     ContainerType,
     EntryFilter,
 };
-use fonos_core::modes::{built_in_modes, Mode, OutputTarget, ContainerKind};
+use fonos_core::modes::{built_in_modes, Mode, OutputTarget};
 use rusqlite::Connection;
 use std::time::Instant;
 

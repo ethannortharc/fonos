@@ -45,13 +45,11 @@ fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
 
     let scale = target.scale_factor();
     let panel_w = 340.0; // logical pixels — matches tauri.conf.json width
-    let panel_h = 200.0;
 
     // Convert monitor bounds to logical
     let mon_x = target.position().x as f64 / scale;
     let mon_y = target.position().y as f64 / scale;
     let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
 
     // Top-center: drops down from the menu bar area like a water drop
     let x = mon_x + (mon_w - panel_w) / 2.0;
@@ -139,7 +137,6 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
 
     let scale = target.scale_factor();
     let panel_w = 520.0_f64;
-    let panel_h = 400.0_f64;
     let top_margin = 80.0_f64;
 
     let mon_x = target.position().x as f64 / scale;
@@ -158,6 +155,10 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
 
 /// Stop dictation, run LLM if needed, inject text at cursor, emit float:stop.
 /// Re-centers the float pill after completion.
+///
+/// Only invoked from the Linux global-shortcut path; macOS drives this through
+/// the CGEventTap hotkey handler instead.
+#[cfg(target_os = "linux")]
 async fn stop_and_process_dictation(handle: tauri::AppHandle) {
     use tauri::Emitter;
     let state: tauri::State<'_, commands::AppState> = handle.state();
@@ -332,6 +333,9 @@ fn main() {
         agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
     };
 
+    // `mut` is only exercised on Linux (the global-shortcut plugin block below);
+    // on macOS the binding is never reassigned.
+    #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
     // Register global-shortcut plugin on Linux

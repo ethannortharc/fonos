@@ -271,11 +271,6 @@ pub async fn start_meeting(
         eprintln!("fonos: meeting capture started, channel_mode={}", channel_mode);
 
         // Notify panel that capture started
-        let started_msg = if channel_mode == "dual" {
-            "Meeting started (mic + system audio)"
-        } else {
-            "Meeting started (mic only)"
-        };
         meeting_js(&app_handle, &format!(
             "recvStart('{}', '{}')",
             js_escape(&title),

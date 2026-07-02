@@ -30,6 +30,10 @@ impl ShellSkill {
     }
 
     /// Create a new [`ShellSkill`] with a custom timeout.
+    ///
+    /// Currently only exercised by the timeout unit test; gated to test builds
+    /// so it doesn't warn as dead code in the shipped binary.
+    #[cfg(test)]
     pub fn with_timeout(safety: Arc<CommandSafetyFilter>, timeout_secs: u64) -> Self {
         Self { safety, timeout_secs }
     }

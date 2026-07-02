@@ -27,7 +27,6 @@ use fonos_core::storage::{
     ContainerType,
 };
 use rusqlite::Connection;
-use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -275,7 +274,6 @@ mod c10_note_hotkey {
 mod c14_export_notebook {
     use super::*;
     use tempfile::TempDir;
-    use std::path::PathBuf;
 
     /// Build a notebook with entries in the in-memory DB, return the notebook id.
     fn create_test_notebook(conn: &Connection) -> i64 {

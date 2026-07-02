@@ -9,7 +9,7 @@
 ///   cargo test -p fonos-app --test compat_tests
 
 use fonos_core::config::AppConfig;
-use fonos_core::modes::{built_in_modes, Mode};
+use fonos_core::modes::built_in_modes;
 use fonos_core::stats::{init_db, record_event, get_history, get_today, get_daily_stats};
 use rusqlite::Connection;
 
@@ -321,17 +321,22 @@ mod c15_tauri_commands {
 
     #[test]
     fn all_commands_exist_and_compile() {
-        // If this test compiles, all listed commands are importable.
-        let _ = has_microphone as usize;
-        let _ = get_config as usize;
-        let _ = list_modes as usize;
-        // v2 new commands
-        let _ = list_entries as usize;
-        let _ = search_entries as usize;
-        let _ = create_container as usize;
-        let _ = list_containers as usize;
-        let _ = get_container_entries as usize;
-        let _ = resize_float as usize;
+        // Referencing each command as a value proves it exists and is importable
+        // without invoking it. If any were removed or renamed, this would fail to
+        // compile — which is the whole point of this backward-compat check.
+        let _commands = (
+            has_microphone, start_recording, stop_recording, transcribe_file,
+            synthesize_speech, generate_and_play, play_audio_file, play_speech,
+            stop_playback, pause_playback, resume_playback,
+            get_config, save_config,
+            record_event, delete_event, get_stats, get_history, get_today,
+            list_modes, save_custom_mode, delete_custom_mode,
+            agent_process, agent_reset, list_skills, toggle_skill,
+            save_custom_skill, delete_custom_skill, test_skill,
+            resize_float,
+            list_entries, get_entry, update_entry, delete_entry, search_entries,
+            list_containers, create_container, delete_container, get_container_entries,
+        );
     }
 }
 

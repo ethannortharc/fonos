@@ -141,7 +141,7 @@ fn test_server_ready_time() {
     }
 
     let port = free_port();
-    let mut child = Command::new("uv")
+    let child = Command::new("uv")
         .args([
             "run",
             "uvicorn",

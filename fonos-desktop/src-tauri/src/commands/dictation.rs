@@ -29,11 +29,6 @@ pub fn force_reset_recording() {
     }
 }
 
-/// Move float pill to the monitor where the cursor is (bottom center).
-pub fn move_float_to_cursor_pub(app: &tauri::AppHandle) {
-    move_float_to_monitor(app, false);
-}
-
 /// Move float pill back to the primary monitor (bottom center).
 pub fn move_float_to_primary_pub(app: &tauri::AppHandle) {
     move_float_to_monitor(app, true);

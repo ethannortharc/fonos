@@ -162,49 +162,55 @@ pub fn list_audio_inputs() -> Result<Vec<String>, String> {
 /// When `skip_float` is true, the float pill is not moved or activated (used by agent hotkey).
 #[tauri::command]
 pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppState>, skip_float: Option<bool>) -> Result<(), String> {
-    let was_recording = IS_RECORDING.swap(true, Ordering::SeqCst);
-    eprintln!("fonos: start_recording called, was_recording={}, skip_float={:?}", was_recording, skip_float);
-    if was_recording {
-        return Ok(()); // Already recording — ignore duplicate
-    }
+    eprintln!("fonos: start_recording called, skip_float={:?}", skip_float);
 
-    // Read selected device from config
+    // Read selected device from config.
     let device_name = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         config.audio_input_device.clone()
     };
 
-    // Check device availability
+    // Check device availability up front. These probes read no shared state, so
+    // they run outside the recording-state critical section below.
     use crate::audio::capture::find_input_device;
     match find_input_device(&device_name) {
         None => {
-            IS_RECORDING.store(false, Ordering::SeqCst);
             return Err("No microphone found. Connect an audio input device.".into());
         }
         Some(dev) => {
             use cpal::traits::DeviceTrait;
             if dev.supported_input_configs().is_err() {
-                IS_RECORDING.store(false, Ordering::SeqCst);
                 return Err("Microphone permission denied. Grant access in System Settings > Privacy > Microphone.".into());
             }
         }
     }
 
+    // Critical section: hold the capture lock while we both check the recording
+    // flag and bring the stream up. `stop_recording` flips the same flag under
+    // the same lock, so the two can't interleave — this prevents a fast tap
+    // (down then up) from draining an empty capture and then leaving the mic
+    // live with IS_RECORDING=false. The flag is set to true only *after* the
+    // stream is running, so the invariant "IS_RECORDING == there is a live
+    // capture" always holds.
     let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
+
+    if IS_RECORDING.load(Ordering::SeqCst) {
+        eprintln!("fonos: start_recording ignored — already recording");
+        return Ok(()); // Already recording — ignore duplicate
+    }
 
     // Always create a fresh AudioCapture — the old one may reference a
     // disconnected device or the user may have changed the device setting.
     *guard = None;
-    let capture = AudioCapture::with_device(&device_name).map_err(|e| {
-        IS_RECORDING.store(false, Ordering::SeqCst);
-        format!("mic init failed: {e}")
-    })?;
+    let capture = AudioCapture::with_device(&device_name)
+        .map_err(|e| format!("mic init failed: {e}"))?;
     *guard = Some(capture);
+    guard.as_mut().unwrap().start()
+        .map_err(|e| format!("mic start failed: {e}"))?;
 
-    guard.as_mut().unwrap().start().map_err(|e| {
-        IS_RECORDING.store(false, Ordering::SeqCst);
-        format!("mic start failed: {e}")
-    })?;
+    // Stream is live — now mark recording, still holding the lock.
+    IS_RECORDING.store(true, Ordering::SeqCst);
+    drop(guard);
 
     // Move float pill to the monitor where the cursor is (skip for agent mode)
     if !skip_float.unwrap_or(false) {
@@ -218,24 +224,25 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
 /// Stop recording, save WAV, transcribe via HTTP API, inject text at cursor.
 #[tauri::command]
 pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppState>, mode_override: Option<String>) -> Result<SttResult, String> {
-    if !IS_RECORDING.swap(false, Ordering::SeqCst) {
-        // Not recording — silently ignore (no log spam)
-        return Ok(SttResult {
-            text: String::new(),
-            audio_path: String::new(),
-            latency_ms: 0,
-            duration_secs: 0.0,
-            stt_engine: String::new(),
-            noise_removed_pct: 0.0,
-            gain_db: 0.0,
-        });
-    }
-
     let stop_time = std::time::Instant::now();
 
-    // 1. Stop mic and drain all samples
+    // 1. Stop mic and drain all samples. The IS_RECORDING flag is flipped under
+    //    the same lock start_recording uses, so a concurrent start/stop pair
+    //    can't interleave (see the invariant note in start_recording).
     let all_samples: Vec<i16> = {
         let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
+        if !IS_RECORDING.swap(false, Ordering::SeqCst) {
+            // Not recording — nothing to stop.
+            return Ok(SttResult {
+                text: String::new(),
+                audio_path: String::new(),
+                latency_ms: 0,
+                duration_secs: 0.0,
+                stt_engine: String::new(),
+                noise_removed_pct: 0.0,
+                gain_db: 0.0,
+            });
+        }
         match guard.as_mut() {
             Some(capture) => {
                 capture.stop();
@@ -354,11 +361,27 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     // ── Branch: Apple on-device / Whisper API / Chat Completions STT ────────
     let (transcript, stt_engine) = if stt.provider == "apple" {
         transcribe_apple(&audio_path_str, &lang_code).await
-    } else if stt.stt_api == "chat" {
-        eprintln!("fonos: STT via chat completions (base64 audio)");
-        (transcribe_chat(&stt, &file_bytes, &lang_code).await, String::new())
     } else {
-        (transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode).await, String::new())
+        let result = if stt.stt_api == "chat" {
+            eprintln!("fonos: STT via chat completions (base64 audio)");
+            transcribe_chat(&stt, &file_bytes, &lang_code).await
+        } else {
+            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode).await
+        };
+        match result {
+            Ok(t) => (t, String::new()),
+            Err(e) => {
+                // Surface the failure instead of returning an empty transcript
+                // silently. The float pill shows the error and leaves processing
+                // state; the caller (hotkey / Dictation view) also gets the Err.
+                let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
+                eprintln!("fonos: {msg}");
+                if dictation_mode != "agent" {
+                    let _ = app.emit("float:error", &msg);
+                }
+                return Err(msg);
+            }
+        }
     };
 
     let latency_ms = stop_time.elapsed().as_millis() as u64;
@@ -602,13 +625,13 @@ pub async fn transcribe_http(
     model_name: &str,
     lang_code: &str,
     current_mode: Option<&fonos_core::modes::Mode>,
-) -> String {
+) -> Result<String, String> {
     let url = format!("{}/v1/audio/transcriptions", stt.base_url);
     let part = match reqwest::multipart::Part::bytes(file_bytes.to_vec())
         .file_name("recording.wav")
         .mime_str("audio/wav") {
         Ok(p) => p,
-        Err(e) => { eprintln!("fonos: multipart error: {e}"); return String::new(); }
+        Err(e) => return Err(format!("could not build request: {e}")),
     };
 
     let mut form = reqwest::multipart::Form::new()
@@ -633,7 +656,7 @@ pub async fn transcribe_http(
         .timeout(std::time::Duration::from_secs(15))
         .build() {
         Ok(c) => c,
-        Err(e) => { eprintln!("fonos: http client error: {e}"); return String::new(); }
+        Err(e) => return Err(format!("could not build HTTP client: {e}")),
     };
 
     let mut req = client.post(&url).multipart(form);
@@ -645,18 +668,26 @@ pub async fn transcribe_http(
         Ok(resp) if resp.status().is_success() => {
             let body = resp.text().await.unwrap_or_default();
             let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-            json["text"].as_str().unwrap_or("").to_string()
+            Ok(json["text"].as_str().unwrap_or("").to_string())
         }
         Ok(resp) => {
+            // Non-2xx (e.g. 404 when the endpoint isn't implemented, 401 bad key).
+            // Surface it instead of returning an empty transcript silently.
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            eprintln!("fonos: transcription error {status}: {body}");
-            String::new()
+            let hint = if status.as_u16() == 404 {
+                format!(
+                    " — {url} not found; this server may not implement audio transcription"
+                )
+            } else {
+                String::new()
+            };
+            Err(format!(
+                "{status}{hint}: {}",
+                body.chars().take(200).collect::<String>()
+            ))
         }
-        Err(e) => {
-            eprintln!("fonos: transcription failed: {e}");
-            String::new()
-        }
+        Err(e) => Err(format!("request to {url} failed: {e}")),
     }
 }
 
@@ -669,7 +700,7 @@ pub async fn transcribe_chat(
     stt: &super::ServiceConfig,
     file_bytes: &[u8],
     lang_code: &str,
-) -> String {
+) -> Result<String, String> {
     use base64::Engine;
 
     let url = {
@@ -719,10 +750,7 @@ pub async fn transcribe_chat(
         .build()
     {
         Ok(c) => c,
-        Err(e) => {
-            eprintln!("fonos: chat-stt client error: {e}");
-            return String::new();
-        }
+        Err(e) => return Err(format!("could not build HTTP client: {e}")),
     };
 
     let mut req = client.post(&url).json(&body);
@@ -733,22 +761,63 @@ pub async fn transcribe_chat(
     match req.send().await {
         Ok(resp) if resp.status().is_success() => {
             let json: serde_json::Value = resp.json().await.unwrap_or_default();
-            json["choices"][0]["message"]["content"]
+            Ok(json["choices"][0]["message"]["content"]
                 .as_str()
                 .unwrap_or("")
                 .trim()
-                .to_string()
+                .to_string())
         }
         Ok(resp) => {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            eprintln!("fonos: chat-stt error {status}: {}", body.chars().take(200).collect::<String>());
-            String::new()
+            Err(format!(
+                "{status}: {}",
+                body.chars().take(200).collect::<String>()
+            ))
         }
-        Err(e) => {
-            eprintln!("fonos: chat-stt request failed: {e}");
-            String::new()
-        }
+        Err(e) => Err(format!("request to {url} failed: {e}")),
+    }
+}
+
+// ─── STT endpoint verification ───────────────────────────────────────────────
+
+/// Verify a model's STT endpoint by sending a short silent probe clip.
+///
+/// Distinguishes "endpoint works" (any 2xx, even an empty transcript from
+/// silence) from "endpoint missing/broken" (404/401/network). Lets users
+/// confirm a self-hosted STT server before relying on it, instead of finding
+/// out via a silent empty dictation.
+#[tauri::command]
+pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> Result<String, String> {
+    let stt = super::get_service_config_for_profile(&state, &profile_id);
+
+    if stt.provider == "apple" {
+        return Ok("Apple on-device speech — no network endpoint to test.".to_string());
+    }
+    if stt.base_url.trim().is_empty() {
+        return Err("This model has no base URL configured.".to_string());
+    }
+
+    // Build a short silent WAV (0.3s @ 16kHz mono) as the probe clip.
+    let sample_rate = 16000u32;
+    let sample_count = (sample_rate as usize) * 3 / 10;
+    let pcm = vec![0u8; sample_count * 2]; // i16 LE silence
+    let dir = std::env::temp_dir().join("fonos_audio");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("stt_probe.wav");
+    fonos_core::audio::write_wav(&path, &pcm, sample_rate).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("failed to read probe clip: {e}"))?;
+
+    let model_name = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
+    let result = if stt.stt_api == "chat" {
+        transcribe_chat(&stt, &bytes, "").await
+    } else {
+        transcribe_http(&stt, &bytes, &model_name, "", None).await
+    };
+
+    match result {
+        Ok(_) => Ok(format!("OK — {} responded at {}", stt.provider, stt.base_url)),
+        Err(e) => Err(e),
     }
 }
 

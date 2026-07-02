@@ -152,6 +152,12 @@ export async function listProviderModels(baseUrl: string, apiKey: string): Promi
   return invoke<{ id: string; owned_by: string }[]>("list_provider_models", { baseUrl, apiKey });
 }
 
+/** Verify a model's STT endpoint with a silent probe clip. Resolves with an OK
+ *  message, or rejects with the endpoint error (404, auth, network, …). */
+export async function testStt(profileId: string): Promise<string> {
+  return invoke<string>("test_stt", { profileId });
+}
+
 /** List all modes (built-in + custom). */
 export async function listModes(): Promise<ModeEntry[]> {
   return invoke<ModeEntry[]>("list_modes");

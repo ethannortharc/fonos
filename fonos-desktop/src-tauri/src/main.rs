@@ -355,6 +355,7 @@ fn main() {
             commands::dictation::list_audio_inputs,
             commands::dictation::start_recording,
             commands::dictation::stop_recording,
+            commands::dictation::test_stt,
             commands::dictation::transcribe_file,
             // TTS commands
             commands::tts::synthesize_speech,

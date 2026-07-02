@@ -431,6 +431,8 @@ export function installDemoIpc() {
           { id: "gpt-4o-mini-tts", owned_by: "openai" },
           { id: "google/gemini-2.5-flash", owned_by: "google" },
         ];
+      case "test_stt":
+        return "OK — demo endpoint responded";
       default:
         return null;
     }

@@ -157,6 +157,24 @@ interface EntryItemProps {
   onPlay?: (audioRef: string) => void;
 }
 
+/** Day bucket label for journal-style grouping: Today / Yesterday / Mar 5. */
+function dayLabel(isoDate: string): string {
+  try {
+    const d = new Date(isoDate);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return "Today";
+    const y = new Date(now.getTime() - 86400000);
+    if (d.toDateString() === y.toDateString()) return "Yesterday";
+    const opts: Intl.DateTimeFormatOptions =
+      d.getFullYear() === now.getFullYear()
+        ? { month: "short", day: "numeric" }
+        : { month: "short", day: "numeric", year: "numeric" };
+    return d.toLocaleDateString([], opts);
+  } catch {
+    return isoDate;
+  }
+}
+
 function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
   const [editMode, setEditMode] = useState(false);
   const [editText, setEditText] = useState(entry.processed_text || entry.raw_text);
@@ -492,7 +510,7 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
 
 // ─── Notebook list (Level 1) ──────────────────────────────────────────────────
 
-function NotebookList() {
+function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; initialNotebookId?: number }) {
   const [notebooks, setNotebooks] = useState<Container[]>([]);
   const [entryCounts, setEntryCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
@@ -545,9 +563,13 @@ function NotebookList() {
 
   useEffect(() => {
     if (selectedId === null && sortedNotebooks.length > 0) {
-      setSelectedId(sortedNotebooks[0].id);
+      const preferred =
+        initialNotebookId != null && sortedNotebooks.some((nb) => nb.id === initialNotebookId)
+          ? initialNotebookId
+          : sortedNotebooks[0].id;
+      setSelectedId(preferred);
     }
-  }, [sortedNotebooks, selectedId]);
+  }, [sortedNotebooks, selectedId, initialNotebookId]);
 
   // Load entries when selected notebook changes — also refresh counts for all notebooks
   useEffect(() => {
@@ -573,10 +595,12 @@ function NotebookList() {
       data-testid="notes-view"
       className="flex flex-col h-full bg-[#1a1917]"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9]">Notes</h2>
-      </div>
+      {/* Header (hidden when embedded in the History view) */}
+      {!embedded && (
+        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
+          <h2 className="text-[13px] font-semibold text-[#fafaf9]">Notes</h2>
+        </div>
+      )}
 
       {/* Notebook tabs — horizontal scroll */}
       <div className="flex-shrink-0 px-5 pb-2">
@@ -614,8 +638,8 @@ function NotebookList() {
             {selectedNotebook ? `No entries in ${selectedNotebook.title}` : "Select a notebook"}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {selectedEntries.map((entry) => {
+          <div className="flex flex-col gap-3">
+            {(() => {
               const refresh = () => {
                 if (selectedId !== null) {
                   getContainerEntries(selectedId)
@@ -624,15 +648,36 @@ function NotebookList() {
                   loadNotebooks(); // refresh counts
                 }
               };
-              return (
-                <EntryItem
-                  key={entry.id}
-                  entry={entry}
-                  onEdit={async (id, text) => { await updateEntry(id, text); refresh(); }}
-                  onDelete={async (id) => { await deleteEntry(id); refresh(); }}
-                />
-              );
-            })}
+              // Journal rhythm: bucket entries under day headers.
+              const groups: { label: string; items: typeof selectedEntries }[] = [];
+              for (const entry of selectedEntries) {
+                const label = dayLabel(entry.created_at);
+                const last = groups[groups.length - 1];
+                if (last && last.label === label) last.items.push(entry);
+                else groups.push({ label, items: [entry] });
+              }
+              return groups.map((g) => (
+                <div key={g.label}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.28)]">
+                      {g.label}
+                    </span>
+                    <div className="flex-1 border-t border-[rgba(255,255,255,0.04)]" />
+                    <span className="text-[9px] text-[rgba(255,255,255,0.15)]">{g.items.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {g.items.map((entry) => (
+                      <EntryItem
+                        key={entry.id}
+                        entry={entry}
+                        onEdit={async (id, text) => { await updateEntry(id, text); refresh(); }}
+                        onDelete={async (id) => { await deleteEntry(id); refresh(); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>
@@ -642,7 +687,13 @@ function NotebookList() {
 
 // ─── Notes root (manages list/detail state) ───────────────────────────────────
 
-export default function Notes() {
+export default function Notes({
+  embedded,
+  initialNotebookId,
+}: {
+  embedded?: boolean;
+  initialNotebookId?: number;
+} = {}) {
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedNotebook, setSelectedNotebook] = useState<Container | null>(null);
 
@@ -659,5 +710,5 @@ export default function Notes() {
     );
   }
 
-  return <NotebookList />;
+  return <NotebookList embedded={embedded} initialNotebookId={initialNotebookId} />;
 }

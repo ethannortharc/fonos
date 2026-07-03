@@ -3,14 +3,12 @@ import Dictation from "./views/Dictation";
 import Voice from "./views/Voice";
 import Stats from "./views/Stats";
 import Settings from "./views/Settings";
-import Recent from "./views/Recent";
-import Notes from "./views/Notes";
-import Meetings from "./views/Meetings";
-import Search from "./views/Search";
+import History from "./views/History";
+import type { HistoryFilter } from "./views/History";
 import Onboarding, { isSttConfigured } from "./views/Onboarding";
 import { getConfig } from "./lib/api";
 
-type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings" | "search";
+type Tab = "dictation" | "voice" | "history" | "stats" | "settings";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -25,47 +23,12 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     ),
   },
   {
-    id: "recent",
-    label: "Recent",
+    id: "history",
+    label: "History",
     icon: (
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 8v4l3 3" />
         <circle cx="12" cy="12" r="10" />
-      </svg>
-    ),
-  },
-  {
-    id: "search",
-    label: "Search",
-    icon: (
-      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="11" cy="11" r="8" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-      </svg>
-    ),
-  },
-  {
-    id: "notes",
-    label: "Notes",
-    icon: (
-      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <polyline points="10 9 9 9 8 9" />
-      </svg>
-    ),
-  },
-  {
-    id: "meetings",
-    label: "Meetings",
-    icon: (
-      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
   },
@@ -116,6 +79,7 @@ export default function App() {
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
   // environments (where getConfig throws) so the shell renders unchanged.
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [historyPreset, setHistoryPreset] = useState<{ filter: HistoryFilter; nonce: number }>();
   // Don't paint the shell until the gate is decided — otherwise a genuine
   // first run flashes the full app for a frame before the wizard mounts.
   const [gateReady, setGateReady] = useState(false);
@@ -144,11 +108,16 @@ export default function App() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
         cleanup.push(await listen<string>("navigate-tab", (event) => {
-          const tab = typeof event.payload === "string"
-            ? event.payload.replace(/"/g, "") as Tab
-            : null;
-          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings", "search"].includes(tab)) {
-            setActiveTab(tab);
+          const raw = typeof event.payload === "string" ? event.payload.replace(/"/g, "") : "";
+          // Legacy tab names from the float pill / tray map into History filters.
+          const historyMap: Record<string, HistoryFilter> = {
+            recent: "all", search: "all", history: "all", notes: "note", meetings: "meeting",
+          };
+          if (raw in historyMap) {
+            setHistoryPreset({ filter: historyMap[raw], nonce: Date.now() });
+            setActiveTab("history");
+          } else if (["dictation", "voice", "stats", "settings"].includes(raw)) {
+            setActiveTab(raw as Tab);
           }
         }));
       } catch {
@@ -255,10 +224,7 @@ export default function App() {
           {activeTab === "voice" && <Voice />}
           {activeTab === "stats" && <Stats />}
           {activeTab === "settings" && <Settings />}
-          {activeTab === "recent" && <Recent />}
-          {activeTab === "notes" && <Notes />}
-          {activeTab === "meetings" && <Meetings />}
-          {activeTab === "search" && <Search onNavigate={setActiveTab} />}
+          {activeTab === "history" && <History preset={historyPreset} />}
         </div>
       </div>
     </div>

@@ -58,7 +58,6 @@ const config = {
   audio_input_device: "MacBook Pro Microphone",
   audio_output_device: "System Default",
   show_floating_indicator: true,
-  show_live_transcript: true,
   stt_language: "auto",
   model_profiles: modelProfiles,
   stt_profile: "openai-gpt-4o-mini-transcribe",

@@ -308,15 +308,14 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     // Resolve effective vocab books for this dictation (global ∪ mode, issue #3).
     // Cloned out of the config lock so the books outlive the transcription awaits.
-    let (vocab_books, live_transcript): (Vec<fonos_core::vocab::VocabBook>, bool) = {
+    let vocab_books: Vec<fonos_core::vocab::VocabBook> = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let empty: &[String] = &[];
         let mode_ids = current_mode.map(|m| m.vocab_books.as_slice()).unwrap_or(empty);
-        let books = fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
+        fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
             .into_iter()
             .cloned()
-            .collect();
-        (books, config.show_live_transcript)
+            .collect()
     };
     let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();
     let vocab_terms = fonos_core::vocab::collect_terms(&vocab_refs);
@@ -381,11 +380,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             eprintln!("fonos: STT via chat completions (base64 audio)");
             transcribe_chat(&stt, &file_bytes, &lang_code, &vocab_terms).await
         } else {
-            // Live partials only for non-agent dictations. Agent recordings use
-            // skip_float (idle pill), so emitting stt:partial would paint text
-            // onto a pill that isn't in the processing state.
-            let partial_sink = if dictation_mode != "agent" && live_transcript { Some(&app) } else { None };
-            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode, &vocab_terms, partial_sink).await
+            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode, &vocab_terms).await
         };
         match result {
             Ok(t) => (t, String::new()),
@@ -678,87 +673,7 @@ fn find_apple_stt_binary() -> Option<String> {
     None
 }
 
-// ─── Incremental SSE parser for streaming transcription ─────────────────────
-
-/// A parsed OpenAI-shaped streaming transcription event.
-#[derive(Debug, Clone, PartialEq)]
-enum SseEvent {
-    /// `transcript.text.delta` — an incremental chunk of transcript text.
-    Delta(String),
-    /// `transcript.text.done` — the final, full transcript text.
-    Done(String),
-}
-
-/// Incremental parser for a `text/event-stream` body.
-///
-/// Fed raw byte chunks off the wire (which may split lines — even mid-JSON —
-/// across chunk boundaries), it buffers bytes until a line is terminated by
-/// `\n`, then decodes and parses that line. It yields one [`SseEvent`] for each
-/// complete `data: {json}` line whose JSON is a recognized event type; every
-/// other line (blank separators, SSE comments / keepalives, unknown event
-/// types, malformed JSON) is silently ignored. Bytes are buffered rather than
-/// chars, so a multi-byte UTF-8 codepoint split across two chunks is never
-/// corrupted — decoding happens only on complete (newline-terminated) lines,
-/// and `\n` never falls inside a codepoint.
-struct SseParser {
-    buf: Vec<u8>,
-}
-
-impl SseParser {
-    fn new() -> Self {
-        Self { buf: Vec::new() }
-    }
-
-    /// Append `chunk` and return every event completed by it (possibly none,
-    /// possibly several).
-    fn feed(&mut self, chunk: &[u8]) -> Vec<SseEvent> {
-        self.buf.extend_from_slice(chunk);
-        let mut events = Vec::new();
-        while let Some(nl) = self.buf.iter().position(|&b| b == b'\n') {
-            // Take the line including its trailing '\n'.
-            let line: Vec<u8> = self.buf.drain(..=nl).collect();
-            // Strip the '\n' and an optional preceding '\r' (CRLF tolerance).
-            let mut end = line.len() - 1;
-            if end > 0 && line[end - 1] == b'\r' {
-                end -= 1;
-            }
-            let text = String::from_utf8_lossy(&line[..end]);
-            if let Some(ev) = Self::parse_line(&text) {
-                events.push(ev);
-            }
-        }
-        events
-    }
-
-    /// Parse a single already-de-newlined line. Returns `None` for anything
-    /// that is not a recognized `data:` transcription event.
-    fn parse_line(line: &str) -> Option<SseEvent> {
-        let payload = line.strip_prefix("data:")?.trim();
-        if payload.is_empty() || payload == "[DONE]" {
-            return None;
-        }
-        let v: serde_json::Value = serde_json::from_str(payload).ok()?;
-        match v.get("type").and_then(|t| t.as_str()) {
-            Some("transcript.text.delta") => Some(SseEvent::Delta(
-                v.get("delta").and_then(|d| d.as_str()).unwrap_or("").to_string(),
-            )),
-            Some("transcript.text.done") => Some(SseEvent::Done(
-                v.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-            )),
-            _ => None,
-        }
-    }
-}
-
 /// Transcribe via HTTP POST to an OpenAI-compatible /v1/audio/transcriptions endpoint.
-///
-/// When `partial_events` is `Some(app)`, the request is sent with `stream=true`
-/// and, if the server answers with `text/event-stream`, transcript deltas are
-/// emitted to the float pill as `stt:partial` events (payload = accumulated
-/// text, throttled to ≤1 per 80 ms) while the final transcript is taken from
-/// the `transcript.text.done` event. When `partial_events` is `None` the
-/// request is byte-identical to the original non-streaming call (no `stream`
-/// field), so the probe (`test_stt`) and meeting callers are unaffected.
 pub async fn transcribe_http(
     stt: &super::ServiceConfig,
     file_bytes: &[u8],
@@ -766,179 +681,76 @@ pub async fn transcribe_http(
     lang_code: &str,
     current_mode: Option<&fonos_core::modes::Mode>,
     vocab_terms: &[String],
-    partial_events: Option<&tauri::AppHandle>,
 ) -> Result<String, String> {
     let url = format!("{}/v1/audio/transcriptions", stt.base_url);
+    let part = match reqwest::multipart::Part::bytes(file_bytes.to_vec())
+        .file_name("recording.wav")
+        .mime_str("audio/wav") {
+        Ok(p) => p,
+        Err(e) => return Err(format!("could not build request: {e}")),
+    };
 
-    // Merge the mode's own stt_prompt and the vocabulary glossary into one
-    // Whisper prompt (budget-capped). Computed once; reused if we have to build
-    // the form a second time for the no-stream fallback.
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("model", model_name.to_string());
+
+    // Apply mode STT params. The mode's own stt_prompt and the vocabulary
+    // glossary are merged into one Whisper prompt (budget-capped).
     let base_prompt = current_mode.map(|m| m.stt_prompt.as_str()).unwrap_or("");
     let prompt = fonos_core::vocab::build_stt_prompt(
         base_prompt,
         vocab_terms,
         fonos_core::vocab::STT_PROMPT_BUDGET_CHARS,
     );
+    if !prompt.is_empty() {
+        form = form.text("prompt", prompt);
+    }
+    if let Some(mode) = current_mode {
+        if mode.stt_temperature > 0.0 {
+            form = form.text("temperature", mode.stt_temperature.to_string());
+        }
+    }
 
-    // reqwest's multipart Form is not Clone and a Part consumes its bytes, so we
-    // rebuild the whole form from the (owned) file bytes each time. That lets us
-    // retry once without the `stream` field for servers that 4xx on it.
-    let build_form = |with_stream: bool| -> Result<reqwest::multipart::Form, String> {
-        let part = reqwest::multipart::Part::bytes(file_bytes.to_vec())
-            .file_name("recording.wav")
-            .mime_str("audio/wav")
-            .map_err(|e| format!("could not build request: {e}"))?;
-        let mut form = reqwest::multipart::Form::new()
-            .part("file", part)
-            .text("model", model_name.to_string());
-        if !prompt.is_empty() {
-            form = form.text("prompt", prompt.clone());
-        }
-        if let Some(mode) = current_mode {
-            if mode.stt_temperature > 0.0 {
-                form = form.text("temperature", mode.stt_temperature.to_string());
-            }
-        }
-        if !lang_code.is_empty() {
-            form = form.text("language", lang_code.to_string());
-        }
-        // Only ask for streaming when a partials sink was supplied — keeps the
-        // probe/meeting callers byte-identical to the original request.
-        if with_stream {
-            form = form.text("stream", "true");
-        }
-        Ok(form)
-    };
+    if !lang_code.is_empty() {
+        form = form.text("language", lang_code.to_string());
+    }
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .build()
-    {
+        .build() {
         Ok(c) => c,
         Err(e) => return Err(format!("could not build HTTP client: {e}")),
     };
 
-    // First attempt: stream only when partials were requested.
-    let want_stream = partial_events.is_some();
-    let mut req = client.post(&url).multipart(build_form(want_stream)?);
+    let mut req = client.post(&url).multipart(form);
     if !stt.api_key.is_empty() {
         req = req.header("Authorization", format!("Bearer {}", stt.api_key));
     }
-    let mut resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => return Err(format!("request to {url} failed: {e}")),
-    };
 
-    // Robust fallback: some OpenAI-compatible servers (and OpenAI's own
-    // whisper-1) reject an unknown/unsupported `stream` field with a 4xx.
-    // Retry once without it before giving up.
-    let mut used_stream = want_stream;
-    if want_stream && resp.status().is_client_error() {
-        eprintln!(
-            "fonos: STT stream=true rejected ({}) — retrying once without stream",
-            resp.status()
-        );
-        used_stream = false;
-        let mut req = client.post(&url).multipart(build_form(false)?);
-        if !stt.api_key.is_empty() {
-            req = req.header("Authorization", format!("Bearer {}", stt.api_key));
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await.unwrap_or_default();
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+            Ok(json["text"].as_str().unwrap_or("").to_string())
         }
-        resp = match req.send().await {
-            Ok(r) => r,
-            Err(e) => return Err(format!("request to {url} failed: {e}")),
-        };
-    }
-
-    let status = resp.status();
-    let content_type = resp
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    // ── Streaming path: consume SSE, emit throttled partials, return done. ──
-    if used_stream && content_type.contains("text/event-stream") {
-        use futures_util::StreamExt;
-        // used_stream ⇒ want_stream ⇒ partial_events.is_some(); guard anyway.
-        let app = match partial_events {
-            Some(a) => a,
-            None => return Err("internal: streaming without an event sink".to_string()),
-        };
-
-        let mut stream = resp.bytes_stream();
-        let mut parser = SseParser::new();
-        let mut acc = String::new();
-        let mut got_any = false;
-        let mut done_text: Option<String> = None;
-        let mut last_emit: Option<std::time::Instant> = None;
-
-        while let Some(chunk) = stream.next().await {
-            let bytes = match chunk {
-                Ok(b) => b,
-                Err(e) => {
-                    // Mid-stream network error: keep whatever we accumulated
-                    // rather than losing the whole dictation.
-                    if got_any {
-                        eprintln!("fonos: STT stream error after partial data: {e}");
-                        break;
-                    }
-                    return Err(format!("stream read error from {url}: {e}"));
-                }
+        Ok(resp) => {
+            // Non-2xx (e.g. 404 when the endpoint isn't implemented, 401 bad key).
+            // Surface it instead of returning an empty transcript silently.
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            let hint = if status.as_u16() == 404 {
+                format!(
+                    " — {url} not found; this server may not implement audio transcription"
+                )
+            } else {
+                String::new()
             };
-            for ev in parser.feed(&bytes) {
-                match ev {
-                    SseEvent::Delta(d) => {
-                        got_any = true;
-                        acc.push_str(&d);
-                        // Throttle partial emits to ≤1 per 80 ms; always emit the
-                        // first one so the pill lights up immediately.
-                        if last_emit.is_none_or(|t| t.elapsed().as_millis() >= 80) {
-                            let _ = app.emit("stt:partial", acc.clone());
-                            last_emit = Some(std::time::Instant::now());
-                        }
-                    }
-                    SseEvent::Done(t) => {
-                        done_text = Some(t);
-                    }
-                }
-            }
-            if done_text.is_some() {
-                break;
-            }
+            Err(format!(
+                "{status}{hint}: {}",
+                body.chars().take(200).collect::<String>()
+            ))
         }
-
-        return match done_text {
-            Some(t) => Ok(t),
-            None if got_any => {
-                eprintln!(
-                    "fonos: STT stream ended without a done event — returning {} accumulated chars",
-                    acc.len()
-                );
-                Ok(acc)
-            }
-            None => Err(format!("STT stream from {url} produced no transcript events")),
-        };
-    }
-
-    // ── Non-streaming path (unchanged behavior). ──
-    if status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        let json: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
-        Ok(json["text"].as_str().unwrap_or("").to_string())
-    } else {
-        // Non-2xx (e.g. 404 when the endpoint isn't implemented, 401 bad key).
-        // Surface it instead of returning an empty transcript silently.
-        let body = resp.text().await.unwrap_or_default();
-        let hint = if status.as_u16() == 404 {
-            format!(" — {url} not found; this server may not implement audio transcription")
-        } else {
-            String::new()
-        };
-        Err(format!(
-            "{status}{hint}: {}",
-            body.chars().take(200).collect::<String>()
-        ))
+        Err(e) => Err(format!("request to {url} failed: {e}")),
     }
 }
 
@@ -1069,7 +881,7 @@ pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> 
     let result = if stt.stt_api == "chat" {
         transcribe_chat(&stt, &bytes, "", &[]).await
     } else {
-        transcribe_http(&stt, &bytes, &model_name, "", None, &[], None).await
+        transcribe_http(&stt, &bytes, &model_name, "", None, &[]).await
     };
 
     match result {
@@ -1129,154 +941,4 @@ fn preprocess_audio(samples: Vec<i16>) -> (Vec<i16>, (f64, f64)) {
         noise_removed_pct, gain_db);
 
     (normalized, (noise_removed_pct, gain_db))
-}
-
-// ─── SSE parser tests ────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod sse_tests {
-    use super::{SseEvent, SseParser};
-
-    #[test]
-    fn single_event_per_chunk() {
-        let mut p = SseParser::new();
-        let evs = p.feed(b"data: {\"type\":\"transcript.text.delta\",\"delta\":\" Kubernetes\"}\n\n");
-        assert_eq!(evs, vec![SseEvent::Delta(" Kubernetes".to_string())]);
-    }
-
-    #[test]
-    fn multiple_events_in_one_chunk() {
-        let mut p = SseParser::new();
-        let evs = p.feed(
-            b"data: {\"type\":\"transcript.text.delta\",\"delta\":\"a\"}\n\n\
-              data: {\"type\":\"transcript.text.delta\",\"delta\":\"b\"}\n\n",
-        );
-        assert_eq!(
-            evs,
-            vec![
-                SseEvent::Delta("a".to_string()),
-                SseEvent::Delta("b".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn event_split_mid_json_across_chunks() {
-        let mut p = SseParser::new();
-        // First chunk ends in the middle of the JSON object (no newline yet).
-        let evs1 = p.feed(b"data: {\"type\":\"transcript.text.delta\",\"del");
-        assert!(evs1.is_empty(), "no complete line yet, got {evs1:?}");
-        // Second chunk completes the line — the event is only yielded now.
-        let evs2 = p.feed(b"ta\":\" split\"}\n\n");
-        assert_eq!(evs2, vec![SseEvent::Delta(" split".to_string())]);
-    }
-
-    #[test]
-    fn done_event_extraction() {
-        let mut p = SseParser::new();
-        let evs = p.feed(
-            b"data: {\"type\":\"transcript.text.done\",\"text\":\"hello world\",\"usage\":{\"x\":1}}\n\n",
-        );
-        assert_eq!(evs, vec![SseEvent::Done("hello world".to_string())]);
-    }
-
-    #[test]
-    fn junk_and_keepalive_lines_ignored() {
-        let mut p = SseParser::new();
-        let evs = p.feed(
-            b": keepalive\n\
-              event: message\n\
-              \n\
-              data: not-json\n\
-              data: {\"type\":\"other.event\"}\n\
-              data: {\"type\":\"transcript.text.delta\",\"delta\":\"x\"}\n\n",
-        );
-        assert_eq!(evs, vec![SseEvent::Delta("x".to_string())]);
-    }
-
-    #[test]
-    fn crlf_line_endings() {
-        let mut p = SseParser::new();
-        let evs =
-            p.feed(b"data: {\"type\":\"transcript.text.delta\",\"delta\":\"crlf\"}\r\n\r\n");
-        assert_eq!(evs, vec![SseEvent::Delta("crlf".to_string())]);
-    }
-
-    /// End-to-end against a live local OMLX server. Ignored by default — it
-    /// requires the OMLX server running at http://localhost:8000 plus the env
-    /// vars `OMLX_API_KEY` and `FONOS_TEST_WAV`. Run with:
-    ///   OMLX_API_KEY=... FONOS_TEST_WAV=/path/clip.wav \
-    ///     cargo test -p fonos-desktop live_streaming_deltas_then_done -- --ignored --nocapture
-    #[test]
-    #[ignore]
-    fn live_streaming_deltas_then_done() {
-        let api_key = match std::env::var("OMLX_API_KEY") {
-            Ok(k) => k,
-            Err(_) => {
-                eprintln!("skip: OMLX_API_KEY unset");
-                return;
-            }
-        };
-        let wav_path = match std::env::var("FONOS_TEST_WAV") {
-            Ok(p) => p,
-            Err(_) => {
-                eprintln!("skip: FONOS_TEST_WAV unset");
-                return;
-            }
-        };
-        let bytes = std::fs::read(&wav_path).expect("read FONOS_TEST_WAV");
-
-        let part = reqwest::blocking::multipart::Part::bytes(bytes)
-            .file_name("recording.wav")
-            .mime_str("audio/wav")
-            .unwrap();
-        let model = std::env::var("OMLX_STT_MODEL")
-            .unwrap_or_else(|_| "Qwen3-ASR-1.7B-bf16".to_string());
-        let form = reqwest::blocking::multipart::Form::new()
-            .part("file", part)
-            .text("model", model)
-            .text("stream", "true");
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .unwrap();
-        let mut resp = client
-            .post("http://localhost:8000/v1/audio/transcriptions")
-            .header("Authorization", format!("Bearer {api_key}"))
-            .multipart(form)
-            .send()
-            .expect("request to local OMLX failed");
-        assert!(resp.status().is_success(), "status {}", resp.status());
-        let ct = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-        assert!(ct.contains("text/event-stream"), "content-type was {ct}");
-
-        use std::io::Read;
-        let mut parser = SseParser::new();
-        let mut buf = [0u8; 4096];
-        let mut got_delta = false;
-        let mut delta_before_done = false;
-        let mut final_text = String::new();
-        loop {
-            let n = resp.read(&mut buf).expect("read stream");
-            if n == 0 {
-                break;
-            }
-            for ev in parser.feed(&buf[..n]) {
-                match ev {
-                    SseEvent::Delta(_) => got_delta = true,
-                    SseEvent::Done(t) => {
-                        delta_before_done = got_delta;
-                        final_text = t;
-                    }
-                }
-            }
-        }
-        assert!(delta_before_done, "expected deltas to arrive before the done event");
-        assert!(!final_text.trim().is_empty(), "final transcript text was empty");
-    }
 }

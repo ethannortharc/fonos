@@ -44,9 +44,6 @@ pub struct AppConfig {
     pub audio_output_device: String,
     /// Whether to show the floating recording indicator pill.
     pub show_floating_indicator: bool,
-    /// Whether the float pill expands into a live transcript preview card
-    /// while a streaming STT backend is transcribing.
-    pub show_live_transcript: bool,
     /// STT language hint (BCP-47 tag or `"auto"`).
     pub stt_language: String,
     /// Named model profiles: JSON array of `{id, name, provider, api_key, model, base_url, capabilities[]}`.
@@ -159,7 +156,6 @@ impl Default for AppConfig {
             audio_input_device: "auto".to_string(),
             audio_output_device: "default".to_string(),
             show_floating_indicator: true,
-            show_live_transcript: true,
             stt_language: "auto".to_string(),
             model_profiles: vec![],
             stt_profile: String::new(),

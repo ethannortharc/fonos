@@ -72,30 +72,6 @@
   .dd-btn:hover{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7)}
   .dd-btn .s-icon{font-size:14px;line-height:1}
 
-  /* ── Live transcript card ── */
-  #tcard{
-    display:none;flex-direction:column;
-    background:rgba(26,25,23,0.94);
-    backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
-    border:1px solid rgba(251,191,36,0.14);border-radius:14px;
-    padding:10px 14px;margin-bottom:8px;
-    width:320px;
-    box-shadow:0 8px 32px rgba(0,0,0,0.4);
-    animation:cardIn 0.18s ease-out;
-  }
-  #tcard.show{display:flex}
-  #tcard-text{
-    font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
-    font-size:12px;line-height:1.55;color:rgba(255,255,255,0.82);
-    max-height:56px;overflow:hidden;word-break:break-word;
-  }
-  .tcaret{
-    display:inline-block;width:6px;height:12px;border-radius:1.5px;
-    background:rgba(251,191,36,0.75);margin-left:3px;vertical-align:-1px;
-    animation:pulse 1s ease-in-out infinite;
-  }
-  @keyframes cardIn{from{opacity:0;transform:translateY(5px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
-
   /* ── Pill ── */
   #pill{
     display:inline-flex;align-items:center;justify-content:center;
@@ -160,7 +136,6 @@
 <body>
 <div id="container">
   <div id="dropdown"></div>
-  <div id="tcard"><div id="tcard-text"></div></div>
   <div id="pill" onclick="onPillClick(event)">
     <div id="idle">
       <span class="pill-dot"></span>
@@ -352,7 +327,7 @@ function openSettings(){
 }
 
 function startRec(){
-  if(isRec)return;isRec=true;closeMenu();clearErr();resetPartial();
+  if(isRec)return;isRec=true;closeMenu();clearErr();
   document.getElementById('pill').classList.add('recording');
   document.getElementById('rec-dur').textContent='0s';
   let t0=Date.now();
@@ -368,60 +343,10 @@ function showProcessing(){
   var p=document.getElementById('pill');
   p.classList.remove('recording','success','error');
   p.classList.add('processing');
-  resetPartial();
   sz(110,PH);
 }
-/* Reset the live-transcript surface: hide the card, restore the plain
-   "Processing" label. Each caller (startRec/showProcessing/stopRec/showError)
-   sets its own pill size afterwards, so window size is theirs to own. Called
-   on every state transition so a non-streaming backend and the next dictation
-   start clean. */
-var partialFirstAt=0;
-function resetPartial(){
-  partialFirstAt=0;
-  var lbl=document.getElementById('proc-label');
-  if(lbl)lbl.textContent='Processing';
-  var tc=document.getElementById('tcard');
-  if(tc)tc.classList.remove('show');
-}
-/* Live streaming transcript (stt:partial). `text` is the ACCUMULATED
-   transcript. Only paint while the pill is in the processing state — stray
-   partials for raw/agent/non-streaming paths are ignored.
-
-   Display: a readable card above the pill (3 lines max, newest text kept in
-   view, blinking caret), with the pill showing "transcribing" beneath it. To
-   avoid a flash on sub-second transcriptions, the card only appears once the
-   text is substantial (>24 chars) or transcription has run >400ms; until then
-   the short text rides inline in the pill label. */
-function onPartial(text){
-  var p=document.getElementById('pill');
-  if(!p||!p.classList.contains('processing'))return;
-  var s=(text||'').trim();
-  if(!s)return;
-  var now=Date.now();
-  if(!partialFirstAt)partialFirstAt=now;
-  var tc=document.getElementById('tcard'),tt=document.getElementById('tcard-text');
-  var lbl=document.getElementById('proc-label');
-  if(!tc||!tt||!lbl)return;
-  if(tc.classList.contains('show')||s.length>24||(now-partialFirstAt)>400){
-    tt.textContent=s;
-    var caret=document.createElement('span');caret.className='tcaret';
-    tt.appendChild(caret);
-    tt.scrollTop=tt.scrollHeight; /* keep the newest words in view */
-    lbl.textContent='transcribing';
-    if(!tc.classList.contains('show')){
-      tc.classList.add('show');
-      requestAnimationFrame(function(){sz(340,PH+tc.offsetHeight+10);});
-    } else {
-      sz(340,PH+tc.offsetHeight+10);
-    }
-  } else {
-    lbl.textContent=s;
-    sz(Math.max(110,Math.min(340,Math.round(s.length*5)+50)),PH);
-  }
-}
 function stopRec(text){
-  isRec=false;clearErr();resetPartial();
+  isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   var p=document.getElementById('pill');
@@ -455,7 +380,7 @@ function showError(payload){
   // string (backward compatible). Show a short label in the narrow pill and
   // keep the full message in console.warn + the title attribute. When a
   // permission `pane` is present, the pill becomes clickable (see onPillClick).
-  isRec=false;resetPartial();
+  isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   if(errTimer){clearTimeout(errTimer);errTimer=null;}
@@ -521,7 +446,6 @@ function setup(){
   function listen(ev,cb){inv('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(cb)}).catch(()=>{});}
   listen('float:start',()=>startRec());
   listen('float:processing',()=>showProcessing());
-  listen('stt:partial',e=>onPartial(e&&e.payload?e.payload:''));
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
   loadCfg();loadModes();idleSz();

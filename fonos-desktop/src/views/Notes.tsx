@@ -492,7 +492,7 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
 
 // ─── Notebook list (Level 1) ──────────────────────────────────────────────────
 
-function NotebookList() {
+function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; initialNotebookId?: number }) {
   const [notebooks, setNotebooks] = useState<Container[]>([]);
   const [entryCounts, setEntryCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
@@ -545,9 +545,13 @@ function NotebookList() {
 
   useEffect(() => {
     if (selectedId === null && sortedNotebooks.length > 0) {
-      setSelectedId(sortedNotebooks[0].id);
+      const preferred =
+        initialNotebookId != null && sortedNotebooks.some((nb) => nb.id === initialNotebookId)
+          ? initialNotebookId
+          : sortedNotebooks[0].id;
+      setSelectedId(preferred);
     }
-  }, [sortedNotebooks, selectedId]);
+  }, [sortedNotebooks, selectedId, initialNotebookId]);
 
   // Load entries when selected notebook changes — also refresh counts for all notebooks
   useEffect(() => {
@@ -573,10 +577,12 @@ function NotebookList() {
       data-testid="notes-view"
       className="flex flex-col h-full bg-[#1a1917]"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9]">Notes</h2>
-      </div>
+      {/* Header (hidden when embedded in the History view) */}
+      {!embedded && (
+        <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
+          <h2 className="text-[13px] font-semibold text-[#fafaf9]">Notes</h2>
+        </div>
+      )}
 
       {/* Notebook tabs — horizontal scroll */}
       <div className="flex-shrink-0 px-5 pb-2">
@@ -642,7 +648,13 @@ function NotebookList() {
 
 // ─── Notes root (manages list/detail state) ───────────────────────────────────
 
-export default function Notes() {
+export default function Notes({
+  embedded,
+  initialNotebookId,
+}: {
+  embedded?: boolean;
+  initialNotebookId?: number;
+} = {}) {
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedNotebook, setSelectedNotebook] = useState<Container | null>(null);
 
@@ -659,5 +671,5 @@ export default function Notes() {
     );
   }
 
-  return <NotebookList />;
+  return <NotebookList embedded={embedded} initialNotebookId={initialNotebookId} />;
 }

@@ -193,7 +193,7 @@ export default function Settings() {
 
         {/* ────────────── Vocabulary tab ────────────── */}
         {settingsTab === "vocab" && (
-          <VocabTab config={config} modes={modes} onSave={handleSave} onSaveMode={handleSaveMode} />
+          <VocabTab config={config} onSave={handleSave} />
         )}
 
         {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}

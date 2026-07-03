@@ -2,8 +2,7 @@
 // Books are referenced by id from global_vocab_books and per-mode vocab_books.
 
 import { useState } from "react";
-import type { AppConfig, ModeEntry, VocabBook, VocabRule } from "../../types";
-import type { ModeForm } from "./constants";
+import type { AppConfig, VocabBook, VocabRule } from "../../types";
 
 const EMPTY_RULE: VocabRule = { from: "", to: "", kind: "literal", case_insensitive: true };
 
@@ -19,14 +18,10 @@ function newBook(): VocabBook {
 
 export default function VocabTab({
   config,
-  modes,
   onSave,
-  onSaveMode,
 }: {
   config: AppConfig;
-  modes: ModeEntry[];
   onSave: (updates: Partial<AppConfig>) => void;
-  onSaveMode: (form: ModeForm) => void;
 }) {
   const books = config.vocab_books ?? [];
   const globalIds = config.global_vocab_books ?? [];
@@ -72,34 +67,6 @@ export default function VocabTab({
     setTermsDraft(null);
   };
 
-  // Mount/unmount a book on a mode. Saving a built-in mode's id as a custom
-  // mode shadows the built-in (same mechanism as the mode editor's
-  // "Customize..." flow), so this works for polish/formal/etc. too.
-  const toggleMode = (mode: ModeEntry, bookId: string) => {
-    const current = mode.vocab_books ?? [];
-    const next = current.includes(bookId)
-      ? current.filter((id) => id !== bookId)
-      : [...current, bookId];
-    onSaveMode({
-      id: mode.id,
-      name: mode.name,
-      description: mode.description ?? "",
-      icon: mode.icon ?? "",
-      system: mode.system ?? "",
-      user_template: mode.user_template ?? "",
-      temperature: mode.temperature,
-      model: mode.model ?? "",
-      stt_model: mode.stt_model ?? "",
-      stt_prompt: mode.stt_prompt ?? "",
-      stt_temperature: mode.stt_temperature ?? 0,
-      max_tokens: mode.max_tokens,
-      output_language: mode.output_language ?? "auto",
-      auto_paste: mode.auto_paste,
-      auto_press_enter: mode.auto_press_enter,
-      vocab_books: next,
-    });
-  };
-
   const updateRule = (book: VocabBook, i: number, patch: Partial<VocabRule>) => {
     updateBook(book.id, {
       rules: book.rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
@@ -116,7 +83,8 @@ export default function VocabTab({
         <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
           Terms bias speech recognition and guide LLM output; rules are deterministic
           find → replace corrections applied to every transcript. Mark a book Global to
-          apply it everywhere, or mount it on specific modes in the Dictation tab.
+          apply it everywhere — or mount it on specific modes from each mode's card in
+          the Dictation tab.
         </div>
       </div>
 
@@ -196,36 +164,6 @@ export default function VocabTab({
                     >
                       ×
                     </button>
-                  </div>
-
-                  {/* Apply to: global + per-mode chips */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      Applies to
-                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">
-                        (Global = every dictation; or pick specific modes)
-                      </span>
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {modes.map((m) => {
-                        const mounted = (m.vocab_books ?? []).includes(book.id);
-                        return (
-                          <button
-                            key={m.id}
-                            onClick={() => toggleMode(m, book.id)}
-                            title={mounted ? `Unmount from ${m.name}` : `Mount on ${m.name}`}
-                            className={[
-                              "px-2.5 py-1 rounded-full text-[10px] transition-all",
-                              mounted
-                                ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
-                                : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
-                            ].join(" ")}
-                          >
-                            {m.icon} {m.name}
-                          </button>
-                        );
-                      })}
-                    </div>
                   </div>
 
                   {/* Terms */}

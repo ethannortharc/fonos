@@ -6,8 +6,9 @@ import Settings from "./views/Settings";
 import Recent from "./views/Recent";
 import Notes from "./views/Notes";
 import Meetings from "./views/Meetings";
+import Search from "./views/Search";
 
-type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings";
+type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings" | "search";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -28,6 +29,16 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 8v4l3 3" />
         <circle cx="12" cy="12" r="10" />
+      </svg>
+    ),
+  },
+  {
+    id: "search",
+    label: "Search",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
     ),
   },
@@ -115,7 +126,7 @@ export default function App() {
           const tab = typeof event.payload === "string"
             ? event.payload.replace(/"/g, "") as Tab
             : null;
-          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings"].includes(tab)) {
+          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings", "search"].includes(tab)) {
             setActiveTab(tab);
           }
         }));
@@ -217,6 +228,7 @@ export default function App() {
           {activeTab === "recent" && <Recent />}
           {activeTab === "notes" && <Notes />}
           {activeTab === "meetings" && <Meetings />}
+          {activeTab === "search" && <Search onNavigate={setActiveTab} />}
         </div>
       </div>
     </div>

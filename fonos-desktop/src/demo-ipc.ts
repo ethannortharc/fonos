@@ -385,6 +385,15 @@ export function installDemoIpc() {
           .filter((entry) => !sourceType || entry.source_type === sourceType)
           .slice(0, (payload.limit as number | undefined) ?? 20);
       }
+      case "search_entries": {
+        const q = String(payload.query ?? "").toLowerCase();
+        if (!q) return [];
+        return entries
+          .filter((entry) =>
+            (entry.raw_text ?? "").toLowerCase().includes(q) ||
+            (entry.processed_text ?? "").toLowerCase().includes(q))
+          .slice(0, (payload.limit as number | undefined) ?? 50);
+      }
       case "get_container_entries":
         return entries.filter((entry) => entry.container_id === payload.container_id);
       case "get_meetings":

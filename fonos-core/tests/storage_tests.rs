@@ -650,6 +650,34 @@ mod c03_fts5_search {
         assert!(!results.is_empty(), "should find the Python entry in Chinese text");
     }
 
+    /// Unit: Queries containing FTS5 syntax characters (apostrophes, quotes,
+    /// operators) must be treated as literal text, not raise a syntax error.
+    /// Dictated natural language is full of apostrophes.
+    #[test]
+    fn punctuation_in_query_is_literal() {
+        let conn = open_db();
+        insert_entry(&conn, &Entry {
+            id: None,
+            created_at: ts(0),
+            source_type: SourceType::Dictation,
+            role: EntryRole::User,
+            mode: "raw".to_string(),
+            raw_text: "Don't forget to submit the expense report".to_string(),
+            processed_text: None,
+            container_id: None,
+            audio_ref: None,
+            metadata: serde_json::Value::Null,
+        }).expect("insert entry");
+
+        let results = search_entries(&conn, "don't forget", 10)
+            .expect("apostrophe in query must not be an FTS5 syntax error");
+        assert!(!results.is_empty(), "should match text containing don't");
+
+        let results = search_entries(&conn, "\"expense", 10)
+            .expect("unbalanced double quote must not be an FTS5 syntax error");
+        assert!(!results.is_empty(), "stray quotes should be ignored, matching 'expense'");
+    }
+
     /// Integration: Search for Chinese company name.
     #[test]
     fn chinese_company_name_search() {

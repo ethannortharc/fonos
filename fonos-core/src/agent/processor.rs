@@ -656,6 +656,7 @@ mod test_agent_planner {
             api_key: "test-key".into(),
             model: "gpt-4o".into(),
             base_url: String::new(),
+            stt_api: String::new(),
         }
     }
 
@@ -1036,6 +1037,7 @@ mod test_agent_executor {
             api_key: "test-key".into(),
             model: "gpt-4o".into(),
             base_url: String::new(),
+            stt_api: String::new(),
         }
     }
 

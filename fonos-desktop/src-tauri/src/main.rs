@@ -176,9 +176,9 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
                 };
                 if has_llm {
-                    // Keep float in processing state while LLM runs
-                    // (overrides the premature float:stop from stop_recording)
-                    let _ = handle.emit("float:processing", ());
+                    // stop_recording already left the pill in the processing
+                    // state for LLM modes; just run the LLM and emit the final
+                    // float:stop/float:error below.
                     match commands::llm::process_with_llm(state2, result.text, mode).await {
                         Ok(llm_result) => {
                             let mut delivered = true;
@@ -1065,6 +1065,12 @@ fn main() {
                                                 .replace('\'', "\\'")
                                                 .replace('\n', "\\n");
                                             note_js(&handle, &format!("recvResult('{}')", esc));
+                                            // The note panel is the real UI, but stop_recording
+                                            // suppresses its own float:stop for LLM modes (note
+                                            // has an LLM prompt) and this path runs no LLM step,
+                                            // so end the float pill here — otherwise it stays
+                                            // stuck in "Processing".
+                                            let _ = handle.emit("float:stop", &result.text);
                                             // Panel will auto-dismiss after 2s via JS timer,
                                             // or user can press hotkey again to dismiss immediately
                                         }
@@ -1143,6 +1149,10 @@ fn main() {
                                             }
                                             let esc = result.text.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
                                             note_nb_js(&handle, &format!("recvResult('{}')", esc));
+                                            // End the float pill — stop_recording suppresses its
+                                            // float:stop for LLM modes (note) and this path runs
+                                            // no LLM step, so it'd otherwise stay in "Processing".
+                                            let _ = handle.emit("float:stop", &result.text);
                                         }
                                         Err(e) => {
                                             if !e.contains("not recording") {

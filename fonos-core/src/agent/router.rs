@@ -257,6 +257,7 @@ mod test_processor_router {
             api_key: "test-key".to_string(),
             model: "gpt-4o".to_string(),
             base_url: String::new(),
+            stt_api: String::new(),
         }
     }
 

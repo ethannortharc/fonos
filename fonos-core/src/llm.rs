@@ -35,6 +35,10 @@ pub struct ServiceConfig {
     pub model: String,
     /// Base URL override (empty string means use the provider default).
     pub base_url: String,
+    /// STT API flavor for speech profiles: `"whisper"` (multipart upload,
+    /// default) or `"chat"` (base64 audio in chat completions). Unused by
+    /// LLM-only calls.
+    pub stt_api: String,
 }
 
 /// Process `text` through an LLM using the given `mode_def` and `service`.
@@ -389,6 +393,7 @@ mod tests {
             api_key: "sk-test".into(),
             model: "gpt-4o".into(),
             base_url: String::new(),
+            stt_api: String::new(),
         };
         assert_eq!(s.provider, "openai");
         assert_eq!(s.model, "gpt-4o");

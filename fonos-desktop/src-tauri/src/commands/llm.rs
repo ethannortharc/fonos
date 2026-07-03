@@ -74,7 +74,7 @@ pub async fn process_with_llm(
         mode, mode_def.name, provider, model,
         caps.as_ref().map(|c| format!("sys:{} lang:{}", c.follows_system_prompt, c.preserves_language)).unwrap_or("unprobed".into()));
 
-    let service = ServiceConfig { provider, api_key, model: model.clone(), base_url };
+    let service = ServiceConfig { provider, api_key, model: model.clone(), base_url, stt_api: String::new() };
     let translate_target = config.translate_target.clone();
 
     // ③ Vocabulary glossary (issue #3): append the effective books' terms to

@@ -105,17 +105,10 @@ impl AgentState {
     }
 }
 
-// ─── Helper: convert commands::ServiceConfig -> llm::ServiceConfig ──────────
-
-/// Convert the Tauri-layer [`super::ServiceConfig`] into the
-/// [`fonos_core::llm::ServiceConfig`] expected by [`AgentProcessor`].
+// commands::ServiceConfig and llm::ServiceConfig are the same type now
+// (unified in fonos-core, issue #21) — the old conversion is a clone.
 fn to_llm_service(sc: &super::ServiceConfig) -> ServiceConfig {
-    ServiceConfig {
-        provider: sc.provider.clone(),
-        api_key: sc.api_key.clone(),
-        model: sc.model.clone(),
-        base_url: sc.base_url.clone(),
-    }
+    sc.clone()
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────

@@ -161,71 +161,26 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
     Ok(())
 }
 
-/// Service connection info: URL + optional API key + model name
-pub struct ServiceConfig {
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-    pub provider: String,
-    /// STT API path: "whisper" (default, multipart upload) or "chat" (base64 in chat completions).
-    pub stt_api: String,
-}
-
-/// Build a ServiceConfig from a JSON model profile entry.
-pub fn config_from_profile(profile: &serde_json::Value) -> ServiceConfig {
-    let url = profile["base_url"].as_str().unwrap_or("").to_string();
-    ServiceConfig {
-        base_url: if url.is_empty() {
-            let provider = profile["provider"].as_str().unwrap_or("");
-            match provider {
-                "omlx" => "http://localhost:8000".to_string(),
-                "ollama" => "http://localhost:11434".to_string(),
-                "openai" => "https://api.openai.com".to_string(),
-                "openrouter" => "https://openrouter.ai/api/v1".to_string(),
-                "anthropic" => "https://api.anthropic.com".to_string(),
-                "google" => "https://generativelanguage.googleapis.com".to_string(),
-                _ => String::new(),
-            }
-        } else {
-            url.trim_end_matches('/').to_string()
-        },
-        api_key: profile["api_key"].as_str().unwrap_or("").to_string(),
-        model: profile["model"].as_str().unwrap_or("").to_string(),
-        provider: profile["provider"].as_str().unwrap_or("").to_string(),
-        stt_api: profile["stt_api"].as_str().unwrap_or("whisper").to_string(),
-    }
-}
-
-fn empty_service_config() -> ServiceConfig {
-    ServiceConfig { base_url: String::new(), api_key: String::new(), model: String::new(), provider: String::new(), stt_api: "whisper".to_string() }
-}
+// Service resolution moved to fonos-core (issue #21); the unified
+// ServiceConfig lives in fonos_core::llm. These wrappers only add the
+// AppState config-lock handling.
+pub use fonos_core::llm::ServiceConfig;
+pub use fonos_core::services::service_from_profile as config_from_profile;
 
 /// Get connection info for a service by reading the active model profile.
 pub fn get_service_config(state: &AppState, service: &str) -> ServiceConfig {
-    let Ok(config) = state.config.lock() else { return empty_service_config(); };
-
-    let profile_id = match service {
-        "stt" => &config.stt_profile,
-        "tts" => &config.tts_profile,
-        _ => &config.llm_profile,
-    };
-
-    if profile_id.is_empty() { return empty_service_config(); }
-
-    config.model_profiles.iter()
-        .find(|p| p["id"].as_str() == Some(profile_id))
-        .map(config_from_profile)
-        .unwrap_or_else(empty_service_config)
+    match state.config.lock() {
+        Ok(config) => fonos_core::services::resolve_service(&config, service),
+        Err(_) => fonos_core::services::resolve_service(&Default::default(), service),
+    }
 }
 
 /// Get connection info for a specific model profile by its ID.
 pub fn get_service_config_for_profile(state: &AppState, profile_id: &str) -> ServiceConfig {
-    let Ok(config) = state.config.lock() else { return empty_service_config(); };
-
-    config.model_profiles.iter()
-        .find(|p| p["id"].as_str() == Some(profile_id))
-        .map(config_from_profile)
-        .unwrap_or_else(empty_service_config)
+    match state.config.lock() {
+        Ok(config) => fonos_core::services::resolve_profile(&config, profile_id),
+        Err(_) => fonos_core::services::resolve_profile(&Default::default(), profile_id),
+    }
 }
 
 /// Shared application state.

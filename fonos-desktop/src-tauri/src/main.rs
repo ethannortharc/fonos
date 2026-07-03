@@ -2,6 +2,7 @@
 
 mod audio;
 mod commands;
+mod error_surface;
 #[cfg(target_os = "macos")]
 mod hotkey;
 mod injection;
@@ -180,33 +181,53 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     let _ = handle.emit("float:processing", ());
                     match commands::llm::process_with_llm(state2, result.text, mode).await {
                         Ok(llm_result) => {
+                            let mut delivered = true;
                             if !llm_result.processed.is_empty() && llm_result.auto_paste {
-                                let _ = crate::injection::inject_text(&llm_result.processed);
-                                if llm_result.auto_press_enter {
-                                    std::thread::sleep(std::time::Duration::from_millis(50));
-                                    crate::injection::press_enter();
+                                let inj_cfg = {
+                                    let s: tauri::State<'_, commands::AppState> = handle.state();
+                                    let cfg = s.config.lock().unwrap().clone();
+                                    cfg
+                                };
+                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
+                                    Ok(_) => {
+                                        if llm_result.auto_press_enter {
+                                            std::thread::sleep(std::time::Duration::from_millis(50));
+                                            if let Err(e) = crate::injection::press_enter() {
+                                                eprintln!("fonos: press_enter failed: {e}");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        delivered = false;
+                                        let msg = format!("Injection failed: {e}");
+                                        crate::error_surface::emit_float_error(&handle, &msg);
+                                    }
                                 }
                             }
-                            let _ = handle.emit("float:stop", &llm_result.processed);
+                            if delivered {
+                                let _ = handle.emit("float:stop", &llm_result.processed);
+                            }
                         }
                         Err(e) => {
-                            eprintln!("fonos: LLM error: {e}");
-                            let _ = handle.emit("float:stop", "");
+                            crate::error_surface::emit_float_error(&handle, &format!("LLM processing failed: {e}"));
                         }
                     }
-                } else {
-                    // Raw mode — injection already handled in stop_recording
-                    let _ = handle.emit("float:stop", &result.text);
                 }
+                // Raw mode — stop_recording already injected and emitted
+                // float:stop (success) or float:error (injection failure).
+                // Re-emitting float:stop here would repaint the pill green
+                // over a just-shown injection error.
             } else {
                 let _ = handle.emit("float:stop", "");
             }
         }
         Err(e) => {
-            if !e.contains("not recording") {
-                eprintln!("fonos: stop error: {e}");
+            if e.contains("not recording") {
+                // Harmless start/stop race — keep the silent idle revert.
+                let _ = handle.emit("float:stop", "");
+            } else {
+                crate::error_surface::emit_float_error(&handle, &e);
             }
-            let _ = handle.emit("float:stop", "");
         }
     }
 }
@@ -357,6 +378,9 @@ fn main() {
             commands::dictation::stop_recording,
             commands::dictation::test_stt,
             commands::dictation::transcribe_file,
+            // Permission commands
+            commands::permissions::check_accessibility,
+            commands::permissions::open_settings_pane,
             // TTS commands
             commands::tts::synthesize_speech,
             commands::tts::generate_and_play,
@@ -446,6 +470,20 @@ fn main() {
                     let _ = panel.set_shadow(false);
                 }
                 // Main window starts hidden — user opens it via tray icon or dock click.
+                // First run: show + focus the main window immediately so the
+                // onboarding wizard is visible (mirrors the tray "Open Fonos" flow).
+                let first_run = {
+                    let state = app.state::<AppState>();
+                    let config = state.config.lock().unwrap();
+                    !config.has_completed_onboarding
+                };
+                if first_run {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                        let _ = w.set_focus();
+                    }
+                }
             }
 
             // 0. SIGUSR2 handler — toggle dictation from external scripts / window managers.
@@ -581,8 +619,7 @@ fn main() {
                                         if let Err(e) = commands::dictation::start_recording(
                                             handle.clone(), state, None
                                         ).await {
-                                            eprintln!("fonos: hotkey start error: {e}");
-                                            let _ = handle.emit("float:stop", "");
+                                            crate::error_surface::emit_float_error(&handle, &e);
                                         }
                                         return;
                                     }
@@ -646,32 +683,46 @@ fn main() {
                                                         if has_llm {
                                                             match commands::llm::process_with_llm(state2, result.text, mode).await {
                                                                 Ok(llm) => {
+                                                                    let mut delivered = true;
                                                                     if !llm.processed.is_empty() && llm.auto_paste {
-                                                                        let _ = crate::injection::inject_text(&llm.processed);
+                                                                        let inj_cfg = {
+                                                                            let s: tauri::State<'_, AppState> = h2.state();
+                                                                            let cfg = s.config.lock().unwrap().clone();
+                                                                            cfg
+                                                                        };
+                                                                        if let Err(e) = crate::injection::inject_text(&llm.processed, &inj_cfg) {
+                                                                            delivered = false;
+                                                                            let msg = format!("Injection failed: {e}");
+                                                                            crate::error_surface::emit_float_error(&h2, &msg);
+                                                                        }
                                                                     }
-                                                                    let _ = h2.emit("float:stop", &llm.processed);
+                                                                    if delivered {
+                                                                        let _ = h2.emit("float:stop", &llm.processed);
+                                                                    }
                                                                 }
                                                                 Err(e) => {
-                                                                    eprintln!("fonos: toggle LLM error: {e}");
-                                                                    let _ = h2.emit("float:stop", "");
+                                                                    crate::error_surface::emit_float_error(&h2, &format!("LLM processing failed: {e}"));
                                                                 }
                                                             }
-                                                        } else {
-                                                            let _ = h2.emit("float:stop", &result.text);
                                                         }
+                                                        // Raw mode — stop_recording already emitted
+                                                        // float:stop/float:error; don't repaint over it.
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    eprintln!("fonos: toggle stop error: {e}");
-                                                    let _ = h2.emit("float:stop", "");
+                                                    if e.contains("not recording") {
+                                                        // Harmless start/stop race — silent idle revert.
+                                                        let _ = h2.emit("float:stop", "");
+                                                    } else {
+                                                        crate::error_surface::emit_float_error(&h2, &e);
+                                                    }
                                                 }
                                             }
                                         } else {
                                             eprintln!("fonos: toggle → starting");
                                             let state: tauri::State<'_, AppState> = h2.state();
                                             if let Err(e) = commands::dictation::start_recording(h2.clone(), state, None).await {
-                                                eprintln!("fonos: toggle start error: {e}");
-                                                let _ = h2.emit("float:stop", "");
+                                                crate::error_surface::emit_float_error(&h2, &e);
                                             }
                                         }
                                     });
@@ -702,20 +753,35 @@ fn main() {
                                                         state2.clone(), result.text.clone(), mode.clone()
                                                     ).await {
                                                         Ok(llm_result) => {
-                                                            if !llm_result.processed.is_empty() {
-                                                                if llm_result.auto_paste {
-                                                                    let _ = crate::injection::inject_text(&llm_result.processed);
-                                                                    if llm_result.auto_press_enter {
-                                                                        std::thread::sleep(std::time::Duration::from_millis(50));
-                                                                        crate::injection::press_enter();
+                                                            let mut delivered = true;
+                                                            if !llm_result.processed.is_empty() && llm_result.auto_paste {
+                                                                let inj_cfg = {
+                                                                    let s: tauri::State<'_, AppState> = handle.state();
+                                                                    let cfg = s.config.lock().unwrap().clone();
+                                                                    cfg
+                                                                };
+                                                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
+                                                                    Ok(_) => {
+                                                                        if llm_result.auto_press_enter {
+                                                                            std::thread::sleep(std::time::Duration::from_millis(50));
+                                                                            if let Err(e) = crate::injection::press_enter() {
+                                                                                eprintln!("fonos: press_enter failed: {e}");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        delivered = false;
+                                                                        let msg = format!("Injection failed: {e}");
+                                                                        crate::error_surface::emit_float_error(&handle, &msg);
                                                                     }
                                                                 }
                                                             }
-                                                            let _ = handle.emit("float:stop", &llm_result.processed);
+                                                            if delivered {
+                                                                let _ = handle.emit("float:stop", &llm_result.processed);
+                                                            }
                                                         }
                                                         Err(e) => {
-                                                            eprintln!("fonos: hotkey LLM error: {e}");
-                                                            let _ = handle.emit("float:stop", "");
+                                                            crate::error_surface::emit_float_error(&handle, &format!("LLM processing failed: {e}"));
                                                         }
                                                     }
                                                 }
@@ -734,9 +800,11 @@ fn main() {
                                             }
                                         }
                                         Err(e) => {
-                                            let _ = handle.emit("float:stop", "");
-                                            if !e.contains("not recording") {
-                                                eprintln!("fonos: hotkey stop error: {e}");
+                                            if e.contains("not recording") {
+                                                // Harmless start/stop race — silent idle revert.
+                                                let _ = handle.emit("float:stop", "");
+                                            } else {
+                                                crate::error_surface::emit_float_error(&handle, &e);
                                             }
                                         }
                                     }
@@ -1226,6 +1294,24 @@ fn main() {
                     eprintln!("fonos: hotkey registration failed: {}", e);
                 }
 
+                // The CGEventTap that backs global hotkeys is installed on a
+                // background thread and silently no-ops without the Accessibility
+                // permission, so hm.start() can't report that failure directly.
+                // Probe AXIsProcessTrusted() as a proxy and surface a clickable
+                // error when it's missing. A short delay lets the float pill's
+                // event listener come up before we emit.
+                if !crate::injection::accessibility_trusted() {
+                    let acc_handle = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(1500));
+                        crate::error_surface::emit_float_error(
+                            &acc_handle,
+                            "Accessibility permission not granted — global hotkeys won't work. \
+                             Enable Fonos in System Settings > Privacy & Security > Accessibility.",
+                        );
+                    });
+                }
+
                 // Listen for hotkey config changes and reload bindings
                 let reload_handle = app.handle().clone();
                 let reload_hotkeys = hotkeys_arc;
@@ -1246,7 +1332,6 @@ fn main() {
             #[cfg(target_os = "linux")]
             {
                 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-                use tauri::Emitter;
 
                 let state = app.state::<AppState>();
                 let config = state.config.lock().unwrap();
@@ -1302,8 +1387,7 @@ fn main() {
                                             } else {
                                                 let state: tauri::State<'_, AppState> = handle.state();
                                                 if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                    eprintln!("fonos: linux start error: {e}");
-                                                    let _ = handle.emit("float:stop", "");
+                                                    crate::error_surface::emit_float_error(&handle, &e);
                                                 }
                                             }
                                         });
@@ -1315,8 +1399,7 @@ fn main() {
                                                 if !crate::commands::dictation::is_recording() {
                                                     let state: tauri::State<'_, AppState> = handle.state();
                                                     if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                        eprintln!("fonos: linux start error: {e}");
-                                                        let _ = handle.emit("float:stop", "");
+                                                        crate::error_surface::emit_float_error(&handle, &e);
                                                     }
                                                 }
                                             } else {
@@ -1342,7 +1425,6 @@ fn main() {
                 let reload_handle = app.handle().clone();
                 app.listen("hotkey:reload", move |_| {
                     use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-                    use tauri::Emitter;
 
                     let h = reload_handle.clone();
                     eprintln!("fonos: linux hotkey reload — re-registering");
@@ -1378,8 +1460,7 @@ fn main() {
                                             if !crate::commands::dictation::is_recording() {
                                                 let state: tauri::State<'_, AppState> = handle.state();
                                                 if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                    eprintln!("fonos: linux start error: {e}");
-                                                    let _ = handle.emit("float:stop", "");
+                                                    crate::error_surface::emit_float_error(&handle, &e);
                                                 }
                                             }
                                         }

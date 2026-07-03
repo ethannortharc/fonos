@@ -55,6 +55,17 @@ export interface AppConfig {
   // Quick transform
   hotkey_transform?: string;
   transform_mode?: string;
+  // Text injection
+  injection_strategy?: string;
+  injection_app_overrides?: InjectionAppOverride[];
+  // Onboarding — gates the first-run wizard
+  has_completed_onboarding?: boolean;
+}
+
+/** A per-app override for the text injection strategy. */
+export interface InjectionAppOverride {
+  app: string;
+  strategy: string;
 }
 
 /** A named model profile entry within AppConfig.model_profiles. */

@@ -116,7 +116,7 @@
   /* ── Result (success / error) ── */
   #result{display:none;align-items:center;gap:4px}
   #result-icon{font-size:10px;line-height:1}
-  #result-text{font-size:9px;font-family:-apple-system,sans-serif}
+  #result-text{font-size:9px;font-family:-apple-system,sans-serif;white-space:nowrap}
 
   #pill.success{background:rgba(26,25,23,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
   #pill.success #idle{display:none!important}
@@ -136,7 +136,7 @@
 <body>
 <div id="container">
   <div id="dropdown"></div>
-  <div id="pill" onclick="toggleMenu(event)">
+  <div id="pill" onclick="onPillClick(event)">
     <div id="idle">
       <span class="pill-dot"></span>
       <span id="pill-text">FONOS</span>
@@ -189,6 +189,9 @@ const BUILTIN_MODES=[
 let allModes=[...BUILTIN_MODES];
 let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null;
 let rollerIdx=0; // index into circular list, maps to center slot
+// Error state: while an error is showing, clicking the pill opens the
+// permission's System Settings pane (if any) instead of the mode menu.
+let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
 const S=window.devicePixelRatio||2;
 function sz(w,h){
@@ -204,6 +207,18 @@ function menuSz(){
   requestAnimationFrame(()=>{sz(160,PH+dd.offsetHeight+10);});
 }
 
+function onPillClick(e){
+  // While an error is showing, a click opens the relevant System Settings pane
+  // (when the error carries one) instead of toggling the mode menu.
+  if(errActive){
+    e.stopPropagation();
+    if(errPane&&typeof window.__TAURI_INTERNALS__!=='undefined'){
+      window.__TAURI_INTERNALS__.invoke('open_settings_pane',{pane:errPane}).catch(()=>{});
+    }
+    return;
+  }
+  toggleMenu(e);
+}
 function toggleMenu(e){
   if(isRec)return;
   e.stopPropagation();
@@ -312,7 +327,7 @@ function openSettings(){
 }
 
 function startRec(){
-  if(isRec)return;isRec=true;closeMenu();
+  if(isRec)return;isRec=true;closeMenu();clearErr();
   document.getElementById('pill').classList.add('recording');
   document.getElementById('rec-dur').textContent='0s';
   let t0=Date.now();
@@ -322,7 +337,7 @@ function startRec(){
   recSz();
 }
 function showProcessing(){
-  isRec=false;
+  isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   var p=document.getElementById('pill');
@@ -331,7 +346,7 @@ function showProcessing(){
   sz(110,PH);
 }
 function stopRec(text){
-  isRec=false;
+  isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   var p=document.getElementById('pill');
@@ -346,24 +361,69 @@ function stopRec(text){
     p.classList.add('error');
   }
   sz(90,PH);
-  setTimeout(()=>{
+  if(stopTm)clearTimeout(stopTm);
+  stopTm=setTimeout(()=>{
+    stopTm=null;
     p.classList.remove('success','error');
     idleSz();
   },1200);
 }
-function showError(msg){
-  // STT (or pipeline) failure — show it instead of leaving the pill spinning.
+function clearErr(){
+  errActive=false;errPane=null;
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  var t=document.getElementById('result-text');if(t)t.title='';
+}
+function showError(payload){
+  // Pipeline / permission failure. `payload` is either the structured JSON
+  // {message, pane} emitted by error_surface::emit_float_error, or a plain
+  // string (backward compatible). Show a short label in the narrow pill and
+  // keep the full message in console.warn + the title attribute. When a
+  // permission `pane` is present, the pill becomes clickable (see onPillClick).
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  // Cancel a pending stopRec revert so it can't cut this error display short.
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+
+  var full='',pane=null;
+  if(payload){
+    try{
+      var o=JSON.parse(payload);
+      if(o&&typeof o==='object'&&'message'in o){full=o.message||'';pane=o.pane||null;}
+      else{full=String(payload);}
+    }catch(_){full=String(payload);}
+  }
+  if(!full)full='Error';
+
+  // Truncate to ~48 chars for the pill; append the click hint when clickable.
+  var short=full.length>48?full.slice(0,47)+'…':full;
+  var disp=pane?short+' — click to open Settings':short;
+
   var p=document.getElementById('pill');
   p.classList.remove('recording','processing','success');
   document.getElementById('result-icon').textContent='✗';
-  document.getElementById('result-text').textContent='STT error';
+  var textEl=document.getElementById('result-text');
+  textEl.textContent=disp;
+  textEl.title=full; // full message on hover
   p.classList.add('error');
-  if(msg)console.error('fonos float: '+msg);
-  sz(96,PH);
-  setTimeout(()=>{p.classList.remove('error');idleSz();},2600);
+  console.warn('fonos float error: '+full);
+
+  errActive=true;errPane=pane;
+
+  // Size the pill to the displayed text so it never overflows (mirrors the
+  // sz()/recSz() resize pattern): ~5px/char at 9px + icon/padding overhead.
+  var w=Math.max(110,Math.min(440,Math.round(disp.length*5)+44));
+  sz(w,PH);
+
+  // Permission errors linger longer so they can be read and clicked.
+  var dur=pane?6000:2600;
+  errTimer=setTimeout(function(){
+    p.classList.remove('error');
+    clearErr();
+    idleSz();
+  },dur);
 }
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;

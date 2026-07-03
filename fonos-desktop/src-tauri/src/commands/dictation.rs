@@ -375,9 +375,10 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 // silently. The float pill shows the error and leaves processing
                 // state; the caller (hotkey / Dictation view) also gets the Err.
                 let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
-                eprintln!("fonos: {msg}");
                 if dictation_mode != "agent" {
-                    let _ = app.emit("float:error", &msg);
+                    crate::error_surface::emit_float_error(&app, &msg);
+                } else {
+                    eprintln!("fonos: {msg}");
                 }
                 return Err(msg);
             }
@@ -389,11 +390,22 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     // 4. Notify float window (stops the recording animation) — skip for agent mode
     eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
     if dictation_mode != "agent" {
-        let _ = app.emit("float:stop", &transcript);
-        // 5. Inject raw text only in raw mode (not agent, not LLM modes)
+        // 5. Inject raw text only in raw mode (not agent, not LLM modes).
+        // Injection runs BEFORE the success emit: on failure the pill must
+        // show only the error — a float:stop first would schedule the pill's
+        // revert-to-idle timer, which would cut the error display short.
+        let mut delivered = true;
         if dictation_mode == "raw" && !transcript.is_empty() {
             eprintln!("fonos: INJECTING raw text at cursor ({} chars)", transcript.len());
-            let _ = inject_text(&transcript);
+            let inj_cfg = state.config.lock().map(|c| c.clone()).unwrap_or_default();
+            if let Err(e) = inject_text(&transcript, &inj_cfg) {
+                delivered = false;
+                let msg = format!("Injection failed: {e}");
+                crate::error_surface::emit_float_error(&app, &msg);
+            }
+        }
+        if delivered {
+            let _ = app.emit("float:stop", &transcript);
         }
     } else {
         eprintln!("fonos: agent mode — skipping float:stop and inject");

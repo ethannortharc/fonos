@@ -457,6 +457,20 @@ pub fn search_entries(conn: &Connection, query: &str, limit: i64) -> Result<Vec<
         return search_entries_like(conn, normalized_query, limit);
     }
 
+    // The query is user text, not FTS5 syntax: apostrophes and stray operators
+    // (don't, "foo, foo-bar) would otherwise be parse errors. Quote each
+    // whitespace-separated token as an FTS5 string literal (implicit AND),
+    // treating `"` itself as a separator.
+    let fts_query = normalized_query
+        .replace('"', " ")
+        .split_whitespace()
+        .map(|token| format!("\"{token}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    if fts_query.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let mut stmt = conn.prepare(
         "SELECT e.id, e.created_at, e.source_type, e.role, e.mode,
                 e.raw_text, e.processed_text, e.container_id, e.audio_ref, e.metadata
@@ -469,7 +483,7 @@ pub fn search_entries(conn: &Connection, query: &str, limit: i64) -> Result<Vec<
     .map_err(|e| Error::Database(format!("search_entries prepare: {e}")))?;
 
     let rows = stmt
-        .query_map(params![normalized_query, limit], map_entry_row)
+        .query_map(params![fts_query, limit], map_entry_row)
         .map_err(|e| Error::Database(format!("search_entries query: {e}")))?;
 
     collect_rows(rows)

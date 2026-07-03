@@ -25,6 +25,19 @@ export async function hasMicrophone(): Promise<boolean> {
   return invoke<boolean>("has_microphone");
 }
 
+// ─── Permissions ──────────────────────────────────────────────────────────────
+
+/** Whether the app is trusted for Accessibility (hotkeys + text injection). */
+export async function checkAccessibility(): Promise<boolean> {
+  return invoke<boolean>("check_accessibility");
+}
+
+/** Open a System Settings privacy pane. Pane is one of:
+ *  "microphone" | "accessibility" | "speech_recognition" | "screen_recording". */
+export async function openSettingsPane(pane: string): Promise<void> {
+  return invoke<void>("open_settings_pane", { pane });
+}
+
 /** Start capturing audio from the microphone. */
 export async function startRecording(): Promise<void> {
   return invoke<void>("start_recording");

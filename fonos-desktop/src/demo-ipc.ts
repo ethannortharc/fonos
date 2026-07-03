@@ -82,6 +82,8 @@ const config = {
   meeting_stt_profile: "openrouter-gemini",
   meeting_llm_profile: "openrouter-gemini",
   meeting_audio_source: "mic+system",
+  // Demo mode is already "set up" — never trigger the first-run wizard.
+  has_completed_onboarding: true,
 };
 
 const modes = [
@@ -341,6 +343,10 @@ export function installDemoIpc() {
         return "0.1.0";
       case "has_microphone":
         return true;
+      case "check_accessibility":
+        return true;
+      case "open_settings_pane":
+        return null;
       case "start_recording":
         return null;
       case "stop_recording":
@@ -384,6 +390,15 @@ export function installDemoIpc() {
         return entries
           .filter((entry) => !sourceType || entry.source_type === sourceType)
           .slice(0, (payload.limit as number | undefined) ?? 20);
+      }
+      case "search_entries": {
+        const q = String(payload.query ?? "").toLowerCase();
+        if (!q) return [];
+        return entries
+          .filter((entry) =>
+            (entry.raw_text ?? "").toLowerCase().includes(q) ||
+            (entry.processed_text ?? "").toLowerCase().includes(q))
+          .slice(0, (payload.limit as number | undefined) ?? 50);
       }
       case "get_container_entries":
         return entries.filter((entry) => entry.container_id === payload.container_id);

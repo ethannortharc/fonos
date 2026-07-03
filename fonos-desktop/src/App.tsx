@@ -6,8 +6,11 @@ import Settings from "./views/Settings";
 import Recent from "./views/Recent";
 import Notes from "./views/Notes";
 import Meetings from "./views/Meetings";
+import Search from "./views/Search";
+import Onboarding, { isSttConfigured } from "./views/Onboarding";
+import { getConfig } from "./lib/api";
 
-type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings";
+type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings" | "search";
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   {
@@ -28,6 +31,16 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 8v4l3 3" />
         <circle cx="12" cy="12" r="10" />
+      </svg>
+    ),
+  },
+  {
+    id: "search",
+    label: "Search",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
     ),
   },
@@ -100,9 +113,28 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dictation");
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  // First-run wizard gate. Stays false while loading and in non-Tauri/demo
+  // environments (where getConfig throws) so the shell renders unchanged.
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  // Don't paint the shell until the gate is decided — otherwise a genuine
+  // first run flashes the full app for a frame before the wizard mounts.
+  const [gateReady, setGateReady] = useState(false);
 
   useEffect(() => {
     import("@tauri-apps/api/app").then((m) => m.getVersion()).then(setAppVersion).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => {
+        // Show the wizard only for genuinely-unconfigured first runs: the flag
+        // is unset AND there's no usable STT config. Existing installs that
+        // already configured models via Settings skip the wizard even with the
+        // flag unset; skipping still persists the flag.
+        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowOnboarding(true);
+      })
+      .catch(() => {})
+      .finally(() => setGateReady(true));
   }, []);
 
   // Listen for navigation events from float pill / tray
@@ -115,7 +147,7 @@ export default function App() {
           const tab = typeof event.payload === "string"
             ? event.payload.replace(/"/g, "") as Tab
             : null;
-          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings"].includes(tab)) {
+          if (tab && ["dictation", "voice", "recent", "stats", "settings", "notes", "meetings", "search"].includes(tab)) {
             setActiveTab(tab);
           }
         }));
@@ -125,6 +157,15 @@ export default function App() {
     })();
     return () => { cleanup.forEach((fn) => fn()); };
   }, []);
+
+  // First-run: render the wizard instead of the shell (after all hooks so the
+  // hook order stays stable across the loading → onboarding transition).
+  if (!gateReady) {
+    return <div className="h-screen bg-[#1a1917]" />;
+  }
+  if (showOnboarding) {
+    return <Onboarding onDone={() => setShowOnboarding(false)} />;
+  }
 
   return (
     <div className="flex flex-col h-screen select-none bg-[#1a1917]">
@@ -217,6 +258,7 @@ export default function App() {
           {activeTab === "recent" && <Recent />}
           {activeTab === "notes" && <Notes />}
           {activeTab === "meetings" && <Meetings />}
+          {activeTab === "search" && <Search onNavigate={setActiveTab} />}
         </div>
       </div>
     </div>

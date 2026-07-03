@@ -61,7 +61,7 @@ unsafe fn simulate_cmd_key(key_code: u16) {
 
 /// Get the name of the frontmost application.
 #[cfg(target_os = "macos")]
-fn frontmost_app() -> String {
+pub(crate) fn frontmost_app() -> String {
     Command::new("osascript")
         .args(["-e", "tell application \"System Events\" to get name of first application process whose frontmost is true"])
         .output()
@@ -70,7 +70,7 @@ fn frontmost_app() -> String {
 }
 
 #[cfg(target_os = "linux")]
-fn frontmost_app() -> String {
+pub(crate) fn frontmost_app() -> String {
     Command::new("xdotool").args(["getactivewindow", "getwindowname"])
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
@@ -78,7 +78,7 @@ fn frontmost_app() -> String {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn frontmost_app() -> String { String::new() }
+pub(crate) fn frontmost_app() -> String { String::new() }
 
 /// Activate a named application (bring it to front).
 #[cfg(target_os = "macos")]

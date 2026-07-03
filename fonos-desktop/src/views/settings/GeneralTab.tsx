@@ -1,11 +1,16 @@
 // General settings — microphone selection + speech recognition language.
 
 import { useState, useEffect } from "react";
-import type { AppConfig } from "../../types";
-import { listAudioInputs } from "../../lib/api";
+import type { AppConfig, InjectionAppOverride } from "../../types";
 import { LANGUAGES, TARGET_LANGUAGES } from "./constants";
+import MicrophonePicker from "./MicrophonePicker";
 
 const FREQUENT_CODES = ["auto", "Chinese", "English", "Japanese", "Korean", "Cantonese", "French", "Spanish"];
+
+const INJECTION_STRATEGIES = [
+  { value: "paste", label: "Paste (fast, uses clipboard briefly)", short: "Paste" },
+  { value: "type", label: "Type (slower, never touches clipboard)", short: "Type" },
+];
 
 export default function GeneralTab({
   config,
@@ -14,18 +19,48 @@ export default function GeneralTab({
   config: AppConfig;
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
-  const [audioInputs, setAudioInputs] = useState<string[]>([]);
   const [showAllLangs, setShowAllLangs] = useState(false);
   const [showAllTranslate, setShowAllTranslate] = useState(false);
+  const [overrides, setOverrides] = useState<InjectionAppOverride[]>(config.injection_app_overrides ?? []);
 
   useEffect(() => {
-    listAudioInputs().then(setAudioInputs).catch(() => {});
-  }, []);
+    // Sync from config but keep unsaved local rows (blank app names are
+    // filtered out on save) so an in-progress override isn't wiped mid-edit.
+    setOverrides((prev) => {
+      const saved = config.injection_app_overrides ?? [];
+      const blanks = prev.filter((r) => r.app.trim() === "");
+      return [...saved, ...blanks];
+    });
+  }, [config.injection_app_overrides]);
 
   const sttCurrent = config.stt_language || "auto";
+  const injectionStrategy = config.injection_strategy ?? "paste";
 
   const selectSttLang = (code: string) => {
     onSave({ stt_language: code });
+  };
+
+  const persistOverrides = (rows: InjectionAppOverride[]) => {
+    setOverrides(rows);
+    onSave({ injection_app_overrides: rows.filter((r) => r.app.trim() !== "") });
+  };
+
+  const updateOverride = (i: number, patch: Partial<InjectionAppOverride>) => {
+    persistOverrides(overrides.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+
+  // Typing in the app field updates local state only; persistence happens on
+  // blur so config.json isn't rewritten on every keystroke.
+  const updateOverrideLocal = (i: number, patch: Partial<InjectionAppOverride>) => {
+    setOverrides(overrides.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+
+  const removeOverride = (i: number) => {
+    persistOverrides(overrides.filter((_, idx) => idx !== i));
+  };
+
+  const addOverride = () => {
+    setOverrides([...overrides, { app: "", strategy: "paste" }]);
   };
 
   const sttFrequent = LANGUAGES.filter((l) => FREQUENT_CODES.includes(l.code));
@@ -35,54 +70,10 @@ export default function GeneralTab({
   return (
     <div className="flex flex-col gap-5">
       {/* ── Microphone ── */}
-      <div className="flex flex-col gap-2.5">
-        <div>
-          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Microphone</div>
-          <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            Auto Detect finds the best available mic (prefers external over built-in).
-            Select a specific device to lock to it.
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          {audioInputs.map((name) => {
-            const selected = (config.audio_input_device || "auto") === name;
-            const isAuto = name === "auto";
-            return (
-              <button
-                key={name}
-                onClick={() => onSave({ audio_input_device: name })}
-                className={[
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-[11px]",
-                  selected
-                    ? "bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)]"
-                    : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)]",
-                ].join(" ")}
-              >
-                <div className={[
-                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                  selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
-                ].join(" ")} />
-                <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
-                  {isAuto ? "Auto Detect" : name}
-                </span>
-                {isAuto && (
-                  <span className="text-[8px] text-[rgba(255,255,255,0.15)] ml-auto">
-                    prefers external
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <button
-          onClick={() => listAudioInputs().then(setAudioInputs).catch(() => {})}
-          className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors self-start"
-        >
-          Refresh Devices
-        </button>
-      </div>
+      <MicrophonePicker
+        value={config.audio_input_device}
+        onSelect={(name) => onSave({ audio_input_device: name })}
+      />
 
       {/* Divider */}
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
@@ -183,6 +174,94 @@ export default function GeneralTab({
             </>
           );
         })()}
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
+      {/* ── Text insertion ── */}
+      <div className="flex flex-col gap-2.5">
+        <div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Text insertion</div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
+            How dictated text is inserted into the active app.
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          {INJECTION_STRATEGIES.map((opt) => {
+            const selected = injectionStrategy === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onSave({ injection_strategy: opt.value })}
+                className={[
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-[11px]",
+                  selected
+                    ? "bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)]"
+                    : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)]",
+                ].join(" ")}
+              >
+                <div className={[
+                  "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
+                ].join(" ")} />
+                <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
+                  {opt.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          {overrides.map((row, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={row.app}
+                onChange={(e) => updateOverrideLocal(i, { app: e.target.value })}
+                onBlur={() => persistOverrides(overrides)}
+                placeholder="e.g. Terminal"
+                className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.7)] placeholder:text-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[rgba(245,158,11,0.25)]"
+              />
+              {INJECTION_STRATEGIES.map((opt) => {
+                const selected = (row.strategy || "paste") === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => updateOverride(i, { strategy: opt.value })}
+                    className={[
+                      "px-2.5 py-2 rounded-lg text-[10px] transition-all flex-shrink-0",
+                      selected
+                        ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24] font-medium"
+                        : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:border-[rgba(255,255,255,0.08)]",
+                    ].join(" ")}
+                  >
+                    {opt.short}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => removeOverride(i)}
+                className="px-2 py-2 rounded-lg text-[13px] leading-none text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] transition-colors flex-shrink-0"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          <button
+            onClick={addOverride}
+            className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start"
+          >
+            Add app override
+          </button>
+        </div>
+
+        <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
+          Overrides match the frontmost app's name (first match wins).
+        </div>
       </div>
     </div>
   );

@@ -302,6 +302,53 @@ export default function Dictation() {
     return () => { if (durationRef.current) clearInterval(durationRef.current); };
   }, [isRecording]);
 
+  // Surface background pipeline/permission errors (hotkey-driven flows that
+  // bypass this view's own try/catch) into the activity feed. The payload is
+  // the structured {message, pane} JSON from error_surface::emit_float_error,
+  // or a plain string (backward compatible).
+  useEffect(() => {
+    const cleanup: (() => void)[] = [];
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        cleanup.push(await listen<string>("float:error", (event) => {
+          const raw = typeof event.payload === "string" ? event.payload : String(event.payload ?? "");
+          let message = raw;
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object" && "message" in parsed) {
+              message = (parsed as { message?: string }).message ?? raw;
+            }
+          } catch {
+            // Plain-string payload — use it as-is.
+          }
+          if (!message) return;
+          setActivity((prev) => {
+            // Best-effort dedup: skip if the most recent entry is an identical
+            // error added within the last 1.5s (e.g. the in-view catch below
+            // already recorded it). Errors with differing text still appear.
+            const last = prev[prev.length - 1];
+            if (last && last.type === "error" && last.content === message &&
+                Date.now() - last.timestamp.getTime() < 1500) {
+              return prev;
+            }
+            return [...prev, {
+              id: `${Date.now()}-fe-${Math.random()}`,
+              timestamp: new Date(),
+              type: "error" as const,
+              icon: <AlertIcon size={12} />,
+              label: "Error",
+              content: message,
+            }];
+          });
+        }));
+      } catch {
+        // Not running under Tauri.
+      }
+    })();
+    return () => { cleanup.forEach((fn) => fn()); };
+  }, []);
+
   // Select a notebook for note-mode dictation: switches mode to "note"
   const handleSelectNotebook = useCallback(async (id: number | null) => {
     setSelectedNotebookId(id);

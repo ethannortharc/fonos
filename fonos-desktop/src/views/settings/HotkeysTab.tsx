@@ -10,7 +10,7 @@ import type { AppConfig } from "../../types";
 
 // ─── Hotkey capture input ────────────────────────────────────────────────────
 
-function HotkeyInput({ value, onChange, placeholder }: {
+export function HotkeyInput({ value, onChange, placeholder }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   const [capturing, setCapturing] = useState(false);

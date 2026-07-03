@@ -16,6 +16,7 @@ export interface AppConfig {
   audio_input_device: string;
   audio_output_device: string;
   show_floating_indicator: boolean;
+  warmup_enabled?: boolean;
   stt_language: string;
   model_profiles: ModelProfile[];
   stt_profile: string;
@@ -322,4 +323,23 @@ export interface SkillParamInfo {
   description: string;
   required: boolean;
   default_value: string | null;
+}
+
+/** Mirrors fonos_core::stats::LatencyModelStat */
+export interface LatencyModelStat {
+  model: string;
+  count: number;
+  p50_ms: number;
+  p95_ms: number;
+}
+
+/** Mirrors fonos_core::stats::LatencyStats */
+export interface LatencyStats {
+  count: number;
+  p50_ms: number;
+  p95_ms: number;
+  avg_ms: number;
+  min_ms: number;
+  max_ms: number;
+  by_model: LatencyModelStat[];
 }

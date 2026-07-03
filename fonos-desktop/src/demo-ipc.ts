@@ -58,6 +58,7 @@ const config = {
   audio_input_device: "MacBook Pro Microphone",
   audio_output_device: "System Default",
   show_floating_indicator: true,
+  warmup_enabled: true,
   stt_language: "auto",
   model_profiles: modelProfiles,
   stt_profile: "openai-gpt-4o-mini-transcribe",
@@ -417,6 +418,19 @@ export function installDemoIpc() {
       case "export_meeting_md":
       case "export_meeting_json":
         return "/tmp/fonos-demo-export";
+      case "get_dictation_latency":
+        return {
+          count: 42,
+          p50_ms: 640,
+          p95_ms: 1980,
+          avg_ms: 780,
+          min_ms: 310,
+          max_ms: 2400,
+          by_model: [
+            { model: "Qwen3-ASR-1.7B-bf16", count: 31, p50_ms: 580, p95_ms: 1400 },
+            { model: "gpt-4o-mini-transcribe", count: 11, p50_ms: 910, p95_ms: 2400 },
+          ],
+        };
       case "get_stats":
         return dailyStats;
       case "get_today":

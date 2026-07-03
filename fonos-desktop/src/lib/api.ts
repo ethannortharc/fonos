@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  LatencyStats,
   AgentResult,
   AppConfig,
   DailyStat,
@@ -245,6 +246,11 @@ export async function getStats(
 }
 
 /** Get today's aggregated summary. */
+/** End-to-end dictation latency percentiles over [from, to] (YYYY-MM-DD). */
+export async function getDictationLatency(from: string, to: string): Promise<LatencyStats> {
+  return invoke<LatencyStats>("get_dictation_latency", { date_from: from, date_to: to });
+}
+
 export async function getToday(): Promise<TodaySummary> {
   return invoke<TodaySummary>("get_today");
 }

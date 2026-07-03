@@ -164,6 +164,7 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
     use tauri::Emitter;
     let state: tauri::State<'_, commands::AppState> = handle.state();
     let state2: tauri::State<'_, commands::AppState> = handle.state();
+    let dictation_t0 = std::time::Instant::now();
     match commands::dictation::stop_recording(handle.clone(), state, None).await {
         Ok(result) => {
             if !result.text.is_empty() {
@@ -179,7 +180,7 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     // stop_recording already left the pill in the processing
                     // state for LLM modes; just run the LLM and emit the final
                     // float:stop/float:error below.
-                    match commands::llm::process_with_llm(state2, result.text, mode).await {
+                    match commands::llm::process_with_llm(state2, result.text, mode.clone()).await {
                         Ok(llm_result) => {
                             let mut delivered = true;
                             if !llm_result.processed.is_empty() && llm_result.auto_paste {
@@ -206,6 +207,19 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                             }
                             if delivered {
                                 let _ = handle.emit("float:stop", &llm_result.processed);
+                                // End-to-end dictation latency (key release → delivered), issue #4.
+                                {
+                                    let db_arc = {
+                                        let s: tauri::State<AppState> = handle.state();
+                                        s.db.clone()
+                                    };
+                                    let guard = db_arc.lock();
+                                    if let Ok(db) = guard {
+                                        let _ = fonos_core::stats::record_dictation_latency(
+                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                        );
+                                    }
+                                }
                             }
                         }
                         Err(e) => {
@@ -415,6 +429,7 @@ fn main() {
             commands::stats::get_stats,
             commands::stats::get_history,
             commands::stats::get_today,
+            commands::stats::get_dictation_latency,
             // Agent commands
             commands::agent::agent_process,
             commands::agent::agent_reset,
@@ -667,6 +682,7 @@ fn main() {
                                             eprintln!("fonos: toggle → stopping");
                                             let state: tauri::State<'_, AppState> = h2.state();
                                             let state2: tauri::State<'_, AppState> = h2.state();
+                                            let dictation_t0 = std::time::Instant::now();
                                             match commands::dictation::stop_recording(h2.clone(), state, None).await {
                                                 Ok(result) => {
                                                     if result.text.is_empty() {
@@ -681,7 +697,7 @@ fn main() {
                                                             all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
                                                         };
                                                         if has_llm {
-                                                            match commands::llm::process_with_llm(state2, result.text, mode).await {
+                                                            match commands::llm::process_with_llm(state2, result.text, mode.clone()).await {
                                                                 Ok(llm) => {
                                                                     let mut delivered = true;
                                                                     if !llm.processed.is_empty() && llm.auto_paste {
@@ -698,6 +714,19 @@ fn main() {
                                                                     }
                                                                     if delivered {
                                                                         let _ = h2.emit("float:stop", &llm.processed);
+                                                                        // End-to-end dictation latency (key release → delivered), issue #4.
+                                                                        {
+                                                                            let db_arc = {
+                                                                                let s: tauri::State<AppState> = h2.state();
+                                                                                s.db.clone()
+                                                                            };
+                                                                            let guard = db_arc.lock();
+                                                                            if let Ok(db) = guard {
+                                                                                let _ = fonos_core::stats::record_dictation_latency(
+                                                                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                                                                );
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                                 Err(e) => {
@@ -733,6 +762,7 @@ fn main() {
                                 {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let state2: tauri::State<'_, AppState> = handle.state();
+                                    let dictation_t0 = std::time::Instant::now();
                                     match commands::dictation::stop_recording(
                                         handle.clone(), state, None
                                     ).await {
@@ -778,6 +808,19 @@ fn main() {
                                                             }
                                                             if delivered {
                                                                 let _ = handle.emit("float:stop", &llm_result.processed);
+                                                                // End-to-end dictation latency (key release → delivered), issue #4.
+                                                                {
+                                                                    let db_arc = {
+                                                                        let s: tauri::State<AppState> = handle.state();
+                                                                        s.db.clone()
+                                                                    };
+                                                                    let guard = db_arc.lock();
+                                                                    if let Ok(db) = guard {
+                                                                        let _ = fonos_core::stats::record_dictation_latency(
+                                                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                                                        );
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                         Err(e) => {

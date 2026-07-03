@@ -44,6 +44,9 @@ pub struct AppConfig {
     pub audio_output_device: String,
     /// Whether to show the floating recording indicator pill.
     pub show_floating_indicator: bool,
+    /// Ping the configured local STT/LLM backend when recording starts so the
+    /// first capture after idle doesn't pay a model cold start (issue #4).
+    pub warmup_enabled: bool,
     /// STT language hint (BCP-47 tag or `"auto"`).
     pub stt_language: String,
     /// Named model profiles: JSON array of `{id, name, provider, api_key, model, base_url, capabilities[]}`.
@@ -156,6 +159,7 @@ impl Default for AppConfig {
             audio_input_device: "auto".to_string(),
             audio_output_device: "default".to_string(),
             show_floating_indicator: true,
+            warmup_enabled: true,
             stt_language: "auto".to_string(),
             model_profiles: vec![],
             stt_profile: String::new(),

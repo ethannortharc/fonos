@@ -179,6 +179,31 @@ export default function GeneralTab({
       {/* Divider */}
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
 
+      {/* ── Model warm-up ── */}
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Model warm-up</div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
+            Ping local STT/LLM backends when recording starts, so the first
+            dictation after idle doesn't pay a model cold start.
+          </div>
+        </div>
+        <button
+          onClick={() => onSave({ warmup_enabled: !(config.warmup_enabled ?? true) })}
+          className={[
+            "px-2.5 py-1.5 rounded-lg text-[10px] transition-all flex-shrink-0",
+            (config.warmup_enabled ?? true)
+              ? "bg-[rgba(74,222,128,0.1)] border border-[rgba(74,222,128,0.2)] text-[#4ade80]"
+              : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.3)]",
+          ].join(" ")}
+        >
+          {(config.warmup_enabled ?? true) ? "Enabled" : "Disabled"}
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
       {/* ── Text insertion ── */}
       <div className="flex flex-col gap-2.5">
         <div>

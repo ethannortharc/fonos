@@ -43,23 +43,28 @@ pub async fn create_listen_item(
         return Err("No text selected".to_string());
     }
 
-    // 1. Process per the configured mode (falls back to the raw text when the
-    //    mode has no LLM step).
-    let processed = if mode.system.is_some() || mode.user_template.is_some() {
-        process_text(text, mode, llm, None, translate_target)
-            .await
-            .map_err(|e| format!("Listen processing failed: {e}"))?
-            .text
-    } else {
-        text.to_string()
-    };
-    let processed = processed.trim().to_string();
+    // 1+2. Processing and title run in parallel (the title works fine off the
+    //    raw text and this removes a serial LLM round-trip from the latency).
+    let has_llm = mode.system.is_some() || mode.user_template.is_some();
+    let title_prompt = title_mode();
+    let (processed_res, title_res) = tokio::join!(
+        async {
+            if has_llm {
+                process_text(text, mode, llm, None, translate_target)
+                    .await
+                    .map(|r| r.text)
+                    .map_err(|e| format!("Listen processing failed: {e}"))
+            } else {
+                Ok(text.to_string())
+            }
+        },
+        process_text(text, &title_prompt, llm, None, "")
+    );
+    let processed = processed_res?.trim().to_string();
     if processed.is_empty() {
         return Err("Listen processing produced no text".to_string());
     }
-
-    // 2. Title: one small LLM call; any failure falls back to a text prefix.
-    let title = match process_text(&processed, &title_mode(), llm, None, "").await {
+    let title = match title_res {
         Ok(resp) if !resp.text.trim().is_empty() => clip(resp.text.trim(), 60),
         _ => fallback_title(&processed),
     };
@@ -194,13 +199,13 @@ pub fn wav_duration_secs(wav: &[u8]) -> Option<f64> {
     Some(parsed.data.len() as f64 / byte_rate)
 }
 
-struct ParsedWav<'a> {
-    fmt: &'a [u8],
-    data: &'a [u8],
+pub(crate) struct ParsedWav<'a> {
+    pub(crate) fmt: &'a [u8],
+    pub(crate) data: &'a [u8],
 }
 
 /// Minimal RIFF walk: locate the `fmt ` and `data` chunks.
-fn parse_wav(bytes: &[u8]) -> Result<ParsedWav<'_>, String> {
+pub(crate) fn parse_wav(bytes: &[u8]) -> Result<ParsedWav<'_>, String> {
     if bytes.len() < 12 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err("not a WAV file".to_string());
     }

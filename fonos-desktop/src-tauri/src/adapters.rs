@@ -83,31 +83,57 @@ impl TurnSink for PillTurnSink {
     }
 }
 
-/// Plays WAVs through the shared output device, returning when playback has
-/// (by duration) completed. Uses the WAV header duration rather than holding
-/// the playback lock, so pause/stop stay responsive.
-pub struct PlaybackAudioOut(
-    pub std::sync::Arc<std::sync::Mutex<Option<crate::audio::playback::AudioPlayback>>>,
-);
+/// Streams synthesized PCM straight into the shared output device: audio is
+/// audible while later sentences are still being generated. `finish()` polls
+/// the queue without holding the playback lock, so pause/stop stay live.
+pub struct PlaybackAudioOut {
+    playback: std::sync::Arc<std::sync::Mutex<Option<crate::audio::playback::AudioPlayback>>>,
+    format: Mutex<(u32, u16)>,
+}
+
+impl PlaybackAudioOut {
+    /// Wrap the shared playback slot from `AppState`.
+    pub fn new(
+        playback: std::sync::Arc<std::sync::Mutex<Option<crate::audio::playback::AudioPlayback>>>,
+    ) -> Self {
+        Self { playback, format: Mutex::new((16000, 1)) }
+    }
+}
+
+impl fonos_core::tts::PcmSink for PlaybackAudioOut {
+    fn begin(&self, sample_rate: u32, channels: u16) -> Result<(), String> {
+        *self.format.lock().unwrap() = (sample_rate, channels);
+        let mut guard = self.playback.lock().map_err(|e| e.to_string())?;
+        if guard.is_none() {
+            *guard =
+                Some(crate::audio::playback::AudioPlayback::new().map_err(|e| e.to_string())?);
+        }
+        Ok(())
+    }
+
+    fn push(&self, pcm: &[u8]) -> Result<(), String> {
+        let (rate, channels) = *self.format.lock().unwrap();
+        let guard = self.playback.lock().map_err(|e| e.to_string())?;
+        guard
+            .as_ref()
+            .ok_or("playback not initialized")?
+            .append_pcm(rate, channels, pcm)
+            .map_err(|e| e.to_string())
+    }
+}
 
 #[async_trait::async_trait]
 impl AudioOut for PlaybackAudioOut {
-    async fn play_wav(&self, wav: Vec<u8>) -> Result<(), String> {
-        let duration = fonos_core::listen::wav_duration_secs(&wav).unwrap_or(0.0);
-        {
-            let mut guard = self.0.lock().map_err(|e| e.to_string())?;
-            if guard.is_none() {
-                *guard = Some(
-                    crate::audio::playback::AudioPlayback::new().map_err(|e| e.to_string())?,
-                );
+    async fn finish(&self) -> Result<(), String> {
+        loop {
+            let empty = {
+                let guard = self.playback.lock().map_err(|e| e.to_string())?;
+                guard.as_ref().map(|p| p.queue_empty()).unwrap_or(true)
+            };
+            if empty {
+                return Ok(());
             }
-            guard
-                .as_ref()
-                .unwrap()
-                .play_wav(wav)
-                .map_err(|e| e.to_string())?;
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
         }
-        tokio::time::sleep(std::time::Duration::from_secs_f64(duration + 0.15)).await;
-        Ok(())
     }
 }

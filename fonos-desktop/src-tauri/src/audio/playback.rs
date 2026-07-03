@@ -137,6 +137,28 @@ impl AudioPlayback {
     pub fn state(&self) -> PlaybackState {
         self.state.lock().unwrap().clone()
     }
+
+    /// Append raw 16-bit LE PCM frames to the playback queue (does NOT clear
+    /// previously queued audio) and make sure the sink is playing. Used by
+    /// the streaming TTS path.
+    pub fn append_pcm(&self, sample_rate: u32, channels: u16, pcm: &[u8]) -> Result<(), PlaybackError> {
+        let samples: Vec<i16> = pcm
+            .chunks_exact(2)
+            .map(|b| i16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        let source = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+        let inner = self.inner.lock().unwrap();
+        inner.sink.append(source);
+        inner.sink.play();
+        let mut state = self.state.lock().unwrap();
+        *state = PlaybackState::Playing;
+        Ok(())
+    }
+
+    /// Whether the playback queue has drained.
+    pub fn queue_empty(&self) -> bool {
+        self.inner.lock().unwrap().sink.empty()
+    }
 }
 
 #[cfg(test)]

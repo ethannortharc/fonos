@@ -210,6 +210,11 @@ export default function History({
 
   const handleDelete = async (id: number) => {
     try {
+      // If the deleted item is a listen entry it may be playing right now.
+      const victim = entries.find((e) => e.id === id) ?? results.find((e) => e.id === id);
+      if (victim?.source_type === "listen") {
+        stopPlayback().catch(() => {});
+      }
       await deleteEntry(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
       setResults((prev) => prev.filter((e) => e.id !== id));

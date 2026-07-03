@@ -3,10 +3,24 @@
 //! lives in fonos-core; this module resolves config and provides adapters.
 
 use super::AppState;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+
+/// One conversation turn at a time; hotkey autorepeat and double-taps are
+/// dropped while a turn is in flight.
+static TURN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Key-up entry point: stop recording, transcribe, run one conversation turn.
 pub async fn run_sts_turn(app: tauri::AppHandle) -> Result<String, String> {
+    if TURN_IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        return Err("conversation turn already running".to_string());
+    }
+    let result = run_sts_turn_inner(app).await;
+    TURN_IN_FLIGHT.store(false, Ordering::SeqCst);
+    result
+}
+
+async fn run_sts_turn_inner(app: tauri::AppHandle) -> Result<String, String> {
     // Agent mode override: no injection, no float:stop — the TurnSink owns
     // the pill lifecycle from here (stop_recording already emitted
     // float:processing).
@@ -70,7 +84,7 @@ pub async fn run_sts_turn(app: tauri::AppHandle) -> Result<String, String> {
     ];
 
     let tts = fonos_core::tts::HttpTts { service: tts_svc, voice, speed: 1.0 };
-    let audio = crate::adapters::PlaybackAudioOut(state.audio_playback.clone());
+    let audio = crate::adapters::PlaybackAudioOut::new(state.audio_playback.clone());
 
     let mut session = state.sts_session.lock().await;
     session.max_turns = max_turns;

@@ -11,8 +11,7 @@
 //! no new code, different stage configs.
 
 use crate::error_class::{classify_error, SurfacedError};
-use crate::listen::split_for_tts;
-use crate::tts::TtsEngine;
+use crate::tts::{PcmSink, TtsEngine};
 
 /// Typed per-turn notifications for renderers.
 #[derive(Debug, Clone, PartialEq)]
@@ -37,11 +36,12 @@ pub trait TurnSink: Send + Sync {
     fn emit(&self, event: TurnEvent);
 }
 
-/// Speaker port: play one complete WAV and return when playback is done.
+/// Speaker port: receives streamed PCM (via the [`PcmSink`] supertrait) and
+/// can be awaited until everything queued has actually been played.
 #[async_trait::async_trait]
-pub trait AudioOut: Send + Sync {
-    /// Play `wav` to completion.
-    async fn play_wav(&self, wav: Vec<u8>) -> Result<(), String>;
+pub trait AudioOut: PcmSink {
+    /// Block until all pushed audio has finished playing.
+    async fn finish(&self) -> Result<(), String>;
 }
 
 /// One composable text-processing step in the pipeline.
@@ -121,9 +121,6 @@ pub struct StsSession {
     pub max_turns: usize,
 }
 
-/// Max characters per synthesized sentence chunk in conversation replies.
-pub const STS_CHUNK_CHARS: usize = 300;
-
 /// Run one conversation turn.
 ///
 /// Emits exactly one terminal event (`TurnDone` or `Failed`). Synthesis and
@@ -164,35 +161,17 @@ pub async fn run_turn(
     }
     sink.emit(TurnEvent::Reply(reply.clone()));
 
-    // Pipelined speak: synthesize chunk n+1 while chunk n plays.
-    let chunks = split_for_tts(&reply, STS_CHUNK_CHARS);
+    // Streamed speak: TTS PCM flows straight into the speaker as it is
+    // generated — playback starts after the first synthesized sentence, not
+    // after the whole reply.
     sink.emit(TurnEvent::SpeakingStarted);
-    let mut pending = match tts.synthesize(&chunks[0]).await {
-        Ok(w) => w,
-        Err(e) => {
-            let e = format!("TTS failed: {e}");
-            sink.emit(TurnEvent::Failed(classify_error(&e)));
-            return Err(e);
-        }
-    };
-    for next_chunk in chunks.iter().skip(1) {
-        let (played, synthesized) =
-            tokio::join!(audio.play_wav(std::mem::take(&mut pending)), tts.synthesize(next_chunk));
-        if let Err(e) = played {
-            let e = format!("Playback failed: {e}");
-            sink.emit(TurnEvent::Failed(classify_error(&e)));
-            return Err(e);
-        }
-        match synthesized {
-            Ok(w) => pending = w,
-            Err(e) => {
-                let e = format!("TTS failed: {e}");
-                sink.emit(TurnEvent::Failed(classify_error(&e)));
-                return Err(e);
-            }
-        }
+    let pcm_sink: &dyn PcmSink = audio;
+    if let Err(e) = tts.synthesize_stream(&reply, pcm_sink).await {
+        let e = format!("TTS failed: {e}");
+        sink.emit(TurnEvent::Failed(classify_error(&e)));
+        return Err(e);
     }
-    if let Err(e) = audio.play_wav(pending).await {
+    if let Err(e) = audio.finish().await {
         let e = format!("Playback failed: {e}");
         sink.emit(TurnEvent::Failed(classify_error(&e)));
         return Err(e);
@@ -252,12 +231,28 @@ mod tests {
             self.0.lock().unwrap().push(text.to_string());
             Ok(text.as_bytes().to_vec())
         }
+        async fn synthesize_stream(&self, text: &str, sink: &dyn PcmSink) -> Result<(), String> {
+            self.0.lock().unwrap().push(text.to_string());
+            sink.begin(16000, 1)?;
+            sink.push(text.as_bytes())
+        }
     }
+    /// Records the streamed lifecycle: begin(fmt) → pcm… → finish.
     struct FakeAudio(Mutex<Vec<String>>);
+    impl PcmSink for FakeAudio {
+        fn begin(&self, rate: u32, ch: u16) -> Result<(), String> {
+            self.0.lock().unwrap().push(format!("begin {rate}/{ch}"));
+            Ok(())
+        }
+        fn push(&self, pcm: &[u8]) -> Result<(), String> {
+            self.0.lock().unwrap().push(format!("pcm:{}", String::from_utf8_lossy(pcm)));
+            Ok(())
+        }
+    }
     #[async_trait::async_trait]
     impl AudioOut for FakeAudio {
-        async fn play_wav(&self, wav: Vec<u8>) -> Result<(), String> {
-            self.0.lock().unwrap().push(String::from_utf8_lossy(&wav).into_owned());
+        async fn finish(&self) -> Result<(), String> {
+            self.0.lock().unwrap().push("finish".into());
             Ok(())
         }
     }
@@ -303,15 +298,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn long_replies_are_chunked_and_played_in_order() {
+    async fn audio_lifecycle_is_begin_pcm_finish() {
         let (sink, tts, audio) = ports();
         let mut session = StsSession::default();
-        let long = "First sentence. ".repeat(40); // >> STS_CHUNK_CHARS
-        let stages: Vec<Box<dyn TextStage>> = vec![Box::new(SuffixStage(&""))];
-        let _ = run_turn(&mut session, long.clone(), &stages, &tts, &audio, &sink).await.unwrap();
-        let played = audio.0.lock().unwrap();
-        assert!(played.len() >= 2, "expected chunked playback, got {}", played.len());
-        assert_eq!(played.join(" ").split_whitespace().count(), long.trim().split_whitespace().count());
+        let stages: Vec<Box<dyn TextStage>> = vec![Box::new(SuffixStage("."))];
+        run_turn(&mut session, "hello".into(), &stages, &tts, &audio, &sink).await.unwrap();
+        let calls = audio.0.lock().unwrap();
+        assert_eq!(*calls, vec!["begin 16000/1", "pcm:hello.", "finish"]);
     }
 
     #[tokio::test]

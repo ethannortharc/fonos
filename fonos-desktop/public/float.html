@@ -191,7 +191,7 @@ let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null;
 let rollerIdx=0; // index into circular list, maps to center slot
 // Error state: while an error is showing, clicking the pill opens the
 // permission's System Settings pane (if any) instead of the mode menu.
-let errActive=false,errPane=null,errTimer=null;
+let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
 const S=window.devicePixelRatio||2;
 function sz(w,h){
@@ -361,7 +361,9 @@ function stopRec(text){
     p.classList.add('error');
   }
   sz(90,PH);
-  setTimeout(()=>{
+  if(stopTm)clearTimeout(stopTm);
+  stopTm=setTimeout(()=>{
+    stopTm=null;
     p.classList.remove('success','error');
     idleSz();
   },1200);
@@ -369,6 +371,7 @@ function stopRec(text){
 function clearErr(){
   errActive=false;errPane=null;
   if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
   var t=document.getElementById('result-text');if(t)t.title='';
 }
 function showError(payload){
@@ -381,6 +384,8 @@ function showError(payload){
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  // Cancel a pending stopRec revert so it can't cut this error display short.
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
 
   var full='',pane=null;
   if(payload){

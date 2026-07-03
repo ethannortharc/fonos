@@ -24,7 +24,13 @@ export default function GeneralTab({
   const [overrides, setOverrides] = useState<InjectionAppOverride[]>(config.injection_app_overrides ?? []);
 
   useEffect(() => {
-    setOverrides(config.injection_app_overrides ?? []);
+    // Sync from config but keep unsaved local rows (blank app names are
+    // filtered out on save) so an in-progress override isn't wiped mid-edit.
+    setOverrides((prev) => {
+      const saved = config.injection_app_overrides ?? [];
+      const blanks = prev.filter((r) => r.app.trim() === "");
+      return [...saved, ...blanks];
+    });
   }, [config.injection_app_overrides]);
 
   const sttCurrent = config.stt_language || "auto";
@@ -41,6 +47,12 @@ export default function GeneralTab({
 
   const updateOverride = (i: number, patch: Partial<InjectionAppOverride>) => {
     persistOverrides(overrides.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  };
+
+  // Typing in the app field updates local state only; persistence happens on
+  // blur so config.json isn't rewritten on every keystroke.
+  const updateOverrideLocal = (i: number, patch: Partial<InjectionAppOverride>) => {
+    setOverrides(overrides.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   };
 
   const removeOverride = (i: number) => {
@@ -208,7 +220,8 @@ export default function GeneralTab({
               <input
                 type="text"
                 value={row.app}
-                onChange={(e) => updateOverride(i, { app: e.target.value })}
+                onChange={(e) => updateOverrideLocal(i, { app: e.target.value })}
+                onBlur={() => persistOverrides(overrides)}
                 placeholder="e.g. Terminal"
                 className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.7)] placeholder:text-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[rgba(245,158,11,0.25)]"
               />

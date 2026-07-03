@@ -116,6 +116,9 @@ export default function App() {
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
   // environments (where getConfig throws) so the shell renders unchanged.
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // Don't paint the shell until the gate is decided — otherwise a genuine
+  // first run flashes the full app for a frame before the wizard mounts.
+  const [gateReady, setGateReady] = useState(false);
 
   useEffect(() => {
     import("@tauri-apps/api/app").then((m) => m.getVersion()).then(setAppVersion).catch(() => {});
@@ -130,7 +133,8 @@ export default function App() {
         // flag unset; skipping still persists the flag.
         if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowOnboarding(true);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setGateReady(true));
   }, []);
 
   // Listen for navigation events from float pill / tray
@@ -156,6 +160,9 @@ export default function App() {
 
   // First-run: render the wizard instead of the shell (after all hooks so the
   // hook order stays stable across the loading → onboarding transition).
+  if (!gateReady) {
+    return <div className="h-screen bg-[#1a1917]" />;
+  }
   if (showOnboarding) {
     return <Onboarding onDone={() => setShowOnboarding(false)} />;
   }

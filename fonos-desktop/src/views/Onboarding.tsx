@@ -159,6 +159,8 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // editor — it lands in model_profiles identically and routes to Apple STT
   // because the Rust STT resolver keys on profile.provider == "apple".
   const addAppleProfile = useCallback(() => {
+    // Idempotent: a second click must not create a duplicate apple profile.
+    if ((config?.model_profiles ?? []).some((p) => p.provider === "apple")) return;
     const appleProfile: ModelProfile = {
       id: `apple-${Date.now()}`,
       name: "Apple on-device Speech",

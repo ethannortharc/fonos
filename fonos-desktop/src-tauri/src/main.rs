@@ -212,10 +212,11 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                             crate::error_surface::emit_float_error(&handle, &format!("LLM processing failed: {e}"));
                         }
                     }
-                } else {
-                    // Raw mode — injection already handled in stop_recording
-                    let _ = handle.emit("float:stop", &result.text);
                 }
+                // Raw mode — stop_recording already injected and emitted
+                // float:stop (success) or float:error (injection failure).
+                // Re-emitting float:stop here would repaint the pill green
+                // over a just-shown injection error.
             } else {
                 let _ = handle.emit("float:stop", "");
             }
@@ -703,9 +704,9 @@ fn main() {
                                                                     crate::error_surface::emit_float_error(&h2, &format!("LLM processing failed: {e}"));
                                                                 }
                                                             }
-                                                        } else {
-                                                            let _ = h2.emit("float:stop", &result.text);
                                                         }
+                                                        // Raw mode — stop_recording already emitted
+                                                        // float:stop/float:error; don't repaint over it.
                                                     }
                                                 }
                                                 Err(e) => {

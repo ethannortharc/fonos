@@ -101,22 +101,32 @@ export default function Search({ onNavigate }: SearchProps) {
       return;
     }
     setLoading(true);
+    // `cancelled` guards against out-of-order responses: a slow request for a
+    // previous query must not overwrite results of the current one.
+    let cancelled = false;
     const timer = setTimeout(async () => {
       try {
         const found = await searchEntries(q, RESULT_LIMIT);
+        if (cancelled) return;
         setResults(found);
         setError("");
       } catch (err) {
+        if (cancelled) return;
         console.error("searchEntries error:", err);
         setError(String(err));
         setResults([]);
       } finally {
-        setLoading(false);
-        setSearched(true);
-        setExpandedId(null);
+        if (!cancelled) {
+          setLoading(false);
+          setSearched(true);
+          setExpandedId(null);
+        }
       }
     }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   const groups = GROUP_ORDER

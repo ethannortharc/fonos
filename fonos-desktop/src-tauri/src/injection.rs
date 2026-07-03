@@ -106,8 +106,11 @@ pub fn inject_text(text: &str, config: &AppConfig) -> Result<InjectionMethod, St
 ///
 /// If the chosen strategy fails for a reason that isn't a preflight failure
 /// (those block both strategies), the other strategy is tried once before
-/// reporting an error. Fallback is safe: every failure mode of a strategy
-/// happens before any text reaches the target app.
+/// reporting an error — but only when the failed attempt cannot have
+/// delivered any text. Paste fails before anything reaches the app, and
+/// Linux typing is a single atomic xdotool call. macOS typing posts
+/// keystrokes incrementally, so a mid-text failure must NOT fall back to
+/// paste: the prefix already typed would be followed by the full text again.
 pub fn inject_text_with_strategy(
     text: &str,
     strategy: InjectionStrategy,
@@ -116,6 +119,11 @@ pub fn inject_text_with_strategy(
     match try_strategy(text, strategy) {
         Ok(method) => Ok(method),
         Err(primary_err) => {
+            let fallback_is_safe =
+                strategy == InjectionStrategy::Paste || cfg!(target_os = "linux");
+            if !fallback_is_safe {
+                return Err(primary_err);
+            }
             let alt = match strategy {
                 InjectionStrategy::Paste => InjectionStrategy::Type,
                 InjectionStrategy::Type => InjectionStrategy::Paste,

@@ -410,13 +410,32 @@ export default function Dictation() {
             addActivity({ type: "processing", icon: <HourglassIcon size={12} />, label: "Processing\u2026" });
             try {
               const llm = await processWithLlm(result.text, dictationMode);
+              // stop_recording left the float pill in "Processing" for LLM
+              // modes (it suppresses its own float:stop so "Done" can't show
+              // before the LLM step). Now that the LLM step resolved, emit the
+              // real final event so the pill shows "Done".
+              try {
+                const { emit } = await import("@tauri-apps/api/event");
+                await emit("float:stop", llm.processed);
+              } catch {
+                // Not running under Tauri (demo/web) — no float pill to update.
+              }
               setActivity((prev) => {
                 const filtered = prev.filter((e) => e.type !== "processing");
                 const me = modes.find((m) => m.id === dictationMode);
                 return [...filtered, { id: `${Date.now()}-r`, timestamp: new Date(), type: "result" as const, icon: me?.icon ? <ModeIcon icon={me.icon} size={12} /> : <SparklesIcon size={12} />, label: llm.mode_name || dictationMode, content: llm.processed, latency: llm.latency_ms, model: actualLlm || undefined }];
               });
             } catch (e: unknown) {
-              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) }]);
+              const msg = e instanceof Error ? e.message : String(e);
+              // The pill is stuck in "Processing" (stop_recording suppressed its
+              // float:stop for this LLM mode) — surface the failure on it too.
+              try {
+                const { emit } = await import("@tauri-apps/api/event");
+                await emit("float:error", msg);
+              } catch {
+                // Not running under Tauri.
+              }
+              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: "Error", content: msg }]);
             }
           }
         } else {

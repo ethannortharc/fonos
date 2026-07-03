@@ -412,6 +412,15 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     // 4. Notify float window (stops the recording animation) — skip for agent mode
     eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
     if dictation_mode != "agent" {
+        // Does this mode run a downstream LLM step? Same predicate main.rs uses
+        // for `has_llm`. When it does, the STT transcript is NOT the final
+        // output — the LLM caller (the hotkey pipelines in main.rs, or the
+        // Dictation view) emits the real float:stop/float:error after LLM +
+        // injection completes.
+        let mode_has_llm = current_mode
+            .map(|m| m.system.is_some() || m.user_template.is_some())
+            .unwrap_or(false);
+
         // 5. Inject raw text only in raw mode (not agent, not LLM modes).
         // Injection runs BEFORE the success emit: on failure the pill must
         // show only the error — a float:stop first would schedule the pill's
@@ -427,7 +436,15 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             }
         }
         if delivered {
-            let _ = app.emit("float:stop", &transcript);
+            if mode_has_llm && !transcript.is_empty() {
+                // Pipeline isn't done: the transcript still goes to the LLM.
+                // Keep the pill in "Processing" and let the LLM caller emit the
+                // final float:stop — emitting float:stop here would flash a
+                // premature green "Done" before the LLM step even runs.
+                let _ = app.emit("float:processing", ());
+            } else {
+                let _ = app.emit("float:stop", &transcript);
+            }
         }
     } else {
         eprintln!("fonos: agent mode — skipping float:stop and inject");

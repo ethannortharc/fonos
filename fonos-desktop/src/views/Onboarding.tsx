@@ -1,10 +1,13 @@
 // First-run onboarding wizard — full-screen takeover shown until the user
 // completes (or skips) setup. Walks a brand-new user from install to working
 // dictation without docs:
-//   0. Grant Microphone + Accessibility permissions (deep links to OS panes)
-//   1. Pick an STT/LLM backend (Apple on-device / cloud / local endpoint)
+//   0. Grant Microphone + Accessibility permissions + pick a mic
+//   1. Set up a speech engine (reuses the Settings model-profile editor)
 //   2. Set/confirm the primary dictation hotkey
 //   3. Live "try it now" test dictation
+//
+// The backend + mic steps REUSE the same components as Settings (ModelProfileEditor,
+// MicrophonePicker) so the model-profile shape and mic logic can't drift.
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
@@ -15,11 +18,11 @@ import {
   openSettingsPane,
   startRecording,
   stopRecording,
-  testStt,
 } from "../lib/api";
-import type { ModelProfile, SttResult } from "../types";
-import { PROVIDERS } from "./settings/constants";
+import type { AppConfig, ModelProfile, SttResult } from "../types";
 import { HotkeyInput } from "./settings/HotkeysTab";
+import ModelProfileEditor from "./settings/ModelProfileEditor";
+import MicrophonePicker from "./settings/MicrophonePicker";
 
 const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -27,9 +30,19 @@ const isMac =
   typeof navigator !== "undefined" &&
   /mac/i.test(navigator.platform || navigator.userAgent || "");
 
+/** Whether the app already has a usable STT configuration — a set default STT
+ *  profile, or any model profile advertising the "stt" capability. Used by the
+ *  first-run gate so existing installs (models configured via Settings) never
+ *  see the wizard even with has_completed_onboarding unset. */
+export function isSttConfigured(cfg: AppConfig): boolean {
+  const hasDefault = (cfg.stt_profile ?? "") !== "";
+  const hasSttCapable = (cfg.model_profiles ?? []).some(
+    (p) => Array.isArray(p.capabilities) && p.capabilities.includes("stt")
+  );
+  return hasDefault || hasSttCapable;
+}
+
 type Step = 0 | 1 | 2 | 3;
-type Backend = "apple" | "cloud" | "local";
-type TestState = { status: "testing" | "ok" | "err"; msg: string } | null;
 
 const STEP_LABELS = ["Permissions", "Backend", "Hotkey", "Try it"];
 
@@ -61,18 +74,31 @@ function ErrorLine({ msg }: { msg: string }) {
 export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<Step>(0);
 
-  // Existing config snapshot (so we merge — never clobber — model profiles).
-  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
+  // Full config snapshot so the shared editor sees + merges model_profiles the
+  // same way Settings does. Loaded once; updated through handleSave.
+  const [config, setConfig] = useState<AppConfig | null>(null);
   const [hotkey, setHotkey] = useState("cmd+shift+space");
   const [hotkeyErr, setHotkeyErr] = useState("");
 
   useEffect(() => {
     getConfig()
       .then((cfg) => {
-        setProfiles(cfg.model_profiles ?? []);
+        setConfig(cfg);
         if (cfg.hotkey_dictation) setHotkey(cfg.hotkey_dictation);
       })
       .catch(() => {});
+  }, []);
+
+  // Persist a config delta and merge it into local state — mirrors Settings'
+  // handleSave. Functional setState avoids stale closures across rapid saves
+  // (e.g. model_profiles then stt_profile).
+  const handleSave = useCallback(async (updates: Partial<AppConfig>) => {
+    try {
+      await saveConfig(JSON.stringify(updates));
+      setConfig((prev) => (prev ? { ...prev, ...updates } : prev));
+    } catch (e) {
+      setBackendErr(errStr(e));
+    }
   }, []);
 
   // ── Step 0: Permissions ──────────────────────────────────────────────────
@@ -110,113 +136,44 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     }
   };
 
-  // ── Step 1: Backend ──────────────────────────────────────────────────────
-  const [backend, setBackend] = useState<Backend | null>(isMac ? "apple" : null);
-  const [cloudProvider, setCloudProvider] = useState("openai");
-  const [cloudKey, setCloudKey] = useState("");
-  const [cloudModel, setCloudModel] = useState("");
-  const [localUrl, setLocalUrl] = useState("http://localhost:8000");
-  const [localModel, setLocalModel] = useState("");
-  const [savedId, setSavedId] = useState<string | null>(null);
-  const [backendTest, setBackendTest] = useState<TestState>(null);
+  // ── Step 1: Backend (shared model-profile editor) ────────────────────────
   const [backendErr, setBackendErr] = useState("");
 
-  const selectBackend = (b: Backend) => {
-    setBackend(b);
-    setSavedId(null);
-    setBackendTest(null);
-    setBackendErr("");
-  };
+  // When a profile is saved from the wizard, also assign it as the default STT
+  // (and LLM) service — the same mechanism ServiceCardDropdown uses in ModelsTab.
+  const applySttDefaults = useCallback(
+    (added: ModelProfile[]) => {
+      const stt = added.find((p) => p.capabilities?.includes("stt"));
+      if (!stt) return;
+      const updates: Partial<AppConfig> = { stt_profile: stt.id };
+      if (stt.capabilities?.includes("llm")) updates.llm_profile = stt.id;
+      handleSave(updates);
+    },
+    [handleSave]
+  );
 
-  const idPrefix = () =>
-    backend === "apple" ? "apple" : backend === "cloud" ? cloudProvider : "local";
-
-  // Build a model profile matching ModelsTab's shape for the chosen backend.
-  const buildProfile = (id: string): ModelProfile | null => {
-    if (backend === "apple") {
-      return {
-        id,
-        name: "Apple on-device Speech",
-        provider: "apple",
-        model: "apple-speech",
-        capabilities: ["stt"],
-      };
-    }
-    if (backend === "cloud") {
-      const prov = PROVIDERS.find((p) => p.id === cloudProvider);
-      return {
-        id,
-        name: `${prov?.label ?? cloudProvider} Speech`,
-        provider: cloudProvider,
-        model: cloudModel.trim(),
-        api_key: cloudKey.trim() || undefined,
-        base_url: prov?.url || undefined,
-        capabilities: ["stt", "llm"],
-        stt_api: cloudProvider === "openrouter" ? "chat" : undefined,
-      };
-    }
-    if (backend === "local") {
-      return {
-        id,
-        name: "Local endpoint",
-        provider: "custom",
-        model: localModel.trim(),
-        base_url: localUrl.trim() || undefined,
-        capabilities: ["stt", "llm"],
-      };
-    }
-    return null;
-  };
-
-  // Persist the chosen backend: append/replace the profile, set it as the
-  // default STT (and LLM if the profile is llm-capable). Returns the profile id.
-  const saveBackend = async (): Promise<string | null> => {
-    if (!backend) return null;
-    const id = savedId ?? `${idPrefix()}-${Date.now()}`;
-    const profile = buildProfile(id);
-    if (!profile) return null;
-    const others = profiles.filter((p) => p.id !== id);
-    const next = [...others, profile];
-    const isLlm = profile.capabilities?.includes("llm") ?? false;
-    const updates: Record<string, unknown> = {
-      model_profiles: next,
-      stt_profile: id,
+  // Apple on-device: Settings has no way to create a provider="apple" model
+  // profile (PROVIDERS has no "apple", and the ModesTab "apple-speech" option is
+  // a per-mode stt_model sentinel, not a model_profile). So the wizard offers a
+  // quick button that builds the profile through the SAME save path as the
+  // editor — it lands in model_profiles identically and routes to Apple STT
+  // because the Rust STT resolver keys on profile.provider == "apple".
+  const addAppleProfile = useCallback(() => {
+    const appleProfile: ModelProfile = {
+      id: `apple-${Date.now()}`,
+      name: "Apple on-device Speech",
+      provider: "apple",
+      model: "apple-speech",
+      capabilities: ["stt"],
     };
-    if (isLlm) updates.llm_profile = id;
-    await saveConfig(JSON.stringify(updates));
-    setProfiles(next);
-    setSavedId(id);
-    return id;
-  };
+    const next = [...(config?.model_profiles ?? []), appleProfile];
+    handleSave({ model_profiles: next });
+    applySttDefaults([appleProfile]);
+  }, [config, handleSave, applySttDefaults]);
 
-  const handleTest = async () => {
-    setBackendErr("");
-    setBackendTest({ status: "testing", msg: "" });
-    try {
-      const id = await saveBackend();
-      if (!id) {
-        setBackendTest(null);
-        return;
-      }
-      const msg = await testStt(id);
-      setBackendTest({ status: "ok", msg });
-    } catch (e) {
-      setBackendTest({ status: "err", msg: errStr(e) });
-    }
-  };
-
-  const handleBackendContinue = async () => {
-    setBackendErr("");
-    if (backend) {
-      try {
-        await saveBackend();
-      } catch (e) {
-        setBackendErr(errStr(e));
-        return;
-      }
-    }
-    setStep(2);
-  };
+  const appleAlreadyAdded = (config?.model_profiles ?? []).some(
+    (p) => p.provider === "apple"
+  );
 
   // ── Step 2: Hotkey ───────────────────────────────────────────────────────
   const handleHotkeyChange = async (v: string) => {
@@ -224,6 +181,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     setHotkeyErr("");
     try {
       await saveConfig(JSON.stringify({ hotkey_dictation: v }));
+      setConfig((prev) => (prev ? { ...prev, hotkey_dictation: v } : prev));
     } catch (e) {
       setHotkeyErr(errStr(e));
     }
@@ -276,13 +234,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
+  // Skip is friction-free: one click marks onboarding done and dismisses the
+  // wizard. Everything remains configurable later in Settings.
   const handleSkip = async () => {
-    if (
-      !window.confirm(
-        "Skip setup? You can configure permissions, models and hotkeys later in Settings."
-      )
-    )
-      return;
     try {
       await saveConfig(JSON.stringify({ has_completed_onboarding: true }));
     } catch {
@@ -290,10 +244,6 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     }
     onDone();
   };
-
-  // ── Shared field styles ──────────────────────────────────────────────────
-  const inputCls =
-    "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -332,12 +282,17 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             </div>
           ))}
         </div>
-        <button
-          onClick={handleSkip}
-          className="absolute right-4 text-[11px] text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
-        >
-          Skip setup
-        </button>
+        <div className="absolute right-4 flex items-center gap-2.5">
+          <span className="hidden md:inline text-[10px] text-[rgba(255,255,255,0.22)] whitespace-nowrap">
+            You can configure everything later in Settings.
+          </span>
+          <button
+            onClick={handleSkip}
+            className="text-[11px] text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
+          >
+            Skip setup
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -407,6 +362,15 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </p>
               )}
               <ErrorLine msg={permErr} />
+
+              {/* Divider */}
+              <div className="border-t border-[rgba(255,255,255,0.05)]" />
+
+              {/* Microphone device selection (shared with Settings › General) */}
+              <MicrophonePicker
+                value={config?.audio_input_device ?? ""}
+                onSelect={(name) => handleSave({ audio_input_device: name })}
+              />
             </>
           )}
 
@@ -415,165 +379,68 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <>
               <div className="flex flex-col gap-1.5">
                 <h1 className="text-[20px] font-semibold text-[#fafaf9]">
-                  Choose a speech engine
+                  Set up a speech engine
                 </h1>
                 <p className="text-[13px] text-[rgba(255,255,255,0.5)] leading-relaxed">
-                  This is what turns your voice into text. You can add more or
+                  This is what turns your voice into text. Pick Apple on-device for
+                  zero setup, or add a cloud / local model. You can add more or
                   change this later in Settings.
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2.5">
-                {/* Apple on-device */}
-                {isMac && (
-                  <BackendCard
-                    active={backend === "apple"}
-                    onClick={() => selectBackend("apple")}
-                    title="Apple on-device"
-                    badge="Recommended"
-                    desc="Zero setup, fully private, works offline. Uses macOS built-in speech recognition."
+              {config ? (
+                <>
+                  {/* Apple on-device quick button (macOS only) */}
+                  {isMac && (
+                    <button
+                      onClick={addAppleProfile}
+                      className={[
+                        "rounded-xl border p-4 text-left transition-colors",
+                        appleAlreadyAdded
+                          ? "bg-[rgba(245,158,11,0.06)] border-[rgba(245,158,11,0.3)]"
+                          : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] hover:border-[rgba(245,158,11,0.3)]",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-[#fafaf9]">
+                          Apple on-device
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
+                          Recommended · zero-config
+                        </span>
+                        {appleAlreadyAdded && (
+                          <span className="text-[11px] text-[rgba(134,239,172,0.9)] ml-auto">
+                            {"✓"} Added
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed mt-1.5">
+                        Fully private, works offline. Uses macOS built-in speech
+                        recognition — click to add it and set it as your default.
+                      </p>
+                    </button>
+                  )}
+
+                  {/* Or add / manage models via the same editor Settings uses */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 border-t border-[rgba(255,255,255,0.05)]" />
+                    <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
+                      {isMac ? "Or add a model" : "Add a model"}
+                    </span>
+                    <div className="flex-1 border-t border-[rgba(255,255,255,0.05)]" />
+                  </div>
+
+                  <ModelProfileEditor
+                    config={config}
+                    onSave={handleSave}
+                    setError={setBackendErr}
+                    onProfilesAdded={applySttDefaults}
+                    startInAddMode={!isMac}
                   />
-                )}
-
-                {/* Cloud provider */}
-                <BackendCard
-                  active={backend === "cloud"}
-                  onClick={() => selectBackend("cloud")}
-                  title="Cloud provider"
-                  desc="Paste an API key from OpenAI, OpenRouter, Google, and more."
-                >
-                  {backend === "cloud" && (
-                    <div className="flex flex-col gap-2 mt-3">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[rgba(255,255,255,0.4)]">
-                          Provider
-                        </label>
-                        <select
-                          value={cloudProvider}
-                          onChange={(e) => {
-                            setCloudProvider(e.target.value);
-                            setSavedId(null);
-                            setBackendTest(null);
-                          }}
-                          className={`${inputCls} cursor-pointer appearance-none`}
-                        >
-                          {PROVIDERS.filter((p) => p.id !== "custom").map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[rgba(255,255,255,0.4)]">
-                          API Key
-                        </label>
-                        <input
-                          type="password"
-                          value={cloudKey}
-                          onChange={(e) => {
-                            setCloudKey(e.target.value);
-                            setSavedId(null);
-                          }}
-                          placeholder="sk-..."
-                          className={`${inputCls} font-mono`}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[rgba(255,255,255,0.4)]">
-                          Model{" "}
-                          <span className="text-[rgba(255,255,255,0.2)]">
-                            (optional)
-                          </span>
-                        </label>
-                        <input
-                          type="text"
-                          value={cloudModel}
-                          onChange={(e) => {
-                            setCloudModel(e.target.value);
-                            setSavedId(null);
-                          }}
-                          placeholder="e.g. gpt-4o-transcribe"
-                          className={`${inputCls} font-mono`}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </BackendCard>
-
-                {/* Local endpoint */}
-                <BackendCard
-                  active={backend === "local"}
-                  onClick={() => selectBackend("local")}
-                  title="Local endpoint"
-                  desc="Point Fonos at a self-hosted OpenAI-compatible server."
-                >
-                  {backend === "local" && (
-                    <div className="flex flex-col gap-2 mt-3">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[rgba(255,255,255,0.4)]">
-                          Base URL
-                        </label>
-                        <input
-                          type="text"
-                          value={localUrl}
-                          onChange={(e) => {
-                            setLocalUrl(e.target.value);
-                            setSavedId(null);
-                          }}
-                          placeholder="http://localhost:8000"
-                          className={`${inputCls} font-mono`}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-[10px] text-[rgba(255,255,255,0.4)]">
-                          Model{" "}
-                          <span className="text-[rgba(255,255,255,0.2)]">
-                            (optional)
-                          </span>
-                        </label>
-                        <input
-                          type="text"
-                          value={localModel}
-                          onChange={(e) => {
-                            setLocalModel(e.target.value);
-                            setSavedId(null);
-                          }}
-                          placeholder="e.g. whisper-1"
-                          className={`${inputCls} font-mono`}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </BackendCard>
-              </div>
-
-              {/* Test + status */}
-              {backend && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleTest}
-                    disabled={backendTest?.status === "testing"}
-                    className="px-4 py-2 rounded-lg bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] text-[11px] text-[rgba(255,255,255,0.6)] transition-colors disabled:opacity-40"
-                  >
-                    {backendTest?.status === "testing" ? "Testing…" : "Test"}
-                  </button>
-                  {backendTest?.status === "ok" && (
-                    <span
-                      title={backendTest.msg}
-                      className="text-[11px] text-[rgba(134,239,172,0.9)] truncate max-w-[320px]"
-                    >
-                      {"✓"} {backendTest.msg}
-                    </span>
-                  )}
-                  {backendTest?.status === "err" && (
-                    <span
-                      title={backendTest.msg}
-                      className="text-[11px] text-[rgba(239,68,68,0.85)] truncate max-w-[320px]"
-                    >
-                      {"✗"} {backendTest.msg}
-                    </span>
-                  )}
+                </>
+              ) : (
+                <div className="py-6 text-center text-[rgba(255,255,255,0.25)] text-[12px]">
+                  Loading…
                 </div>
               )}
               <ErrorLine msg={backendErr} />
@@ -712,9 +579,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
         {step < 3 ? (
           <button
-            onClick={() =>
-              step === 1 ? handleBackendContinue() : setStep((s) => (s + 1) as Step)
-            }
+            onClick={() => setStep((s) => (s + 1) as Step)}
             className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
           >
             Continue
@@ -728,57 +593,6 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           </button>
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── Backend choice card ─────────────────────────────────────────────────────
-
-function BackendCard({
-  active,
-  onClick,
-  title,
-  badge,
-  desc,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  badge?: string;
-  desc: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      className={[
-        "rounded-xl border p-4 cursor-pointer transition-colors",
-        active
-          ? "bg-[rgba(245,158,11,0.06)] border-[rgba(245,158,11,0.3)]"
-          : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.12)]",
-      ].join(" ")}
-    >
-      <div className="flex items-center gap-2">
-        <div
-          className={[
-            "w-3.5 h-3.5 rounded-full border flex items-center justify-center flex-shrink-0",
-            active ? "border-[#fbbf24]" : "border-[rgba(255,255,255,0.2)]",
-          ].join(" ")}
-        >
-          {active && <div className="w-1.5 h-1.5 rounded-full bg-[#fbbf24]" />}
-        </div>
-        <span className="text-[13px] font-medium text-[#fafaf9]">{title}</span>
-        {badge && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
-            {badge}
-          </span>
-        )}
-      </div>
-      <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed mt-1.5 ml-[22px]">
-        {desc}
-      </p>
-      {children && <div className="ml-[22px]">{children}</div>}
     </div>
   );
 }

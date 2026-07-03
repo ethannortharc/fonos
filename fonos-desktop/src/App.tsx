@@ -7,7 +7,7 @@ import Recent from "./views/Recent";
 import Notes from "./views/Notes";
 import Meetings from "./views/Meetings";
 import Search from "./views/Search";
-import Onboarding from "./views/Onboarding";
+import Onboarding, { isSttConfigured } from "./views/Onboarding";
 import { getConfig } from "./lib/api";
 
 type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings" | "search";
@@ -123,7 +123,13 @@ export default function App() {
 
   useEffect(() => {
     getConfig()
-      .then((cfg) => { if (!cfg.has_completed_onboarding) setShowOnboarding(true); })
+      .then((cfg) => {
+        // Show the wizard only for genuinely-unconfigured first runs: the flag
+        // is unset AND there's no usable STT config. Existing installs that
+        // already configured models via Settings skip the wizard even with the
+        // flag unset; skipping still persists the flag.
+        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowOnboarding(true);
+      })
       .catch(() => {});
   }, []);
 

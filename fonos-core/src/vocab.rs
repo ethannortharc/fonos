@@ -205,7 +205,11 @@ pub fn build_glossary_block(terms: &[String]) -> Option<String> {
         return None;
     }
     Some(format!(
-        "\n\nDomain vocabulary — when these terms appear (possibly mis-transcribed), prefer these exact spellings: {}.",
+        "\n\nDomain vocabulary: {}. The transcript may render these as sound-alike \
+         mis-transcriptions (including English terms heard as similar-sounding words \
+         in another language, e.g. a Chinese homophone standing in for an English \
+         term). When context indicates one of these terms was meant, restore the \
+         exact spelling listed here.",
         terms.join(", ")
     ))
 }

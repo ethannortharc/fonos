@@ -82,6 +82,8 @@ const config = {
   meeting_stt_profile: "openrouter-gemini",
   meeting_llm_profile: "openrouter-gemini",
   meeting_audio_source: "mic+system",
+  // Demo mode is already "set up" — never trigger the first-run wizard.
+  has_completed_onboarding: true,
 };
 
 const modes = [
@@ -341,6 +343,10 @@ export function installDemoIpc() {
         return "0.1.0";
       case "has_microphone":
         return true;
+      case "check_accessibility":
+        return true;
+      case "open_settings_pane":
+        return null;
       case "start_recording":
         return null;
       case "stop_recording":

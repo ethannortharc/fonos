@@ -4,6 +4,8 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Fonos needs microphone access for voice dictation, notes, meetings, and agent interactions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Fonos uses on-device speech recognition to transcribe your dictation.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Fonos uses automation to paste text into other applications.</string>
 </dict>

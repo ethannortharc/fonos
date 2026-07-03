@@ -58,6 +58,8 @@ export interface AppConfig {
   // Text injection
   injection_strategy?: string;
   injection_app_overrides?: InjectionAppOverride[];
+  // Onboarding — gates the first-run wizard
+  has_completed_onboarding?: boolean;
 }
 
 /** A per-app override for the text injection strategy. */

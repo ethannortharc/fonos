@@ -7,6 +7,8 @@ import Recent from "./views/Recent";
 import Notes from "./views/Notes";
 import Meetings from "./views/Meetings";
 import Search from "./views/Search";
+import Onboarding from "./views/Onboarding";
+import { getConfig } from "./lib/api";
 
 type Tab = "dictation" | "voice" | "recent" | "stats" | "settings" | "notes" | "meetings" | "search";
 
@@ -111,9 +113,18 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dictation");
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  // First-run wizard gate. Stays false while loading and in non-Tauri/demo
+  // environments (where getConfig throws) so the shell renders unchanged.
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     import("@tauri-apps/api/app").then((m) => m.getVersion()).then(setAppVersion).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => { if (!cfg.has_completed_onboarding) setShowOnboarding(true); })
+      .catch(() => {});
   }, []);
 
   // Listen for navigation events from float pill / tray
@@ -136,6 +147,12 @@ export default function App() {
     })();
     return () => { cleanup.forEach((fn) => fn()); };
   }, []);
+
+  // First-run: render the wizard instead of the shell (after all hooks so the
+  // hook order stays stable across the loading → onboarding transition).
+  if (showOnboarding) {
+    return <Onboarding onDone={() => setShowOnboarding(false)} />;
+  }
 
   return (
     <div className="flex flex-col h-screen select-none bg-[#1a1917]">

@@ -128,6 +128,12 @@ pub struct AppConfig {
     /// Per-app overrides of the injection strategy, matched against the
     /// frontmost app's name. First match wins.
     pub injection_app_overrides: Vec<InjectionAppOverride>,
+
+    // ── Onboarding ───────────────────────────────────────────────────────
+
+    /// Gates the first-run onboarding wizard. `false` until the user completes
+    /// (or skips) the wizard; the wizard is shown on launch while this is false.
+    pub has_completed_onboarding: bool,
 }
 
 impl Default for AppConfig {
@@ -176,6 +182,7 @@ impl Default for AppConfig {
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }
                 .to_string(),
             injection_app_overrides: Vec::new(),
+            has_completed_onboarding: false,
         }
     }
 }

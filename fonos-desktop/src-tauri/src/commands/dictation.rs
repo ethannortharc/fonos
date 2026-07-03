@@ -375,9 +375,10 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 // silently. The float pill shows the error and leaves processing
                 // state; the caller (hotkey / Dictation view) also gets the Err.
                 let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
-                eprintln!("fonos: {msg}");
                 if dictation_mode != "agent" {
-                    let _ = app.emit("float:error", &msg);
+                    crate::error_surface::emit_float_error(&app, &msg);
+                } else {
+                    eprintln!("fonos: {msg}");
                 }
                 return Err(msg);
             }
@@ -396,8 +397,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             let inj_cfg = state.config.lock().map(|c| c.clone()).unwrap_or_default();
             if let Err(e) = inject_text(&transcript, &inj_cfg) {
                 let msg = format!("Injection failed: {e}");
-                eprintln!("fonos: {msg}");
-                let _ = app.emit("float:error", &msg);
+                crate::error_surface::emit_float_error(&app, &msg);
             }
         }
     } else {

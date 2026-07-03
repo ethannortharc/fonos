@@ -2,4 +2,5 @@
 
 pub mod audio;
 pub mod commands;
+pub mod error_surface;
 pub mod injection;

@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 // ─── Types matching Rust structs ──────────────────────────────────────────────
 
-export type SourceType = "dictation" | "agent" | "note" | "meeting";
+export type SourceType = "dictation" | "agent" | "note" | "meeting" | "listen";
 export type Role = "user" | "assistant" | "system";
 export type ContainerTypeValue =
   | "notebook"

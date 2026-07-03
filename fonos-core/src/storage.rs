@@ -23,6 +23,8 @@ pub enum SourceType {
     Note,
     /// Meeting transcript or meeting-related recording.
     Meeting,
+    /// Listen-queue item: captured text summarized and synthesized to audio.
+    Listen,
 }
 
 impl SourceType {
@@ -32,6 +34,7 @@ impl SourceType {
             SourceType::Agent => "agent",
             SourceType::Note => "note",
             SourceType::Meeting => "meeting",
+            SourceType::Listen => "listen",
         }
     }
 
@@ -40,6 +43,7 @@ impl SourceType {
             "agent" => SourceType::Agent,
             "note" => SourceType::Note,
             "meeting" => SourceType::Meeting,
+            "listen" => SourceType::Listen,
             _ => SourceType::Dictation,
         }
     }

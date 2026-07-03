@@ -16,6 +16,7 @@ import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
 import ModesTab from "./settings/ModesTab";
 import HotkeysTab from "./settings/HotkeysTab";
+import SpeechTab from "./settings/SpeechTab";
 import VocabTab from "./settings/VocabTab";
 import AgentTab from "./settings/AgentTab";
 import SkillsTab from "./settings/SkillsTab";
@@ -189,6 +190,11 @@ export default function Settings() {
             onSaveMode={handleSaveMode}
             onDeleteMode={handleDeleteMode}
           />
+        )}
+
+        {/* ────────────── Speech tab (Listen + future STS) ────────────── */}
+        {settingsTab === "speech" && (
+          <SpeechTab config={config} modes={modes} onSave={handleSave} />
         )}
 
         {/* ────────────── Vocabulary tab ────────────── */}

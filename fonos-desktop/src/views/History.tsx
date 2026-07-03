@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { listEntries, listContainers, searchEntries, deleteEntry } from "../lib/storage-api";
+import { playAudioFile, stopPlayback } from "../lib/api";
 import type { Entry, Container, SourceType } from "../lib/storage-api";
 import Notes from "./Notes";
 import Meetings from "./Meetings";
@@ -22,6 +23,7 @@ const FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: "dictation", label: "Dictation" },
   { id: "note", label: "Notes" },
   { id: "meeting", label: "Meetings" },
+  { id: "listen", label: "Listen" },
   { id: "agent", label: "Agent" },
 ];
 
@@ -30,6 +32,7 @@ const STRIPE_COLOR: Record<string, string> = {
   agent: "#c084fc",
   note: "#4ade80",
   meeting: "#fbbf24",
+  listen: "#7dd3fc",
 };
 
 function formatTime(iso: string): string {
@@ -161,7 +164,7 @@ export default function History({
     }
   }, []);
 
-  const timelineActive = !query.trim() && (filter === "all" || filter === "dictation" || filter === "agent");
+  const timelineActive = !query.trim() && (filter === "all" || filter === "dictation" || filter === "agent" || filter === "listen");
 
   useEffect(() => {
     if (!timelineActive) return;
@@ -428,6 +431,9 @@ function EntryCard({
   const notebook = entry.source_type === "note" && entry.container_id != null
     ? containers.get(entry.container_id)
     : null;
+  const listenTitle = entry.source_type === "listen"
+    ? String((entry.metadata as Record<string, unknown>)?.title ?? "")
+    : "";
 
   return (
     <div
@@ -456,6 +462,9 @@ function EntryCard({
               {notebook.title} →
             </button>
           )}
+          {listenTitle && (
+            <span className="text-[11px] font-medium text-[#fafaf9] truncate flex-1">{listenTitle}</span>
+          )}
         </div>
         {expanded ? (
           <>
@@ -463,6 +472,22 @@ function EntryCard({
               {text || <span className="italic text-[rgba(255,255,255,0.2)]">(no content)</span>}
             </div>
             <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+              {entry.source_type === "listen" && entry.audio_ref && (
+                <>
+                  <button
+                    onClick={() => { playAudioFile(entry.audio_ref!).catch(() => {}); }}
+                    className="text-[9px] px-2.5 py-1 rounded-md bg-[rgba(125,211,252,0.12)] text-[#7dd3fc] hover:bg-[rgba(125,211,252,0.2)] transition-colors"
+                  >
+                    ▶ Play
+                  </button>
+                  <button
+                    onClick={() => { stopPlayback().catch(() => {}); }}
+                    className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
+                  >
+                    ■ Stop
+                  </button>
+                </>
+              )}
               <button
                 onClick={onCopy}
                 className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
@@ -526,11 +551,12 @@ function MeetingCard({
 
 // ─── Search results ───────────────────────────────────────────────────────────
 
-const GROUP_ORDER: SourceType[] = ["dictation", "note", "meeting", "agent"];
+const GROUP_ORDER: SourceType[] = ["dictation", "note", "meeting", "listen", "agent"];
 const GROUP_LABEL: Record<SourceType, string> = {
   dictation: "Dictations",
   note: "Notes",
   meeting: "Meetings",
+  listen: "Listen",
   agent: "Agent",
 };
 

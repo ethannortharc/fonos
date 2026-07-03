@@ -59,6 +59,10 @@ const config = {
   audio_output_device: "System Default",
   show_floating_indicator: true,
   warmup_enabled: true,
+  hotkey_listen: "option+l",
+  listen_mode: "listen",
+  listen_voice_profile: "",
+  listen_voice: "default",
   stt_language: "auto",
   model_profiles: modelProfiles,
   stt_profile: "openai-gpt-4o-mini-transcribe",
@@ -227,6 +231,19 @@ const containers = [
 
 const entries = [
   {
+    id: 99,
+    created_at: iso(5),
+    source_type: "listen",
+    role: "user",
+    mode: "listen",
+    raw_text: "Long article text captured from the browser about open-source voice AI…",
+    processed_text:
+      "Open-source voice AI is closing the gap with proprietary stacks. Modular pipelines let teams swap recognition, language and speech models independently.",
+    container_id: null,
+    audio_ref: "/tmp/demo-listen.wav",
+    metadata: { title: "Open-source voice AI briefing" },
+  },
+  {
     id: 101,
     created_at: iso(12),
     source_type: "dictation",
@@ -344,6 +361,11 @@ export function installDemoIpc() {
       case "plugin:app|version":
       case "plugin:app|get_version":
         return "0.1.0";
+      case "play_audio_file":
+      case "stop_playback":
+        return null;
+      case "create_listen_from_text":
+        return 99;
       case "has_microphone":
         return true;
       case "check_accessibility":

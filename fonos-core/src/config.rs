@@ -138,6 +138,17 @@ pub struct AppConfig {
     /// (or skips) the wizard; the wizard is shown on launch while this is false.
     pub has_completed_onboarding: bool,
 
+    // ── Listen queue (issue #23) ─────────────────────────────────────────
+
+    /// Global hotkey: capture the current selection into the Listen queue.
+    pub hotkey_listen: String,
+    /// Mode id used to process captured text (summary / cleanup / custom).
+    pub listen_mode: String,
+    /// TTS profile id for listen synthesis; empty = fall back to `tts_profile`.
+    pub listen_voice_profile: String,
+    /// Voice identifier for listen synthesis (provider-specific).
+    pub listen_voice: String,
+
     // ── Custom vocabulary ────────────────────────────────────────────────
 
     /// User-defined vocab books (terms + correction rules). Referenced by id
@@ -189,6 +200,10 @@ impl Default for AppConfig {
             meeting_stt_profile: String::new(),
             meeting_summary_prompt: String::new(),
             hotkey_transform: "cmd+shift+t".to_string(),
+            hotkey_listen: "option+l".to_string(),
+            listen_mode: "listen".to_string(),
+            listen_voice_profile: String::new(),
+            listen_voice: "default".to_string(),
             transform_mode: "polish".to_string(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }

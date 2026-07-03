@@ -11,6 +11,7 @@ pub mod audio;
 pub mod config;
 pub mod error;
 pub mod hotkey;
+pub mod listen;
 pub mod llm;
 pub mod meetings;
 pub mod error_class;
@@ -21,6 +22,7 @@ pub mod services;
 pub mod stats;
 pub mod stt;
 pub mod storage;
+pub mod tts;
 pub mod vocab;
 pub mod voice_store;
 

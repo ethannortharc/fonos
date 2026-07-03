@@ -1,11 +1,20 @@
-// Stats view — usage statistics with today card, weekly chart, and period selector.
-// Full implementation in WP-09.
+// Stats view — hero metric, KPI tiles, daily activity chart, activity mix.
+// Chart colors validated for the dark surface (#1a1917): series #d97706,
+// categorical trio #d97706 / #8b5cf6 / #16a34a (lightness band, CVD, contrast).
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { getStats, getToday } from "../lib/api";
 import type { DailyStat, TodaySummary } from "../types";
 
 type Period = "7d" | "30d" | "90d";
+type Metric = "words" | "sessions" | "time";
+
+const SERIES = "#d97706";
+const MIX = [
+  { key: "stt", label: "Dictation", color: "#d97706" },
+  { key: "tts", label: "Speech", color: "#8b5cf6" },
+  { key: "llm", label: "LLM", color: "#16a34a" },
+] as const;
 
 function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -20,7 +29,7 @@ function getPeriodDates(period: Period): { from: string; to: string } {
   return { from: formatDate(from), to: formatDate(to) };
 }
 
-/** Format seconds into a human-friendly string, e.g. 240 -> "4m", 3661 -> "1h 1m" */
+/** 240 -> "4m", 3661 -> "1h 1m" */
 function formatTimeSaved(secs: number): string {
   const rounded = Math.round(secs);
   if (rounded < 60) return `${rounded}s`;
@@ -32,58 +41,164 @@ function formatTimeSaved(secs: number): string {
   return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
 }
 
-// ─── CSS div bar chart ───────────────────────────────────────────────────────
+function shortDay(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
-function BarChart({ stats }: { stats: DailyStat[] }) {
-  if (stats.length === 0) {
+function metricOf(s: DailyStat, m: Metric): number {
+  if (m === "words") return s.stt_words;
+  if (m === "sessions") return s.stt_count + s.tts_count + s.llm_count;
+  return s.time_saved_secs;
+}
+
+function formatMetric(v: number, m: Metric): string {
+  return m === "time" ? formatTimeSaved(v) : v.toLocaleString();
+}
+
+// ─── Bar chart with hover tooltip ─────────────────────────────────────────────
+
+function BarChart({ stats, metric }: { stats: DailyStat[]; metric: Metric }) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  const values = stats.map((s) => metricOf(s, metric));
+  const max = Math.max(...values, 1);
+  const peakIdx = values.indexOf(Math.max(...values));
+
+  if (stats.length === 0 || values.every((v) => v === 0)) {
     return (
-      <div className="h-[60px] flex items-center justify-center">
-        <span className="text-[rgba(255,255,255,0.2)] text-xs">No data</span>
+      <div className="h-[130px] flex items-center justify-center">
+        <span className="text-[rgba(255,255,255,0.2)] text-[11px]">No activity in this period</span>
       </div>
     );
   }
 
-  const maxWords = Math.max(...stats.map((s) => s.stt_words), 1);
+  const hovered = hover != null ? stats[hover] : null;
 
   return (
-    <div>
-      <div className="flex items-end gap-1 h-[60px]">
-        {stats.map((s) => {
-          const ratio = s.stt_words / maxWords;
-          const heightPct = Math.max(ratio * 100, 3); // min 3% so bars are visible
-          const opacity = 0.2 + ratio * 0.8;
-          return (
-            <div
-              key={s.date}
-              className="flex-1 rounded-t-[3px]"
-              style={{
-                height: `${heightPct}%`,
-                backgroundColor: `rgba(251, 191, 36, ${opacity})`,
-              }}
-            />
-          );
-        })}
+    <div className="relative">
+      {/* Tooltip */}
+      {hovered && hover != null && (
+        <div
+          className="absolute z-10 pointer-events-none rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#242220] px-2.5 py-2 shadow-xl"
+          style={{
+            left: `${Math.min(Math.max(((hover + 0.5) / stats.length) * 100, 12), 82)}%`,
+            transform: "translateX(-50%)",
+            top: -8,
+          }}
+        >
+          <div className="text-[9px] text-[rgba(255,255,255,0.4)] font-medium mb-1 whitespace-nowrap">
+            {shortDay(hovered.date)}
+          </div>
+          <div className="flex flex-col gap-0.5 text-[10px] whitespace-nowrap">
+            <span className="text-[rgba(255,255,255,0.75)]">{hovered.stt_words.toLocaleString()} words</span>
+            <span className="text-[rgba(255,255,255,0.5)]">
+              {hovered.stt_count + hovered.tts_count + hovered.llm_count} sessions
+            </span>
+            <span className="text-[rgba(255,255,255,0.5)]">{formatTimeSaved(hovered.time_saved_secs)} saved</span>
+          </div>
+        </div>
+      )}
+
+      {/* Plot: recessive gridline at max + baseline; bars with 2px gaps */}
+      <div className="relative h-[130px]">
+        <div className="absolute inset-x-0 top-0 border-t border-dashed border-[rgba(255,255,255,0.06)]" />
+        <div className="absolute inset-0 flex items-end gap-[2px]">
+          {stats.map((s, i) => {
+            const v = values[i];
+            const h = v === 0 ? 0 : Math.max((v / max) * 100, 2);
+            return (
+              <div
+                key={s.date}
+                className="flex-1 h-full flex flex-col justify-end cursor-default"
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+              >
+                {/* Selective direct label: peak only */}
+                {i === peakIdx && v > 0 && hover == null && (
+                  <span className="text-[8px] text-[rgba(255,255,255,0.45)] text-center mb-0.5 whitespace-nowrap overflow-visible">
+                    {formatMetric(v, metric)}
+                  </span>
+                )}
+                <div
+                  className="rounded-t-[4px] transition-opacity w-full max-w-[40px] mx-auto"
+                  style={{
+                    height: `${h}%`,
+                    background: SERIES,
+                    opacity: hover == null ? 0.85 : hover === i ? 1 : 0.35,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
+      <div className="border-t border-[rgba(255,255,255,0.08)]" />
+
+      {/* X labels: every day for short ranges, endpoints otherwise */}
       <div className="flex justify-between mt-1.5">
-        {stats.length <= 14 ? (
+        {stats.length <= 10 ? (
           stats.map((s) => (
-            <span
-              key={s.date}
-              className="flex-1 text-center text-[9px] text-[rgba(255,255,255,0.15)]"
-            >
+            <span key={s.date} className="flex-1 text-center text-[9px] text-[rgba(255,255,255,0.22)]">
               {s.date.slice(5)}
             </span>
           ))
         ) : (
           <>
-            <span className="text-[9px] text-[rgba(255,255,255,0.15)]">
-              {stats[0].date.slice(5)}
-            </span>
-            <span className="text-[9px] text-[rgba(255,255,255,0.15)]">
-              {stats[stats.length - 1].date.slice(5)}
-            </span>
+            <span className="text-[9px] text-[rgba(255,255,255,0.22)]">{shortDay(stats[0].date)}</span>
+            <span className="text-[9px] text-[rgba(255,255,255,0.22)]">{shortDay(stats[stats.length - 1].date)}</span>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Activity mix: composition bar with gaps + legend ─────────────────────────
+
+function ActivityMix({ stats }: { stats: DailyStat[] }) {
+  const counts = {
+    stt: stats.reduce((s, d) => s + d.stt_count, 0),
+    tts: stats.reduce((s, d) => s + d.tts_count, 0),
+    llm: stats.reduce((s, d) => s + d.llm_count, 0),
+  };
+  const total = counts.stt + counts.tts + counts.llm;
+  if (total === 0) return null;
+
+  return (
+    <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
+      <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-2.5 block">
+        Activity mix
+      </span>
+      {/* Composition bar: 2px surface gaps between segments */}
+      <div className="flex h-[10px] gap-[2px] rounded-full overflow-hidden mb-2.5">
+        {MIX.map((m) => {
+          const v = counts[m.key];
+          if (v === 0) return null;
+          return (
+            <div
+              key={m.key}
+              title={`${m.label}: ${v}`}
+              style={{ width: `${(v / total) * 100}%`, background: m.color, minWidth: 3 }}
+              className="first:rounded-l-full last:rounded-r-full"
+            />
+          );
+        })}
+      </div>
+      {/* Legend with values — identity never color-alone */}
+      <div className="flex gap-5 flex-wrap">
+        {MIX.map((m) => (
+          <div key={m.key} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-[3px]" style={{ background: m.color }} />
+            <span className="text-[10px] text-[rgba(255,255,255,0.55)]">{m.label}</span>
+            <span className="text-[10px] text-[rgba(255,255,255,0.3)] font-mono">
+              {counts[m.key].toLocaleString()}
+            </span>
+            <span className="text-[9px] text-[rgba(255,255,255,0.2)]">
+              {Math.round((counts[m.key] / total) * 100)}%
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -93,6 +208,7 @@ function BarChart({ stats }: { stats: DailyStat[] }) {
 
 export default function Stats() {
   const [period, setPeriod] = useState<Period>("7d");
+  const [metric, setMetric] = useState<Metric>("words");
   const [stats, setStats] = useState<DailyStat[]>([]);
   const [today, setToday] = useState<TodaySummary | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -101,10 +217,7 @@ export default function Stats() {
     setLoading(true);
     try {
       const { from, to } = getPeriodDates(p);
-      const [dailyStats, todaySummary] = await Promise.all([
-        getStats(from, to),
-        getToday(),
-      ]);
+      const [dailyStats, todaySummary] = await Promise.all([getStats(from, to), getToday()]);
       setStats(dailyStats);
       setToday(todaySummary);
     } catch (e: unknown) {
@@ -118,19 +231,47 @@ export default function Stats() {
     load(period);
   }, [period, load]);
 
-  const totalSessions = stats.reduce(
-    (s, d) => s + d.stt_count + d.tts_count + d.llm_count,
-    0
+  const agg = useMemo(
+    () => ({
+      words: stats.reduce((s, d) => s + d.stt_words, 0),
+      sessions: stats.reduce((s, d) => s + d.stt_count + d.tts_count + d.llm_count, 0),
+      timeSaved: stats.reduce((s, d) => s + d.time_saved_secs, 0),
+      tokens: stats.reduce((s, d) => s + d.tokens_total, 0),
+      activeDays: stats.filter((d) => d.stt_count + d.tts_count + d.llm_count > 0).length,
+    }),
+    [stats]
   );
-  const timeSaved = stats.reduce((s, d) => s + d.time_saved_secs, 0);
+
+  const kpis = today
+    ? [
+        {
+          label: "Words dictated",
+          value: agg.words.toLocaleString(),
+          sub: `${today.total_words.toLocaleString()} today`,
+        },
+        {
+          label: "Sessions",
+          value: agg.sessions.toLocaleString(),
+          sub: `${today.total_sessions} today · ${agg.activeDays} active day${agg.activeDays === 1 ? "" : "s"}`,
+        },
+        {
+          label: "LLM latency",
+          value: today.llm_latency_avg > 0 ? `${Math.round(today.llm_latency_avg)}ms` : "—",
+          sub: "avg today",
+        },
+        {
+          label: "Tokens",
+          value: agg.tokens.toLocaleString(),
+          sub: `${today.tokens_total.toLocaleString()} today`,
+        },
+      ]
+    : [];
 
   return (
     <div className="flex flex-col h-full p-5 gap-3 bg-[#1a1917] overflow-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-[16px] font-semibold text-[#fafaf9]">Stats</h2>
-
-        {/* Period selector */}
+      {/* Header + period filter */}
+      <div className="flex items-center justify-between flex-shrink-0">
+        <h2 className="text-[13px] font-semibold text-[#fafaf9]">Stats</h2>
         <div className="flex gap-1">
           {(["7d", "30d", "90d"] as Period[]).map((p) => (
             <button
@@ -149,83 +290,84 @@ export default function Stats() {
         </div>
       </div>
 
-      {/* Summary tiles */}
+      {/* Hero: the product's core value metric */}
       {today && (
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5 flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-              Today words
-            </span>
-            <span className="text-[18px] font-semibold text-[#fafaf9]">
-              {today.total_words.toLocaleString()}
-            </span>
-            <span className="text-[10px] text-[rgba(255,255,255,0.2)]">
-              {today.stt_words} STT · {today.tts_words} TTS
-            </span>
+        <div className="bg-[rgba(217,119,6,0.06)] border border-[rgba(217,119,6,0.15)] rounded-[12px] px-5 py-4 flex items-end justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.35)] mb-1">
+              Time saved · {period}
+            </div>
+            <div className="text-[30px] font-semibold text-[#fafaf9] leading-none">
+              {formatTimeSaved(agg.timeSaved)}
+            </div>
           </div>
-          <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5 flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-              Sessions
-            </span>
-            <span className="text-[18px] font-semibold text-[#fafaf9]">
-              {today.total_sessions}
-            </span>
-            <span className="text-[10px] text-[rgba(255,255,255,0.2)]">
-              {totalSessions} in {period}
-            </span>
-          </div>
-          <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5 flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-              Time saved
-            </span>
-            <span className="text-[18px] font-semibold text-[#fafaf9]">
+          <div className="text-right">
+            <div className="text-[15px] font-medium text-[rgba(255,255,255,0.75)]">
               {formatTimeSaved(today.time_saved_secs)}
-            </span>
-            <span className="text-[10px] text-[rgba(255,255,255,0.2)]">
-              {formatTimeSaved(timeSaved)} in {period}
-            </span>
+            </div>
+            <div className="text-[9px] text-[rgba(255,255,255,0.3)]">today</div>
           </div>
         </div>
       )}
 
-      {/* Bar chart */}
+      {/* KPI tiles */}
+      {kpis.length > 0 && (
+        <div className="grid grid-cols-4 gap-2">
+          {kpis.map((k) => (
+            <div
+              key={k.label}
+              className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3 flex flex-col gap-0.5 min-w-0"
+            >
+              <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] truncate">
+                {k.label}
+              </span>
+              <span className="text-[17px] font-semibold text-[#fafaf9] truncate">{k.value}</span>
+              <span className="text-[9px] text-[rgba(255,255,255,0.25)] truncate">{k.sub}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Daily activity chart + metric switcher */}
       <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
-        <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-2 block">
-          {period} · STT words per day
-        </span>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
+            Daily {metric === "words" ? "words" : metric === "sessions" ? "sessions" : "time saved"}
+          </span>
+          <div className="flex gap-1">
+            {(
+              [
+                { id: "words", label: "Words" },
+                { id: "sessions", label: "Sessions" },
+                { id: "time", label: "Time saved" },
+              ] as { id: Metric; label: string }[]
+            ).map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMetric(m.id)}
+                className={[
+                  "px-2 py-0.5 text-[9px] font-medium rounded-md transition-colors",
+                  metric === m.id
+                    ? "bg-[rgba(217,119,6,0.15)] text-[#fbbf24]"
+                    : "text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.5)]",
+                ].join(" ")}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
         {loading ? (
-          <div className="h-[60px] flex items-center justify-center">
-            <span className="text-[rgba(255,255,255,0.2)] text-xs">Loading...</span>
+          <div className="h-[130px] flex items-center justify-center">
+            <span className="text-[rgba(255,255,255,0.2)] text-[11px]">Loading…</span>
           </div>
         ) : (
-          <BarChart stats={stats} />
+          <BarChart stats={stats} metric={metric} />
         )}
       </div>
 
-      {/* Breakdown row */}
-      <div className="flex gap-4 px-1 py-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#fbbf24]" />
-          <span className="text-[10px] text-[rgba(255,255,255,0.35)]">
-            {stats.reduce((s, d) => s + d.stt_count, 0)} STT &middot;{" "}
-            {stats.reduce((s, d) => s + d.stt_words, 0).toLocaleString()} words
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#c4b5fd]" />
-          <span className="text-[10px] text-[rgba(255,255,255,0.35)]">
-            {stats.reduce((s, d) => s + d.tts_count, 0)} TTS &middot;{" "}
-            {stats.reduce((s, d) => s + d.tts_words, 0).toLocaleString()} words
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#86efac]" />
-          <span className="text-[10px] text-[rgba(255,255,255,0.35)]">
-            {stats.reduce((s, d) => s + d.llm_count, 0)} LLM &middot;{" "}
-            {stats.reduce((s, d) => s + d.tokens_total, 0).toLocaleString()} tokens
-          </span>
-        </div>
-      </div>
+      {/* Activity mix */}
+      <ActivityMix stats={stats} />
     </div>
   );
 }

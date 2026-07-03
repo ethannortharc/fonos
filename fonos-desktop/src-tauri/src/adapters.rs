@@ -43,3 +43,71 @@ impl TextSink for InjectionTextSink {
         crate::injection::press_enter()
     }
 }
+
+use fonos_core::sts::{AudioOut, TurnEvent, TurnSink};
+use std::sync::Mutex;
+
+/// Renders STS conversation turns on the float pill: busy while the reply is
+/// being produced/spoken, Done with the reply text at the end, classified
+/// errors on failure.
+pub struct PillTurnSink {
+    app: tauri::AppHandle,
+    reply: Mutex<String>,
+}
+
+impl PillTurnSink {
+    /// Wrap an app handle.
+    pub fn new(app: tauri::AppHandle) -> Self {
+        Self { app, reply: Mutex::new(String::new()) }
+    }
+}
+
+impl TurnSink for PillTurnSink {
+    fn emit(&self, event: TurnEvent) {
+        match event {
+            TurnEvent::Transcript(_) | TurnEvent::SpeakingStarted => {
+                let _ = self.app.emit("float:processing", ());
+            }
+            TurnEvent::Reply(text) => {
+                *self.reply.lock().unwrap() = text;
+            }
+            TurnEvent::SpeakingDone => {}
+            TurnEvent::TurnDone => {
+                let reply = self.reply.lock().unwrap().clone();
+                let _ = self.app.emit("float:stop", &reply);
+            }
+            TurnEvent::Failed(surfaced) => {
+                crate::error_surface::emit_surfaced(&self.app, &surfaced);
+            }
+        }
+    }
+}
+
+/// Plays WAVs through the shared output device, returning when playback has
+/// (by duration) completed. Uses the WAV header duration rather than holding
+/// the playback lock, so pause/stop stay responsive.
+pub struct PlaybackAudioOut(
+    pub std::sync::Arc<std::sync::Mutex<Option<crate::audio::playback::AudioPlayback>>>,
+);
+
+#[async_trait::async_trait]
+impl AudioOut for PlaybackAudioOut {
+    async fn play_wav(&self, wav: Vec<u8>) -> Result<(), String> {
+        let duration = fonos_core::listen::wav_duration_secs(&wav).unwrap_or(0.0);
+        {
+            let mut guard = self.0.lock().map_err(|e| e.to_string())?;
+            if guard.is_none() {
+                *guard = Some(
+                    crate::audio::playback::AudioPlayback::new().map_err(|e| e.to_string())?,
+                );
+            }
+            guard
+                .as_ref()
+                .unwrap()
+                .play_wav(wav)
+                .map_err(|e| e.to_string())?;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs_f64(duration + 0.15)).await;
+        Ok(())
+    }
+}

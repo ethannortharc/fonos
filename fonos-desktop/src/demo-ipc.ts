@@ -63,6 +63,12 @@ const config = {
   listen_mode: "listen",
   listen_voice_profile: "",
   listen_voice: "default",
+  hotkey_sts: "option+s",
+  sts_persona: "You are a friendly voice assistant.",
+  sts_llm_profile: "",
+  sts_voice_profile: "",
+  sts_voice: "default",
+  sts_max_turns: 8,
   stt_language: "auto",
   model_profiles: modelProfiles,
   stt_profile: "openai-gpt-4o-mini-transcribe",
@@ -363,6 +369,8 @@ export function installDemoIpc() {
         return "0.1.0";
       case "play_audio_file":
       case "stop_playback":
+        return null;
+      case "reset_sts_session":
         return null;
       case "create_listen_from_text":
         return 99;

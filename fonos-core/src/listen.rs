@@ -181,6 +181,19 @@ pub fn concat_wavs(wavs: &[Vec<u8>]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// Duration in seconds of a PCM WAV, from its fmt byte-rate and data length.
+pub fn wav_duration_secs(wav: &[u8]) -> Option<f64> {
+    let parsed = parse_wav(wav).ok()?;
+    if parsed.fmt.len() < 12 {
+        return None;
+    }
+    let byte_rate = u32::from_le_bytes(parsed.fmt[8..12].try_into().ok()?) as f64;
+    if byte_rate <= 0.0 {
+        return None;
+    }
+    Some(parsed.data.len() as f64 / byte_rate)
+}
+
 struct ParsedWav<'a> {
     fmt: &'a [u8],
     data: &'a [u8],

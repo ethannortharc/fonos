@@ -252,6 +252,7 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     try_add(&config.hotkey_meeting, "meeting");
     try_add(&config.hotkey_transform, "transform");
     try_add(&config.hotkey_listen, "listen");
+    try_add(&config.hotkey_sts, "sts");
     if config.notebook_hotkey_1 > 0 { try_add(&config.hotkey_note_1, "note-1"); }
     if config.notebook_hotkey_2 > 0 { try_add(&config.hotkey_note_2, "note-2"); }
     if config.notebook_hotkey_3 > 0 { try_add(&config.hotkey_note_3, "note-3"); }
@@ -354,6 +355,7 @@ fn main() {
         meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
         note_target: Arc::new(Mutex::new(None)),
         agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
+        sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
     };
 
     // `mut` is only exercised on Linux (the global-shortcut plugin block below);
@@ -382,6 +384,7 @@ fn main() {
             commands::dictation::transcribe_file,
             // Permission commands
             commands::listen::create_listen_from_text,
+            commands::sts::reset_sts_session,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
             // TTS commands
@@ -514,6 +517,7 @@ fn main() {
                  agent_combo, agent_panel_combo, note_combo, meeting_combo,
                  transform_combo,
                     listen_combo,
+                    sts_combo,
                  note1_combo, note2_combo, note3_combo,
                  note1_nb, note2_nb, note3_nb) = {
                 let config = state.config.lock().unwrap();
@@ -526,6 +530,7 @@ fn main() {
                     config.hotkey_meeting.clone(),
                     config.hotkey_transform.clone(),
                     config.hotkey_listen.clone(),
+                    config.hotkey_sts.clone(),
                     config.hotkey_note_1.clone(),
                     config.hotkey_note_2.clone(),
                     config.hotkey_note_3.clone(),
@@ -574,6 +579,12 @@ fn main() {
                 match hotkey::HotkeyManager::parse_hotkey(&listen_combo, "listen") {
                     Ok(hk) => { hm.register(hk); any_hotkey = true; }
                     Err(e) => eprintln!("fonos: could not parse listen hotkey '{}': {}", listen_combo, e),
+                }
+            }
+            if !sts_combo.is_empty() {
+                match hotkey::HotkeyManager::parse_hotkey(&sts_combo, "sts") {
+                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
+                    Err(e) => eprintln!("fonos: could not parse sts hotkey '{}': {}", sts_combo, e),
                 }
             }
             // Notebook-specific note shortcuts (only if a notebook is bound)
@@ -1234,6 +1245,18 @@ fn main() {
                                 }
                             }
 
+                            "sts" => {
+                                // Hold-to-talk conversation turn (issue #24):
+                                // key-down records, key-up transcribes → chat → speaks.
+                                if is_down {
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
+                                        crate::error_surface::emit_float_error(&handle, &e);
+                                    }
+                                } else {
+                                    let _ = commands::sts::run_sts_turn(handle.clone()).await;
+                                }
+                            }
                             "listen" => {
                                 // Capture the current selection into the Listen queue
                                 // (summarize + synthesize; async, pill shows progress).

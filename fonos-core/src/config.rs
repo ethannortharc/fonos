@@ -149,6 +149,21 @@ pub struct AppConfig {
     /// Voice identifier for listen synthesis (provider-specific).
     pub listen_voice: String,
 
+    // ── STS conversation (issue #24) ─────────────────────────────────────
+
+    /// Global hotkey: hold-to-talk conversation turn.
+    pub hotkey_sts: String,
+    /// Persona / system prompt for the conversation chat stage.
+    pub sts_persona: String,
+    /// LLM profile id for conversation; empty = fall back to `llm_profile`.
+    pub sts_llm_profile: String,
+    /// TTS profile id for the spoken reply; empty = fall back to `tts_profile`.
+    pub sts_voice_profile: String,
+    /// Voice identifier for the spoken reply.
+    pub sts_voice: String,
+    /// Conversation memory: max user/assistant turn pairs kept.
+    pub sts_max_turns: usize,
+
     // ── Custom vocabulary ────────────────────────────────────────────────
 
     /// User-defined vocab books (terms + correction rules). Referenced by id
@@ -204,6 +219,12 @@ impl Default for AppConfig {
             listen_mode: "listen".to_string(),
             listen_voice_profile: String::new(),
             listen_voice: "default".to_string(),
+            hotkey_sts: "option+s".to_string(),
+            sts_persona: "You are a friendly voice assistant. Your replies are spoken aloud, so answer in 1-3 short conversational sentences in the user's language. No markdown, no lists.".to_string(),
+            sts_llm_profile: String::new(),
+            sts_voice_profile: String::new(),
+            sts_voice: "default".to_string(),
+            sts_max_turns: 8,
             transform_mode: "polish".to_string(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }

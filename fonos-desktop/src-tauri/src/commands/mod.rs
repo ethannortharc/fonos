@@ -8,6 +8,7 @@ pub mod llm;
 pub mod meeting;
 pub mod permissions;
 pub mod selection;
+pub mod sts;
 pub mod stats;
 pub mod storage;
 pub mod tts;
@@ -202,4 +203,6 @@ pub struct AppState {
     pub note_target: Arc<Mutex<Option<i64>>>,
     /// Stashed selection context grabbed on agent hotkey key-down, consumed on key-up.
     pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
+    /// STS conversation memory (issue #24), reset when the app restarts.
+    pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
 }

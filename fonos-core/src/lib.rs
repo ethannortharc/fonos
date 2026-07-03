@@ -22,6 +22,7 @@ pub mod services;
 pub mod stats;
 pub mod stt;
 pub mod storage;
+pub mod sts;
 pub mod tts;
 pub mod vocab;
 pub mod voice_store;

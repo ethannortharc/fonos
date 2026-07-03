@@ -21,6 +21,12 @@ export interface AppConfig {
   listen_mode?: string;
   listen_voice_profile?: string;
   listen_voice?: string;
+  hotkey_sts?: string;
+  sts_persona?: string;
+  sts_llm_profile?: string;
+  sts_voice_profile?: string;
+  sts_voice?: string;
+  sts_max_turns?: number;
   stt_language: string;
   model_profiles: ModelProfile[];
   stt_profile: string;

@@ -5,6 +5,7 @@ pub mod config;
 pub mod dictation;
 pub mod llm;
 pub mod meeting;
+pub mod permissions;
 pub mod selection;
 pub mod stats;
 pub mod storage;

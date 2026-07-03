@@ -180,14 +180,33 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     let _ = handle.emit("float:processing", ());
                     match commands::llm::process_with_llm(state2, result.text, mode).await {
                         Ok(llm_result) => {
+                            let mut delivered = true;
                             if !llm_result.processed.is_empty() && llm_result.auto_paste {
-                                let _ = crate::injection::inject_text(&llm_result.processed);
-                                if llm_result.auto_press_enter {
-                                    std::thread::sleep(std::time::Duration::from_millis(50));
-                                    crate::injection::press_enter();
+                                let inj_cfg = {
+                                    let s: tauri::State<'_, commands::AppState> = handle.state();
+                                    let cfg = s.config.lock().unwrap().clone();
+                                    cfg
+                                };
+                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
+                                    Ok(_) => {
+                                        if llm_result.auto_press_enter {
+                                            std::thread::sleep(std::time::Duration::from_millis(50));
+                                            if let Err(e) = crate::injection::press_enter() {
+                                                eprintln!("fonos: press_enter failed: {e}");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        delivered = false;
+                                        let msg = format!("Injection failed: {e}");
+                                        eprintln!("fonos: {msg}");
+                                        let _ = handle.emit("float:error", &msg);
+                                    }
                                 }
                             }
-                            let _ = handle.emit("float:stop", &llm_result.processed);
+                            if delivered {
+                                let _ = handle.emit("float:stop", &llm_result.processed);
+                            }
                         }
                         Err(e) => {
                             eprintln!("fonos: LLM error: {e}");
@@ -357,6 +376,9 @@ fn main() {
             commands::dictation::stop_recording,
             commands::dictation::test_stt,
             commands::dictation::transcribe_file,
+            // Permission commands
+            commands::permissions::check_accessibility,
+            commands::permissions::open_settings_pane,
             // TTS commands
             commands::tts::synthesize_speech,
             commands::tts::generate_and_play,
@@ -646,10 +668,23 @@ fn main() {
                                                         if has_llm {
                                                             match commands::llm::process_with_llm(state2, result.text, mode).await {
                                                                 Ok(llm) => {
+                                                                    let mut delivered = true;
                                                                     if !llm.processed.is_empty() && llm.auto_paste {
-                                                                        let _ = crate::injection::inject_text(&llm.processed);
+                                                                        let inj_cfg = {
+                                                                            let s: tauri::State<'_, AppState> = h2.state();
+                                                                            let cfg = s.config.lock().unwrap().clone();
+                                                                            cfg
+                                                                        };
+                                                                        if let Err(e) = crate::injection::inject_text(&llm.processed, &inj_cfg) {
+                                                                            delivered = false;
+                                                                            let msg = format!("Injection failed: {e}");
+                                                                            eprintln!("fonos: {msg}");
+                                                                            let _ = h2.emit("float:error", &msg);
+                                                                        }
                                                                     }
-                                                                    let _ = h2.emit("float:stop", &llm.processed);
+                                                                    if delivered {
+                                                                        let _ = h2.emit("float:stop", &llm.processed);
+                                                                    }
                                                                 }
                                                                 Err(e) => {
                                                                     eprintln!("fonos: toggle LLM error: {e}");
@@ -702,16 +737,33 @@ fn main() {
                                                         state2.clone(), result.text.clone(), mode.clone()
                                                     ).await {
                                                         Ok(llm_result) => {
-                                                            if !llm_result.processed.is_empty() {
-                                                                if llm_result.auto_paste {
-                                                                    let _ = crate::injection::inject_text(&llm_result.processed);
-                                                                    if llm_result.auto_press_enter {
-                                                                        std::thread::sleep(std::time::Duration::from_millis(50));
-                                                                        crate::injection::press_enter();
+                                                            let mut delivered = true;
+                                                            if !llm_result.processed.is_empty() && llm_result.auto_paste {
+                                                                let inj_cfg = {
+                                                                    let s: tauri::State<'_, AppState> = handle.state();
+                                                                    let cfg = s.config.lock().unwrap().clone();
+                                                                    cfg
+                                                                };
+                                                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
+                                                                    Ok(_) => {
+                                                                        if llm_result.auto_press_enter {
+                                                                            std::thread::sleep(std::time::Duration::from_millis(50));
+                                                                            if let Err(e) = crate::injection::press_enter() {
+                                                                                eprintln!("fonos: press_enter failed: {e}");
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(e) => {
+                                                                        delivered = false;
+                                                                        let msg = format!("Injection failed: {e}");
+                                                                        eprintln!("fonos: {msg}");
+                                                                        let _ = handle.emit("float:error", &msg);
                                                                     }
                                                                 }
                                                             }
-                                                            let _ = handle.emit("float:stop", &llm_result.processed);
+                                                            if delivered {
+                                                                let _ = handle.emit("float:stop", &llm_result.processed);
+                                                            }
                                                         }
                                                         Err(e) => {
                                                             eprintln!("fonos: hotkey LLM error: {e}");

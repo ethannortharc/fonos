@@ -393,7 +393,12 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         // 5. Inject raw text only in raw mode (not agent, not LLM modes)
         if dictation_mode == "raw" && !transcript.is_empty() {
             eprintln!("fonos: INJECTING raw text at cursor ({} chars)", transcript.len());
-            let _ = inject_text(&transcript);
+            let inj_cfg = state.config.lock().map(|c| c.clone()).unwrap_or_default();
+            if let Err(e) = inject_text(&transcript, &inj_cfg) {
+                let msg = format!("Injection failed: {e}");
+                eprintln!("fonos: {msg}");
+                let _ = app.emit("float:error", &msg);
+            }
         }
     } else {
         eprintln!("fonos: agent mode — skipping float:stop and inject");

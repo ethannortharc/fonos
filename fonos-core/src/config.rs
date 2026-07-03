@@ -8,6 +8,20 @@ use std::path::PathBuf;
 
 use crate::{Error, Result};
 
+/// Per-app override for the text injection strategy.
+///
+/// `app` is matched as a case-insensitive substring of the frontmost
+/// application's name (e.g. `"terminal"` matches "Terminal" and "iTerm2" does
+/// not). The first matching override in the list wins.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InjectionAppOverride {
+    /// App name fragment to match (case-insensitive).
+    pub app: String,
+    /// `"paste"` (clipboard + Cmd+V) or `"type"` (simulated keystrokes).
+    pub strategy: String,
+}
+
 /// Application configuration persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -104,6 +118,16 @@ pub struct AppConfig {
     /// Which dictation mode to use for quick-transform (e.g. "polish", "formal", "translate").
     /// Uses the mode's system prompt + user_template as the LLM processing step.
     pub transform_mode: String,
+
+    // ── Text injection settings ──────────────────────────────────────────
+
+    /// Default text injection strategy: `"paste"` (clipboard + Cmd+V, fast but
+    /// briefly occupies the clipboard) or `"type"` (simulated keystrokes,
+    /// never touches the clipboard but is slower for long text).
+    pub injection_strategy: String,
+    /// Per-app overrides of the injection strategy, matched against the
+    /// frontmost app's name. First match wins.
+    pub injection_app_overrides: Vec<InjectionAppOverride>,
 }
 
 impl Default for AppConfig {
@@ -148,6 +172,10 @@ impl Default for AppConfig {
             meeting_summary_prompt: String::new(),
             hotkey_transform: "cmd+shift+t".to_string(),
             transform_mode: "polish".to_string(),
+            // Linux historically used xdotool type-first; macOS uses paste.
+            injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }
+                .to_string(),
+            injection_app_overrides: Vec::new(),
         }
     }
 }

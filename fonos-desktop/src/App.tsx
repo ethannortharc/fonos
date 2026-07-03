@@ -146,10 +146,12 @@ export default function App() {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="absolute w-[20px] h-[20px] rounded-[5px] flex items-center justify-center hover:bg-[rgba(255,255,255,0.07)] transition-colors"
-          style={{ stroke: "rgba(255,255,255,0.25)", top: "6px", left: "88px" }}
+          style={{ stroke: "#ffffff", top: "6px", left: "88px" }}
           title={collapsed ? "Show sidebar" : "Hide sidebar"}
         >
-          {SIDEBAR_ICON}
+          {/* Opaque stroke + wrapper alpha: overlapping strokes inside the
+              glyph composite once, so joints don't render brighter. */}
+          <span className="flex" style={{ opacity: 0.25 }}>{SIDEBAR_ICON}</span>
         </button>
       </div>
 
@@ -184,10 +186,15 @@ export default function App() {
                   : "hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
               style={{
-                stroke: activeTab === item.id ? "#fbbf24" : "rgba(255,255,255,0.22)",
+                stroke: activeTab === item.id ? "#fbbf24" : "#ffffff",
               }}
             >
-              {item.icon}
+              <span
+                className="flex transition-opacity"
+                style={{ opacity: activeTab === item.id ? 1 : 0.22 }}
+              >
+                {item.icon}
+              </span>
             </button>
           ))}
           </div>
@@ -206,10 +213,15 @@ export default function App() {
                 : "hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
             style={{
-              stroke: activeTab === "settings" ? "#fbbf24" : "rgba(255,255,255,0.22)",
+              stroke: activeTab === "settings" ? "#fbbf24" : "#ffffff",
             }}
           >
-            {SETTINGS_ICON}
+            <span
+              className="flex transition-opacity"
+              style={{ opacity: activeTab === "settings" ? 1 : 0.22 }}
+            >
+              {SETTINGS_ICON}
+            </span>
           </button>
 
           {/* Version */}

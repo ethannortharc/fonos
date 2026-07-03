@@ -15,6 +15,7 @@ pub mod llm;
 pub mod meetings;
 pub mod error_class;
 pub mod modes;
+pub mod pipeline;
 pub mod model_caps;
 pub mod services;
 pub mod stats;

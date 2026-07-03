@@ -9,7 +9,11 @@
 
 /// A classified error ready to surface in the UI.
 ///
+/// Derives `Clone`/`PartialEq` so it can travel inside
+/// [`crate::pipeline::PipelineEvent`].
+///
 /// Serialized to the JSON `float:error` payload described in the module docs.
+#[derive(Debug, Clone, PartialEq)]
 pub struct SurfacedError {
     /// Short, user-facing message shown in the pill / activity feed.
     pub message: String,

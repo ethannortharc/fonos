@@ -44,3 +44,17 @@ pub fn emit_float_error(app: &tauri::AppHandle, raw: &str) {
 
     let _ = app.emit("float:error", payload);
 }
+
+/// Emit an already-classified error as the `float:error` payload.
+///
+/// Used by the pipeline adapters ([`crate::adapters::PillEventSink`]) where
+/// classification already happened in fonos-core.
+pub fn emit_surfaced(app: &tauri::AppHandle, surfaced: &SurfacedError) {
+    eprintln!("fonos: pipeline error surfaced: {}", surfaced.message);
+    let payload = serde_json::json!({
+        "message": surfaced.message,
+        "pane": surfaced.pane,
+    })
+    .to_string();
+    let _ = app.emit("float:error", payload);
+}

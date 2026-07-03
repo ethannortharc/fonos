@@ -56,6 +56,11 @@ fonos-ios                      second consumer of the same core (validates ports
 ## Migration status
 
 - Phase 0 — audit + this document: **done**
-- Phase 1 — mechanical moves (STT clients, error classification, service resolution → core): see #21
-- Phase 2 — ports + `PipelineEvent` + `core::pipeline`: see #21
+- Phase 1 — mechanical moves (STT clients, error classification, service
+  resolution → core): **done**
+- Phase 2 — ports (`EventSink`, `TextSink`) + `PipelineEvent` +
+  `core::pipeline::deliver_llm_result` (the previously-triplicated post-LLM
+  delivery flow, now unit-tested with fake adapters): **done**.
+  Remaining Phase-2 increment: fold the capture→transcribe half
+  (`stop_recording`) behind an `SttEngine`/`AudioSource` port pair — see #21.
 - Phase 3 — iOS on the same pipeline; public API (semver, docs): follow-up after #21

@@ -2,6 +2,7 @@
 
 mod audio;
 mod commands;
+mod adapters;
 mod error_surface;
 #[cfg(target_os = "macos")]
 mod hotkey;
@@ -180,50 +181,36 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
                     // stop_recording already left the pill in the processing
                     // state for LLM modes; just run the LLM and emit the final
                     // float:stop/float:error below.
-                    match commands::llm::process_with_llm(state2, result.text, mode.clone()).await {
-                        Ok(llm_result) => {
-                            let mut delivered = true;
-                            if !llm_result.processed.is_empty() && llm_result.auto_paste {
-                                let inj_cfg = {
-                                    let s: tauri::State<'_, commands::AppState> = handle.state();
-                                    let cfg = s.config.lock().unwrap().clone();
-                                    cfg
-                                };
-                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
-                                    Ok(_) => {
-                                        if llm_result.auto_press_enter {
-                                            std::thread::sleep(std::time::Duration::from_millis(50));
-                                            if let Err(e) = crate::injection::press_enter() {
-                                                eprintln!("fonos: press_enter failed: {e}");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        delivered = false;
-                                        let msg = format!("Injection failed: {e}");
-                                        crate::error_surface::emit_float_error(&handle, &msg);
-                                    }
-                                }
+                    {
+                        // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
+                        // processed text, emit exactly one terminal pill event, classify errors.
+                        let llm_res = commands::llm::process_with_llm(state2, result.text, mode.clone()).await;
+                        let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
+                            processed: l.processed,
+                            auto_paste: l.auto_paste,
+                            auto_press_enter: l.auto_press_enter,
+                        });
+                        let (events, text_sink) = {
+                            let s: tauri::State<AppState> = handle.state();
+                            (
+                                crate::adapters::PillEventSink(handle.clone()),
+                                crate::adapters::InjectionTextSink(s.config.clone()),
+                            )
+                        };
+                        if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
+                            == fonos_core::pipeline::DeliveryOutcome::Delivered
+                        {
+                            // End-to-end dictation latency (key release → delivered), issue #4.
+                            let db_arc = {
+                                let s: tauri::State<AppState> = handle.state();
+                                s.db.clone()
+                            };
+                            let guard = db_arc.lock();
+                            if let Ok(db) = guard {
+                                let _ = fonos_core::stats::record_dictation_latency(
+                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                );
                             }
-                            if delivered {
-                                let _ = handle.emit("float:stop", &llm_result.processed);
-                                // End-to-end dictation latency (key release → delivered), issue #4.
-                                {
-                                    let db_arc = {
-                                        let s: tauri::State<AppState> = handle.state();
-                                        s.db.clone()
-                                    };
-                                    let guard = db_arc.lock();
-                                    if let Ok(db) = guard {
-                                        let _ = fonos_core::stats::record_dictation_latency(
-                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            crate::error_surface::emit_float_error(&handle, &format!("LLM processing failed: {e}"));
                         }
                     }
                 }
@@ -697,40 +684,36 @@ fn main() {
                                                             all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
                                                         };
                                                         if has_llm {
-                                                            match commands::llm::process_with_llm(state2, result.text, mode.clone()).await {
-                                                                Ok(llm) => {
-                                                                    let mut delivered = true;
-                                                                    if !llm.processed.is_empty() && llm.auto_paste {
-                                                                        let inj_cfg = {
-                                                                            let s: tauri::State<'_, AppState> = h2.state();
-                                                                            let cfg = s.config.lock().unwrap().clone();
-                                                                            cfg
-                                                                        };
-                                                                        if let Err(e) = crate::injection::inject_text(&llm.processed, &inj_cfg) {
-                                                                            delivered = false;
-                                                                            let msg = format!("Injection failed: {e}");
-                                                                            crate::error_surface::emit_float_error(&h2, &msg);
-                                                                        }
+                                                            {
+                                                                // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
+                                                                // processed text, emit exactly one terminal pill event, classify errors.
+                                                                let llm_res = commands::llm::process_with_llm(state2, result.text, mode.clone()).await;
+                                                                let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
+                                                                    processed: l.processed,
+                                                                    auto_paste: l.auto_paste,
+                                                                    auto_press_enter: l.auto_press_enter,
+                                                                });
+                                                                let (events, text_sink) = {
+                                                                    let s: tauri::State<AppState> = h2.state();
+                                                                    (
+                                                                        crate::adapters::PillEventSink(h2.clone()),
+                                                                        crate::adapters::InjectionTextSink(s.config.clone()),
+                                                                    )
+                                                                };
+                                                                if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
+                                                                    == fonos_core::pipeline::DeliveryOutcome::Delivered
+                                                                {
+                                                                    // End-to-end dictation latency (key release → delivered), issue #4.
+                                                                    let db_arc = {
+                                                                        let s: tauri::State<AppState> = h2.state();
+                                                                        s.db.clone()
+                                                                    };
+                                                                    let guard = db_arc.lock();
+                                                                    if let Ok(db) = guard {
+                                                                        let _ = fonos_core::stats::record_dictation_latency(
+                                                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                                                        );
                                                                     }
-                                                                    if delivered {
-                                                                        let _ = h2.emit("float:stop", &llm.processed);
-                                                                        // End-to-end dictation latency (key release → delivered), issue #4.
-                                                                        {
-                                                                            let db_arc = {
-                                                                                let s: tauri::State<AppState> = h2.state();
-                                                                                s.db.clone()
-                                                                            };
-                                                                            let guard = db_arc.lock();
-                                                                            if let Ok(db) = guard {
-                                                                                let _ = fonos_core::stats::record_dictation_latency(
-                                                                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                                                                );
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                                Err(e) => {
-                                                                    crate::error_surface::emit_float_error(&h2, &format!("LLM processing failed: {e}"));
                                                                 }
                                                             }
                                                         }
@@ -779,52 +762,36 @@ fn main() {
                                                     all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
                                                 };
                                                 if has_llm {
-                                                    match commands::llm::process_with_llm(
-                                                        state2.clone(), result.text.clone(), mode.clone()
-                                                    ).await {
-                                                        Ok(llm_result) => {
-                                                            let mut delivered = true;
-                                                            if !llm_result.processed.is_empty() && llm_result.auto_paste {
-                                                                let inj_cfg = {
-                                                                    let s: tauri::State<'_, AppState> = handle.state();
-                                                                    let cfg = s.config.lock().unwrap().clone();
-                                                                    cfg
-                                                                };
-                                                                match crate::injection::inject_text(&llm_result.processed, &inj_cfg) {
-                                                                    Ok(_) => {
-                                                                        if llm_result.auto_press_enter {
-                                                                            std::thread::sleep(std::time::Duration::from_millis(50));
-                                                                            if let Err(e) = crate::injection::press_enter() {
-                                                                                eprintln!("fonos: press_enter failed: {e}");
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    Err(e) => {
-                                                                        delivered = false;
-                                                                        let msg = format!("Injection failed: {e}");
-                                                                        crate::error_surface::emit_float_error(&handle, &msg);
-                                                                    }
-                                                                }
+                                                    {
+                                                        // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
+                                                        // processed text, emit exactly one terminal pill event, classify errors.
+                                                        let llm_res = commands::llm::process_with_llm(state2.clone(), result.text.clone(), mode.clone()).await;
+                                                        let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
+                                                            processed: l.processed,
+                                                            auto_paste: l.auto_paste,
+                                                            auto_press_enter: l.auto_press_enter,
+                                                        });
+                                                        let (events, text_sink) = {
+                                                            let s: tauri::State<AppState> = handle.state();
+                                                            (
+                                                                crate::adapters::PillEventSink(handle.clone()),
+                                                                crate::adapters::InjectionTextSink(s.config.clone()),
+                                                            )
+                                                        };
+                                                        if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
+                                                            == fonos_core::pipeline::DeliveryOutcome::Delivered
+                                                        {
+                                                            // End-to-end dictation latency (key release → delivered), issue #4.
+                                                            let db_arc = {
+                                                                let s: tauri::State<AppState> = handle.state();
+                                                                s.db.clone()
+                                                            };
+                                                            let guard = db_arc.lock();
+                                                            if let Ok(db) = guard {
+                                                                let _ = fonos_core::stats::record_dictation_latency(
+                                                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
+                                                                );
                                                             }
-                                                            if delivered {
-                                                                let _ = handle.emit("float:stop", &llm_result.processed);
-                                                                // End-to-end dictation latency (key release → delivered), issue #4.
-                                                                {
-                                                                    let db_arc = {
-                                                                        let s: tauri::State<AppState> = handle.state();
-                                                                        s.db.clone()
-                                                                    };
-                                                                    let guard = db_arc.lock();
-                                                                    if let Ok(db) = guard {
-                                                                        let _ = fonos_core::stats::record_dictation_latency(
-                                                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                                                        );
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        Err(e) => {
-                                                            crate::error_surface::emit_float_error(&handle, &format!("LLM processing failed: {e}"));
                                                         }
                                                     }
                                                 }

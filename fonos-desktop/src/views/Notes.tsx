@@ -157,6 +157,24 @@ interface EntryItemProps {
   onPlay?: (audioRef: string) => void;
 }
 
+/** Day bucket label for journal-style grouping: Today / Yesterday / Mar 5. */
+function dayLabel(isoDate: string): string {
+  try {
+    const d = new Date(isoDate);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return "Today";
+    const y = new Date(now.getTime() - 86400000);
+    if (d.toDateString() === y.toDateString()) return "Yesterday";
+    const opts: Intl.DateTimeFormatOptions =
+      d.getFullYear() === now.getFullYear()
+        ? { month: "short", day: "numeric" }
+        : { month: "short", day: "numeric", year: "numeric" };
+    return d.toLocaleDateString([], opts);
+  } catch {
+    return isoDate;
+  }
+}
+
 function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
   const [editMode, setEditMode] = useState(false);
   const [editText, setEditText] = useState(entry.processed_text || entry.raw_text);
@@ -620,8 +638,8 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
             {selectedNotebook ? `No entries in ${selectedNotebook.title}` : "Select a notebook"}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {selectedEntries.map((entry) => {
+          <div className="flex flex-col gap-3">
+            {(() => {
               const refresh = () => {
                 if (selectedId !== null) {
                   getContainerEntries(selectedId)
@@ -630,15 +648,36 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
                   loadNotebooks(); // refresh counts
                 }
               };
-              return (
-                <EntryItem
-                  key={entry.id}
-                  entry={entry}
-                  onEdit={async (id, text) => { await updateEntry(id, text); refresh(); }}
-                  onDelete={async (id) => { await deleteEntry(id); refresh(); }}
-                />
-              );
-            })}
+              // Journal rhythm: bucket entries under day headers.
+              const groups: { label: string; items: typeof selectedEntries }[] = [];
+              for (const entry of selectedEntries) {
+                const label = dayLabel(entry.created_at);
+                const last = groups[groups.length - 1];
+                if (last && last.label === label) last.items.push(entry);
+                else groups.push({ label, items: [entry] });
+              }
+              return groups.map((g) => (
+                <div key={g.label}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[9px] font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.28)]">
+                      {g.label}
+                    </span>
+                    <div className="flex-1 border-t border-[rgba(255,255,255,0.04)]" />
+                    <span className="text-[9px] text-[rgba(255,255,255,0.15)]">{g.items.length}</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {g.items.map((entry) => (
+                      <EntryItem
+                        key={entry.id}
+                        entry={entry}
+                        onEdit={async (id, text) => { await updateEntry(id, text); refresh(); }}
+                        onDelete={async (id) => { await deleteEntry(id); refresh(); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>

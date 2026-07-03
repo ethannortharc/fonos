@@ -577,6 +577,32 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
           </div>
         ) : detail ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Meta strip — the at-a-glance facts: when, how long, how much */}
+            {transcriptEntries.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {[
+                  formatDateTime(transcriptEntries[0].created_at),
+                  formatDuration(
+                    transcriptEntries[0].created_at,
+                    transcriptEntries[transcriptEntries.length - 1].created_at
+                  ),
+                  `${transcriptEntries.length} segment${transcriptEntries.length === 1 ? "" : "s"}`,
+                ].map((label, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      fontSize: 10, padding: "3px 9px", borderRadius: 12,
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.05)",
+                      color: "rgba(255,255,255,0.45)",
+                      fontFamily: i === 0 ? "inherit" : "'SF Mono', ui-monospace, monospace",
+                    }}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {/* AI Summary section (collapsible) */}
             <div style={{

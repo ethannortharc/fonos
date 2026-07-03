@@ -16,6 +16,7 @@ export interface AppConfig {
   audio_input_device: string;
   audio_output_device: string;
   show_floating_indicator: boolean;
+  show_live_transcript?: boolean;
   stt_language: string;
   model_profiles: ModelProfile[];
   stt_profile: string;

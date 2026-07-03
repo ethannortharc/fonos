@@ -308,14 +308,15 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     // Resolve effective vocab books for this dictation (global ∪ mode, issue #3).
     // Cloned out of the config lock so the books outlive the transcription awaits.
-    let vocab_books: Vec<fonos_core::vocab::VocabBook> = {
+    let (vocab_books, live_transcript): (Vec<fonos_core::vocab::VocabBook>, bool) = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let empty: &[String] = &[];
         let mode_ids = current_mode.map(|m| m.vocab_books.as_slice()).unwrap_or(empty);
-        fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
+        let books = fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
             .into_iter()
             .cloned()
-            .collect()
+            .collect();
+        (books, config.show_live_transcript)
     };
     let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();
     let vocab_terms = fonos_core::vocab::collect_terms(&vocab_refs);
@@ -383,7 +384,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             // Live partials only for non-agent dictations. Agent recordings use
             // skip_float (idle pill), so emitting stt:partial would paint text
             // onto a pill that isn't in the processing state.
-            let partial_sink = if dictation_mode != "agent" { Some(&app) } else { None };
+            let partial_sink = if dictation_mode != "agent" && live_transcript { Some(&app) } else { None };
             transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode, &vocab_terms, partial_sink).await
         };
         match result {

@@ -125,7 +125,7 @@ function ModePipelineCard({
     await onSaveMode({
       id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
       system: mode.system ?? "", user_template: mode.user_template ?? "",
-      temperature: mode.temperature, model: "", stt_model: "", stt_prompt: "", stt_temperature: 0,
+      temperature: mode.temperature, model: "", stt_model: "", stt_prompt: "", stt_temperature: 0, vocab_books: mode.vocab_books ?? [],
       max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
       auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
     });
@@ -183,7 +183,7 @@ function ModePipelineCard({
               onClick={() => onEdit({
                 id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
                 system: mode.system ?? "", user_template: mode.user_template ?? "",
-                temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0,
+                temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0, vocab_books: mode.vocab_books ?? [],
                 max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
                 auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
               })}
@@ -258,7 +258,7 @@ function ModePipelineCard({
                 onClick={() => onEdit({
                   id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
                   system: mode.system ?? "", user_template: mode.user_template ?? "",
-                  temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0,
+                  temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0, vocab_books: mode.vocab_books ?? [],
                   max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
                   auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
                 })}
@@ -493,6 +493,40 @@ export default function ModesTab({
                       className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                     />
                   </div>
+                  {(config.vocab_books ?? []).length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
+                        Vocabulary books
+                        <span className="ml-1 text-[rgba(255,255,255,0.15)]">(mounted for this mode, in addition to Global books)</span>
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(config.vocab_books ?? []).map((b) => {
+                          const selected = editingMode.vocab_books.includes(b.id);
+                          return (
+                            <button
+                              key={b.id}
+                              onClick={() =>
+                                setEditingMode({
+                                  ...editingMode,
+                                  vocab_books: selected
+                                    ? editingMode.vocab_books.filter((id) => id !== b.id)
+                                    : [...editingMode.vocab_books, b.id],
+                                })
+                              }
+                              className={[
+                                "px-2.5 py-1 rounded-full text-[10px] transition-all",
+                                selected
+                                  ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                                  : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
+                              ].join(" ")}
+                            >
+                              {b.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
                       Temperature

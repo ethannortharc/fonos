@@ -60,12 +60,31 @@ export interface AppConfig {
   injection_app_overrides?: InjectionAppOverride[];
   // Onboarding — gates the first-run wizard
   has_completed_onboarding?: boolean;
+  vocab_books?: VocabBook[];
+  global_vocab_books?: string[];
 }
 
 /** A per-app override for the text injection strategy. */
 export interface InjectionAppOverride {
   app: string;
   strategy: string;
+}
+
+/** Mirrors fonos_core::vocab::VocabRule */
+export interface VocabRule {
+  from: string;
+  to: string;
+  kind: "literal" | "regex";
+  case_insensitive: boolean;
+}
+
+/** Mirrors fonos_core::vocab::VocabBook */
+export interface VocabBook {
+  id: string;
+  name: string;
+  enabled: boolean;
+  terms: string[];
+  rules: VocabRule[];
 }
 
 /** A named model profile entry within AppConfig.model_profiles. */
@@ -99,6 +118,7 @@ export interface Mode {
   output_language: string;
   auto_paste: boolean;
   auto_press_enter: boolean;
+  vocab_books?: string[];
 }
 
 /** A mode entry as returned by list_modes — includes id and builtin flag. */
@@ -266,6 +286,7 @@ export interface SaveModeOptions {
   output_language?: string;
   auto_paste?: boolean;
   auto_press_enter?: boolean;
+  vocab_books?: string[];
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────

@@ -306,6 +306,20 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     let all_modes = fonos_core::modes::all_modes();
     let current_mode = all_modes.get(&dictation_mode);
 
+    // Resolve effective vocab books for this dictation (global ∪ mode, issue #3).
+    // Cloned out of the config lock so the books outlive the transcription awaits.
+    let vocab_books: Vec<fonos_core::vocab::VocabBook> = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let empty: &[String] = &[];
+        let mode_ids = current_mode.map(|m| m.vocab_books.as_slice()).unwrap_or(empty);
+        fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
+            .into_iter()
+            .cloned()
+            .collect()
+    };
+    let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();
+    let vocab_terms = fonos_core::vocab::collect_terms(&vocab_refs);
+
     // Read STT config — check for Apple Speech sentinel, then mode override, then global default
     let stt = match current_mode {
         Some(mode) if mode.stt_model == "apple-speech" => {
@@ -360,13 +374,13 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     // ── Branch: Apple on-device / Whisper API / Chat Completions STT ────────
     let (transcript, stt_engine) = if stt.provider == "apple" {
-        transcribe_apple(&audio_path_str, &lang_code).await
+        transcribe_apple(&audio_path_str, &lang_code, &vocab_terms).await
     } else {
         let result = if stt.stt_api == "chat" {
             eprintln!("fonos: STT via chat completions (base64 audio)");
-            transcribe_chat(&stt, &file_bytes, &lang_code).await
+            transcribe_chat(&stt, &file_bytes, &lang_code, &vocab_terms).await
         } else {
-            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode).await
+            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode, &vocab_terms).await
         };
         match result {
             Ok(t) => (t, String::new()),
@@ -383,6 +397,14 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 return Err(msg);
             }
         }
+    };
+
+    // ② Deterministic post-correction from the effective vocab books — runs
+    // for every mode (raw, LLM, note, agent) before any downstream use.
+    let transcript = if vocab_refs.is_empty() {
+        transcript
+    } else {
+        fonos_core::vocab::apply_rules(&transcript, &vocab_refs)
     };
 
     let latency_ms = stop_time.elapsed().as_millis() as u64;
@@ -534,7 +556,7 @@ pub async fn transcribe_file(
 
 /// Transcribe via macOS SFSpeechRecognizer (calls the bundled Swift helper).
 /// Returns (transcript, engine) where engine is "on-device" or "server".
-async fn transcribe_apple(audio_path: &str, lang_code: &str) -> (String, String) {
+async fn transcribe_apple(audio_path: &str, lang_code: &str, vocab_terms: &[String]) -> (String, String) {
     // Find the helper binary next to the app binary or in resources
     let helper = find_apple_stt_binary();
     let Some(helper_path) = helper else {
@@ -567,11 +589,15 @@ async fn transcribe_apple(audio_path: &str, lang_code: &str) -> (String, String)
 
     eprintln!("fonos: Apple STT transcribing {} (locale={})", audio_path, locale);
 
-    let output = tokio::process::Command::new(&helper_path)
-        .arg(audio_path)
-        .arg(locale)
-        .output()
-        .await;
+    let mut cmd = tokio::process::Command::new(&helper_path);
+    cmd.arg(audio_path).arg(locale);
+    // Vocabulary biasing via SFSpeechRecognizer contextualStrings.
+    if !vocab_terms.is_empty() {
+        if let Ok(json) = serde_json::to_string(vocab_terms) {
+            cmd.arg(json);
+        }
+    }
+    let output = cmd.output().await;
 
     match output {
         Ok(out) => {
@@ -637,6 +663,7 @@ pub async fn transcribe_http(
     model_name: &str,
     lang_code: &str,
     current_mode: Option<&fonos_core::modes::Mode>,
+    vocab_terms: &[String],
 ) -> Result<String, String> {
     let url = format!("{}/v1/audio/transcriptions", stt.base_url);
     let part = match reqwest::multipart::Part::bytes(file_bytes.to_vec())
@@ -650,11 +677,18 @@ pub async fn transcribe_http(
         .part("file", part)
         .text("model", model_name.to_string());
 
-    // Apply mode STT params
+    // Apply mode STT params. The mode's own stt_prompt and the vocabulary
+    // glossary are merged into one Whisper prompt (budget-capped).
+    let base_prompt = current_mode.map(|m| m.stt_prompt.as_str()).unwrap_or("");
+    let prompt = fonos_core::vocab::build_stt_prompt(
+        base_prompt,
+        vocab_terms,
+        fonos_core::vocab::STT_PROMPT_BUDGET_CHARS,
+    );
+    if !prompt.is_empty() {
+        form = form.text("prompt", prompt);
+    }
     if let Some(mode) = current_mode {
-        if !mode.stt_prompt.is_empty() {
-            form = form.text("prompt", mode.stt_prompt.clone());
-        }
         if mode.stt_temperature > 0.0 {
             form = form.text("temperature", mode.stt_temperature.to_string());
         }
@@ -712,6 +746,7 @@ pub async fn transcribe_chat(
     stt: &super::ServiceConfig,
     file_bytes: &[u8],
     lang_code: &str,
+    vocab_terms: &[String],
 ) -> Result<String, String> {
     use base64::Engine;
 
@@ -731,6 +766,11 @@ pub async fn transcribe_chat(
     } else {
         format!(" The audio is in language code '{}'.", lang_code)
     };
+    let vocab_hint = if vocab_terms.is_empty() {
+        String::new()
+    } else {
+        format!(" Domain vocabulary (prefer these exact spellings): {}.", vocab_terms.join(", "))
+    };
 
     let body = serde_json::json!({
         "model": stt.model,
@@ -740,8 +780,8 @@ pub async fn transcribe_chat(
                 {
                     "type": "text",
                     "text": format!(
-                        "Transcribe this audio exactly as spoken. Output only the transcript text, nothing else.{}",
-                        lang_hint
+                        "Transcribe this audio exactly as spoken. Output only the transcript text, nothing else.{}{}",
+                        lang_hint, vocab_hint
                     )
                 },
                 {
@@ -822,9 +862,9 @@ pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> 
 
     let model_name = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
     let result = if stt.stt_api == "chat" {
-        transcribe_chat(&stt, &bytes, "").await
+        transcribe_chat(&stt, &bytes, "", &[]).await
     } else {
-        transcribe_http(&stt, &bytes, &model_name, "", None).await
+        transcribe_http(&stt, &bytes, &model_name, "", None, &[]).await
     };
 
     match result {

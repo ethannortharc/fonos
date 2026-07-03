@@ -17,6 +17,7 @@ pub mod modes;
 pub mod model_caps;
 pub mod stats;
 pub mod storage;
+pub mod vocab;
 pub mod voice_store;
 
 pub use error::Error;

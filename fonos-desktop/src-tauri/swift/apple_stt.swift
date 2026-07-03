@@ -1,7 +1,9 @@
 // fonos-stt-apple: Transcribe a WAV file using macOS SFSpeechRecognizer.
 //
-// Usage: fonos-stt-apple <wav-path> [locale]
+// Usage: fonos-stt-apple <wav-path> [locale] [contextual-json]
 //   locale: BCP-47 language tag (e.g. "en-US", "zh-CN", "ja-JP"). Default: "en-US"
+//   contextual-json: JSON array of vocabulary strings passed to the
+//     recognizer as contextualStrings (biases recognition toward them)
 //
 // Output (stdout): {"text": "transcribed text"}
 // Error  (stdout): {"error": "description"}
@@ -33,6 +35,14 @@ guard CommandLine.arguments.count >= 2 else {
 
 let wavPath = CommandLine.arguments[1]
 let localeId = CommandLine.arguments.count >= 3 ? CommandLine.arguments[2] : "en-US"
+let contextualStrings: [String] = {
+    guard CommandLine.arguments.count >= 4,
+          let data = CommandLine.arguments[3].data(using: .utf8),
+          let arr = try? JSONDecoder().decode([String].self, from: data) else {
+        return []
+    }
+    return arr
+}()
 
 guard FileManager.default.fileExists(atPath: wavPath) else {
     fail("Audio file not found: \(wavPath)")
@@ -84,6 +94,9 @@ func recognize(forceOnDevice: Bool) -> (text: String, error: String) {
     let fileUrl = URL(fileURLWithPath: wavPath)
     let req = SFSpeechURLRecognitionRequest(url: fileUrl)
     req.shouldReportPartialResults = false
+    if !contextualStrings.isEmpty {
+        req.contextualStrings = contextualStrings
+    }
     if #available(macOS 13.0, *) {
         req.requiresOnDeviceRecognition = forceOnDevice
     }

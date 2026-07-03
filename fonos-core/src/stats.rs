@@ -175,7 +175,117 @@ pub fn count_words(text: &str) -> usize {
 
 // ─── CRUD Operations ─────────────────────────────────────
 
-/// Record a new event and return the row ID.
+/// Per-model dictation latency summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatencyModelStat {
+    /// STT backend/model identifier as recorded on the event.
+    pub model: String,
+    /// Number of dictations measured for this model.
+    pub count: i64,
+    /// Median end-to-end latency (nearest-rank).
+    pub p50_ms: i64,
+    /// 95th-percentile end-to-end latency (nearest-rank).
+    pub p95_ms: i64,
+}
+
+/// End-to-end dictation latency percentiles over a date window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatencyStats {
+    /// Number of dictations measured in the window.
+    pub count: i64,
+    /// Median end-to-end latency (nearest-rank).
+    pub p50_ms: i64,
+    /// 95th-percentile end-to-end latency (nearest-rank).
+    pub p95_ms: i64,
+    /// Mean end-to-end latency.
+    pub avg_ms: i64,
+    /// Fastest dictation in the window.
+    pub min_ms: i64,
+    /// Slowest dictation in the window.
+    pub max_ms: i64,
+    /// Per-STT-backend breakdown, most-used first (capped at 6).
+    pub by_model: Vec<LatencyModelStat>,
+}
+
+/// Nearest-rank percentile over an ascending-sorted slice.
+fn percentile(sorted: &[i64], p: f64) -> i64 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let rank = ((p / 100.0) * sorted.len() as f64).ceil() as usize;
+    sorted[rank.clamp(1, sorted.len()) - 1]
+}
+
+/// Record one end-to-end dictation (key release → text delivered) latency.
+/// Stored as an `events` row with type `dictation`; excluded from session
+/// counts so it never double-counts the underlying stt/llm events.
+pub fn record_dictation_latency(
+    conn: &Connection,
+    latency_ms: i64,
+    mode: &str,
+    stt_model: &str,
+) -> Result<i64> {
+    record_event(conn, "dictation", "", "", 0.0, latency_ms, mode, stt_model, "", "", 0, 0, "")
+}
+
+/// P50/P95 (nearest-rank) of end-to-end dictation latency in [date_from, date_to].
+pub fn get_dictation_latency(
+    conn: &Connection,
+    date_from: &str,
+    date_to: &str,
+) -> Result<LatencyStats> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT latency_ms, COALESCE(model, '')
+             FROM events
+             WHERE type = 'dictation' AND latency_ms > 0
+               AND date >= ?1 AND date <= ?2",
+        )
+        .map_err(|e| Error::Database(format!("get_dictation_latency: {e}")))?;
+
+    let rows = stmt
+        .query_map(params![date_from, date_to], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| Error::Database(format!("get_dictation_latency query: {e}")))?;
+
+    let mut all: Vec<i64> = Vec::new();
+    let mut per_model: std::collections::HashMap<String, Vec<i64>> = std::collections::HashMap::new();
+    for row in rows {
+        let (ms, model) = row.map_err(|e| Error::Database(format!("get_dictation_latency row: {e}")))?;
+        all.push(ms);
+        per_model.entry(model).or_default().push(ms);
+    }
+    all.sort_unstable();
+
+    let mut by_model: Vec<LatencyModelStat> = per_model
+        .into_iter()
+        .map(|(model, mut v)| {
+            v.sort_unstable();
+            LatencyModelStat {
+                model,
+                count: v.len() as i64,
+                p50_ms: percentile(&v, 50.0),
+                p95_ms: percentile(&v, 95.0),
+            }
+        })
+        .collect();
+    by_model.sort_by(|a, b| b.count.cmp(&a.count).then(a.model.cmp(&b.model)));
+    by_model.truncate(6);
+
+    let count = all.len() as i64;
+    Ok(LatencyStats {
+        count,
+        p50_ms: percentile(&all, 50.0),
+        p95_ms: percentile(&all, 95.0),
+        avg_ms: if count > 0 { all.iter().sum::<i64>() / count } else { 0 },
+        min_ms: all.first().copied().unwrap_or(0),
+        max_ms: all.last().copied().unwrap_or(0),
+        by_model,
+    })
+}
+
+/// Insert one usage event row (stt / tts / llm / dictation).
 pub fn record_event(
     conn: &Connection,
     event_type: &str,
@@ -362,7 +472,7 @@ pub fn get_today(conn: &Connection) -> Result<TodaySummary> {
                 SUM(CASE WHEN type='tts' THEN words_out ELSE 0 END),
                 SUM(CASE WHEN type='llm' THEN 1 ELSE 0 END),
                 SUM(CASE WHEN type='llm' THEN latency_ms ELSE 0 END),
-                COUNT(*),
+                SUM(CASE WHEN type IN ('stt','tts','llm') THEN 1 ELSE 0 END),
                 SUM(tokens_in + tokens_out)
              FROM events WHERE date = ?1",
         )
@@ -431,4 +541,72 @@ fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
+}
+
+#[cfg(test)]
+mod latency_tests {
+    use super::*;
+
+    fn db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        init_db(&conn);
+        conn
+    }
+
+    fn insert(conn: &Connection, date: &str, ms: i64, model: &str) {
+        conn.execute(
+            "INSERT INTO events (type, created_at, date, latency_ms, mode, model)
+             VALUES ('dictation', ?1, ?1, ?2, 'raw', ?3)",
+            params![format!("{date}T12:00:00"), ms, model],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn percentile_nearest_rank() {
+        let v: Vec<i64> = (1..=100).collect();
+        assert_eq!(percentile(&v, 50.0), 50);
+        assert_eq!(percentile(&v, 95.0), 95);
+        assert_eq!(percentile(&[7], 95.0), 7);
+        assert_eq!(percentile(&[], 50.0), 0);
+    }
+
+    #[test]
+    fn latency_stats_over_window() {
+        let conn = db();
+        for (i, ms) in [100, 200, 300, 400, 1000].iter().enumerate() {
+            insert(&conn, "2026-07-01", *ms, if i < 3 { "qwen" } else { "whisper" });
+        }
+        insert(&conn, "2026-06-01", 9999, "qwen"); // outside window
+
+        let s = get_dictation_latency(&conn, "2026-07-01", "2026-07-31").unwrap();
+        assert_eq!(s.count, 5);
+        assert_eq!(s.p50_ms, 300);
+        assert_eq!(s.p95_ms, 1000);
+        assert_eq!(s.min_ms, 100);
+        assert_eq!(s.max_ms, 1000);
+        assert_eq!(s.avg_ms, 400);
+        assert_eq!(s.by_model.len(), 2);
+        assert_eq!(s.by_model[0].model, "qwen"); // most-used first
+        assert_eq!(s.by_model[0].count, 3);
+        assert_eq!(s.by_model[0].p50_ms, 200);
+    }
+
+    #[test]
+    fn empty_window_is_zeroes() {
+        let conn = db();
+        let s = get_dictation_latency(&conn, "2026-07-01", "2026-07-31").unwrap();
+        assert_eq!(s.count, 0);
+        assert_eq!(s.p50_ms, 0);
+        assert!(s.by_model.is_empty());
+    }
+
+    #[test]
+    fn dictation_rows_do_not_inflate_session_count() {
+        let conn = db();
+        record_event(&conn, "stt", "hi", "", 1.0, 500, "raw", "qwen", "", "", 0, 0, "").unwrap();
+        record_dictation_latency(&conn, 800, "raw", "qwen").unwrap();
+        let today = get_today(&conn).unwrap();
+        assert_eq!(today.total_sessions, 1, "dictation latency rows must not count as sessions");
+    }
 }

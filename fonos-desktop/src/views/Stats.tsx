@@ -3,8 +3,8 @@
 // categorical trio #d97706 / #8b5cf6 / #16a34a (lightness band, CVD, contrast).
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { getStats, getToday } from "../lib/api";
-import type { DailyStat, TodaySummary } from "../types";
+import { getStats, getToday, getDictationLatency } from "../lib/api";
+import type { DailyStat, TodaySummary, LatencyStats } from "../types";
 
 type Period = "7d" | "30d" | "90d";
 type Metric = "words" | "sessions" | "time";
@@ -211,15 +211,21 @@ export default function Stats() {
   const [metric, setMetric] = useState<Metric>("words");
   const [stats, setStats] = useState<DailyStat[]>([]);
   const [today, setToday] = useState<TodaySummary | null>(null);
+  const [latency, setLatency] = useState<LatencyStats | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
   const load = useCallback(async (p: Period) => {
     setLoading(true);
     try {
       const { from, to } = getPeriodDates(p);
-      const [dailyStats, todaySummary] = await Promise.all([getStats(from, to), getToday()]);
+      const [dailyStats, todaySummary, latencyStats] = await Promise.all([
+        getStats(from, to),
+        getToday(),
+        getDictationLatency(from, to).catch(() => null),
+      ]);
       setStats(dailyStats);
       setToday(todaySummary);
+      setLatency(latencyStats);
     } catch (e: unknown) {
       console.error("getStats:", e);
     } finally {
@@ -365,6 +371,47 @@ export default function Stats() {
           <BarChart stats={stats} metric={metric} />
         )}
       </div>
+
+      {/* Dictation latency percentiles (issue #4) */}
+      {latency && latency.count > 0 && (
+        <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
+              Dictation latency · {period}
+            </span>
+            <span className="text-[9px] text-[rgba(255,255,255,0.25)]">
+              {latency.count} dictations · release → text delivered
+            </span>
+          </div>
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {[
+              { label: "P50", value: `${latency.p50_ms.toLocaleString()}ms`, hero: true },
+              { label: "P95", value: `${latency.p95_ms.toLocaleString()}ms`, hero: true },
+              { label: "Avg", value: `${latency.avg_ms.toLocaleString()}ms`, hero: false },
+              { label: "Fastest", value: `${latency.min_ms.toLocaleString()}ms`, hero: false },
+            ].map((t) => (
+              <div key={t.label} className="flex flex-col gap-0.5">
+                <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t.label}</span>
+                <span className={t.hero ? "text-[20px] font-semibold text-[#fafaf9]" : "text-[15px] font-medium text-[rgba(255,255,255,0.6)]"}>
+                  {t.value}
+                </span>
+              </div>
+            ))}
+          </div>
+          {latency.by_model.length > 0 && (
+            <div className="flex flex-col gap-1 border-t border-[rgba(255,255,255,0.04)] pt-2.5">
+              {latency.by_model.map((m) => (
+                <div key={m.model} className="flex items-center gap-2 text-[10px]">
+                  <span className="text-[rgba(255,255,255,0.55)] truncate flex-1">{m.model || "(unknown)"}</span>
+                  <span className="text-[rgba(255,255,255,0.35)] font-mono">P50 {m.p50_ms.toLocaleString()}ms</span>
+                  <span className="text-[rgba(255,255,255,0.25)] font-mono">P95 {m.p95_ms.toLocaleString()}ms</span>
+                  <span className="text-[rgba(255,255,255,0.2)] w-10 text-right">{m.count}×</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Activity mix */}
       <ActivityMix stats={stats} />

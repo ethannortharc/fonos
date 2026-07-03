@@ -60,6 +60,17 @@ pub fn get_history(
     stats::get_history(&conn, limit, offset, &type_filter).map_err(|e| e.to_string())
 }
 
+/// End-to-end dictation latency percentiles over a date window (issue #4).
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_dictation_latency(
+    state: tauri::State<'_, AppState>,
+    date_from: String,
+    date_to: String,
+) -> Result<stats::LatencyStats, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    stats::get_dictation_latency(&conn, &date_from, &date_to).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_today(
     state: tauri::State<'_, AppState>,

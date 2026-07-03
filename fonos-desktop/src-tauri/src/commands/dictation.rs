@@ -4,7 +4,7 @@
 //! No WebSocket streaming — avoids model contention and is faster.
 
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::audio::capture::AudioCapture;
 use crate::injection::inject_text;
@@ -134,6 +134,8 @@ pub struct SttResult {
     pub duration_secs: f64,
     /// For Apple Speech: "on-device" or "server". Empty for HTTP providers.
     pub stt_engine: String,
+    /// STT backend identifier used for this transcription (for latency stats).
+    pub stt_model: String,
     /// Low-frequency noise removed by high-pass filter, as percentage of total energy.
     pub noise_removed_pct: f64,
     /// Normalization gain applied in dB (positive = amplified, 0 = no change).
@@ -156,6 +158,93 @@ pub fn has_microphone() -> Result<bool, String> {
 #[tauri::command]
 pub fn list_audio_inputs() -> Result<Vec<String>, String> {
     Ok(crate::audio::capture::list_input_devices())
+}
+
+/// Warm-up debounce: at most one backend ping per interval.
+static LAST_WARMUP: AtomicU64 = AtomicU64::new(0);
+const WARMUP_INTERVAL_SECS: u64 = 180;
+
+fn is_local_endpoint(base_url: &str) -> bool {
+    base_url.contains("localhost") || base_url.contains("127.0.0.1") || base_url.contains("0.0.0.0")
+}
+
+/// Fire-and-forget warm-up of the configured STT (and, for LLM modes, LLM)
+/// backend so the first capture after idle doesn't pay a model cold start.
+/// The ping runs while the user is speaking, so by stop time the model is
+/// loaded. Local endpoints only — cloud APIs don't cold-start and probes
+/// would cost money. Debounced to once per WARMUP_INTERVAL_SECS.
+fn spawn_backend_warmup(state: &tauri::State<'_, AppState>) {
+    let (enabled, mode_name) = match state.config.lock() {
+        Ok(cfg) => (cfg.warmup_enabled, cfg.dictation_mode.clone()),
+        Err(_) => return,
+    };
+    if !enabled {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if now.saturating_sub(LAST_WARMUP.load(Ordering::Relaxed)) < WARMUP_INTERVAL_SECS {
+        return;
+    }
+    LAST_WARMUP.store(now, Ordering::Relaxed);
+
+    let stt = super::get_service_config(state, "stt");
+    let llm = super::get_service_config(state, "llm");
+    let mode_has_llm = fonos_core::modes::all_modes()
+        .get(&mode_name)
+        .map(|m| m.system.is_some() || m.user_template.is_some())
+        .unwrap_or(false);
+
+    tauri::async_runtime::spawn(async move {
+        if stt.provider != "apple" && !stt.base_url.trim().is_empty() && is_local_endpoint(&stt.base_url) {
+            let model = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
+            eprintln!("fonos: warm-up ping → STT {} ({})", stt.base_url, model);
+            let bytes = silent_probe_wav();
+            let _ = if stt.stt_api == "chat" {
+                transcribe_chat(&stt, &bytes, "", &[]).await
+            } else {
+                transcribe_http(&stt, &bytes, &model, "", None, &[]).await
+            };
+        }
+        if mode_has_llm && !llm.base_url.trim().is_empty() && is_local_endpoint(&llm.base_url) {
+            eprintln!("fonos: warm-up ping → LLM {} ({})", llm.base_url, llm.model);
+            let base = llm.base_url.trim_end_matches('/');
+            let url = if base.ends_with("/v1") {
+                format!("{base}/chat/completions")
+            } else {
+                format!("{base}/v1/chat/completions")
+            };
+            let client = reqwest::Client::new();
+            let _ = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", llm.api_key))
+                .json(&serde_json::json!({
+                    "model": llm.model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                }))
+                .timeout(std::time::Duration::from_secs(15))
+                .send()
+                .await;
+        }
+    });
+}
+
+/// A 0.3s silent 16kHz mono WAV, used as a warm-up / endpoint-probe clip.
+fn silent_probe_wav() -> Vec<u8> {
+    let sample_rate = 16000u32;
+    let sample_count = (sample_rate as usize) * 3 / 10;
+    let pcm = vec![0u8; sample_count * 2]; // i16 LE silence
+    let dir = std::env::temp_dir().join("fonos_audio");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("stt_probe.wav");
+    if fonos_core::audio::write_wav(&path, &pcm, sample_rate).is_ok() {
+        std::fs::read(&path).unwrap_or_default()
+    } else {
+        Vec::new()
+    }
 }
 
 /// Start capturing audio from the microphone (local only, no network).
@@ -184,6 +273,9 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
             }
         }
     }
+
+    // Preload the backends while the user speaks (issue #4 warm-up).
+    spawn_backend_warmup(&state);
 
     // Critical section: hold the capture lock while we both check the recording
     // flag and bring the stream up. `stop_recording` flips the same flag under
@@ -239,6 +331,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 latency_ms: 0,
                 duration_secs: 0.0,
                 stt_engine: String::new(),
+                stt_model: String::new(),
                 noise_removed_pct: 0.0,
                 gain_db: 0.0,
             });
@@ -271,6 +364,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             latency_ms: 0,
             duration_secs: 0.0,
             stt_engine: String::new(),
+            stt_model: String::new(),
             noise_removed_pct: 0.0,
             gain_db: 0.0,
         });
@@ -409,6 +503,11 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     let latency_ms = stop_time.elapsed().as_millis() as u64;
 
+    // Raw dictations complete inside this function (transcribe + inject), so
+    // their end-to-end latency is recorded here; LLM modes are recorded by the
+    // hotkey pipeline after processing + injection.
+    let mut raw_e2e_done = false;
+
     // 4. Notify float window (stops the recording animation) — skip for agent mode
     eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
     if dictation_mode != "agent" {
@@ -434,6 +533,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 let msg = format!("Injection failed: {e}");
                 crate::error_surface::emit_float_error(&app, &msg);
             }
+            raw_e2e_done = delivered;
         }
         if delivered {
             if mode_has_llm && !transcript.is_empty() {
@@ -463,6 +563,13 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 latency_ms as i64, &dictation_mode, &stats_model, "", &audio_path_str,
                 0, 0, "",
             );
+
+            // End-to-end latency (key release → injected) for raw dictations.
+            if raw_e2e_done {
+                let _ = fonos_core::stats::record_dictation_latency(
+                    &db, stop_time.elapsed().as_millis() as i64, &dictation_mode, &stats_model,
+                );
+            }
 
             // Write to v2 unified entries table — all activity is recorded.
             // Recent view shows everything; Notes view filters to note-only.
@@ -513,6 +620,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         latency_ms,
         duration_secs: recording_duration,
         stt_engine,
+        stt_model: stats_model,
         noise_removed_pct: preprocess_metrics.0,
         gain_db: preprocess_metrics.1,
     })
@@ -867,15 +975,11 @@ pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> 
         return Err("This model has no base URL configured.".to_string());
     }
 
-    // Build a short silent WAV (0.3s @ 16kHz mono) as the probe clip.
-    let sample_rate = 16000u32;
-    let sample_count = (sample_rate as usize) * 3 / 10;
-    let pcm = vec![0u8; sample_count * 2]; // i16 LE silence
-    let dir = std::env::temp_dir().join("fonos_audio");
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("stt_probe.wav");
-    fonos_core::audio::write_wav(&path, &pcm, sample_rate).map_err(|e| e.to_string())?;
-    let bytes = std::fs::read(&path).map_err(|e| format!("failed to read probe clip: {e}"))?;
+    // Short silent WAV probe clip (shared with the warm-up path).
+    let bytes = silent_probe_wav();
+    if bytes.is_empty() {
+        return Err("failed to build probe clip".to_string());
+    }
 
     let model_name = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
     let result = if stt.stt_api == "chat" {

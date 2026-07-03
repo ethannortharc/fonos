@@ -16,6 +16,7 @@ import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
 import ModesTab from "./settings/ModesTab";
 import HotkeysTab from "./settings/HotkeysTab";
+import VocabTab from "./settings/VocabTab";
 import AgentTab from "./settings/AgentTab";
 import SkillsTab from "./settings/SkillsTab";
 import NotesTab from "./settings/NotesTab";
@@ -104,6 +105,7 @@ export default function Settings() {
           output_language: form.output_language,
           auto_paste: form.auto_paste,
           auto_press_enter: form.auto_press_enter,
+          vocab_books: form.vocab_books,
         });
         loadAll();
       } catch (e: unknown) {
@@ -187,6 +189,11 @@ export default function Settings() {
             onSaveMode={handleSaveMode}
             onDeleteMode={handleDeleteMode}
           />
+        )}
+
+        {/* ────────────── Vocabulary tab ────────────── */}
+        {settingsTab === "vocab" && (
+          <VocabTab config={config} onSave={handleSave} />
         )}
 
         {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}

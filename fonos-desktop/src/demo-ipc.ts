@@ -84,6 +84,8 @@ const config = {
   meeting_audio_source: "mic+system",
   // Demo mode is already "set up" — never trigger the first-run wizard.
   has_completed_onboarding: true,
+  vocab_books: [],
+  global_vocab_books: [],
 };
 
 const modes = [

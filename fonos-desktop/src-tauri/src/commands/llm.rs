@@ -77,8 +77,28 @@ pub async fn process_with_llm(
     let service = ServiceConfig { provider, api_key, model: model.clone(), base_url };
     let translate_target = config.translate_target.clone();
 
+    // ③ Vocabulary glossary (issue #3): append the effective books' terms to
+    // the mode's system prompt so the LLM output prefers canonical spellings.
+    let mode_with_glossary = {
+        let eff = fonos_core::vocab::effective_books(
+            &config.vocab_books,
+            &config.global_vocab_books,
+            &mode_def.vocab_books,
+        );
+        let terms = fonos_core::vocab::collect_terms(&eff);
+        fonos_core::vocab::build_glossary_block(&terms).map(|block| {
+            let mut m = mode_def.clone();
+            m.system = Some(match &m.system {
+                Some(sys) => format!("{sys}{block}"),
+                None => block.trim_start().to_string(),
+            });
+            m
+        })
+    };
+    let mode_for_llm = mode_with_glossary.as_ref().unwrap_or(mode_def);
+
     let t0 = std::time::Instant::now();
-    let resp = process_text(&text, mode_def, &service, caps.as_ref(), &translate_target)
+    let resp = process_text(&text, mode_for_llm, &service, caps.as_ref(), &translate_target)
         .await
         .map_err(|e| e.to_string())?;
     let latency_ms = t0.elapsed().as_millis() as u64;
@@ -253,6 +273,7 @@ pub fn list_modes() -> Result<serde_json::Value, String> {
             "output_language": m.output_language,
             "auto_paste": m.auto_paste,
             "auto_press_enter": m.auto_press_enter,
+            "vocab_books": m.vocab_books,
         })
     }).collect();
 
@@ -277,6 +298,7 @@ pub fn save_custom_mode(
     output_language: String,
     auto_paste: bool,
     auto_press_enter: bool,
+    vocab_books: Option<Vec<String>>,
 ) -> Result<(), String> {
     let mut custom = modes::load_custom_modes();
     custom.insert(id, modes::Mode {
@@ -294,6 +316,7 @@ pub fn save_custom_mode(
         output_language: if output_language.is_empty() { "auto".into() } else { output_language },
         auto_paste,
         auto_press_enter,
+        vocab_books: vocab_books.unwrap_or_default(),
         ..Default::default()
     });
     modes::save_custom_modes(&custom).map_err(|e| e.to_string())

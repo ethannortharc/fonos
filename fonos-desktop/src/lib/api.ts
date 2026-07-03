@@ -194,6 +194,7 @@ export async function saveCustomMode(opts: SaveModeOptions): Promise<void> {
     outputLanguage: opts.output_language ?? "auto",
     autoPaste: opts.auto_paste !== false,
     autoPressEnter: opts.auto_press_enter === true,
+    vocabBooks: opts.vocab_books ?? [],
   });
 }
 

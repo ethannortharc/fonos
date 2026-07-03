@@ -134,6 +134,14 @@ pub struct AppConfig {
     /// Gates the first-run onboarding wizard. `false` until the user completes
     /// (or skips) the wizard; the wizard is shown on launch while this is false.
     pub has_completed_onboarding: bool,
+
+    // ── Custom vocabulary ────────────────────────────────────────────────
+
+    /// User-defined vocab books (terms + correction rules). Referenced by id
+    /// from `global_vocab_books` and per-mode `Mode.vocab_books`.
+    pub vocab_books: Vec<crate::vocab::VocabBook>,
+    /// Book ids applied to every dictation regardless of mode.
+    pub global_vocab_books: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -183,6 +191,8 @@ impl Default for AppConfig {
                 .to_string(),
             injection_app_overrides: Vec::new(),
             has_completed_onboarding: false,
+            vocab_books: Vec::new(),
+            global_vocab_books: Vec::new(),
         }
     }
 }

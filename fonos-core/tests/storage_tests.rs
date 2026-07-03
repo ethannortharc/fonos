@@ -953,6 +953,7 @@ mod c05_mode_extensions {
             auto_container: false,
             save_audio: false,
             processor: String::new(),
+            vocab_books: Vec::new(),
         };
 
         assert!(matches!(mode.output_target, OutputTarget::Clipboard));

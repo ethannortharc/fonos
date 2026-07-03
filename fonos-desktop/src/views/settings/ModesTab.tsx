@@ -86,6 +86,18 @@ function ModelSelector({
 
 // ─── Mode Pipeline Card ──────────────────────────────────────────────────────
 
+function modeToForm(m: ModeEntry): ModeForm {
+  return {
+    id: m.id, name: m.name, description: m.description, icon: m.icon,
+    system: m.system ?? "", user_template: m.user_template ?? "",
+    temperature: m.temperature, model: m.model ?? "", stt_model: m.stt_model ?? "",
+    stt_prompt: m.stt_prompt ?? "", stt_temperature: m.stt_temperature ?? 0,
+    vocab_books: m.vocab_books ?? [],
+    max_tokens: m.max_tokens ?? 4096, output_language: m.output_language ?? "auto",
+    auto_paste: m.auto_paste, auto_press_enter: m.auto_press_enter,
+  };
+}
+
 function ModePipelineCard({
   mode,
   config,
@@ -125,7 +137,7 @@ function ModePipelineCard({
     await onSaveMode({
       id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
       system: mode.system ?? "", user_template: mode.user_template ?? "",
-      temperature: mode.temperature, model: "", stt_model: "", stt_prompt: "", stt_temperature: 0,
+      temperature: mode.temperature, model: "", stt_model: "", stt_prompt: "", stt_temperature: 0, vocab_books: mode.vocab_books ?? [],
       max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
       auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
     });
@@ -183,7 +195,7 @@ function ModePipelineCard({
               onClick={() => onEdit({
                 id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
                 system: mode.system ?? "", user_template: mode.user_template ?? "",
-                temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0,
+                temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0, vocab_books: mode.vocab_books ?? [],
                 max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
                 auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
               })}
@@ -204,7 +216,7 @@ function ModePipelineCard({
         <div className="px-3.5 pb-3 pt-0">
           <div className="border-t border-[rgba(255,255,255,0.04)] pt-3 pl-1">
             {/* Step 1: STT */}
-            <PipelineStep dotColor="#fbbf24" label="Step 1: Speech to Text" isLast={!hasLlm}>
+            <PipelineStep dotColor="#fbbf24" label="Step 1: Speech to Text" isLast={!hasLlm && (config.vocab_books ?? []).length === 0}>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] text-[11px] text-[rgba(255,255,255,0.6)]">
                   <MicIcon size={11} /> {sttModelName}
@@ -214,6 +226,50 @@ function ModePipelineCard({
                 ].join(" ")}>{mode.builtin && !sttOverridden ? "Default" : "Custom"}</span>
               </div>
             </PipelineStep>
+
+            {/* Vocabulary books mounted on this mode (in addition to Global) */}
+            {(config.vocab_books ?? []).length > 0 && (
+              <PipelineStep dotColor="#4ade80" label="Vocabulary" isLast={false}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(config.vocab_books ?? []).map((b) => {
+                    const isGlobal = (config.global_vocab_books ?? []).includes(b.id);
+                    const mounted = (mode.vocab_books ?? []).includes(b.id);
+                    if (isGlobal) {
+                      return (
+                        <span
+                          key={b.id}
+                          title="Applied to every dictation (Global book)"
+                          className="px-2 py-0.5 rounded-full text-[9px] bg-[rgba(74,222,128,0.08)] border border-[rgba(74,222,128,0.15)] text-[rgba(74,222,128,0.5)]"
+                        >
+                          {b.name} · global
+                        </span>
+                      );
+                    }
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => {
+                          const current = mode.vocab_books ?? [];
+                          const next = mounted
+                            ? current.filter((id) => id !== b.id)
+                            : [...current, b.id];
+                          void onSaveMode({ ...modeToForm(mode), vocab_books: next });
+                        }}
+                        title={mounted ? `Unmount ${b.name} from this mode` : `Mount ${b.name} on this mode`}
+                        className={[
+                          "px-2 py-0.5 rounded-full text-[9px] transition-all",
+                          mounted
+                            ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                            : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)]",
+                        ].join(" ")}
+                      >
+                        {b.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PipelineStep>
+            )}
 
             {/* Step 2: LLM */}
             {hasLlm && (
@@ -255,13 +311,7 @@ function ModePipelineCard({
           {mode.builtin && (
             <div className="mt-1 pt-2 border-t border-[rgba(255,255,255,0.04)]">
               <button
-                onClick={() => onEdit({
-                  id: mode.id, name: mode.name, description: mode.description, icon: mode.icon,
-                  system: mode.system ?? "", user_template: mode.user_template ?? "",
-                  temperature: mode.temperature, model: mode.model ?? "", stt_model: mode.stt_model ?? "", stt_prompt: mode.stt_prompt ?? "", stt_temperature: mode.stt_temperature ?? 0,
-                  max_tokens: mode.max_tokens ?? 4096, output_language: mode.output_language ?? "auto",
-                  auto_paste: mode.auto_paste, auto_press_enter: mode.auto_press_enter,
-                })}
+                onClick={() => onEdit(modeToForm(mode))}
                 className="text-[10px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors"
               >Customize...</button>
             </div>
@@ -493,6 +543,40 @@ export default function ModesTab({
                       className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                     />
                   </div>
+                  {(config.vocab_books ?? []).length > 0 && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
+                        Vocabulary books
+                        <span className="ml-1 text-[rgba(255,255,255,0.15)]">(mounted for this mode, in addition to Global books)</span>
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(config.vocab_books ?? []).map((b) => {
+                          const selected = editingMode.vocab_books.includes(b.id);
+                          return (
+                            <button
+                              key={b.id}
+                              onClick={() =>
+                                setEditingMode({
+                                  ...editingMode,
+                                  vocab_books: selected
+                                    ? editingMode.vocab_books.filter((id) => id !== b.id)
+                                    : [...editingMode.vocab_books, b.id],
+                                })
+                              }
+                              className={[
+                                "px-2.5 py-1 rounded-full text-[10px] transition-all",
+                                selected
+                                  ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                                  : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
+                              ].join(" ")}
+                            >
+                              {b.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
                       Temperature

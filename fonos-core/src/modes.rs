@@ -101,6 +101,9 @@ pub struct Mode {
     /// Processing pipeline identifier (e.g. "light_polish", "raw", "agent").
     #[serde(default)]
     pub processor: String,
+    /// Vocab book ids mounted by this mode, in addition to the global books.
+    #[serde(default)]
+    pub vocab_books: Vec<String>,
 }
 
 impl Default for Mode {
@@ -125,6 +128,7 @@ impl Default for Mode {
             auto_container: false,
             save_audio: false,
             processor: String::new(),
+            vocab_books: Vec::new(),
         }
     }
 }

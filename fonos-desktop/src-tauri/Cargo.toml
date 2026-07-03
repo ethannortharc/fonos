@@ -13,7 +13,11 @@ fonos-core = { path = "../../fonos-core" }
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "stream"] }
+# StreamExt::next() for consuming reqwest's bytes_stream() during SSE
+# transcription. Already present transitively (hyper-util/tower); this makes it
+# a direct, minimal dependency so the import is stable.
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["full"] }
 dirs = "6"
 cpal = "0.15"

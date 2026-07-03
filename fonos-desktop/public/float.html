@@ -327,7 +327,7 @@ function openSettings(){
 }
 
 function startRec(){
-  if(isRec)return;isRec=true;closeMenu();clearErr();
+  if(isRec)return;isRec=true;closeMenu();clearErr();resetPartial();
   document.getElementById('pill').classList.add('recording');
   document.getElementById('rec-dur').textContent='0s';
   let t0=Date.now();
@@ -343,10 +343,37 @@ function showProcessing(){
   var p=document.getElementById('pill');
   p.classList.remove('recording','success','error');
   p.classList.add('processing');
+  resetPartial();
   sz(110,PH);
 }
+/* Restore the plain "Processing" label. Each caller (startRec/showProcessing/
+   stopRec/showError) sets its own pill size, so this only resets the label —
+   size is handled by the caller. Called on every state transition so a
+   non-streaming backend and the next dictation start clean. */
+function resetPartial(){
+  var lbl=document.getElementById('proc-label');
+  if(lbl)lbl.textContent='Processing';
+}
+/* Live streaming transcript (stt:partial). `text` is the ACCUMULATED transcript
+   so far. Only paint while the pill is actually in the processing state — stray
+   partials for raw/agent/non-streaming paths are ignored. Cheap direct
+   textContent updates; the pill grows to fit the tail of the text. */
+function onPartial(text){
+  var p=document.getElementById('pill');
+  if(!p||!p.classList.contains('processing'))return;
+  var s=text||'';
+  var TAIL=44;
+  var disp=s.length>TAIL?'…'+s.slice(s.length-TAIL):s;
+  var lbl=document.getElementById('proc-label');
+  if(!lbl)return;
+  lbl.textContent=disp||'Processing'; /* empty payload keeps the normal label */
+  /* Floor at the normal processing width (110), hard cap at 340 logical px.
+     ~5px/char at 9px + proc-dots/gap/padding overhead (~50px). */
+  var w=Math.max(110,Math.min(340,Math.round(disp.length*5)+50));
+  sz(w,PH);
+}
 function stopRec(text){
-  isRec=false;clearErr();
+  isRec=false;clearErr();resetPartial();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   var p=document.getElementById('pill');
@@ -380,7 +407,7 @@ function showError(payload){
   // string (backward compatible). Show a short label in the narrow pill and
   // keep the full message in console.warn + the title attribute. When a
   // permission `pane` is present, the pill becomes clickable (see onPillClick).
-  isRec=false;
+  isRec=false;resetPartial();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   if(errTimer){clearTimeout(errTimer);errTimer=null;}
@@ -446,6 +473,7 @@ function setup(){
   function listen(ev,cb){inv('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(cb)}).catch(()=>{});}
   listen('float:start',()=>startRec());
   listen('float:processing',()=>showProcessing());
+  listen('stt:partial',e=>onPartial(e&&e.payload?e.payload:''));
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
   loadCfg();loadModes();idleSz();

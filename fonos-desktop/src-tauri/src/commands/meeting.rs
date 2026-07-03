@@ -369,7 +369,7 @@ pub async fn start_meeting(
                 // A meeting streams many chunks; a single failed chunk shouldn't
                 // abort the session. Log and skip it (per-chunk error surfacing
                 // would be a separate meetings-UI concern).
-                let transcript = match transcribe_http(&svc, &file_bytes, &stt_model, "", None, &[]).await {
+                let transcript = match transcribe_http(&svc, &file_bytes, &stt_model, "", None, &[], None).await {
                     Ok(t) => t,
                     Err(e) => {
                         eprintln!("fonos: meeting chunk #{local_counter} STT error: {e}");

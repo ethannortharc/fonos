@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; }
+  html, body { background: transparent; overflow: hidden; width:100%; height:100%; }
+  canvas { display:block; }
+</style>
+<script src="three.min.js"></script>
+<script>if(location.search.includes('bg=dark'))addEventListener('DOMContentLoaded',()=>document.body.style.background='#1c2333');</script>
+</head>
+<body>
+<script>
+// ─── 3D flower fairy — free flight across the whole screen ──────────────────
+// Transparent WebGL overlay; the fairy is built from primitives + canvas
+// glow textures (no external assets): pearl body, petal skirt, fluttering
+// translucent wings, halo, and an additive sparkle trail. Lighting comes
+// from an ambient + a warm point light riding with the fairy, so the petals
+// shade as she banks and turns.
+
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000000, 0);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 0, 16);
+
+scene.add(new THREE.AmbientLight(0xcfdcff, 0.95));
+const sun = new THREE.DirectionalLight(0xfff2df, 1.6);
+sun.position.set(4, 8, 6);
+scene.add(sun);
+
+// ── canvas-generated glow sprite textures ──
+function glowTexture(inner, outer) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, inner);
+  grad.addColorStop(0.4, outer);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+const haloTex = glowTexture('rgba(255,240,255,0.95)', 'rgba(255,170,220,0.35)');
+const sparkTex = glowTexture('rgba(255,255,255,1)', 'rgba(170,220,255,0.5)');
+
+// ── the fairy ──
+const fairy = new THREE.Group();
+
+const skin = new THREE.MeshStandardMaterial({ color: 0xffe8d8, roughness: 0.5, emissive: 0x30150a, emissiveIntensity: 0.25 });
+const pearl = new THREE.MeshStandardMaterial({ color: 0xfff6fb, roughness: 0.35, emissive: 0xff9ecb, emissiveIntensity: 0.18 });
+
+// head + hair bun
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 20), skin);
+head.position.y = 0.62;
+fairy.add(head);
+const hair = new THREE.Mesh(new THREE.SphereGeometry(0.365, 24, 20, 0, Math.PI * 2, 0, Math.PI * 0.52), new THREE.MeshStandardMaterial({ color: 0xc98a54, roughness: 0.55 }));
+hair.position.y = 0.68;
+fairy.add(hair);
+// side buns (odango) instead of a top acorn
+const bunMatL = hair.material;
+for (const sx of [-1, 1]) {
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 14), bunMatL);
+  bun.position.set(sx * 0.32, 0.86, -0.02);
+  fairy.add(bun);
+}
+// face: dot eyes + blush
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0x2a2230 });
+for (const sx of [-1, 1]) {
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), eyeMat);
+  eye.position.set(sx * 0.13, 0.63, 0.30);
+  fairy.add(eye);
+  const blush = new THREE.Mesh(new THREE.CircleGeometry(0.055, 12),
+    new THREE.MeshBasicMaterial({ color: 0xff9db4, transparent: true, opacity: 0.7 }));
+  blush.position.set(sx * 0.22, 0.55, 0.315);
+  fairy.add(blush);
+}
+
+// torso
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.16, 8, 16), pearl);
+torso.position.y = 0.22;
+fairy.add(torso);
+
+// petal skirt — six shaded petals; this is where the light plays
+const petalGeo = new THREE.SphereGeometry(0.42, 20, 16);
+petalGeo.scale(0.55, 1.0, 0.16);
+const petals = new THREE.Group();
+const petalColors = [0xffa9c9, 0xff92ba, 0xffbdd6, 0xffa9c9, 0xff92ba, 0xffbdd6];
+for (let i = 0; i < 6; i++) {
+  const m = new THREE.MeshStandardMaterial({
+    color: petalColors[i], roughness: 0.3,
+    emissive: 0xff6ea6, emissiveIntensity: 0.28,
+    side: THREE.DoubleSide,
+  });
+  const p = new THREE.Mesh(petalGeo, m);
+  const a = (i / 6) * Math.PI * 2;
+  p.position.set(Math.sin(a) * 0.22, -0.16, Math.cos(a) * 0.22);
+  p.rotation.z = Math.sin(a) * 0.7;
+  p.rotation.x = Math.cos(a) * 0.7;
+  p.userData.baseRot = { x: p.rotation.x, z: p.rotation.z, phase: a };
+  petals.add(p);
+}
+fairy.add(petals);
+
+// wings — four translucent glowing planes, fluttering
+function wing(sx, sy, px, py, tilt) {
+  const geo = new THREE.CircleGeometry(0.62, 24);
+  geo.scale(sx, sy, 1);
+  const membrane = new THREE.MeshBasicMaterial({
+    color: 0xdff2ff, transparent: true, opacity: 0.5,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
+  const glow = new THREE.MeshBasicMaterial({
+    map: glowTexture('rgba(220,245,255,0.9)', 'rgba(160,210,255,0.25)'),
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const pivot = new THREE.Group();
+  pivot.position.set(px, py, -0.12);
+  for (const mat of [membrane, glow]) {
+    const w = new THREE.Mesh(geo, mat);
+    w.position.x = sx > 0 ? 0.5 : -0.5;
+    pivot.add(w);
+  }
+  pivot.userData.tilt = tilt;
+  fairy.add(pivot);
+  return pivot;
+}
+const wings = [
+  wing(1.0, 0.62, 0.10, 0.42, 0.35), wing(-1.0, 0.62, -0.10, 0.42, -0.35),
+  wing(0.7, 0.45, 0.08, 0.16, 0.9), wing(-0.7, 0.45, -0.08, 0.16, -0.9),
+];
+
+// halo glow + fairy light
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: haloTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
+}));
+halo.scale.set(2.6, 2.6, 1);
+halo.position.y = 0.2;
+fairy.add(halo);
+const fairyLight = new THREE.PointLight(0xffc2e0, 14, 9, 2.0);
+fairyLight.position.y = 0.4;
+fairy.add(fairyLight);
+
+fairy.scale.setScalar(1.35);
+scene.add(fairy);
+
+// ── sparkle trail ──
+const MAX_SPARKS = 240;
+const sparkGeo = new THREE.BufferGeometry();
+const sparkPos = new Float32Array(MAX_SPARKS * 3);
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
+const sparkMat = new THREE.PointsMaterial({
+  size: 0.34, map: sparkTex, transparent: true, depthWrite: false,
+  blending: THREE.AdditiveBlending, color: 0xcfe8ff, opacity: 0.9, sizeAttenuation: true,
+});
+scene.add(new THREE.Points(sparkGeo, sparkMat));
+const sparks = Array.from({ length: MAX_SPARKS }, () => ({ x: 0, y: -999, z: 0, vx: 0, vy: 0, life: 0 }));
+let sparkIdx = 0;
+
+function spawnSpark(p) {
+  const s = sparks[sparkIdx = (sparkIdx + 1) % MAX_SPARKS];
+  s.x = p.x + (Math.random() - 0.5) * 0.3;
+  s.y = p.y + (Math.random() - 0.5) * 0.3;
+  s.z = p.z + (Math.random() - 0.5) * 0.3;
+  s.vx = (Math.random() - 0.5) * 0.25;
+  s.vy = -0.35 - Math.random() * 0.4;
+  s.life = 1.0;
+}
+
+// ── flight brain: wander the whole visible volume ──
+// world-units half-extents of the view at z=0 (camera at z=16, fov 45)
+function bounds() {
+  const h = Math.tan(THREE.MathUtils.degToRad(22.5)) * 16;
+  return { x: h * (innerWidth / innerHeight) - 1.2, y: h - 1.0 };
+}
+let target = new THREE.Vector3(0, 0, 0);
+const vel = new THREE.Vector3();
+let mode = 'hover';         // hover → wander loop
+let modeUntil = 3.0;        // hover center first (nice for a first look)
+let hoverBase = new THREE.Vector3(0, 0, 0);
+
+function pickTarget() {
+  const b = bounds();
+  target.set((Math.random() * 2 - 1) * b.x, (Math.random() * 2 - 1) * b.y, (Math.random() * 2 - 1) * 2.0);
+}
+
+const clock = new THREE.Clock();
+let t = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  t += dt;
+
+  // mode switching
+  if (t > modeUntil) {
+    if (mode === 'hover') { mode = 'wander'; pickTarget(); modeUntil = t + 6 + Math.random() * 6; }
+    else { mode = 'hover'; hoverBase.copy(fairy.position); modeUntil = t + 2.5 + Math.random() * 2.5; }
+  }
+
+  if (mode === 'wander') {
+    const to = target.clone().sub(fairy.position);
+    if (to.length() < 0.8) pickTarget();
+    const desired = to.normalize().multiplyScalar(4.2);
+    vel.lerp(desired, 1 - Math.pow(0.0015, dt));   // smooth steering
+    fairy.position.addScaledVector(vel, dt);
+  } else {
+    // gentle figure-8 hover
+    const hx = hoverBase.x + Math.sin(t * 1.3) * 0.5;
+    const hy = hoverBase.y + Math.sin(t * 2.1) * 0.35;
+    fairy.position.lerp(new THREE.Vector3(hx, hy, hoverBase.z), 1 - Math.pow(0.001, dt));
+    vel.multiplyScalar(Math.pow(0.02, dt));
+  }
+
+  // banking + facing
+  const bank = THREE.MathUtils.clamp(-vel.x * 0.10, -0.5, 0.5);
+  fairy.rotation.z += (bank - fairy.rotation.z) * Math.min(1, dt * 5);
+  fairy.rotation.y += ((vel.x * 0.05) - fairy.rotation.y) * Math.min(1, dt * 3);
+  fairy.position.y += Math.sin(t * 3.1) * 0.010; // idle bob
+
+  // wings flutter (faster when moving)
+  const flap = 10 + Math.min(vel.length(), 5) * 3;
+  wings.forEach((w, i) => {
+    const dir = i % 2 === 0 ? 1 : -1;
+    w.rotation.y = dir * (0.45 + Math.sin(t * flap + (i > 1 ? 1.2 : 0)) * 0.55) * -1;
+    w.rotation.z = w.userData.tilt * 0.35;
+  });
+
+  // petals sway
+  petals.children.forEach((p) => {
+    const b0 = p.userData.baseRot;
+    p.rotation.x = b0.x + Math.sin(t * 2.2 + b0.phase) * 0.08;
+    p.rotation.z = b0.z + Math.cos(t * 2.0 + b0.phase) * 0.08;
+  });
+
+  // halo breathing
+  halo.material.opacity = 0.7 + Math.sin(t * 2.4) * 0.15;
+
+  // trail
+  if (vel.length() > 0.6) { spawnSpark(fairy.position); spawnSpark(fairy.position); }
+  else if (Math.random() < 0.3) spawnSpark(fairy.position);
+  sparks.forEach((s, i) => {
+    if (s.life > 0) {
+      s.life -= dt * 0.8;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+    }
+    sparkPos[i * 3] = s.x;
+    sparkPos[i * 3 + 1] = s.life > 0 ? s.y : -999;
+    sparkPos[i * 3 + 2] = s.z;
+  });
+  sparkGeo.attributes.position.needsUpdate = true;
+  sparkMat.opacity = 0.85;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

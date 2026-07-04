@@ -209,8 +209,20 @@ impl VadSession {
             Phase::Speech => {
                 self.utterance_ms = self.utterance_ms.saturating_add(chunk_ms);
                 if above {
+                    // Deadlock escape: energy only barely above the threshold,
+                    // sustained inside an utterance, is far more likely an
+                    // underestimated noise floor (e.g. post-AEC ambient after
+                    // makeup gain) than speech — speech runs tens of times the
+                    // threshold. Let the floor recover slowly so the threshold
+                    // climbs past the ambient and trailing silence can finally
+                    // count; otherwise the floor is frozen (it only adapts on
+                    // sub-threshold chunks) and the utterance never ends.
+                    if rms < self.threshold() * 2.0 {
+                        self.adapt_floor(rms);
+                    }
                     self.silence_ms = 0;
                 } else {
+                    self.adapt_floor(rms);
                     self.silence_ms = self.silence_ms.saturating_add(chunk_ms);
                 }
                 if self.silence_ms >= self.config.silence_hang_ms
@@ -699,6 +711,43 @@ mod tests {
     /// floor with the listen phase's real ambient level (× K) raises the bar
     /// above that residual — so it never triggers however long it sustains —
     /// while a genuine voice, clearly louder than the quiet room, still barges.
+    #[test]
+    fn utterance_ends_despite_underestimated_floor() {
+        // Regression: post-AEC ambient (~120 RMS after makeup gain) sat ABOVE
+        // a threshold built from a stale low floor (50 × 2.0 = 100). Silence
+        // never counted, the floor only adapted on sub-threshold chunks —
+        // deadlock: the utterance never ended. The in-speech recovery path
+        // must lift the floor and end the utterance on trailing "silence".
+        let cfg = VadConfig {
+            sensitivity: 0.8,
+            min_speech_ms: 250,
+            silence_hang_ms: 1000,
+            max_utterance_ms: 30_000,
+            timeout_ms: 60_000,
+            abs_min_threshold: Some(12.0),
+        };
+        let mut vad = VadSession::new(cfg);
+        let chunk = |r: i16| vec![r; 1600]; // 100ms of constant amplitude ≈ rms r
+        // real speech: 600ms at rms ~3000
+        let mut started = false;
+        for _ in 0..6 {
+            if vad.push(&chunk(3000)) == VadEvent::SpeechStart {
+                started = true;
+            }
+        }
+        assert!(started, "speech should be detected");
+        // then post-speech ambient at rms ~120 — above the stale threshold
+        let mut ended_after_ms = None;
+        for i in 0..80 {
+            if vad.push(&chunk(120)) == VadEvent::UtteranceEnd {
+                ended_after_ms = Some((i + 1) * 100);
+                break;
+            }
+        }
+        let ms = ended_after_ms.expect("utterance must end despite ambient above stale threshold");
+        assert!(ms <= 6000, "should end within ~6s of trailing ambient, took {ms}ms");
+    }
+
     #[test]
     fn barge_ambient_seed_raises_the_bar() {
         // The user's quiet room measured ~220 RMS during the listen phase, at

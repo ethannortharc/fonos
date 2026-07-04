@@ -16,10 +16,13 @@
 //! the user — the detector gates the mic against the *live* playback loudness we
 //! own ([`AudioPlayback::reference_rms`]): it spends its first ~300 ms learning
 //! the speaker→mic coupling, then flags only mic energy that sustains clearly
-//! above the bleed expected for whatever is playing at that instant. On a barge
-//! it stops playback, cancels the in-flight turn, and carries the interrupting
-//! words straight into the next listen. With barge-in off, the mic stays closed
-//! during playback (the original behavior).
+//! above the bleed expected for whatever is playing at that instant. That fire
+//! is a *soft* trigger: rather than cut immediately (AEC residual echo can trip
+//! it ~2–3× per 20 turns), the monitor opens a short verify window and confirms
+//! only if the energy stays clearly above a raised bar while playback keeps
+//! going. On a *confirmed* barge it stops playback, cancels the in-flight turn,
+//! and carries the interrupting words straight into the next listen. With
+//! barge-in off, the mic stays closed during playback (the original behavior).
 
 use std::collections::VecDeque;
 use std::io::Write;
@@ -67,6 +70,22 @@ const BARGE_ABS_MIN_FALLBACK: f32 = 80.0;
 /// Pre-roll carried into the next listen so the interrupting words aren't lost
 /// (16 000 samples ≈ 1 s at 16 kHz).
 const BARGE_PREROLL_SAMPLES: usize = 16_000;
+/// Soft-barge verify window: once [`BargeDetector`] fires, keep listening this
+/// long for the interruption to prove itself against a *raised* bar before
+/// committing to the hard cut. Playback continues untouched throughout —
+/// overlap (user and assistant briefly talking at once) is natural, and a real
+/// user through AEC runs well above the residual that tripped the soft trigger,
+/// so marginal residual bursts can't clear the raised bar. This is what turns
+/// the ~2–3 false cuts per 20 turns (AEC residual echo) into no-ops.
+const BARGE_VERIFY_WINDOW_MS: u32 = 700;
+/// Cumulative time within the verify window that mic energy must exceed the
+/// raised bar to CONFIRM a barge; below it the trigger is REFUTED as residual.
+const BARGE_VERIFY_VOICED_MS: u32 = 300;
+/// Multiplier on the detector's absolute floor forming the verify bar (the
+/// `abs_mult` in [`BargeDetector::threshold_for`]). The confirm bar therefore
+/// sits clearly above the trigger threshold, while the reference-coupling term
+/// (already tracking live playback loudness) is left as-is.
+const BARGE_VERIFY_BAR_MULT: f32 = 1.5;
 /// Extra margin on top of the listen VAD's speech-threshold factor when seeding
 /// the barge floor from the quiet-phase ambient noise: a barge must be *clearly*
 /// louder than what merely counted as speech while nothing played.
@@ -746,9 +765,19 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// Watch the mic for a genuine interruption while the reply plays.
 ///
 /// Returns `Some(carry)` — a pre-roll + trigger buffer to seed the next listen
-/// — when the mic sustains energy clearly above the live playback bleed, or
-/// `None` if the call was cancelled (or capture couldn't start) before any
-/// barge.
+/// — when a barge is *confirmed*, or `None` if the call was cancelled (or
+/// capture couldn't start) before any confirmed barge.
+///
+/// Detection is two-stage. [`BargeDetector`] first fires a SOFT trigger when
+/// the mic sustains energy above the bleed; because AEC residual echo can
+/// briefly do the same (~2–3 false cuts per 20 turns), the monitor then opens a
+/// ~[`BARGE_VERIFY_WINDOW_MS`] verify window instead of cutting immediately.
+/// Playback keeps going throughout — overlap is natural — and the trigger is
+/// CONFIRMED only if mic energy stays above a *raised* bar
+/// ([`BargeDetector::threshold_for`], `abs_mult` = [`BARGE_VERIFY_BAR_MULT`])
+/// for [`BARGE_VERIFY_VOICED_MS`] cumulative; a real user through AEC runs well
+/// above the residual, so marginal bursts are REFUTED (run reset, reply
+/// uninterrupted, monitoring continues).
 ///
 /// Detection is reference-gated: because we own the TTS PCM, each mic chunk is
 /// compared against [`AudioPlayback::reference_rms`] — the loudness the speaker
@@ -893,18 +922,91 @@ async fn barge_monitor(
                 }
 
                 if barged {
+                    // ── SOFT barge: don't cut yet. The detector fired, but AEC
+                    // residual echo can sustain past the trigger ~2–3× per 20
+                    // turns and self-cut the reply. Mark the point and open a
+                    // verify window: playback keeps going (overlap is natural),
+                    // and only mic energy that stays *clearly* above the trigger
+                    // bar for BARGE_VERIFY_VOICED_MS confirms a real user. ──
                     log.line(&format!(
-                        "speak: BARGE trigger — sustained_run={}ms; last {} chunks (mic,ref,thr):",
+                        "barge: soft — verifying (playback continues); trigger run={}ms \
+                         abs_floor={:.0}; last {} chunks (mic,ref,thr):",
                         detector.run_ms(),
+                        detector.abs_floor(),
                         recent.len()
                     ));
                     for (m, r, t) in &recent {
                         log.line(&format!("    mic={m:.0} ref={r:.0} thr={t:.0}"));
                     }
-                    // Keep a short pre-roll (the words that led up to the
-                    // trigger) plus everything after it.
-                    let start = buf.len().saturating_sub(BARGE_PREROLL_SAMPLES);
-                    return Some(buf[start..].to_vec());
+
+                    let verify_start_len = buf.len();
+                    let mut verify_ms: u32 = 0;
+                    let mut voiced_ms: u32 = 0;
+                    let mut vmic: Vec<f32> = Vec::new();
+                    let mut last_bar = 0.0f32;
+                    // Verify window: keep draining the (still-live) mic into the
+                    // carry buffer, counting time above the raised bar. Ends
+                    // early the moment enough voiced time accrues.
+                    while verify_ms < BARGE_VERIFY_WINDOW_MS && voiced_ms < BARGE_VERIFY_VOICED_MS {
+                        if !active.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        match audio.take_chunk(VAD_CHUNK_MS, capture) {
+                            Some(samples) => {
+                                let mic_rms = rms(&samples);
+                                // Live playback loudness for the coupling bar
+                                // (0.0 on the macOS helper path — abs_floor
+                                // governs there).
+                                let ref_rms = playback
+                                    .lock()
+                                    .ok()
+                                    .and_then(|g| g.as_ref().map(|p| p.reference_rms()))
+                                    .unwrap_or(0.0);
+                                let bar = detector.threshold_for(ref_rms, BARGE_VERIFY_BAR_MULT);
+                                last_bar = bar;
+                                let chunk_ms = (samples.len() as u32) / 16;
+                                buf.extend_from_slice(&samples);
+                                vmic.push(mic_rms);
+                                verify_ms += chunk_ms;
+                                if mic_rms > bar {
+                                    voiced_ms += chunk_ms;
+                                }
+                            }
+                            None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,
+                        }
+                    }
+
+                    if voiced_ms >= BARGE_VERIFY_VOICED_MS {
+                        // ── CONFIRMED: a real interruption. Hand back the carry
+                        // (pre-roll + soft-window audio); the caller does exactly
+                        // today's hard cut — flush/stop playback, cancel the
+                        // turn, emit {kind:"barge"}, seed the next listen. ──
+                        log.line(&format!(
+                            "barge: confirmed ({voiced_ms} ms voiced above raised bar={last_bar:.0}; \
+                             verify mic[min/avg/max]={:.0}/{:.0}/{:.0})",
+                            min(&vmic),
+                            avg(&vmic),
+                            max(&vmic)
+                        ));
+                        let start = buf.len().saturating_sub(BARGE_PREROLL_SAMPLES);
+                        return Some(buf[start..].to_vec());
+                    }
+
+                    // ── REFUTED: nothing audible happened — the sustained energy
+                    // was echo residual, not the user. Leave the reply playing,
+                    // drop the soft-window audio from the carry, and require a
+                    // fresh full sustained run before the next soft attempt. ──
+                    log.line(&format!(
+                        "barge: refuted — residual, playback uninterrupted \
+                         ({voiced_ms} ms < {BARGE_VERIFY_VOICED_MS} above bar={last_bar:.0}; \
+                         verify mic[min/avg/max]={:.0}/{:.0}/{:.0})",
+                        min(&vmic),
+                        avg(&vmic),
+                        max(&vmic)
+                    ));
+                    buf.truncate(verify_start_len);
+                    detector.reset_run();
+                    // Fall through: keep monitoring from the next chunk.
                 }
             }
             None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,

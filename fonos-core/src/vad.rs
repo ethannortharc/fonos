@@ -372,6 +372,19 @@ impl BargeDetector {
             .max(self.abs_min)
     }
 
+    /// The detection threshold for a given live reference: the larger of the
+    /// absolute floor (optionally scaled by `abs_mult`) and the reference-gated
+    /// coupling bar (`coupling · ref_rms · margin`). `abs_mult == 1.0`
+    /// reproduces the exact bar [`push`](Self::push) applies.
+    ///
+    /// The soft-barge verify path raises the absolute-floor term (`abs_mult`
+    /// > 1) to demand energy *clearly* louder than the residual that tripped
+    /// the trigger, while leaving the coupling term — which already tracks the
+    /// live playback loudness — untouched.
+    pub fn threshold_for(&self, ref_rms: f32, abs_mult: f32) -> f32 {
+        (self.abs_floor() * abs_mult).max(self.coupling * ref_rms * BARGE_MARGIN)
+    }
+
     /// Learned speaker→mic coupling ratio (peak `mic_rms / ref_rms`). For the
     /// diagnostic log's warmup summary.
     pub fn coupling(&self) -> f32 {
@@ -393,6 +406,17 @@ impl BargeDetector {
     /// length at the moment a barge fires. For the log.
     pub fn run_ms(&self) -> u32 {
         self.run_ms
+    }
+
+    /// Clear the consecutive-excess accumulator (the sustained run) while
+    /// keeping every learned quantity — coupling, peak bleed, ambient/abs
+    /// floor. Used by the soft-barge verify path: when a fired barge is
+    /// *refuted* (the sustained energy was echo residual, not the user — it
+    /// failed to hold above the raised verify bar), the detector must require a
+    /// fresh, full `sustained_ms` run before it can fire again, rather than
+    /// re-confirming immediately off the tail of the run it just refuted.
+    pub fn reset_run(&mut self) {
+        self.run_ms = 0;
     }
 
     /// Whether the detector is still in its warmup window (learning, not
@@ -422,7 +446,7 @@ impl BargeDetector {
 
         // ── Detect: the bar tracks the live reference; `ref_rms == 0` falls
         // back to the absolute floor alone (both are covered by the `max`). ──
-        let threshold = self.abs_floor().max(self.coupling * ref_rms * BARGE_MARGIN);
+        let threshold = self.threshold_for(ref_rms, 1.0);
         self.last_threshold = threshold;
         let excess = mic_rms > threshold;
 
@@ -746,6 +770,45 @@ mod tests {
         }
         let ms = ended_after_ms.expect("utterance must end despite ambient above stale threshold");
         assert!(ms <= 6000, "should end within ~6s of trailing ambient, took {ms}ms");
+    }
+
+    /// The soft-barge refute path: `reset_run` clears a partial (or complete)
+    /// sustained run without touching learned state, so after a refuted trigger
+    /// the detector demands a *fresh* full `sustained_ms` of excess before it
+    /// can fire again — it must not re-confirm off the tail of the run it just
+    /// refuted.
+    #[test]
+    fn barge_reset_run_requires_a_fresh_sustained_window() {
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0, 80.0);
+        feed_barge(&mut d, 300.0, 2_000.0, 3); // warmup: coupling ≈ 0.15
+        // Build a 400 ms excess run — one 100 ms chunk short of the 450 ms
+        // needed to fire.
+        assert!(!feed_barge(&mut d, 5_000.0, 2_000.0, 4), "400 ms < 450 ms");
+        // Without a reset the very next excess chunk (500 ms) would confirm.
+        // Refute instead: reset the run.
+        d.reset_run();
+        assert!(!d.push(5_000.0, 2_000.0, 100), "post-reset: only 100 ms of a new run");
+        assert!(!feed_barge(&mut d, 5_000.0, 2_000.0, 3), "up to 400 ms of the fresh run");
+        assert!(d.push(5_000.0, 2_000.0, 100), "a full fresh 450+ ms run confirms");
+    }
+
+    /// `threshold_for` raises only the absolute-floor term; the coupling term
+    /// (already tracking the live reference) is untouched, and `abs_mult == 1.0`
+    /// reproduces the bar `push` applies. The verify path's raised bar therefore
+    /// sits clearly above the trigger threshold.
+    #[test]
+    fn barge_threshold_for_raises_only_the_absolute_floor() {
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0, 80.0);
+        feed_barge(&mut d, 300.0, 2_000.0, 3); // coupling ≈ 0.15, abs_floor 390
+        // No live reference: the bar is the absolute floor, and the 1.5× verify
+        // multiplier raises it proportionally.
+        let base = d.threshold_for(0.0, 1.0);
+        assert!((base - d.abs_floor()).abs() < 1e-6, "abs_mult 1.0 == abs_floor");
+        assert!((d.threshold_for(0.0, 1.5) - d.abs_floor() * 1.5).abs() < 1e-6);
+        // With a loud reference the coupling bar dominates and the multiplier on
+        // the (smaller) absolute-floor term leaves it unchanged.
+        let coupling_bar = d.coupling() * 8_000.0 * BARGE_MARGIN; // ≫ abs_floor
+        assert!((d.threshold_for(8_000.0, 1.5) - coupling_bar).abs() < 1e-3);
     }
 
     #[test]

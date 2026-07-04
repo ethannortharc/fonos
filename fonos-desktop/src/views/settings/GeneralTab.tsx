@@ -1,6 +1,7 @@
 // General settings — microphone selection + speech recognition language.
 
 import { useState, useEffect } from "react";
+import { useT, setLocale, resolveLocale } from "../../lib/i18n";
 import type { AppConfig, InjectionAppOverride } from "../../types";
 import { LANGUAGES, TARGET_LANGUAGES } from "./constants";
 import MicrophonePicker from "./MicrophonePicker";
@@ -19,6 +20,7 @@ export default function GeneralTab({
   config: AppConfig;
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
+  const t = useT();
   const [showAllLangs, setShowAllLangs] = useState(false);
   const [showAllTranslate, setShowAllTranslate] = useState(false);
   const [overrides, setOverrides] = useState<InjectionAppOverride[]>(config.injection_app_overrides ?? []);
@@ -69,6 +71,32 @@ export default function GeneralTab({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Interface language ── */}
+      <div className="flex flex-col gap-2">
+        <div className="text-[12px] font-medium text-[#fafaf9]">{t("general.language")}</div>
+        <div className="flex gap-1.5">
+          {([["auto", t("general.language.auto")], ["en", t("general.language.en")], ["zh", t("general.language.zh")]] as const).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => {
+                onSave({ ui_language: val });
+                setLocale(resolveLocale(val));
+              }}
+              className={[
+                "px-3 py-1.5 rounded-lg text-[10.5px] border transition-all",
+                (config.ui_language ?? "auto") === val
+                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.7)]",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
       {/* ── Microphone ── */}
       <MicrophonePicker
         value={config.audio_input_device}

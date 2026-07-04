@@ -4,6 +4,7 @@
 
 import { useRef, useState } from "react";
 import type { AppConfig, VocabBook, VocabRule } from "../../types";
+import { t, useT } from "../../lib/i18n";
 
 const EMPTY_RULE: VocabRule = { from: "", to: "", kind: "literal", case_insensitive: true };
 
@@ -79,7 +80,7 @@ function TermChips({ terms, onChange }: { terms: string[]; onChange: (t: string[
           }
         }}
         onBlur={() => commit(draft)}
-        placeholder={terms.length === 0 ? "Type a term, press Enter — e.g. Kubernetes, OMLX…" : ""}
+        placeholder={terms.length === 0 ? t("vocab.terms.placeholder") : ""}
         spellCheck={false}
         className="flex-1 min-w-[110px] bg-transparent text-[11px] text-[#fafaf9] placeholder-[rgba(255,255,255,0.18)] outline-none py-[3px]"
       />
@@ -111,7 +112,7 @@ function RuleRow({
         onBlur={(e) => {
           if (e.target.value !== rule.from) onPatch({ from: e.target.value });
         }}
-        placeholder={isRegex ? "pattern" : "heard as…"}
+        placeholder={isRegex ? t("vocab.rule.pattern") : t("vocab.rule.from")}
         spellCheck={false}
         className={`${input} flex-1 min-w-0 ${isRegex ? "font-mono" : ""}`}
       />
@@ -125,7 +126,7 @@ function RuleRow({
         onBlur={(e) => {
           if (e.target.value !== rule.to) onPatch({ to: e.target.value });
         }}
-        placeholder="should be…"
+        placeholder={t("vocab.rule.to")}
         spellCheck={false}
         className={`${input} flex-1 min-w-0`}
       />
@@ -173,6 +174,7 @@ export default function VocabTab({
   config: AppConfig;
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
+  useT();
   const books = config.vocab_books ?? [];
   const globalIds = config.global_vocab_books ?? [];
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -204,12 +206,9 @@ export default function VocabTab({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Vocabulary books</div>
+        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("vocab.title")}</div>
         <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-          Terms bias speech recognition and guide LLM output; rules are deterministic
-          find → replace corrections applied to every transcript. Mark a book Global to
-          apply it everywhere — or mount it on specific modes from each mode's card in
-          the Dictation tab.
+          {t("vocab.desc")}
         </div>
       </div>
 
@@ -243,15 +242,15 @@ export default function VocabTab({
                 </span>
                 {isGlobal && (
                   <span className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24] shrink-0">
-                    Global
+                    {t("common.global")}
                   </span>
                 )}
                 <span className="flex-1" />
                 <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] shrink-0">
-                  {book.terms.length} terms
+                  {book.terms.length} {t("vocab.termcount")}
                 </span>
                 <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] shrink-0">
-                  {book.rules.length} rules
+                  {book.rules.length} {t("vocab.rulecount")}
                 </span>
                 <span
                   className={[
@@ -274,7 +273,7 @@ export default function VocabTab({
                       onBlur={(e) => {
                         if (e.target.value !== book.name) updateBook(book.id, { name: e.target.value });
                       }}
-                      placeholder="Book name"
+                      placeholder={t("vocab.bookname")}
                       className={`${input} flex-1`}
                     />
                     <button
@@ -286,7 +285,7 @@ export default function VocabTab({
                           : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)]",
                       ].join(" ")}
                     >
-                      Global
+                      {t("common.global")}
                     </button>
                     <button
                       onClick={() => updateBook(book.id, { enabled: !book.enabled })}
@@ -297,7 +296,7 @@ export default function VocabTab({
                           : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.3)]",
                       ].join(" ")}
                     >
-                      {book.enabled ? "Enabled" : "Disabled"}
+                      {book.enabled ? t("common.enabled") : t("common.disabled")}
                     </button>
                     <button
                       onClick={() => removeBook(book.id)}
@@ -311,9 +310,9 @@ export default function VocabTab({
                   {/* Terms */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      Terms
+                      {t("vocab.terms")}
                       <span className="ml-1 text-[rgba(255,255,255,0.15)]">
-                        — correct spellings the recognizer should prefer
+                        {t("vocab.terms.hint")}
                       </span>
                     </label>
                     <TermChips
@@ -325,14 +324,14 @@ export default function VocabTab({
                   {/* Rules */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      Correction rules
+                      {t("vocab.rules")}
                       <span className="ml-1 text-[rgba(255,255,255,0.15)]">
-                        — deterministic fixes, e.g. 衣袖 → issue
+                        {t("vocab.rules.hint")}
                       </span>
                     </label>
                     {book.rules.length === 0 && (
                       <div className="text-[9.5px] text-[rgba(255,255,255,0.18)] px-0.5 pb-0.5">
-                        When the recognizer keeps mishearing a word, pin the fix here.
+                        {t("vocab.rules.empty")}
                       </div>
                     )}
                     {book.rules.map((rule, i) => (
@@ -355,7 +354,7 @@ export default function VocabTab({
                       onClick={() => updateBook(book.id, { rules: [...book.rules, { ...EMPTY_RULE }] })}
                       className="w-full py-1.5 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-[10px] text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] hover:border-[rgba(251,191,36,0.3)] transition-colors"
                     >
-                      + Add rule
+                      {t("vocab.addrule")}
                     </button>
                   </div>
                 </div>
@@ -367,10 +366,9 @@ export default function VocabTab({
         {books.length === 0 && (
           <div className="flex flex-col items-center gap-2 py-8 text-center rounded-xl border border-dashed border-[rgba(255,255,255,0.08)]">
             <span className="text-[18px]">📖</span>
-            <div className="text-[11px] text-[rgba(255,255,255,0.4)]">No vocabulary books yet</div>
+            <div className="text-[11px] text-[rgba(255,255,255,0.4)]">{t("vocab.empty.title")}</div>
             <div className="text-[10px] text-[rgba(255,255,255,0.22)] max-w-[300px]">
-              Add one for your domain terms — names, jargon, product words — and dictation
-              will start getting them right.
+              {t("vocab.empty.desc")}
             </div>
           </div>
         )}
@@ -379,7 +377,7 @@ export default function VocabTab({
           onClick={addBook}
           className="self-start px-3 py-2 rounded-lg text-[11px] bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.15)] transition-colors"
         >
-          + Add vocabulary book
+          {t("vocab.addbook")}
         </button>
       </div>
     </div>

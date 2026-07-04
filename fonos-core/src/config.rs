@@ -138,6 +138,9 @@ pub struct AppConfig {
     /// (or skips) the wizard; the wizard is shown on launch while this is false.
     pub has_completed_onboarding: bool,
 
+    /// UI language: "auto" (follow system), "en", or "zh".
+    pub ui_language: String,
+
     // ── Listen queue (issue #23) ─────────────────────────────────────────
 
     /// Global hotkey: capture the current selection into the Listen queue.
@@ -215,6 +218,7 @@ impl Default for AppConfig {
             meeting_stt_profile: String::new(),
             meeting_summary_prompt: String::new(),
             hotkey_transform: "cmd+shift+t".to_string(),
+            ui_language: "auto".to_string(),
             hotkey_listen: "option+l".to_string(),
             listen_mode: "listen".to_string(),
             listen_voice_profile: String::new(),

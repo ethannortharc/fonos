@@ -2,16 +2,18 @@
 
 export type SettingsTab = "general" | "models" | "dictation" | "speech" | "vocab" | "agent" | "notes" | "meeting" | "hotkeys";
 
-export const TABS: { key: SettingsTab; label: string }[] = [
-  { key: "general", label: "General" },
-  { key: "models", label: "Models" },
-  { key: "dictation", label: "Dictation" },
-  { key: "speech", label: "Speech" },
-  { key: "vocab", label: "Vocabulary" },
-  { key: "agent", label: "Agent" },
-  { key: "notes", label: "Notes" },
-  { key: "meeting", label: "Meeting" },
-  { key: "hotkeys", label: "Hotkeys" },
+import type { TKey } from "../../lib/i18n";
+
+export const TABS: { key: SettingsTab; label: TKey }[] = [
+  { key: "general", label: "tab.general" },
+  { key: "models", label: "tab.models" },
+  { key: "dictation", label: "tab.dictation" },
+  { key: "speech", label: "tab.speech" },
+  { key: "vocab", label: "tab.vocab" },
+  { key: "agent", label: "tab.agent" },
+  { key: "notes", label: "tab.notes" },
+  { key: "meeting", label: "tab.meeting" },
+  { key: "hotkeys", label: "tab.hotkeys" },
 ];
 
 export const PROVIDERS = [

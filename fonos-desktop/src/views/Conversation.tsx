@@ -14,6 +14,7 @@ import {
   stopPlayback,
 } from "../lib/api";
 import type { AppConfig } from "../types";
+import { t, useT, type TKey } from "../lib/i18n";
 
 type TurnState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -22,14 +23,15 @@ interface Message {
   text: string;
 }
 
-const STATE_META: Record<TurnState, { label: string; color: string }> = {
-  idle: { label: "Ready", color: "#78716c" },
-  listening: { label: "Listening…", color: "#f87171" },
-  thinking: { label: "Thinking…", color: "#fbbf24" },
-  speaking: { label: "Speaking…", color: "#4ade80" },
+const STATE_META: Record<TurnState, { label: TKey; color: string }> = {
+  idle: { label: "conv.state.idle", color: "#78716c" },
+  listening: { label: "conv.state.listening", color: "#f87171" },
+  thinking: { label: "conv.state.thinking", color: "#fbbf24" },
+  speaking: { label: "conv.state.speaking", color: "#4ade80" },
 };
 
 export default function Conversation() {
+  useT();
   const [messages, setMessages] = useState<Message[]>([]);
   const [turnState, setTurnState] = useState<TurnState>("idle");
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -172,7 +174,7 @@ export default function Conversation() {
       {/* ── header ── */}
       <div className="flex items-center justify-between px-5 pt-4 pb-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-[15px] font-semibold text-[#fafaf9]">Conversation</h1>
+          <h1 className="text-[15px] font-semibold text-[#fafaf9]">{t("conv.title")}</h1>
           <span
             className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)]"
             style={{ color: meta.color }}
@@ -181,7 +183,7 @@ export default function Conversation() {
               className={`w-1.5 h-1.5 rounded-full ${turnState !== "idle" ? "animate-pulse" : ""}`}
               style={{ background: meta.color }}
             />
-            {meta.label}
+            {t(meta.label)}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -193,13 +195,13 @@ export default function Conversation() {
                 : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
             }`}
           >
-            Persona
+            {t("conv.persona")}
           </button>
           <button
             onClick={handleReset}
             className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
           >
-            New chat
+            {t("conv.newchat")}
           </button>
         </div>
       </div>
@@ -208,7 +210,7 @@ export default function Conversation() {
       {personaOpen && (
         <div className="mx-5 mb-3 p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
           <div className="text-[10px] text-[rgba(255,255,255,0.35)] mb-1.5">
-            System prompt for this conversation — replies are spoken aloud, keep them short.
+            {t("conv.persona.desc")}
           </div>
           <textarea
             value={persona}
@@ -222,14 +224,14 @@ export default function Conversation() {
           />
           <div className="flex items-center justify-between mt-1.5">
             <span className="text-[9px] text-[rgba(255,255,255,0.2)]">
-              Applies from the next turn{personaDirty ? " · unsaved" : ""}
+              {t("conv.persona.applies")}{personaDirty ? t("conv.persona.unsaved") : ""}
             </span>
             <button
               onClick={savePersonaDefault}
               disabled={!personaDirty}
               className="text-[9px] px-2 py-1 rounded-md bg-[rgba(251,191,36,0.1)] text-[#fbbf24] disabled:opacity-30 transition-opacity"
             >
-              Save as default
+              {t("conv.persona.savedefault")}
             </button>
           </div>
         </div>
@@ -246,9 +248,9 @@ export default function Conversation() {
                 <line x1="12" y1="18" x2="12" y2="22" />
               </svg>
             </div>
-            <div className="text-[12px] text-[rgba(255,255,255,0.5)]">Hold the button and talk</div>
+            <div className="text-[12px] text-[rgba(255,255,255,0.5)]">{t("conv.empty.title")}</div>
             <div className="text-[10px] text-[rgba(255,255,255,0.25)]">
-              ⌥S works from anywhere · memory lasts {config?.sts_max_turns ?? 8} turns
+              ⌥S {t("conv.empty.hint")} {config?.sts_max_turns ?? 8} {t("conv.empty.turns")}
             </div>
           </div>
         )}
@@ -291,7 +293,7 @@ export default function Conversation() {
                 style={{ height: h, animationDelay: `${i * 0.12}s`, animationDuration: "0.7s" }}
               />
             ))}
-            <span className="text-[9px] text-[rgba(74,222,128,0.6)] ml-1">speaking</span>
+            <span className="text-[9px] text-[rgba(74,222,128,0.6)] ml-1">{t("conv.speaking")}</span>
           </div>
         )}
       </div>
@@ -321,7 +323,7 @@ export default function Conversation() {
           </svg>
         </button>
         <div className="text-[9px] text-[rgba(255,255,255,0.25)]">
-          {listening ? "Release to send" : "Hold to talk"}
+          {listening ? t("conv.release") : t("conv.hold")}
         </div>
       </div>
     </div>

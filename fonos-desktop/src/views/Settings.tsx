@@ -10,6 +10,7 @@ import {
   deleteCustomMode,
 } from "../lib/api";
 import type { AppConfig, ModeEntry } from "../types";
+import { useT } from "../lib/i18n";
 import { TABS } from "./settings/constants";
 import type { SettingsTab, ModeForm } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
@@ -24,6 +25,7 @@ import NotesTab from "./settings/NotesTab";
 import MeetingTab from "./settings/MeetingTab";
 
 export default function Settings() {
+  const tr = useT();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [modes, setModes] = useState<ModeEntry[]>([]);
   const [saving, setSaving] = useState<boolean>(false);
@@ -163,7 +165,7 @@ export default function Settings() {
                   : "text-[rgba(255,255,255,0.3)]",
               ].join(" ")}
             >
-              {t.label}
+              {tr(t.label)}
             </button>
           ))}
         </div>

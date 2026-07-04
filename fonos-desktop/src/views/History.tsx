@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { listEntries, listContainers, searchEntries, deleteEntry } from "../lib/storage-api";
 import { playAudioFile, stopPlayback } from "../lib/api";
+import { t, useT, type TKey } from "../lib/i18n";
 import type { Entry, Container, SourceType } from "../lib/storage-api";
 import Notes from "./Notes";
 import Meetings from "./Meetings";
@@ -18,13 +19,13 @@ const SEARCH_DEBOUNCE_MS = 250;
 
 export type HistoryFilter = "all" | SourceType;
 
-const FILTERS: { id: HistoryFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "dictation", label: "Dictation" },
-  { id: "note", label: "Notes" },
-  { id: "meeting", label: "Meetings" },
-  { id: "listen", label: "Listen" },
-  { id: "agent", label: "Agent" },
+const FILTERS: { id: HistoryFilter; label: TKey }[] = [
+  { id: "all", label: "history.filter.all" },
+  { id: "dictation", label: "history.filter.dictation" },
+  { id: "note", label: "history.filter.notes" },
+  { id: "meeting", label: "history.filter.meetings" },
+  { id: "listen", label: "history.filter.listen" },
+  { id: "agent", label: "history.filter.agent" },
 ];
 
 const STRIPE_COLOR: Record<string, string> = {
@@ -110,6 +111,7 @@ export default function History({
   /** External navigation (float pill / tray) can preset the filter. */
   preset?: { filter: HistoryFilter; nonce: number };
 }) {
+  useT();
   const [filter, setFilter] = useState<HistoryFilter>(preset?.filter ?? "all");
   const [query, setQuery] = useState("");
   const [openMeeting, setOpenMeeting] = useState<Container | null>(null);
@@ -278,7 +280,7 @@ export default function History({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-            placeholder="Search dictations, notes, meetings…"
+            placeholder={t("history.search")}
             spellCheck={false}
             className="flex-1 bg-transparent outline-none border-none text-[#fafaf9] text-[11px] placeholder:text-[rgba(255,255,255,0.2)]"
           />
@@ -307,7 +309,7 @@ export default function History({
                 : "bg-[rgba(255,255,255,0.04)] border-transparent text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.55)]",
             ].join(" ")}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
@@ -483,13 +485,13 @@ function EntryCard({
                     onClick={() => { playAudioFile(entry.audio_ref!).catch(() => {}); }}
                     className="text-[9px] px-2.5 py-1 rounded-md bg-[rgba(125,211,252,0.12)] text-[#7dd3fc] hover:bg-[rgba(125,211,252,0.2)] transition-colors"
                   >
-                    ▶ Play
+                    {t("common.play")}
                   </button>
                   <button
                     onClick={() => { stopPlayback().catch(() => {}); }}
                     className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
                   >
-                    ■ Stop
+                    {t("common.stop")}
                   </button>
                 </>
               )}
@@ -497,13 +499,13 @@ function EntryCard({
                 onClick={onCopy}
                 className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
               >
-                Copy
+                {t("common.copy")}
               </button>
               <button
                 onClick={onDelete}
                 className="text-[9px] px-2 py-1 rounded-md bg-[rgba(239,68,68,0.06)] text-[rgba(239,68,68,0.5)] hover:text-[#ef4444] transition-colors"
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           </>

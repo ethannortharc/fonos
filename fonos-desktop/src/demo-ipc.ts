@@ -59,6 +59,7 @@ const config = {
   audio_output_device: "System Default",
   show_floating_indicator: true,
   warmup_enabled: true,
+  ui_language: "auto",
   hotkey_listen: "option+l",
   listen_mode: "listen",
   listen_voice_profile: "",

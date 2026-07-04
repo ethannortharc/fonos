@@ -226,6 +226,18 @@ input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
 
     let frames = Int(outBuffer.frameLength)
     guard frames > 0, let ch = outBuffer.int16ChannelData else { return }
+
+    // Post-VPIO levels are conservative: noise suppression drops the silence
+    // floor to near-zero and the AGC levels speech far below the raw cpal path.
+    // Apply a fixed digital makeup gain so downstream VAD/STT see usable
+    // headroom, with a saturating i16 clamp so loud peaks don't wrap.
+    let makeupGain: Float = 3.0
+    let mono = ch[0]
+    for i in 0..<frames {
+        let amplified = (Float(mono[i]) * makeupGain).rounded()
+        mono[i] = Int16(max(-32768.0, min(32767.0, amplified)))
+    }
+
     // Mono interleaved: ch[0] is `frames` contiguous Int16 samples.
     let data = Data(bytes: ch[0], count: frames * MemoryLayout<Int16>.size)
 

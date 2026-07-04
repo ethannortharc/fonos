@@ -50,6 +50,20 @@ const POLL_MS: u64 = 30;
 /// clearly exceeds the expected bleed for the reference playing right now.
 const BARGE_WARMUP_MS: u32 = 300;
 const BARGE_SUSTAINED_MS: u32 = 450;
+/// Speech-threshold absolute-minimum override (RMS) for the listen VAD on a
+/// processed-audio path (system AEC). Post-VPIO/ec silence is near-zero and
+/// speech is AGC-levelled far below raw cpal, so the raw-cpal 48–120 clamp —
+/// which the relative `noise_floor × factor` bar sits under once the floor
+/// adapts down — would leave the call deaf. A small fixed floor lets relative
+/// detection dominate while still rejecting flat-line silence. Fallback keeps
+/// the raw-cpal ramp (`None`).
+const LISTEN_ABS_MIN_AEC: f32 = 12.0;
+/// Barge-detector absolute-floor lower bound (RMS) per path. The raw-cpal
+/// fallback keeps the conservative 80; AEC paths, whose warmup sees near-silence
+/// (peak-bleed term collapses to this), use a low bound and lean on the
+/// ambient-seeded floor + reference-coupling instead.
+const BARGE_ABS_MIN_AEC: f32 = 15.0;
+const BARGE_ABS_MIN_FALLBACK: f32 = 80.0;
 /// Pre-roll carried into the next listen so the interrupting words aren't lost
 /// (16 000 samples ≈ 1 s at 16 kHz).
 const BARGE_PREROLL_SAMPLES: usize = 16_000;
@@ -442,7 +456,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             )
         })
         .unwrap_or((0.5, 800, true, "auto".to_string()));
-    let vad_cfg = VadConfig {
+    let mut vad_cfg = VadConfig {
         sensitivity,
         silence_hang_ms: silence_ms.clamp(500, 2000),
         ..Default::default()
@@ -464,6 +478,18 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     // the plain cpal path armed per phase. The BargeDetector envelope gating runs
     // on top of all three (belt and braces).
     let audio = setup_call_audio(barge_enabled, &device_name, &playback, &log);
+    // On a processed-audio path the listen VAD's raw-cpal absolute-minimum clamp
+    // would leave the call deaf (near-zero silence floor, AGC-levelled speech);
+    // replace it with a small fixed floor so the scale-free relative bar drives
+    // detection. Fallback keeps the raw-cpal ramp.
+    if audio.is_aec() {
+        vad_cfg.abs_min_threshold = Some(LISTEN_ABS_MIN_AEC);
+    }
+    log.line(&format!(
+        "listen: VAD abs_min_threshold={:?} (path={})",
+        vad_cfg.abs_min_threshold,
+        audio.path_label()
+    ));
     // Tell the page which audio path is live so it can render the AEC truth chip.
     emit_call_started(&app, audio.path_label());
     // The barge floor's ambient-seed multiplier: the same "clearly louder than
@@ -512,6 +538,12 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                 buf.extend_from_slice(chunk);
             }
         }
+        // Per-second listen-phase level profile — the mic energy the VAD sees,
+        // plus its live noise floor and effective threshold, so a "call can't
+        // hear me" symptom is directly readable from the log (mirrors the SPEAK
+        // monitor's per-second line).
+        let mut sec_mic: Vec<f32> = Vec::new();
+        let mut sec_ms: u32 = 0;
         let outcome = loop {
             if !active.load(Ordering::SeqCst) {
                 break Outcome::Cancelled;
@@ -524,6 +556,22 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                 Some(samples) => {
                     let ev = vad.push(&samples);
                     buf.extend_from_slice(&samples);
+                    sec_mic.push(rms(&samples));
+                    sec_ms += (samples.len() as u32) / 16; // 16 samples/ms @ 16 kHz
+                    if sec_ms >= 1_000 {
+                        log.line(&format!(
+                            "listen: {}s — mic[min/avg/max]={:.0}/{:.0}/{:.0} \
+                             noise_floor={:.0} threshold={:.0}",
+                            sec_ms / 1_000,
+                            min(&sec_mic),
+                            avg(&sec_mic),
+                            max(&sec_mic),
+                            vad.noise_floor(),
+                            vad.threshold()
+                        ));
+                        sec_mic.clear();
+                        sec_ms = 0;
+                    }
                     match ev {
                         VadEvent::UtteranceEnd => break Outcome::Utterance,
                         VadEvent::Timeout => break Outcome::Timeout,
@@ -762,8 +810,21 @@ async fn barge_monitor(
     // mic sustains energy clearly above the bleed expected for the reference
     // playing at that instant. Its absolute floor is seeded with the listen
     // phase's ambient noise so post-AEC residual can't self-trigger.
-    let mut detector =
-        BargeDetector::new(BARGE_WARMUP_MS, BARGE_SUSTAINED_MS, ambient_floor, ambient_k);
+    // Processed-audio warmup sees near-silence, so its peak-bleed term collapses
+    // to this hard minimum: keep the conservative 80 for raw cpal, but a low
+    // bound for AEC paths (the ambient-seeded floor governs there instead).
+    let barge_abs_min = if audio.is_aec() {
+        BARGE_ABS_MIN_AEC
+    } else {
+        BARGE_ABS_MIN_FALLBACK
+    };
+    let mut detector = BargeDetector::new(
+        BARGE_WARMUP_MS,
+        BARGE_SUSTAINED_MS,
+        ambient_floor,
+        ambient_k,
+        barge_abs_min,
+    );
     let mut buf: Vec<i16> = Vec::new();
     // Diagnostics: last N (mic, ref, threshold) triples for the pre-barge dump,
     // and a rolling per-second min/avg/max of mic/ref energy.

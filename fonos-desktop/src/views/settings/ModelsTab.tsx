@@ -1,6 +1,7 @@
 // Models tab — default service dropdowns + the shared model-profile editor.
 
 import { useState, useEffect, useRef } from "react";
+import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModelProfile } from "../../types";
 import ModelProfileEditor from "./ModelProfileEditor";
 
@@ -46,7 +47,7 @@ function ServiceCardDropdown({
         </div>
         <div>
           <div className={["text-[11px] truncate", current ? "text-[#fafaf9] font-medium" : "text-[rgba(255,255,255,0.2)] italic"].join(" ")}>
-            {current ? current.name : "Not set"}
+            {current ? current.name : t("models.notset")}
           </div>
           <div className="text-[9px] text-[rgba(255,255,255,0.2)] truncate mt-0.5 h-[14px]">
             {current?.model ?? ""}
@@ -65,7 +66,7 @@ function ServiceCardDropdown({
                 : "text-[rgba(255,255,255,0.4)] hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
           >
-            Not configured
+            {t("models.notconfigured")}
           </button>
           {filtered.map((p) => (
             <button
@@ -91,7 +92,7 @@ function ServiceCardDropdown({
           ))}
           {filtered.length === 0 && (
             <div className="px-3 py-2 text-[10px] text-[rgba(255,255,255,0.2)]">
-              No models with {capKey.toUpperCase()} capability
+              {t("models.nocap").replace("{cap}", capKey.toUpperCase())}
             </div>
           )}
         </div>
@@ -111,12 +112,13 @@ export default function ModelsTab({
   onSave: (updates: Partial<AppConfig>) => void;
   setError: (e: string) => void;
 }) {
+  useT();
   return (
     <div className="flex flex-col gap-4">
       {/* ── Section 1: Default Services ── */}
       <div className="flex flex-col gap-2">
         <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-          Default Services
+          {t("models.defaults")}
         </div>
         <div className="grid grid-cols-3 gap-2">
           <ServiceCardDropdown

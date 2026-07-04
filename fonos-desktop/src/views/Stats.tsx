@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { getStats, getToday, getDictationLatency } from "../lib/api";
+import { t, useT } from "../lib/i18n";
 import type { DailyStat, TodaySummary, LatencyStats } from "../types";
 
 type Period = "7d" | "30d" | "90d";
@@ -11,9 +12,9 @@ type Metric = "words" | "sessions" | "time";
 
 const SERIES = "#d97706";
 const MIX = [
-  { key: "stt", label: "Dictation", color: "#d97706" },
-  { key: "tts", label: "Speech", color: "#8b5cf6" },
-  { key: "llm", label: "LLM", color: "#16a34a" },
+  { key: "stt", label: "stats.mix.dictation", color: "#d97706" },
+  { key: "tts", label: "stats.mix.speech", color: "#8b5cf6" },
+  { key: "llm", label: "stats.mix.llm", color: "#16a34a" },
 ] as const;
 
 function formatDate(d: Date): string {
@@ -68,7 +69,7 @@ function BarChart({ stats, metric }: { stats: DailyStat[]; metric: Metric }) {
   if (stats.length === 0 || values.every((v) => v === 0)) {
     return (
       <div className="h-[130px] flex items-center justify-center">
-        <span className="text-[rgba(255,255,255,0.2)] text-[11px]">No activity in this period</span>
+        <span className="text-[rgba(255,255,255,0.2)] text-[11px]">{t("stats.no-activity")}</span>
       </div>
     );
   }
@@ -91,11 +92,11 @@ function BarChart({ stats, metric }: { stats: DailyStat[]; metric: Metric }) {
             {shortDay(hovered.date)}
           </div>
           <div className="flex flex-col gap-0.5 text-[10px] whitespace-nowrap">
-            <span className="text-[rgba(255,255,255,0.75)]">{hovered.stt_words.toLocaleString()} words</span>
+            <span className="text-[rgba(255,255,255,0.75)]">{hovered.stt_words.toLocaleString()} {t("stats.unit.words")}</span>
             <span className="text-[rgba(255,255,255,0.5)]">
-              {hovered.stt_count + hovered.tts_count + hovered.llm_count} sessions
+              {hovered.stt_count + hovered.tts_count + hovered.llm_count} {t("stats.unit.sessions")}
             </span>
-            <span className="text-[rgba(255,255,255,0.5)]">{formatTimeSaved(hovered.time_saved_secs)} saved</span>
+            <span className="text-[rgba(255,255,255,0.5)]">{formatTimeSaved(hovered.time_saved_secs)} {t("stats.unit.saved")}</span>
           </div>
         </div>
       )}
@@ -168,7 +169,7 @@ function ActivityMix({ stats }: { stats: DailyStat[] }) {
   return (
     <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
       <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-2.5 block">
-        Activity mix
+        {t("stats.activity-mix")}
       </span>
       {/* Composition bar: 2px surface gaps between segments */}
       <div className="flex h-[10px] gap-[2px] rounded-full overflow-hidden mb-2.5">
@@ -178,7 +179,7 @@ function ActivityMix({ stats }: { stats: DailyStat[] }) {
           return (
             <div
               key={m.key}
-              title={`${m.label}: ${v}`}
+              title={`${t(m.label as any)}: ${v}`}
               style={{ width: `${(v / total) * 100}%`, background: m.color, minWidth: 3 }}
               className="first:rounded-l-full last:rounded-r-full"
             />
@@ -190,7 +191,7 @@ function ActivityMix({ stats }: { stats: DailyStat[] }) {
         {MIX.map((m) => (
           <div key={m.key} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-[3px]" style={{ background: m.color }} />
-            <span className="text-[10px] text-[rgba(255,255,255,0.55)]">{m.label}</span>
+            <span className="text-[10px] text-[rgba(255,255,255,0.55)]">{t(m.label as any)}</span>
             <span className="text-[10px] text-[rgba(255,255,255,0.3)] font-mono">
               {counts[m.key].toLocaleString()}
             </span>
@@ -207,6 +208,7 @@ function ActivityMix({ stats }: { stats: DailyStat[] }) {
 // ─── Stats view ───────────────────────────────────────────────────────────────
 
 export default function Stats() {
+  useT();
   const [period, setPeriod] = useState<Period>("7d");
   const [metric, setMetric] = useState<Metric>("words");
   const [stats, setStats] = useState<DailyStat[]>([]);
@@ -251,24 +253,24 @@ export default function Stats() {
   const kpis = today
     ? [
         {
-          label: "Words dictated",
+          label: t("stats.kpi.words"),
           value: agg.words.toLocaleString(),
-          sub: `${today.total_words.toLocaleString()} today`,
+          sub: `${today.total_words.toLocaleString()} ${t("stats.today")}`,
         },
         {
-          label: "Sessions",
+          label: t("stats.kpi.sessions"),
           value: agg.sessions.toLocaleString(),
-          sub: `${today.total_sessions} today · ${agg.activeDays} active day${agg.activeDays === 1 ? "" : "s"}`,
+          sub: `${today.total_sessions} ${t("stats.today")} · ${agg.activeDays} ${agg.activeDays === 1 ? t("stats.active-day") : t("stats.active-days")}`,
         },
         {
-          label: "LLM latency",
+          label: t("stats.kpi.llm-latency"),
           value: today.llm_latency_avg > 0 ? `${Math.round(today.llm_latency_avg)}ms` : "—",
-          sub: "avg today",
+          sub: t("stats.avg-today"),
         },
         {
-          label: "Tokens",
+          label: t("stats.kpi.tokens"),
           value: agg.tokens.toLocaleString(),
-          sub: `${today.tokens_total.toLocaleString()} today`,
+          sub: `${today.tokens_total.toLocaleString()} ${t("stats.today")}`,
         },
       ]
     : [];
@@ -277,7 +279,7 @@ export default function Stats() {
     <div className="flex flex-col h-full p-5 gap-3 bg-[#1a1917] overflow-auto">
       {/* Header + period filter */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9]">Stats</h2>
+        <h2 className="text-[13px] font-semibold text-[#fafaf9]">{t("stats.title")}</h2>
         <div className="flex gap-1">
           {(["7d", "30d", "90d"] as Period[]).map((p) => (
             <button
@@ -290,7 +292,7 @@ export default function Stats() {
                   : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] hover:bg-[rgba(255,255,255,0.08)]",
               ].join(" ")}
             >
-              {p}
+              {t(("stats.period." + p) as any)}
             </button>
           ))}
         </div>
@@ -301,7 +303,7 @@ export default function Stats() {
         <div className="bg-[rgba(217,119,6,0.06)] border border-[rgba(217,119,6,0.15)] rounded-[12px] px-5 py-4 flex items-end justify-between">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.35)] mb-1">
-              Time saved · {period}
+              {t("stats.time-saved")} · {t(("stats.period." + period) as any)}
             </div>
             <div className="text-[30px] font-semibold text-[#fafaf9] leading-none">
               {formatTimeSaved(agg.timeSaved)}
@@ -311,7 +313,7 @@ export default function Stats() {
             <div className="text-[15px] font-medium text-[rgba(255,255,255,0.75)]">
               {formatTimeSaved(today.time_saved_secs)}
             </div>
-            <div className="text-[9px] text-[rgba(255,255,255,0.3)]">today</div>
+            <div className="text-[9px] text-[rgba(255,255,255,0.3)]">{t("stats.today")}</div>
           </div>
         </div>
       )}
@@ -338,14 +340,14 @@ export default function Stats() {
       <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
         <div className="flex items-center justify-between mb-4">
           <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-            Daily {metric === "words" ? "words" : metric === "sessions" ? "sessions" : "time saved"}
+            {metric === "words" ? t("stats.daily-words") : metric === "sessions" ? t("stats.daily-sessions") : t("stats.daily-time-saved")}
           </span>
           <div className="flex gap-1">
             {(
               [
-                { id: "words", label: "Words" },
-                { id: "sessions", label: "Sessions" },
-                { id: "time", label: "Time saved" },
+                { id: "words", label: "stats.metric.words" },
+                { id: "sessions", label: "stats.metric.sessions" },
+                { id: "time", label: "stats.metric.time" },
               ] as { id: Metric; label: string }[]
             ).map((m) => (
               <button
@@ -358,14 +360,14 @@ export default function Stats() {
                     : "text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.5)]",
                 ].join(" ")}
               >
-                {m.label}
+                {t(m.label as any)}
               </button>
             ))}
           </div>
         </div>
         {loading ? (
           <div className="h-[130px] flex items-center justify-center">
-            <span className="text-[rgba(255,255,255,0.2)] text-[11px]">Loading…</span>
+            <span className="text-[rgba(255,255,255,0.2)] text-[11px]">{t("stats.loading")}</span>
           </div>
         ) : (
           <BarChart stats={stats} metric={metric} />
@@ -377,23 +379,23 @@ export default function Stats() {
         <div className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3.5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-              Dictation latency · {period}
+              {t("stats.dictation-latency")} · {t(("stats.period." + period) as any)}
             </span>
             <span className="text-[9px] text-[rgba(255,255,255,0.25)]">
-              {latency.count} dictations · release → text delivered
+              {latency.count} {t("stats.unit.dictations")} · {t("stats.latency-desc")}
             </span>
           </div>
           <div className="grid grid-cols-4 gap-2 mb-3">
             {[
               { label: "P50", value: `${latency.p50_ms.toLocaleString()}ms`, hero: true },
               { label: "P95", value: `${latency.p95_ms.toLocaleString()}ms`, hero: true },
-              { label: "Avg", value: `${latency.avg_ms.toLocaleString()}ms`, hero: false },
-              { label: "Fastest", value: `${latency.min_ms.toLocaleString()}ms`, hero: false },
-            ].map((t) => (
-              <div key={t.label} className="flex flex-col gap-0.5">
-                <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t.label}</span>
-                <span className={t.hero ? "text-[20px] font-semibold text-[#fafaf9]" : "text-[15px] font-medium text-[rgba(255,255,255,0.6)]"}>
-                  {t.value}
+              { label: t("stats.avg"), value: `${latency.avg_ms.toLocaleString()}ms`, hero: false },
+              { label: t("stats.fastest"), value: `${latency.min_ms.toLocaleString()}ms`, hero: false },
+            ].map((tile) => (
+              <div key={tile.label} className="flex flex-col gap-0.5">
+                <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{tile.label}</span>
+                <span className={tile.hero ? "text-[20px] font-semibold text-[#fafaf9]" : "text-[15px] font-medium text-[rgba(255,255,255,0.6)]"}>
+                  {tile.value}
                 </span>
               </div>
             ))}
@@ -402,7 +404,7 @@ export default function Stats() {
             <div className="flex flex-col gap-1 border-t border-[rgba(255,255,255,0.04)] pt-2.5">
               {latency.by_model.map((m) => (
                 <div key={m.model} className="flex items-center gap-2 text-[10px]">
-                  <span className="text-[rgba(255,255,255,0.55)] truncate flex-1">{m.model || "(unknown)"}</span>
+                  <span className="text-[rgba(255,255,255,0.55)] truncate flex-1">{m.model || t("stats.unknown-model")}</span>
                   <span className="text-[rgba(255,255,255,0.35)] font-mono">P50 {m.p50_ms.toLocaleString()}ms</span>
                   <span className="text-[rgba(255,255,255,0.25)] font-mono">P95 {m.p95_ms.toLocaleString()}ms</span>
                   <span className="text-[rgba(255,255,255,0.2)] w-10 text-right">{m.count}×</span>

@@ -2,6 +2,7 @@
 // Uses Tailwind classes (same as other settings tabs like AgentTab).
 
 import type { AppConfig, ModelProfile } from "../../types";
+import { t, useT } from "../../lib/i18n";
 
 const DEFAULT_SUMMARY_PROMPT =
   "You are a helpful meeting assistant. Summarize the meeting transcript below. " +
@@ -26,6 +27,7 @@ interface MeetingTabProps {
 }
 
 export default function MeetingTab({ config, onSave }: MeetingTabProps) {
+  useT();
   const llmProfiles: ModelProfile[] = (config.model_profiles ?? []).filter(
     (p) => p.capabilities && p.capabilities.includes("llm")
   );
@@ -41,7 +43,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
 
       {/* ── Audio Source ───────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Audio Source</SectionLabel>
+        <SectionLabel>{t("mtab.audio-source")}</SectionLabel>
         <select
           value={config.meeting_audio_source ?? "auto"}
           onChange={(e) => onSave({ meeting_audio_source: e.target.value })}
@@ -51,17 +53,17 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
             border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <option value="auto">Auto (ScreenCaptureKit + mic)</option>
-          <option value="mic_only">Mic only</option>
+          <option value="auto">{t("mtab.audio-auto")}</option>
+          <option value="mic_only">{t("mtab.audio-mic")}</option>
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          "Auto" captures system audio + microphone via ScreenCaptureKit (macOS 13+).
+          {t("mtab.audio-hint")}
         </div>
       </div>
 
       {/* ── STT Model ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>STT Model</SectionLabel>
+        <SectionLabel>{t("mtab.stt-model")}</SectionLabel>
         <select
           value={config.meeting_stt_profile ?? ""}
           onChange={(e) => onSave({ meeting_stt_profile: e.target.value })}
@@ -71,7 +73,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
             border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <option value="">Default (global STT profile)</option>
+          <option value="">{t("mtab.stt-default")}</option>
           {sttProfiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name} ({p.model})
@@ -79,13 +81,13 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
           ))}
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          STT model for transcribing meeting audio. Defaults to global STT profile if not set.
+          {t("mtab.stt-hint")}
         </div>
       </div>
 
       {/* ── LLM Model for Summary ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>LLM Model for Summary</SectionLabel>
+        <SectionLabel>{t("mtab.llm-model")}</SectionLabel>
         <select
           value={config.meeting_llm_profile ?? ""}
           onChange={(e) => onSave({ meeting_llm_profile: e.target.value })}
@@ -95,7 +97,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
             border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <option value="">— none (no summary) —</option>
+          <option value="">{t("mtab.llm-none")}</option>
           {llmProfiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -104,13 +106,13 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
           ))}
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          LLM used to generate meeting summaries. OpenRouter models work well for long contexts.
+          {t("mtab.llm-hint")}
         </div>
       </div>
 
       {/* ── Summary Prompt ─────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Summary Prompt</SectionLabel>
+        <SectionLabel>{t("mtab.summary-prompt")}</SectionLabel>
         <textarea
           rows={4}
           value={summaryPrompt}
@@ -123,14 +125,13 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
           placeholder={DEFAULT_SUMMARY_PROMPT}
         />
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          System prompt sent to the LLM when generating a meeting summary.
-          Use "- [ ] task" format to create action items.
+          {t("mtab.summary-hint")}
         </div>
       </div>
 
       {/* ── Hotkey (display only) ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Hotkey</SectionLabel>
+        <SectionLabel>{t("mtab.hotkey")}</SectionLabel>
         <div
           className="rounded-lg px-3 py-2 text-[11px] text-[rgba(255,255,255,0.4)]"
           style={{
@@ -140,11 +141,11 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
         >
           {config.hotkey_meeting
             ? <span className="font-mono">{config.hotkey_meeting}</span>
-            : <span className="italic text-[rgba(255,255,255,0.2)]">Not set — configure in Hotkeys tab</span>
+            : <span className="italic text-[rgba(255,255,255,0.2)]">{t("mtab.hotkey-notset")}</span>
           }
         </div>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          The meeting start/stop hotkey is configured in the Hotkeys tab.
+          {t("mtab.hotkey-hint")}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 // General settings — microphone selection + speech recognition language.
 
 import { useState, useEffect } from "react";
+import { useT, setLocale, resolveLocale } from "../../lib/i18n";
 import type { AppConfig, InjectionAppOverride } from "../../types";
 import { LANGUAGES, TARGET_LANGUAGES } from "./constants";
 import MicrophonePicker from "./MicrophonePicker";
@@ -8,9 +9,9 @@ import MicrophonePicker from "./MicrophonePicker";
 const FREQUENT_CODES = ["auto", "Chinese", "English", "Japanese", "Korean", "Cantonese", "French", "Spanish"];
 
 const INJECTION_STRATEGIES = [
-  { value: "paste", label: "Paste (fast, uses clipboard briefly)", short: "Paste" },
-  { value: "type", label: "Type (slower, never touches clipboard)", short: "Type" },
-];
+  { value: "paste", labelKey: "general.insert.paste", shortKey: "general.insert.paste.short" },
+  { value: "type", labelKey: "general.insert.type", shortKey: "general.insert.type.short" },
+] as const;
 
 export default function GeneralTab({
   config,
@@ -19,6 +20,7 @@ export default function GeneralTab({
   config: AppConfig;
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
+  const t = useT();
   const [showAllLangs, setShowAllLangs] = useState(false);
   const [showAllTranslate, setShowAllTranslate] = useState(false);
   const [overrides, setOverrides] = useState<InjectionAppOverride[]>(config.injection_app_overrides ?? []);
@@ -69,6 +71,32 @@ export default function GeneralTab({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Interface language ── */}
+      <div className="flex flex-col gap-2">
+        <div className="text-[12px] font-medium text-[#fafaf9]">{t("general.language")}</div>
+        <div className="flex gap-1.5">
+          {([["auto", t("general.language.auto")], ["en", t("general.language.en")], ["zh", t("general.language.zh")]] as const).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => {
+                onSave({ ui_language: val });
+                setLocale(resolveLocale(val));
+              }}
+              className={[
+                "px-3 py-1.5 rounded-lg text-[10.5px] border transition-all",
+                (config.ui_language ?? "auto") === val
+                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.7)]",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
       {/* ── Microphone ── */}
       <MicrophonePicker
         value={config.audio_input_device}
@@ -81,9 +109,9 @@ export default function GeneralTab({
       {/* ── Speech Recognition Language ── */}
       <div className="flex flex-col gap-2.5">
         <div>
-          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Speech Recognition</div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("general.stt.title")}</div>
           <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            Select your spoken language. Use Auto for mixed-language speech.
+            {t("general.stt.desc")}
           </div>
         </div>
 
@@ -111,7 +139,7 @@ export default function GeneralTab({
         {sttRest.length > 0 && (
           <button onClick={() => setShowAllLangs(!showAllLangs)}
             className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start">
-            {showAllLangs ? "Show less" : `Show ${sttRest.length} more languages...`}
+            {showAllLangs ? t("general.showless") : t("general.showmore").replace("{n}", String(sttRest.length))}
           </button>
         )}
       </div>
@@ -122,9 +150,9 @@ export default function GeneralTab({
       {/* ── Translate Target Language ── */}
       <div className="flex flex-col gap-2.5">
         <div>
-          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Translate To</div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("general.translate.title")}</div>
           <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            Target language for the Translate mode. Click to switch.
+            {t("general.translate.desc")}
           </div>
         </div>
 
@@ -142,7 +170,7 @@ export default function GeneralTab({
                 <div className="flex-1">
                   <div className="text-[13px] font-medium text-[#fbbf24]">{current.label}</div>
                 </div>
-                <span className="text-[10px] text-[rgba(251,191,36,0.35)]">Selected</span>
+                <span className="text-[10px] text-[rgba(251,191,36,0.35)]">{t("general.selected")}</span>
               </div>
 
               <div className="grid grid-cols-3 gap-1.5">
@@ -168,7 +196,7 @@ export default function GeneralTab({
               {translateRest.length > 0 && (
                 <button onClick={() => setShowAllTranslate(!showAllTranslate)}
                   className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start">
-                  {showAllTranslate ? "Show less" : `Show ${translateRest.length} more languages...`}
+                  {showAllTranslate ? t("general.showless") : t("general.showmore").replace("{n}", String(translateRest.length))}
                 </button>
               )}
             </>
@@ -182,10 +210,9 @@ export default function GeneralTab({
       {/* ── Model warm-up ── */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Model warm-up</div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("general.warmup.title")}</div>
           <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            Ping local STT/LLM backends when recording starts, so the first
-            dictation after idle doesn't pay a model cold start.
+            {t("general.warmup.desc")}
           </div>
         </div>
         <button
@@ -197,7 +224,7 @@ export default function GeneralTab({
               : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.3)]",
           ].join(" ")}
         >
-          {(config.warmup_enabled ?? true) ? "Enabled" : "Disabled"}
+          {(config.warmup_enabled ?? true) ? t("common.enabled") : t("common.disabled")}
         </button>
       </div>
 
@@ -207,9 +234,9 @@ export default function GeneralTab({
       {/* ── Text insertion ── */}
       <div className="flex flex-col gap-2.5">
         <div>
-          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Text insertion</div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("general.insert.title")}</div>
           <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-            How dictated text is inserted into the active app.
+            {t("general.insert.desc")}
           </div>
         </div>
 
@@ -232,7 +259,7 @@ export default function GeneralTab({
                   selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
                 ].join(" ")} />
                 <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </span>
               </button>
             );
@@ -247,7 +274,7 @@ export default function GeneralTab({
                 value={row.app}
                 onChange={(e) => updateOverrideLocal(i, { app: e.target.value })}
                 onBlur={() => persistOverrides(overrides)}
-                placeholder="e.g. Terminal"
+                placeholder={t("general.insert.appplaceholder")}
                 className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.7)] placeholder:text-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[rgba(245,158,11,0.25)]"
               />
               {INJECTION_STRATEGIES.map((opt) => {
@@ -263,7 +290,7 @@ export default function GeneralTab({
                         : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:border-[rgba(255,255,255,0.08)]",
                     ].join(" ")}
                   >
-                    {opt.short}
+                    {t(opt.shortKey)}
                   </button>
                 );
               })}
@@ -280,12 +307,12 @@ export default function GeneralTab({
             onClick={addOverride}
             className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start"
           >
-            Add app override
+            {t("general.insert.addoverride")}
           </button>
         </div>
 
         <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-          Overrides match the frontmost app's name (first match wins).
+          {t("general.insert.overridehint")}
         </div>
       </div>
     </div>

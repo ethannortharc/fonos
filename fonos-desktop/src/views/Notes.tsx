@@ -14,6 +14,7 @@ import {
 } from "../lib/storage-api";
 import type { Container, Entry } from "../lib/storage-api";
 import { playAudioFile } from "../lib/api";
+import { t, useT } from "../lib/i18n";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,8 +24,8 @@ function relativeTime(isoDate: string): string {
   const today = now.toDateString();
   const yesterday = new Date(now.getTime() - 86400000).toDateString();
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === today) return `Today, ${time}`;
-  if (d.toDateString() === yesterday) return `Yesterday, ${time}`;
+  if (d.toDateString() === today) return `${t("notes.today")}, ${time}`;
+  if (d.toDateString() === yesterday) return `${t("notes.yesterday")}, ${time}`;
   return `${d.toLocaleDateString([], {
     month: "short",
     day: "numeric",
@@ -38,10 +39,10 @@ function shortRelative(isoDate: string): string {
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  if (diffDays === 0) return t("notes.today");
+  if (diffDays === 1) return t("notes.yesterday");
+  if (diffDays < 7) return `${diffDays}${t("notes.d-ago")}`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}${t("notes.w-ago")}`;
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
@@ -162,9 +163,9 @@ function dayLabel(isoDate: string): string {
   try {
     const d = new Date(isoDate);
     const now = new Date();
-    if (d.toDateString() === now.toDateString()) return "Today";
+    if (d.toDateString() === now.toDateString()) return t("notes.today");
     const y = new Date(now.getTime() - 86400000);
-    if (d.toDateString() === y.toDateString()) return "Yesterday";
+    if (d.toDateString() === y.toDateString()) return t("notes.yesterday");
     const opts: Intl.DateTimeFormatOptions =
       d.getFullYear() === now.getFullYear()
         ? { month: "short", day: "numeric" }
@@ -249,7 +250,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
           <button
             data-testid="audio-play-btn"
             onClick={() => onPlay(entry.audio_ref!)}
-            title="Play audio"
+            title={t("notes.play-audio")}
             className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] hover:bg-[rgba(245,158,11,0.08)] transition-colors"
           >
             {PLAY_ICON}
@@ -260,7 +261,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
         <button
           data-testid="edit-entry-btn"
           onClick={handleEditClick}
-          title="Edit"
+          title={t("notes.edit")}
           className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.25)] hover:text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
         >
           {PENCIL_ICON}
@@ -270,7 +271,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
         <button
           data-testid="delete-entry-btn"
           onClick={handleDeleteClick}
-          title={confirmDelete ? "Click again to confirm" : "Delete"}
+          title={confirmDelete ? t("notes.confirm-delete") : t("notes.delete")}
           className={[
             "w-[22px] h-[22px] rounded-md flex items-center justify-center transition-colors",
             confirmDelete
@@ -299,7 +300,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
               onClick={handleCancel}
               className="px-3 py-1 text-[11px] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
             >
-              Cancel
+              {t("notes.cancel")}
             </button>
             <button
               data-testid="save-entry-btn"
@@ -307,7 +308,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
               disabled={saving}
               className="px-3 py-1 text-[11px] bg-[rgba(245,158,11,0.12)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.2)] rounded-lg transition-colors disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? t("notes.saving") : t("notes.save")}
             </button>
           </div>
         </div>
@@ -317,7 +318,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
           className="text-[13px] text-[rgba(255,255,255,0.7)] leading-relaxed whitespace-pre-wrap"
         >
           {displayText || (
-            <span className="text-[rgba(255,255,255,0.25)] italic">No text</span>
+            <span className="text-[rgba(255,255,255,0.25)] italic">{t("notes.no-text")}</span>
           )}
         </p>
       )}
@@ -418,7 +419,7 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
         <button
           data-testid="back-btn"
           onClick={onBack}
-          title="Back to notebooks"
+          title={t("notes.back-to-notebooks")}
           className="w-[28px] h-[28px] rounded-lg flex items-center justify-center text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
         >
           {BACK_ICON}
@@ -433,11 +434,11 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
           <button
             data-testid="export-notebook-btn"
             onClick={() => setShowExportMenu((v) => !v)}
-            title="Export notebook"
+            title={t("notes.export-notebook")}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
           >
             {EXPORT_ICON}
-            <span>Export</span>
+            <span>{t("notes.export")}</span>
             {CHEVRON_ICON}
           </button>
 
@@ -448,14 +449,14 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
                 onClick={handleExportMd}
                 className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
               >
-                Export as Markdown
+                {t("notes.export-md")}
               </button>
               <button
                 data-testid="export-json"
                 onClick={handleExportJson}
                 className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
               >
-                Export as JSON
+                {t("notes.export-json")}
               </button>
             </div>
           )}
@@ -469,7 +470,7 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
       >
         {loading && (
           <div className="text-center text-[rgba(255,255,255,0.2)] text-[12px] py-8">
-            Loading entries…
+            {t("notes.loading-entries")}
           </div>
         )}
 
@@ -479,9 +480,9 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
             className="text-center text-[rgba(255,255,255,0.2)] text-[12px] py-12 flex flex-col items-center gap-2"
           >
             <NotebookIcon size={32} className="opacity-30" />
-            <p>No entries in this notebook yet.</p>
+            <p>{t("notes.empty-notebook")}</p>
             <p className="text-[rgba(255,255,255,0.12)] text-[11px]">
-              Use the Note hotkey to add entries.
+              {t("notes.empty-hint")}
             </p>
           </div>
         )}
@@ -598,7 +599,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
       {/* Header (hidden when embedded in the History view) */}
       {!embedded && (
         <div className="flex items-center justify-between px-5 py-3 flex-shrink-0">
-          <h2 className="text-[13px] font-semibold text-[#fafaf9]">Notes</h2>
+          <h2 className="text-[13px] font-semibold text-[#fafaf9]">{t("notes.title")}</h2>
         </div>
       )}
 
@@ -630,12 +631,12 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
       {/* Selected notebook entries */}
       <div className="flex-1 overflow-y-auto px-5 py-3">
         {loading ? (
-          <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-4 text-center">Loading…</div>
+          <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-4 text-center">{t("notes.loading")}</div>
         ) : loadingEntries ? (
-          <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-4 text-center">Loading entries…</div>
+          <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-4 text-center">{t("notes.loading-entries")}</div>
         ) : selectedEntries.length === 0 ? (
           <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-8 text-center">
-            {selectedNotebook ? `No entries in ${selectedNotebook.title}` : "Select a notebook"}
+            {selectedNotebook ? `${t("notes.no-entries-in")} ${selectedNotebook.title}` : t("notes.select-notebook")}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -694,6 +695,7 @@ export default function Notes({
   embedded?: boolean;
   initialNotebookId?: number;
 } = {}) {
+  useT();
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedNotebook, setSelectedNotebook] = useState<Container | null>(null);
 

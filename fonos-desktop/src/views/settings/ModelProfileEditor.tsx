@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listProviderModels, testStt } from "../../lib/api";
+import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModelProfile } from "../../types";
 import { PROVIDERS, CAP_BADGE, EMPTY_MODEL } from "./constants";
 import type { ModelForm } from "./constants";
@@ -33,6 +34,7 @@ export default function ModelProfileEditor({
   /** Auto-open the add-model provider picker on mount when the list is empty. */
   startInAddMode?: boolean;
 }) {
+  useT();
   const [editingProfile, setEditingProfile] = useState<ModelForm | null>(null);
   const [addingNew, setAddingNew] = useState<boolean>(false);
   const [providerPicked, setProviderPicked] = useState<boolean>(false);
@@ -141,7 +143,7 @@ export default function ModelProfileEditor({
   const handleSaveProfile = async () => {
     if (!editingProfile) return;
     if (!editingProfile.name || !editingProfile.model) {
-      setError("Name and Model ID are required");
+      setError(t("mprof.err-name-model"));
       return;
     }
     setError("");
@@ -231,14 +233,14 @@ export default function ModelProfileEditor({
       {/* ── Registered Models ── */}
       <div className="flex flex-col gap-2">
         <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-          Registered Models
+          {t("mprof.registered")}
         </div>
 
         {editingProfile ? (
           /* ── Add / Edit form ── */
           <div className="flex flex-col gap-3">
             <span className="text-[rgba(255,255,255,0.4)] text-xs uppercase tracking-wider">
-              {addingNew ? "Add Model Profile" : "Edit Model Profile"}
+              {addingNew ? t("mprof.add-profile") : t("mprof.edit-profile")}
             </span>
 
             {/* Provider picker (shown first when adding, before provider is picked) */}
@@ -268,7 +270,7 @@ export default function ModelProfileEditor({
                       placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[rgba(255,255,255,0.4)] text-[9px]">Base URL</label>
+                    <label className="text-[rgba(255,255,255,0.4)] text-[9px]">{t("mprof.base-url")}</label>
                     <input type="text" value={editingProfile.base_url}
                       onChange={(e) => setEditingProfile({ ...editingProfile, base_url: e.target.value })}
                       placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
@@ -278,7 +280,7 @@ export default function ModelProfileEditor({
                 {/* Probe button */}
                 <button onClick={handleProbeModels} disabled={probingModels || !editingProfile.base_url}
                   className="w-full py-2 rounded-lg bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.5)] text-[11px] transition-colors disabled:opacity-30">
-                  {probingModels ? "Probing..." : "Probe Available Models"}
+                  {probingModels ? t("mprof.probing") : t("mprof.probe")}
                 </button>
 
                 {/* Model list with checkboxes */}
@@ -286,13 +288,13 @@ export default function ModelProfileEditor({
                   <div className="flex flex-col gap-1.5">
                     {/* Select all / Unselect all */}
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-[rgba(255,255,255,0.25)]">{probedModels.length} models found</span>
+                      <span className="text-[10px] text-[rgba(255,255,255,0.25)]">{t("mprof.models-found").replace("{n}", String(probedModels.length))}</span>
                       <button onClick={() => {
                         const allChecked = probedModels.every((m) => m.checked);
                         setProbedModels(probedModels.map((m) => ({ ...m, checked: !allChecked })));
                       }}
                         className="text-[9px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors">
-                        {probedModels.every((m) => m.checked) ? "Unselect All" : "Select All"}
+                        {probedModels.every((m) => m.checked) ? t("mprof.unselect-all") : t("mprof.select-all")}
                       </button>
                     </div>
                   <div className="flex flex-col gap-1 max-h-[240px] overflow-y-auto">
@@ -328,7 +330,7 @@ export default function ModelProfileEditor({
                                 ].join(" ")}>{cap}</button>
                             ))}
                           </div>
-                          {alreadyAdded && <span className="text-[8px] text-[rgba(255,255,255,0.15)]">added</span>}
+                          {alreadyAdded && <span className="text-[8px] text-[rgba(255,255,255,0.15)]">{t("mprof.added")}</span>}
                         </div>
                       );
                     })}
@@ -341,26 +343,29 @@ export default function ModelProfileEditor({
                   {probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length > 0 && (
                     <button onClick={handleBatchAdd}
                       className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90 transition-opacity">
-                      Add {probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length} Model{probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length > 1 ? "s" : ""}
+                      {(() => {
+                        const n = probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length;
+                        return (n > 1 ? t("mprof.add-n-models") : t("mprof.add-n-model")).replace("{n}", String(n));
+                      })()}
                     </button>
                   )}
                   <button onClick={cancelModelEdit}
                     className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)] transition-colors">
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                 </div>
 
                 {/* Manual add fallback */}
                 {probedModels.length === 0 && !probingModels && (
                   <div className="flex flex-col gap-2 border-t border-[rgba(255,255,255,0.04)] pt-3">
-                    <span className="text-[9px] text-[rgba(255,255,255,0.2)]">Or add manually:</span>
+                    <span className="text-[9px] text-[rgba(255,255,255,0.2)]">{t("mprof.or-manual")}</span>
                     <div className="grid grid-cols-2 gap-2">
                       <input type="text" value={editingProfile.name}
                         onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
-                        placeholder="Name" className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
+                        placeholder={t("mprof.name")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
                       <input type="text" value={editingProfile.model}
                         onChange={(e) => setEditingProfile({ ...editingProfile, model: e.target.value })}
-                        placeholder="Model ID" className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                        placeholder={t("mprof.model-id")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
                     </div>
                     <div className="flex gap-4 text-[11px] text-[rgba(255,255,255,0.5)]">
                       {(["stt", "tts", "llm"] as const).map((cap) => (
@@ -382,7 +387,7 @@ export default function ModelProfileEditor({
                     )}
                     <button onClick={handleSaveProfile}
                       className="py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90">
-                      Add Profile
+                      {t("mprof.add-profile-btn")}
                     </button>
                   </div>
                 )}
@@ -393,16 +398,16 @@ export default function ModelProfileEditor({
             {!addingNew && providerPicked && (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">Name</label>
+                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.name")}</label>
                   <input type="text" value={editingProfile.name}
                     onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
-                    placeholder="e.g. GPT-4o" className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
+                    placeholder={t("mprof.ph.name-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">Model ID</label>
+                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.model-id")}</label>
                   <input type="text" value={editingProfile.model}
                     onChange={(e) => setEditingProfile({ ...editingProfile, model: e.target.value })}
-                    placeholder="e.g. gpt-4o" className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                    placeholder={t("mprof.ph.model-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[rgba(255,255,255,0.4)] text-[11px]">API Key</label>
@@ -411,7 +416,7 @@ export default function ModelProfileEditor({
                     placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">Base URL</label>
+                  <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.base-url")}</label>
                   <input type="text" value={editingProfile.base_url}
                     onChange={(e) => setEditingProfile({ ...editingProfile, base_url: e.target.value })}
                     placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
@@ -435,8 +440,8 @@ export default function ModelProfileEditor({
                   </div>
                 )}
                 <div className="flex gap-2 mt-1">
-                  <button onClick={handleSaveProfile} className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90">Save Changes</button>
-                  <button onClick={cancelModelEdit} className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)]">Cancel</button>
+                  <button onClick={handleSaveProfile} className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90">{t("mprof.save-changes")}</button>
+                  <button onClick={cancelModelEdit} className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)]">{t("common.cancel")}</button>
                 </div>
               </div>
             )}
@@ -445,7 +450,7 @@ export default function ModelProfileEditor({
             {addingNew && !providerPicked && (
               <button onClick={cancelModelEdit}
                 className="mt-1 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)] transition-colors">
-                Cancel
+                {t("common.cancel")}
               </button>
             )}
           </div>
@@ -454,15 +459,15 @@ export default function ModelProfileEditor({
           <div className="flex flex-col gap-1.5">
             {config.model_profiles.length === 0 ? (
               <div className="py-6 text-center text-[rgba(255,255,255,0.25)] text-[12px]">
-                No models configured
+                {t("mprof.none")}
               </div>
             ) : (
               config.model_profiles.map((p) => {
                 // Determine if this profile is a current default
                 const defaultBadges: string[] = [];
-                if (p.id === config.stt_profile) defaultBadges.push("Default STT");
-                if (p.id === config.tts_profile) defaultBadges.push("Default TTS");
-                if (p.id === config.llm_profile) defaultBadges.push("Default LLM");
+                if (p.id === config.stt_profile) defaultBadges.push(t("mprof.default-badge").replace("{svc}", "STT"));
+                if (p.id === config.tts_profile) defaultBadges.push(t("mprof.default-badge").replace("{svc}", "TTS"));
+                if (p.id === config.llm_profile) defaultBadges.push(t("mprof.default-badge").replace("{svc}", "LLM"));
 
                 return (
                   <div
@@ -506,7 +511,7 @@ export default function ModelProfileEditor({
                                   : "text-[rgba(255,255,255,0.3)]",
                               ].join(" ")}
                             >
-                              {sttTest.status === "testing" ? "Testing…" : sttTest.status === "ok" ? "✓ OK" : "✗ Failed"}
+                              {sttTest.status === "testing" ? t("mprof.testing") : sttTest.status === "ok" ? t("mprof.ok") : t("mprof.failed")}
                             </span>
                           )}
                           <button
@@ -514,7 +519,7 @@ export default function ModelProfileEditor({
                             disabled={sttTest?.id === p.id && sttTest.status === "testing"}
                             className="text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] text-[11px] px-1.5 transition-colors disabled:opacity-50"
                           >
-                            Test
+                            {t("mprof.test")}
                           </button>
                         </>
                       )}
@@ -522,7 +527,7 @@ export default function ModelProfileEditor({
                         onClick={() => startEditModel(p)}
                         className="text-[rgba(255,255,255,0.25)] hover:text-[rgba(255,255,255,0.5)] text-[11px] px-1.5 transition-colors"
                       >
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button
                         onClick={() => handleDeleteProfile(p.id)}
@@ -541,7 +546,7 @@ export default function ModelProfileEditor({
               onClick={startAddModel}
               className="w-full mt-1 py-2 rounded-lg bg-transparent border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
             >
-              + Add Model
+              {t("mprof.add-model")}
             </button>
           </div>
         )}
@@ -549,7 +554,7 @@ export default function ModelProfileEditor({
 
       {saving && (
         <div className="text-center text-[rgba(255,255,255,0.25)] text-[10px] mt-1">
-          Saving...
+          {t("settings.saving")}
         </div>
       )}
     </>

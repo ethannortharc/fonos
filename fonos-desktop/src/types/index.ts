@@ -17,6 +17,7 @@ export interface AppConfig {
   audio_output_device: string;
   show_floating_indicator: boolean;
   warmup_enabled?: boolean;
+  ui_language?: "auto" | "en" | "zh";
   hotkey_listen?: string;
   listen_mode?: string;
   listen_voice_profile?: string;

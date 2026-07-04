@@ -1,6 +1,7 @@
 // Hotkeys tab — organized into sections with notebook selector for note shortcuts.
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { t, useT } from "../../lib/i18n";
 import { NotebookIcon } from "../../components/Icons";
 import { listModes } from "../../lib/api";
 import type { ModeEntry } from "../../types";
@@ -13,6 +14,7 @@ import type { AppConfig } from "../../types";
 export function HotkeyInput({ value, onChange, placeholder }: {
   value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
+  useT();
   const [capturing, setCapturing] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
 
@@ -39,12 +41,12 @@ export function HotkeyInput({ value, onChange, placeholder }: {
     <input
       ref={ref}
       type="text"
-      value={capturing ? "Press hotkey..." : value}
+      value={capturing ? t("hotkeys.presskeys") : value}
       readOnly
       onClick={() => { setCapturing(true); ref.current?.focus(); }}
       onBlur={() => setCapturing(false)}
       onKeyDown={handleKeyDown}
-      placeholder={placeholder ?? "Click to set"}
+      placeholder={placeholder ?? t("hotkeys.clicktoset")}
       className={[
         "bg-[rgba(255,255,255,0.03)] border rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none font-mono cursor-pointer",
         capturing ? "border-[rgba(245,158,11,0.3)]" : "border-[rgba(255,255,255,0.06)]",
@@ -112,7 +114,7 @@ function NoteShortcutRow({ label, hotkeyValue, notebookId, notebooks, excludeIds
         onChange={(e) => onNotebookChange(parseInt(e.target.value, 10))}
         className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none flex-1 min-w-[100px]"
       >
-        <option value={0}>— Select notebook —</option>
+        <option value={0}>{t("hotkeys.selectnotebook")}</option>
         {selectable.map((nb) => (
           <option key={nb.id} value={nb.id}>{nb.title}</option>
         ))}
@@ -129,6 +131,7 @@ function NoteShortcutRow({ label, hotkeyValue, notebookId, notebooks, excludeIds
 export default function HotkeysTab({ config, onSave }: {
   config: AppConfig; onSave: (updates: Partial<AppConfig>) => void;
 }) {
+  useT();
   const [notebooks, setNotebooks] = useState<Container[]>([]);
   const [modes, setModes] = useState<ModeEntry[]>([]);
 
@@ -142,32 +145,32 @@ export default function HotkeysTab({ config, onSave }: {
   return (
     <div className="flex flex-col gap-4">
 
-      <Section label="Dictation">
-        <HotkeyRow label="Dictation" hint="(hold to talk)" value={config.hotkey_dictation} onChange={(v) => onSave({ hotkey_dictation: v })} />
-        <HotkeyRow label="Dictation Toggle" hint="(press to start/stop)" value={config.hotkey_dictation_toggle ?? ""} onChange={(v) => onSave({ hotkey_dictation_toggle: v })} />
+      <Section label={t("hotkeys.section.dictation")}>
+        <HotkeyRow label={t("hotkeys.dictation")} hint={t("hotkeys.dictation.hint")} value={config.hotkey_dictation} onChange={(v) => onSave({ hotkey_dictation: v })} />
+        <HotkeyRow label={t("hotkeys.dictationtoggle")} hint={t("hotkeys.dictationtoggle.hint")} value={config.hotkey_dictation_toggle ?? ""} onChange={(v) => onSave({ hotkey_dictation_toggle: v })} />
         <HotkeyRow label="TTS" value={config.hotkey_tts} onChange={(v) => onSave({ hotkey_tts: v })} />
       </Section>
 
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
 
-      <Section label="Agent">
-        <HotkeyRow label="Agent speak" hint="(hold-to-talk)" value={config.hotkey_agent ?? "cmd+shift+a"} onChange={(v) => onSave({ hotkey_agent: v })} />
-        <HotkeyRow label="Agent panel" hint="(toggle)" value={config.hotkey_agent_panel ?? "cmd+shift+g"} onChange={(v) => onSave({ hotkey_agent_panel: v })} />
+      <Section label={t("hotkeys.section.agent")}>
+        <HotkeyRow label={t("hotkeys.agentspeak")} hint={t("hotkeys.holdtotalk")} value={config.hotkey_agent ?? "cmd+shift+a"} onChange={(v) => onSave({ hotkey_agent: v })} />
+        <HotkeyRow label={t("hotkeys.agentpanel")} hint={t("hotkeys.toggle")} value={config.hotkey_agent_panel ?? "cmd+shift+g"} onChange={(v) => onSave({ hotkey_agent_panel: v })} />
       </Section>
 
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
 
-      <Section label="Notes">
-        <HotkeyRow label="Note panel" hint="(hold-to-talk)" value={config.hotkey_note ?? "option+n"} onChange={(v) => onSave({ hotkey_note: v })} />
+      <Section label={t("hotkeys.section.notes")}>
+        <HotkeyRow label={t("hotkeys.notepanel")} hint={t("hotkeys.holdtotalk")} value={config.hotkey_note ?? "option+n"} onChange={(v) => onSave({ hotkey_note: v })} />
 
         <div className="mt-1 mb-0.5">
           <span className="text-[9px] text-[rgba(255,255,255,0.2)]">
-            Notebook shortcuts — bind a hotkey to directly record into a specific notebook
+            {t("hotkeys.notebookhint")}
           </span>
         </div>
 
         <NoteShortcutRow
-          label="Shortcut 1"
+          label={`${t("hotkeys.shortcut")} 1`}
           hotkeyValue={config.hotkey_note_1 ?? ""}
           notebookId={config.notebook_hotkey_1}
           notebooks={notebooks}
@@ -176,7 +179,7 @@ export default function HotkeysTab({ config, onSave }: {
           onNotebookChange={(id) => onSave({ notebook_hotkey_1: id || undefined })}
         />
         <NoteShortcutRow
-          label="Shortcut 2"
+          label={`${t("hotkeys.shortcut")} 2`}
           hotkeyValue={config.hotkey_note_2 ?? ""}
           notebookId={config.notebook_hotkey_2}
           notebooks={notebooks}
@@ -185,7 +188,7 @@ export default function HotkeysTab({ config, onSave }: {
           onNotebookChange={(id) => onSave({ notebook_hotkey_2: id || undefined })}
         />
         <NoteShortcutRow
-          label="Shortcut 3"
+          label={`${t("hotkeys.shortcut")} 3`}
           hotkeyValue={config.hotkey_note_3 ?? ""}
           notebookId={config.notebook_hotkey_3}
           notebooks={notebooks}
@@ -198,13 +201,13 @@ export default function HotkeysTab({ config, onSave }: {
       {config.hotkey_meeting && (
         <>
           <div className="border-t border-[rgba(255,255,255,0.04)]" />
-          <Section label="Meeting">
-            <HotkeyRow label="Meeting" hint="(toggle)" value={config.hotkey_meeting} onChange={(v) => onSave({ hotkey_meeting: v })} />
+          <Section label={t("hotkeys.section.meeting")}>
+            <HotkeyRow label={t("hotkeys.meeting")} hint={t("hotkeys.toggle")} value={config.hotkey_meeting} onChange={(v) => onSave({ hotkey_meeting: v })} />
           </Section>
 
-          <Section label="Quick Transform">
+          <Section label={t("hotkeys.section.transform")}>
             <div className="flex items-center gap-3">
-              <span className="text-[11px] text-[rgba(255,255,255,0.4)] min-w-[120px]">Transform</span>
+              <span className="text-[11px] text-[rgba(255,255,255,0.4)] min-w-[120px]">{t("hotkeys.transform")}</span>
               <HotkeyInput value={config.hotkey_transform ?? ""} onChange={(v) => onSave({ hotkey_transform: v })} />
               <select
                 value={config.transform_mode ?? "polish"}
@@ -217,7 +220,7 @@ export default function HotkeysTab({ config, onSave }: {
               </select>
             </div>
             <div className="text-[9px] text-[rgba(255,255,255,0.15)] mt-1 pl-[132px]">
-              Select text → press hotkey → mode's LLM step processes it → result replaces selection
+              {t("hotkeys.transformhint")}
             </div>
           </Section>
         </>

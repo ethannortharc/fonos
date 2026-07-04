@@ -1,6 +1,7 @@
 // Skills management tab — list, toggle, create, test, and import skills.
 
 import { useState, useEffect, useCallback } from "react";
+import { t, useT } from "../../lib/i18n";
 import type { SkillInfo } from "../../types";
 import {
   listSkills,
@@ -113,9 +114,9 @@ const EMPTY_SKILL_FORM: SkillForm = {
 };
 
 function commandLabel(skillType: string): string {
-  if (skillType === "http") return "URL Template";
-  if (skillType === "script") return "Script Path";
-  return "Command";
+  if (skillType === "http") return t("skills.cmd.url");
+  if (skillType === "script") return t("skills.cmd.script");
+  return t("skills.cmd.command");
 }
 
 function commandPlaceholder(skillType: string): string {
@@ -140,8 +141,8 @@ function SkillForm({
   const [error, setError] = useState("");
 
   const handleSave = async () => {
-    if (!form.id.trim()) { setError("Skill ID is required"); return; }
-    if (!form.name.trim()) { setError("Name is required"); return; }
+    if (!form.id.trim()) { setError(t("skills.err-id")); return; }
+    if (!form.name.trim()) { setError(t("skills.err-name")); return; }
     setError("");
     setSaving(true);
     try {
@@ -168,7 +169,7 @@ function SkillForm({
 
   return (
     <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-3">
-      <div className="text-[12px] font-medium text-[#fafaf9]">New Skill</div>
+      <div className="text-[12px] font-medium text-[#fafaf9]">{t("skills.new")}</div>
 
       {error && (
         <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
@@ -178,14 +179,14 @@ function SkillForm({
 
       {/* Identity */}
       <div className="flex flex-col gap-2">
-        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Identity</div>
+        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.identity")}</div>
         <div className="grid grid-cols-[48px_1fr] gap-2">
           <input
             type="text"
             value={form.icon}
             onChange={(e) => setForm({ ...form, icon: e.target.value })}
             className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-2 text-center text-[16px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-            title="Emoji icon"
+            title={t("skills.emoji-title")}
           />
           <input
             type="text"
@@ -199,21 +200,21 @@ function SkillForm({
           type="text"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          placeholder="Display Name"
+          placeholder={t("skills.ph.name")}
           className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
         />
         <input
           type="text"
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
-          placeholder="Description for the LLM"
+          placeholder={t("skills.ph.desc")}
           className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
         />
       </div>
 
       {/* Type picker */}
       <div className="flex flex-col gap-2">
-        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Type</div>
+        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.type")}</div>
         <div className="flex gap-1.5">
           {(["shell", "http", "script"] as const).map((t) => (
             <button
@@ -247,12 +248,12 @@ function SkillForm({
       {/* Parameters */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Parameters</div>
+          <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.parameters")}</div>
           <button
             onClick={addParam}
             className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors"
           >
-            + Add
+            {t("skills.add")}
           </button>
         </div>
         {form.params.length > 0 && (
@@ -263,21 +264,21 @@ function SkillForm({
                   type="text"
                   value={param.name}
                   onChange={(e) => updateParam(idx, "name", e.target.value)}
-                  placeholder="name"
+                  placeholder={t("skills.ph.param-name")}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2 py-1 text-[10px] text-[#fbbf24] font-mono focus:outline-none"
                 />
                 <input
                   type="text"
                   value={param.description}
                   onChange={(e) => updateParam(idx, "description", e.target.value)}
-                  placeholder="description"
+                  placeholder={t("skills.ph.param-desc")}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2 py-1 text-[10px] text-[rgba(255,255,255,0.4)] focus:outline-none"
                 />
                 <input
                   type="text"
                   value={param.defaultVal}
                   onChange={(e) => updateParam(idx, "defaultVal", e.target.value)}
-                  placeholder="default"
+                  placeholder={t("skills.ph.param-default")}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2 py-1 text-[10px] text-[rgba(255,255,255,0.3)] font-mono focus:outline-none"
                 />
                 <button
@@ -291,22 +292,22 @@ function SkillForm({
           </div>
         )}
         {form.params.length === 0 && (
-          <div className="text-[9px] text-[rgba(255,255,255,0.15)] italic">No parameters. Click + Add to define inputs.</div>
+          <div className="text-[9px] text-[rgba(255,255,255,0.15)] italic">{t("skills.no-params")}</div>
         )}
       </div>
 
       {/* Response template */}
       <div className="flex flex-col gap-2">
-        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Response Template</div>
+        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.response-template")}</div>
         <input
           type="text"
           value={form.responseTemplate}
           onChange={(e) => setForm({ ...form, responseTemplate: e.target.value })}
-          placeholder="Summarize this: {output}"
+          placeholder={t("skills.ph.response")}
           className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
         />
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          Use {"{output}"} for the raw skill output. LLM will process this template.
+          {t("skills.response-hint")}
         </div>
       </div>
 
@@ -317,13 +318,13 @@ function SkillForm({
           disabled={saving}
           className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {saving ? "Creating..." : "Create Skill"}
+          {saving ? t("skills.creating") : t("skills.create")}
         </button>
         <button
           onClick={onCancel}
           className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>
@@ -360,7 +361,7 @@ function TestPanel({ skillId }: { skillId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") run(); }}
-          placeholder="Test input..."
+          placeholder={t("skills.ph.test-input")}
           className="flex-1 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2.5 py-1.5 text-[10px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.2)]"
         />
         <button
@@ -368,7 +369,7 @@ function TestPanel({ skillId }: { skillId: string }) {
           disabled={running}
           className="px-2.5 py-1.5 rounded text-[10px] text-[rgba(255,255,255,0.5)] bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.06)] hover:text-[rgba(255,255,255,0.7)] transition-colors disabled:opacity-50"
         >
-          {running ? "..." : "Run"}
+          {running ? "..." : t("skills.run")}
         </button>
       </div>
       {err && (
@@ -377,7 +378,7 @@ function TestPanel({ skillId }: { skillId: string }) {
       {output !== null && (
         <div className="rounded px-2.5 py-2 text-[10px] text-[rgba(255,255,255,0.5)] font-mono leading-relaxed break-all"
              style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.03)" }}>
-          {output || <span className="text-[rgba(255,255,255,0.2)] italic">(empty output)</span>}
+          {output || <span className="text-[rgba(255,255,255,0.2)] italic">{t("skills.empty-output")}</span>}
         </div>
       )}
     </div>
@@ -405,7 +406,7 @@ function ImportPanel({
       const parsed = JSON.parse(json) as Record<string, unknown>;
       setPreview(parsed);
     } catch {
-      setError("Invalid JSON — check your input");
+      setError(t("skills.err-json"));
     }
   };
 
@@ -415,11 +416,11 @@ function ImportPanel({
     try {
       parsed = JSON.parse(json) as Record<string, unknown>;
     } catch {
-      setError("Invalid JSON");
+      setError(t("skills.err-json-short"));
       return;
     }
     if (!parsed.id || !parsed.name) {
-      setError('JSON must have "id" and "name" fields');
+      setError(t("skills.err-json-fields"));
       return;
     }
     setImporting(true);
@@ -435,7 +436,7 @@ function ImportPanel({
 
   return (
     <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-3">
-      <div className="text-[12px] font-medium text-[#fafaf9]">Import Skill</div>
+      <div className="text-[12px] font-medium text-[#fafaf9]">{t("skills.import-title")}</div>
 
       {error && (
         <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
@@ -444,7 +445,7 @@ function ImportPanel({
       )}
 
       <div className="flex flex-col gap-1">
-        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Skill JSON</div>
+        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.json-label")}</div>
         <textarea
           value={json}
           onChange={(e) => { setJson(e.target.value); setPreview(null); }}
@@ -456,7 +457,7 @@ function ImportPanel({
 
       {preview && (
         <div className="rounded-lg p-2.5 flex flex-col gap-1" style={{ background: "rgba(134,239,172,0.04)", border: "1px solid rgba(134,239,172,0.08)" }}>
-          <div className="text-[9px] uppercase tracking-wider text-[rgba(134,239,172,0.4)]">Preview</div>
+          <div className="text-[9px] uppercase tracking-wider text-[rgba(134,239,172,0.4)]">{t("skills.preview")}</div>
           <div className="text-[11px] text-[#fafaf9] font-medium">{String(preview.name ?? "")}</div>
           {preview.description != null && (
             <div className="text-[10px] text-[rgba(255,255,255,0.3)]">{String(preview.description)}</div>
@@ -472,20 +473,20 @@ function ImportPanel({
           onClick={handlePreview}
           className="px-3 py-2 rounded-lg text-[11px] text-[rgba(255,255,255,0.4)] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] hover:border-[rgba(255,255,255,0.1)] transition-colors"
         >
-          Validate
+          {t("skills.validate")}
         </button>
         <button
           onClick={handleImport}
           disabled={importing}
           className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
         >
-          {importing ? "Importing..." : "Import"}
+          {importing ? t("skills.importing") : t("skills.import")}
         </button>
         <button
           onClick={onCancel}
           className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </div>
@@ -533,7 +534,7 @@ function SkillCard({
             </span>
             {skill.builtin && (
               <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">
-                Built-in
+                {t("common.builtin")}
               </span>
             )}
             {skill.enabled && <TypeBadge skillType={skill.skill_type} />}
@@ -553,7 +554,7 @@ function SkillCard({
               onClick={onEdit}
               className="text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.5)] text-[10px] px-1.5 transition-colors"
             >
-              Details
+              {t("skills.details")}
             </button>
           ) : (
             <>
@@ -561,7 +562,7 @@ function SkillCard({
                 onClick={onEdit}
                 className="text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.5)] text-[10px] px-1.5 transition-colors"
               >
-                Edit
+                {t("common.edit")}
               </button>
               <button
                 onClick={onDelete}
@@ -583,7 +584,7 @@ function SkillCard({
           onClick={() => setShowTest(!showTest)}
           className="text-[9px] text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.4)] transition-colors"
         >
-          {showTest ? "Hide test" : "Test"}
+          {showTest ? t("skills.hide-test") : t("skills.test")}
         </button>
         {showTest && <TestPanel skillId={skill.id} />}
       </div>
@@ -594,6 +595,7 @@ function SkillCard({
 // ─── SkillsTab ────────────────────────────────────────────────────────────────
 
 export default function SkillsTab() {
+  useT();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -689,13 +691,13 @@ export default function SkillsTab() {
               <div className="text-[13px] font-medium text-[#fafaf9]">{detailSkill.name}</div>
               <div className="flex items-center gap-2 mt-0.5">
                 <TypeBadge skillType={detailSkill.skill_type} />
-                <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">Built-in</span>
+                <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">{t("common.builtin")}</span>
               </div>
             </div>
           </div>
           <div className="flex flex-col gap-2 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">Description</div>
+              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">{t("skills.desc-label")}</div>
               <div className="text-[11px] text-[rgba(255,255,255,0.5)] leading-relaxed">{detailSkill.description}</div>
             </div>
             <div>
@@ -703,20 +705,20 @@ export default function SkillsTab() {
               <div className="text-[11px] text-[rgba(255,255,255,0.35)] font-mono">{detailSkill.id}</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">Status</div>
+              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">{t("skills.status-label")}</div>
               <div className="text-[11px]" style={{ color: detailSkill.enabled ? "rgba(134,239,172,0.7)" : "rgba(255,255,255,0.25)" }}>
-                {detailSkill.enabled ? "Enabled" : "Disabled"}
+                {detailSkill.enabled ? t("common.enabled") : t("common.disabled")}
               </div>
             </div>
             {detailSkill.parameters && detailSkill.parameters.length > 0 && (
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">Parameters</div>
+                <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] mb-1">{t("skills.parameters")}</div>
                 <div className="flex flex-col gap-1.5">
                   {detailSkill.parameters.map((p) => (
                     <div key={p.name} className="flex items-baseline gap-2 text-[10px]">
                       <span className="text-[#fbbf24] font-mono">{p.name}</span>
                       <span className="text-[rgba(255,255,255,0.25)]">{p.description}</span>
-                      {p.required && <span className="text-[8px] text-[rgba(239,68,68,0.5)]">required</span>}
+                      {p.required && <span className="text-[8px] text-[rgba(239,68,68,0.5)]">{t("skills.required")}</span>}
                       {p.default_value && <span className="text-[8px] text-[rgba(255,255,255,0.15)] font-mono">= {p.default_value}</span>}
                     </div>
                   ))}
@@ -729,7 +731,7 @@ export default function SkillsTab() {
             className="self-start mt-1 px-4 py-1.5 rounded-lg text-[11px] text-[rgba(255,255,255,0.4)] transition-colors hover:text-[rgba(255,255,255,0.6)]"
             style={{ border: "1px solid rgba(255,255,255,0.06)" }}
           >
-            Back
+            {t("common.back")}
           </button>
         </div>
       </div>
@@ -771,13 +773,13 @@ export default function SkillsTab() {
 
       {loading && (
         <div className="text-center text-[rgba(255,255,255,0.2)] text-[11px] py-4">
-          Loading skills...
+          {t("skills.loading")}
         </div>
       )}
 
       {!loading && skills.length === 0 && !error && (
         <div className="text-center text-[rgba(255,255,255,0.15)] text-[11px] py-6">
-          No skills registered. Create or import one below.
+          {t("skills.empty")}
         </div>
       )}
 
@@ -837,13 +839,13 @@ export default function SkillsTab() {
           onClick={() => setView("create")}
           className="flex-1 py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] hover:text-[rgba(251,191,36,0.8)] transition-colors"
         >
-          + Create Skill
+          {t("skills.create-skill")}
         </button>
         <button
           onClick={() => setView("import")}
           className="px-4 py-2 rounded-[10px] border border-dashed border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.25)] text-[12px] hover:border-[rgba(255,255,255,0.1)] hover:text-[rgba(255,255,255,0.45)] transition-colors"
         >
-          Import
+          {t("skills.import")}
         </button>
       </div>
     </div>

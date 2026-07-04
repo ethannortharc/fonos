@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { listEntries, listContainers, searchEntries, deleteEntry } from "../lib/storage-api";
 import { playAudioFile, stopPlayback } from "../lib/api";
+import { t, useT, type TKey } from "../lib/i18n";
 import type { Entry, Container, SourceType } from "../lib/storage-api";
 import Notes from "./Notes";
 import Meetings from "./Meetings";
@@ -18,13 +19,13 @@ const SEARCH_DEBOUNCE_MS = 250;
 
 export type HistoryFilter = "all" | SourceType;
 
-const FILTERS: { id: HistoryFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "dictation", label: "Dictation" },
-  { id: "note", label: "Notes" },
-  { id: "meeting", label: "Meetings" },
-  { id: "listen", label: "Listen" },
-  { id: "agent", label: "Agent" },
+const FILTERS: { id: HistoryFilter; label: TKey }[] = [
+  { id: "all", label: "history.filter.all" },
+  { id: "dictation", label: "history.filter.dictation" },
+  { id: "note", label: "history.filter.notes" },
+  { id: "meeting", label: "history.filter.meetings" },
+  { id: "listen", label: "history.filter.listen" },
+  { id: "agent", label: "history.filter.agent" },
 ];
 
 const STRIPE_COLOR: Record<string, string> = {
@@ -40,9 +41,9 @@ function formatTime(iso: string): string {
     const d = new Date(iso);
     const now = new Date();
     const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    if (d.toDateString() === now.toDateString()) return `Today ${time}`;
+    if (d.toDateString() === now.toDateString()) return `${t("history.today")} ${time}`;
     const y = new Date(now.getTime() - 86400000);
-    if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
+    if (d.toDateString() === y.toDateString()) return `${t("history.yesterday")} ${time}`;
     return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
   } catch {
     return iso;
@@ -110,6 +111,7 @@ export default function History({
   /** External navigation (float pill / tray) can preset the filter. */
   preset?: { filter: HistoryFilter; nonce: number };
 }) {
+  useT();
   const [filter, setFilter] = useState<HistoryFilter>(preset?.filter ?? "all");
   const [query, setQuery] = useState("");
   const [openMeeting, setOpenMeeting] = useState<Container | null>(null);
@@ -266,7 +268,7 @@ export default function History({
     <div className="flex flex-col h-full bg-[#1a1917]">
       {/* Header: title + search */}
       <div className="flex items-center gap-3 px-5 pt-4 pb-2 flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9] flex-shrink-0">History</h2>
+        <h2 className="text-[13px] font-semibold text-[#fafaf9] flex-shrink-0">{t("nav.history")}</h2>
         <div className="flex-1 flex items-center gap-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1.5">
           <svg width={12} height={12} viewBox="0 0 24 24" fill="none" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="stroke-[rgba(255,255,255,0.3)] flex-shrink-0">
             <circle cx="11" cy="11" r="8" />
@@ -278,7 +280,7 @@ export default function History({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
-            placeholder="Search dictations, notes, meetings…"
+            placeholder={t("history.search")}
             spellCheck={false}
             className="flex-1 bg-transparent outline-none border-none text-[#fafaf9] text-[11px] placeholder:text-[rgba(255,255,255,0.2)]"
           />
@@ -307,7 +309,7 @@ export default function History({
                 : "bg-[rgba(255,255,255,0.04)] border-transparent text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.55)]",
             ].join(" ")}
           >
-            {f.label}
+            {t(f.label)}
           </button>
         ))}
       </div>
@@ -340,12 +342,14 @@ export default function History({
         <>
           <div className="flex-1 overflow-y-auto px-5 pb-4">
             {error ? (
-              <div className="text-[rgba(239,68,68,0.7)] text-[12px] py-8 text-center">Error: {error}</div>
+              <div className="text-[rgba(239,68,68,0.7)] text-[12px] py-8 text-center">{t("history.error")} {error}</div>
             ) : loading ? (
-              <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">Loading…</div>
+              <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">{t("history.loading")}</div>
             ) : timeline.length === 0 ? (
               <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">
-                {filter === "all" ? "Nothing captured yet" : `No ${filter} entries`}
+                {filter === "all"
+                  ? t("history.empty-all")
+                  : t("history.empty-filter").replace("{filter}", t(FILTERS.find((f) => f.id === filter)?.label ?? "history.filter.all"))}
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
@@ -381,15 +385,15 @@ export default function History({
                 disabled={page === 0}
                 className="text-[11px] disabled:text-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)]"
               >
-                ← Previous
+                {t("history.prev")}
               </button>
-              <span className="text-[11px] text-[rgba(255,255,255,0.25)]">Page {page + 1}</span>
+              <span className="text-[11px] text-[rgba(255,255,255,0.25)]">{t("history.page").replace("{n}", String(page + 1))}</span>
               <button
                 onClick={() => { const p = page + 1; setPage(p); loadTimeline(p, filter); }}
                 disabled={entries.length < PAGE_SIZE}
                 className="text-[11px] disabled:text-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)]"
               >
-                Next →
+                {t("history.next")}
               </button>
             </div>
           )}
@@ -474,7 +478,7 @@ function EntryCard({
         {expanded ? (
           <>
             <div className="text-[11px] leading-relaxed text-[rgba(255,255,255,0.7)] whitespace-pre-wrap break-words">
-              {text || <span className="italic text-[rgba(255,255,255,0.2)]">(no content)</span>}
+              {text || <span className="italic text-[rgba(255,255,255,0.2)]">{t("history.no-content")}</span>}
             </div>
             <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
               {entry.source_type === "listen" && entry.audio_ref && (
@@ -483,13 +487,13 @@ function EntryCard({
                     onClick={() => { playAudioFile(entry.audio_ref!).catch(() => {}); }}
                     className="text-[9px] px-2.5 py-1 rounded-md bg-[rgba(125,211,252,0.12)] text-[#7dd3fc] hover:bg-[rgba(125,211,252,0.2)] transition-colors"
                   >
-                    ▶ Play
+                    {t("common.play")}
                   </button>
                   <button
                     onClick={() => { stopPlayback().catch(() => {}); }}
                     className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
                   >
-                    ■ Stop
+                    {t("common.stop")}
                   </button>
                 </>
               )}
@@ -497,19 +501,19 @@ function EntryCard({
                 onClick={onCopy}
                 className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
               >
-                Copy
+                {t("common.copy")}
               </button>
               <button
                 onClick={onDelete}
                 className="text-[9px] px-2 py-1 rounded-md bg-[rgba(239,68,68,0.06)] text-[rgba(239,68,68,0.5)] hover:text-[#ef4444] transition-colors"
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           </>
         ) : (
           <div className={["text-[11px] leading-normal break-words", text ? "text-[rgba(255,255,255,0.55)]" : "italic text-[rgba(255,255,255,0.2)]"].join(" ")}>
-            {preview(text) || "(no content)"}
+            {preview(text) || t("history.no-content")}
           </div>
         )}
       </div>
@@ -540,10 +544,10 @@ function MeetingCard({
           <span className="text-[9px] text-[rgba(255,255,255,0.25)] font-mono">{formatTime(item.latest.created_at)}</span>
           <TypeBadge type="meeting" />
           <span className="text-[11px] font-medium text-[#fafaf9] truncate flex-1">
-            {c?.title || "Meeting"}
+            {c?.title || t("tab.meeting")}
           </span>
           <span className="text-[9px] text-[rgba(255,255,255,0.25)] flex-shrink-0">
-            {item.segments} segment{item.segments === 1 ? "" : "s"} ›
+            {item.segments} {item.segments === 1 ? t("meet.segment") : t("meet.segments")} ›
           </span>
         </div>
         <div className="text-[11px] leading-normal text-[rgba(255,255,255,0.5)] break-words">
@@ -557,12 +561,12 @@ function MeetingCard({
 // ─── Search results ───────────────────────────────────────────────────────────
 
 const GROUP_ORDER: SourceType[] = ["dictation", "note", "meeting", "listen", "agent"];
-const GROUP_LABEL: Record<SourceType, string> = {
-  dictation: "Dictations",
-  note: "Notes",
-  meeting: "Meetings",
-  listen: "Listen",
-  agent: "Agent",
+const GROUP_LABEL: Record<SourceType, TKey> = {
+  dictation: "history.group.dictation",
+  note: "history.filter.notes",
+  meeting: "history.filter.meetings",
+  listen: "history.filter.listen",
+  agent: "history.filter.agent",
 };
 
 function SearchResults({
@@ -599,11 +603,11 @@ function SearchResults({
   return (
     <div className="flex-1 overflow-y-auto px-5 pb-4">
       {error ? (
-        <div className="text-[rgba(239,68,68,0.7)] text-[12px] py-8 text-center">Search failed: {error}</div>
+        <div className="text-[rgba(239,68,68,0.7)] text-[12px] py-8 text-center">{t("history.search-failed")} {error}</div>
       ) : searching ? (
-        <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">Searching…</div>
+        <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">{t("history.searching")}</div>
       ) : searched && results.length === 0 ? (
-        <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">No matches for “{query}”</div>
+        <div className="text-[rgba(255,255,255,0.2)] text-[12px] py-10 text-center">{t("history.no-matches")} “{query}”</div>
       ) : (
         <div className="flex flex-col gap-3.5">
           {groups.map((group) => (
@@ -612,7 +616,7 @@ function SearchResults({
                 className="text-[9px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
                 style={{ color: STRIPE_COLOR[group.type] }}
               >
-                {GROUP_LABEL[group.type]}
+                {t(GROUP_LABEL[group.type])}
                 <span className="text-[rgba(255,255,255,0.2)] font-normal">{group.items.length}</span>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -647,19 +651,19 @@ function SearchResults({
                             <div className="flex gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
                               {canOpenNotebook && (
                                 <button onClick={() => onOpenNotebook(entry)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(74,222,128,0.08)] text-[rgba(74,222,128,0.7)] hover:bg-[rgba(74,222,128,0.15)] transition-colors">
-                                  Open notebook →
+                                  {t("history.open-notebook")}
                                 </button>
                               )}
                               {canOpenMeeting && (
                                 <button onClick={() => onOpenMeeting(entry)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(251,191,36,0.08)] text-[rgba(251,191,36,0.7)] hover:bg-[rgba(251,191,36,0.15)] transition-colors">
-                                  Open meeting →
+                                  {t("history.open-meeting")}
                                 </button>
                               )}
                               <button onClick={() => onCopy(text)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors">
-                                Copy
+                                {t("common.copy")}
                               </button>
                               <button onClick={() => onDelete(entry.id)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(239,68,68,0.06)] text-[rgba(239,68,68,0.5)] hover:text-[#ef4444] transition-colors">
-                                Delete
+                                {t("common.delete")}
                               </button>
                             </div>
                           </>

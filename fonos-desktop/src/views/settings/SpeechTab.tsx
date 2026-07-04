@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types";
 import { listVoices, listModelVoices, generateAndPlay } from "../../lib/api";
 import { HotkeyInput } from "./HotkeysTab";
+import { t, useT } from "../../lib/i18n";
 
 const PREVIEW_TEXT = "你好，这是这个音色的试听效果。Hello, this is a preview of this voice.";
 
@@ -82,7 +83,7 @@ function VoicePicker({
   // Server-reported speakers (OMLX voices endpoint) beat the curated lists.
   const speakerGroups =
     serverVoices.length > 0
-      ? [{ group: "Model speakers", names: serverVoices }]
+      ? [{ group: t("speech.voices.model"), names: serverVoices }]
       : modelSpeakers(modelName);
   const known =
     value === "default" ||
@@ -109,7 +110,7 @@ function VoicePicker({
         <input
           type="text"
           defaultValue={value === "default" ? "" : value}
-          placeholder="speaker name…"
+          placeholder={t("speech.voices.placeholder")}
           onBlur={(e) => {
             const v = e.target.value.trim() || "default";
             if (v !== value) onChange(v);
@@ -126,9 +127,9 @@ function VoicePicker({
           }}
           className={`${control} w-44`}
         >
-          <option value="default">default</option>
+          <option value="default">{t("common.default")}</option>
           {voices.length > 0 && (
-            <optgroup label="Your cloned voices">
+            <optgroup label={t("speech.voices.cloned")}>
               {voices.map((v) => (
                 <option key={v.voice_id} value={v.name}>
                   {v.name}
@@ -145,7 +146,7 @@ function VoicePicker({
               ))}
             </optgroup>
           ))}
-          <option value="__custom__">Custom…</option>
+          <option value="__custom__">{t("common.custom")}</option>
         </select>
       )}
       {custom && (
@@ -153,16 +154,16 @@ function VoicePicker({
           onClick={() => setCustom(false)}
           className="text-[9px] px-2 py-1.5 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
         >
-          List
+          {t("common.list")}
         </button>
       )}
       <button
         onClick={preview}
         disabled={previewing}
-        title="Synthesize a short sample with this voice"
+        title={t("speech.preview-title")}
         className="text-[9px] px-2.5 py-1.5 rounded-md bg-[rgba(251,191,36,0.08)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.16)] disabled:opacity-40 transition-colors shrink-0"
       >
-        {previewing ? "Playing…" : "▶ Preview"}
+        {previewing ? t("common.playing") : t("common.preview")}
       </button>
     </div>
   );
@@ -177,6 +178,7 @@ export default function SpeechTab({
   modes: ModeEntry[];
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
+  useT();
   const profiles = (config.model_profiles ?? []) as ModelProfile[];
   const ttsProfiles = profiles.filter((p) => p.capabilities?.includes("tts"));
   const llmProfiles = profiles.filter((p) => p.capabilities?.includes("llm"));
@@ -214,10 +216,10 @@ export default function SpeechTab({
       <div className="flex flex-col gap-2.5">
         <SectionHeader
           icon="🎧"
-          title="Listen queue"
-          desc="Select text anywhere, press the hotkey — summarized, synthesized, playable from History › Listen."
+          title={t("speech.listen.title")}
+          desc={t("speech.listen.desc")}
         />
-        <Row label="Capture hotkey">
+        <Row label={t("speech.listen.hotkey")}>
           <div className="max-w-[240px]">
             <HotkeyInput
               value={config.hotkey_listen ?? "option+l"}
@@ -225,7 +227,7 @@ export default function SpeechTab({
             />
           </div>
         </Row>
-        <Row label="Processing" hint="how text is rewritten">
+        <Row label={t("speech.processing")} hint={t("speech.processing.hint")}>
           <select
             value={config.listen_mode ?? "listen"}
             onChange={(e) => onSave({ listen_mode: e.target.value })}
@@ -238,13 +240,13 @@ export default function SpeechTab({
             ))}
           </select>
         </Row>
-        <Row label="Voice model" hint="empty = default TTS">
+        <Row label={t("speech.voicemodel")} hint={t("speech.voicemodel.hint")}>
           <select
             value={config.listen_voice_profile ?? ""}
             onChange={(e) => onSave({ listen_voice_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default TTS profile</option>
+            <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -252,7 +254,7 @@ export default function SpeechTab({
             ))}
           </select>
         </Row>
-        <Row label="Voice">
+        <Row label={t("speech.voice")}>
           <VoicePicker
             value={config.listen_voice ?? "default"}
             voices={voices}
@@ -269,10 +271,10 @@ export default function SpeechTab({
       <div className="flex flex-col gap-2.5">
         <SectionHeader
           icon="💬"
-          title="Conversation"
-          desc="Hold to talk (in the Talk page or via the global hotkey) — recognized, answered by the persona, spoken back."
+          title={t("speech.conv.title")}
+          desc={t("speech.conv.desc")}
         />
-        <Row label="Hold-to-talk">
+        <Row label={t("speech.conv.hotkey")}>
           <div className="max-w-[240px]">
             <HotkeyInput
               value={config.hotkey_sts ?? "option+s"}
@@ -280,7 +282,7 @@ export default function SpeechTab({
             />
           </div>
         </Row>
-        <Row label="Persona" hint="replies are spoken — keep them short">
+        <Row label={t("speech.persona")} hint={t("speech.persona.hint")}>
           <textarea
             defaultValue={config.sts_persona ?? ""}
             onBlur={(e) => {
@@ -291,13 +293,13 @@ export default function SpeechTab({
             className={`${control} w-full max-w-[420px] resize-y leading-relaxed`}
           />
         </Row>
-        <Row label="LLM" hint="empty = default">
+        <Row label={t("speech.llm")} hint={t("speech.llm.hint")}>
           <select
             value={config.sts_llm_profile ?? ""}
             onChange={(e) => onSave({ sts_llm_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default LLM profile</option>
+            <option value="">{t("speech.default-llm-profile")}</option>
             {llmProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -305,13 +307,13 @@ export default function SpeechTab({
             ))}
           </select>
         </Row>
-        <Row label="Voice model" hint="empty = default TTS">
+        <Row label={t("speech.voicemodel")} hint={t("speech.voicemodel.hint")}>
           <select
             value={config.sts_voice_profile ?? ""}
             onChange={(e) => onSave({ sts_voice_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default TTS profile</option>
+            <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -319,7 +321,7 @@ export default function SpeechTab({
             ))}
           </select>
         </Row>
-        <Row label="Voice">
+        <Row label={t("speech.voice")}>
           <VoicePicker
             value={config.sts_voice ?? "default"}
             voices={voices}
@@ -328,7 +330,7 @@ export default function SpeechTab({
             onChange={(v) => onSave({ sts_voice: v })}
           />
         </Row>
-        <Row label="Memory" hint="turn pairs kept">
+        <Row label={t("speech.memory")} hint={t("speech.memory.hint")}>
           <input
             type="number"
             min={0}

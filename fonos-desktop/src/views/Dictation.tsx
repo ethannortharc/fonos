@@ -11,6 +11,7 @@ import {
   getConfig,
 } from "../lib/api";
 import { listContainers } from "../lib/storage-api";
+import { t, useT } from "../lib/i18n";
 import type { Container } from "../lib/storage-api";
 import type { ModeEntry, ModelProfile } from "../types";
 
@@ -137,7 +138,7 @@ function ModeDrum({
   };
 
   if (modes.length === 0) {
-    return <div className="text-[10px] text-[rgba(255,255,255,0.12)] text-center py-2">No modes</div>;
+    return <div className="text-[10px] text-[rgba(255,255,255,0.12)] text-center py-2">{t("dict.no-modes")}</div>;
   }
 
   return (
@@ -248,6 +249,7 @@ interface ActivityEntry {
 // ─── Dictation view ──────────────────────────────────────────────────────────
 
 export default function Dictation() {
+  useT();
   const [modes, setModes] = useState<ModeEntry[]>([]);
   const [dictationMode, setDictationMode] = useState<string>("raw");
   const [notebooks, setNotebooks] = useState<Container[]>([]);
@@ -337,7 +339,7 @@ export default function Dictation() {
               timestamp: new Date(),
               type: "error" as const,
               icon: <AlertIcon size={12} />,
-              label: "Error",
+              label: t("dict.error"),
               content: message,
             }];
           });
@@ -383,8 +385,8 @@ export default function Dictation() {
 
       const notebookLabel = dictationMode === "note"
         ? (selectedNotebookId !== null
-            ? (notebooks.find((n) => n.id === selectedNotebookId)?.title ?? "notebook")
-            : "Quick Note")
+            ? (notebooks.find((n) => n.id === selectedNotebookId)?.title ?? t("dict.notebook"))
+            : t("dict.quick-note"))
         : undefined;
 
       setIsRecording(false);
@@ -392,7 +394,7 @@ export default function Dictation() {
       addActivity({
         type: "recording",
         icon: <MicSvg size={12} />,
-        label: notebookLabel ? `Recorded → ${notebookLabel}` : "Recorded",
+        label: notebookLabel ? `${t("dict.recorded")} → ${notebookLabel}` : t("dict.recorded"),
         duration: recordDuration,
         model: actualStt || undefined,
       });
@@ -403,11 +405,11 @@ export default function Dictation() {
             ? `${actualStt} (${result.stt_engine})`
             : actualStt;
           const preprocBadge = (result.noise_removed_pct > 0.5 || Math.abs(result.gain_db) > 0.5)
-            ? `HPF: -${result.noise_removed_pct.toFixed(1)}% noise | Norm: ${result.gain_db >= 0 ? "+" : ""}${result.gain_db.toFixed(1)}dB`
+            ? `HPF: -${result.noise_removed_pct.toFixed(1)}% ${t("dict.noise")} | Norm: ${result.gain_db >= 0 ? "+" : ""}${result.gain_db.toFixed(1)}dB`
             : undefined;
-          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: "Transcript", content: result.text, latency: result.latency_ms, duration: result.duration_secs, model: sttDisplay || undefined, tokens: preprocBadge });
+          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: t("dict.transcript"), content: result.text, latency: result.latency_ms, duration: result.duration_secs, model: sttDisplay || undefined, tokens: preprocBadge });
           if (currentMode?.system || currentMode?.user_template) {
-            addActivity({ type: "processing", icon: <HourglassIcon size={12} />, label: "Processing\u2026" });
+            addActivity({ type: "processing", icon: <HourglassIcon size={12} />, label: t("dict.processing") });
             try {
               const llm = await processWithLlm(result.text, dictationMode);
               // stop_recording left the float pill in "Processing" for LLM
@@ -435,19 +437,19 @@ export default function Dictation() {
               } catch {
                 // Not running under Tauri.
               }
-              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: "Error", content: msg }]);
+              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: t("dict.error"), content: msg }]);
             }
           }
         } else {
-          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: "No speech detected", latency: result.latency_ms });
+          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: t("dict.no-speech"), latency: result.latency_ms });
         }
       } catch (e: unknown) {
-        addActivity({ type: "error", icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) });
+        addActivity({ type: "error", icon: <AlertIcon size={12} />, label: t("dict.error"), content: e instanceof Error ? e.message : String(e) });
       } finally { setProcessing(false); }
     } else {
       setActivity([]);
       try { await startRecording(); setIsRecording(true); }
-      catch (e: unknown) { addActivity({ type: "error", icon: <AlertIcon size={12} />, label: "Error", content: e instanceof Error ? e.message : String(e) }); }
+      catch (e: unknown) { addActivity({ type: "error", icon: <AlertIcon size={12} />, label: t("dict.error"), content: e instanceof Error ? e.message : String(e) }); }
     }
   }, [isRecording, dictationMode, selectedNotebookId, notebooks, recordDuration, addActivity, modes, sttModel, llmModel, profiles]);
 
@@ -484,7 +486,7 @@ export default function Dictation() {
             ) : <MicIcon />}
           </button>
           <span className="text-[10px] font-mono text-[rgba(255,255,255,0.18)] mt-1.5">
-            {isRecording ? `${recordDuration.toFixed(1)}s` : hasMic === false ? "No microphone" : "\u2318\u21e7Space"}
+            {isRecording ? `${recordDuration.toFixed(1)}s` : hasMic === false ? t("dict.no-mic") : "\u2318\u21e7Space"}
           </span>
         </div>
 
@@ -504,7 +506,7 @@ export default function Dictation() {
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
             {/* Section label */}
             <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.2)] font-semibold flex-shrink-0 mr-0.5">
-              Notes
+              {t("dict.notes")}
             </span>
             {/* Quick Note pill */}
             <button
@@ -517,7 +519,7 @@ export default function Dictation() {
               ].join(" ")}
             >
               <PinIcon size={11} />
-              <span>Quick Note</span>
+              <span>{t("dict.quick-note")}</span>
             </button>
             {/* Notebook pills (exclude Quick Note — shown above) */}
             {notebooks.filter((nb) => nb.title !== "Quick Note").map((nb) => (
@@ -539,9 +541,9 @@ export default function Dictation() {
           {/* Active destination label */}
           {dictationMode === "note" && (
             <div className="mt-1 text-[9px] text-[rgba(255,255,255,0.2)] pl-0.5">
-              Dictating to:{" "}
+              {t("dict.dictating-to")}{" "}
               <span className="text-[rgba(255,255,255,0.4)]">
-                {currentNotebook ? currentNotebook.title : "Quick Note"}
+                {currentNotebook ? currentNotebook.title : t("dict.quick-note")}
               </span>
             </div>
           )}
@@ -553,16 +555,16 @@ export default function Dictation() {
       {/* ══ Bottom: Activity ══ */}
       <div className="flex flex-col flex-1 min-h-0 px-5 pt-3 pb-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.2)] font-medium">Activity</span>
+          <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.2)] font-medium">{t("dict.activity")}</span>
           {activity.length > 0 && (
-            <button onClick={() => setActivity([])} className="text-[9px] text-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.3)] transition-colors">Clear</button>
+            <button onClick={() => setActivity([])} className="text-[9px] text-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.3)] transition-colors">{t("dict.clear")}</button>
           )}
         </div>
         <div ref={activityRef} className="flex-1 overflow-y-auto min-h-0">
           {activity.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full gap-1">
-              <span className="text-[rgba(255,255,255,0.1)] text-[11px]">{processing ? "Processing\u2026" : "Ready"}</span>
-              {!processing && <span className="text-[rgba(255,255,255,0.06)] text-[10px]">Results will appear here</span>}
+              <span className="text-[rgba(255,255,255,0.1)] text-[11px]">{processing ? t("dict.processing") : t("dict.ready")}</span>
+              {!processing && <span className="text-[rgba(255,255,255,0.06)] text-[10px]">{t("dict.results-hint")}</span>}
             </div>
           ) : (
             <div className="relative pl-5">

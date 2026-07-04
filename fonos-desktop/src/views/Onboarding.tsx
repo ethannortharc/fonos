@@ -20,6 +20,7 @@ import {
   stopRecording,
 } from "../lib/api";
 import type { AppConfig, ModelProfile, SttResult } from "../types";
+import { t, useT } from "../lib/i18n";
 import { HotkeyInput } from "./settings/HotkeysTab";
 import ModelProfileEditor from "./settings/ModelProfileEditor";
 import MicrophonePicker from "./settings/MicrophonePicker";
@@ -44,7 +45,12 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 
 type Step = 0 | 1 | 2 | 3;
 
-const STEP_LABELS = ["Permissions", "Backend", "Hotkey", "Try it"];
+const STEP_LABELS = [
+  "onboard.step.perms",
+  "onboard.step.backend",
+  "onboard.step.hotkey",
+  "onboard.step.try",
+] as const;
 
 // ─── Small building blocks ───────────────────────────────────────────────────
 
@@ -52,14 +58,14 @@ function StatusBadge({ granted }: { granted: boolean | null }) {
   if (granted === true) {
     return (
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[rgba(134,239,172,0.9)]">
-        <span className="text-[12px]">{"✓"}</span> Granted
+        <span className="text-[12px]">{"✓"}</span> {t("onboard.granted")}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#fbbf24]">
       <span className="text-[12px]">{"○"}</span>{" "}
-      {granted === null ? "Checking…" : "Pending"}
+      {granted === null ? t("onboard.checking") : t("onboard.pending")}
     </span>
   );
 }
@@ -72,6 +78,7 @@ function ErrorLine({ msg }: { msg: string }) {
 // ─── Onboarding ──────────────────────────────────────────────────────────────
 
 export default function Onboarding({ onDone }: { onDone: () => void }) {
+  useT();
   const [step, setStep] = useState<Step>(0);
 
   // Full config snapshot so the shared editor sees + merges model_profiles the
@@ -215,7 +222,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       try {
         const mic = await hasMicrophone();
         if (!mic) {
-          setTryErr("No microphone detected — grant Microphone access in step 1.");
+          setTryErr(t("onboard.no-mic"));
           return;
         }
         await startRecording();
@@ -274,7 +281,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   i === step ? "text-[#fafaf9]" : "text-[rgba(255,255,255,0.25)]",
                 ].join(" ")}
               >
-                {label}
+                {t(label)}
               </span>
               {i < STEP_LABELS.length - 1 && (
                 <span className="text-[rgba(255,255,255,0.1)] text-[10px] mx-0.5">
@@ -286,13 +293,13 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
         <div className="absolute right-4 flex items-center gap-2.5">
           <span className="hidden md:inline text-[10px] text-[rgba(255,255,255,0.22)] whitespace-nowrap">
-            You can configure everything later in Settings.
+            {t("onboard.later")}
           </span>
           <button
             onClick={handleSkip}
             className="text-[11px] text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)] transition-colors"
           >
-            Skip setup
+            {t("onboard.skip")}
           </button>
         </div>
       </div>
@@ -308,11 +315,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   <span className="text-[#1a1917] text-lg font-bold">f</span>
                 </div>
                 <h1 className="text-[20px] font-semibold text-[#fafaf9]">
-                  Welcome to Fonos
+                  {t("onboard.welcome")}
                 </h1>
                 <p className="text-[13px] text-[rgba(255,255,255,0.5)] leading-relaxed">
-                  Fonos turns your voice into text anywhere on your Mac. First,
-                  grant two permissions so it can hear you and type for you.
+                  {t("onboard.welcome-desc")}
                 </p>
               </div>
 
@@ -320,19 +326,18 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               <div className="rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px] font-medium text-[#fafaf9]">
-                    Microphone
+                    {t("onboard.mic")}
                   </span>
                   <StatusBadge granted={micGranted} />
                 </div>
                 <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed">
-                  Lets Fonos capture audio for dictation. macOS may only prompt
-                  the first time you record.
+                  {t("onboard.mic-desc")}
                 </p>
                 <button
                   onClick={() => openPane("microphone")}
                   className="self-start mt-1 px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] text-[11px] text-[rgba(255,255,255,0.6)] transition-colors"
                 >
-                  Open System Settings
+                  {t("onboard.open-settings")}
                 </button>
               </div>
 
@@ -340,27 +345,24 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               <div className="rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[13px] font-medium text-[#fafaf9]">
-                    Accessibility
+                    {t("onboard.ax")}
                   </span>
                   <StatusBadge granted={axGranted} />
                 </div>
                 <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed">
-                  Lets Fonos register your global hotkey and paste transcribed
-                  text into other apps.
+                  {t("onboard.ax-desc")}
                 </p>
                 <button
                   onClick={() => openPane("accessibility")}
                   className="self-start mt-1 px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] hover:bg-[rgba(255,255,255,0.08)] text-[11px] text-[rgba(255,255,255,0.6)] transition-colors"
                 >
-                  Open System Settings
+                  {t("onboard.open-settings")}
                 </button>
               </div>
 
               {(micGranted !== true || axGranted !== true) && (
                 <p className="text-[11px] text-[rgba(251,191,36,0.7)] leading-relaxed">
-                  You can continue now — macOS often prompts for the microphone
-                  on your first recording. Accessibility is required for hotkeys
-                  and pasting.
+                  {t("onboard.perm-note")}
                 </p>
               )}
               <ErrorLine msg={permErr} />
@@ -381,12 +383,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <>
               <div className="flex flex-col gap-1.5">
                 <h1 className="text-[20px] font-semibold text-[#fafaf9]">
-                  Set up a speech engine
+                  {t("onboard.engine-title")}
                 </h1>
                 <p className="text-[13px] text-[rgba(255,255,255,0.5)] leading-relaxed">
-                  This is what turns your voice into text. Pick Apple on-device for
-                  zero setup, or add a cloud / local model. You can add more or
-                  change this later in Settings.
+                  {t("onboard.engine-desc")}
                 </p>
               </div>
 
@@ -405,20 +405,19 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-[13px] font-medium text-[#fafaf9]">
-                          Apple on-device
+                          {t("onboard.apple")}
                         </span>
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
-                          Recommended · zero-config
+                          {t("onboard.apple-badge")}
                         </span>
                         {appleAlreadyAdded && (
                           <span className="text-[11px] text-[rgba(134,239,172,0.9)] ml-auto">
-                            {"✓"} Added
+                            {"✓"} {t("onboard.added")}
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] text-[rgba(255,255,255,0.4)] leading-relaxed mt-1.5">
-                        Fully private, works offline. Uses macOS built-in speech
-                        recognition — click to add it and set it as your default.
+                        {t("onboard.apple-desc")}
                       </p>
                     </button>
                   )}
@@ -427,7 +426,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   <div className="flex items-center gap-2">
                     <div className="flex-1 border-t border-[rgba(255,255,255,0.05)]" />
                     <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
-                      {isMac ? "Or add a model" : "Add a model"}
+                      {isMac ? t("onboard.or-add-model") : t("onboard.add-model")}
                     </span>
                     <div className="flex-1 border-t border-[rgba(255,255,255,0.05)]" />
                   </div>
@@ -442,7 +441,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </>
               ) : (
                 <div className="py-6 text-center text-[rgba(255,255,255,0.25)] text-[12px]">
-                  Loading…
+                  {t("onboard.loading")}
                 </div>
               )}
               <ErrorLine msg={backendErr} />
@@ -454,27 +453,26 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <>
               <div className="flex flex-col gap-1.5">
                 <h1 className="text-[20px] font-semibold text-[#fafaf9]">
-                  Set your dictation hotkey
+                  {t("onboard.hotkey-title")}
                 </h1>
                 <p className="text-[13px] text-[rgba(255,255,255,0.5)] leading-relaxed">
-                  Hold this shortcut anywhere to talk, release to insert the
-                  transcript at your cursor.
+                  {t("onboard.hotkey-desc")}
                 </p>
               </div>
 
               <div className="rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex items-center justify-between">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-[13px] font-medium text-[#fafaf9]">
-                    Dictation
+                    {t("onboard.dictation")}
                   </span>
                   <span className="text-[11px] text-[rgba(255,255,255,0.35)]">
-                    Hold to talk
+                    {t("onboard.hold-to-talk")}
                   </span>
                 </div>
                 <HotkeyInput value={hotkey} onChange={handleHotkeyChange} />
               </div>
               <p className="text-[11px] text-[rgba(255,255,255,0.3)]">
-                Current: <span className="font-mono text-[rgba(255,255,255,0.55)]">{hotkey}</span>. Changes take effect immediately — no restart needed.
+                {t("onboard.current")} <span className="font-mono text-[rgba(255,255,255,0.55)]">{hotkey}</span>. {t("onboard.hotkey-effect")}
               </p>
               <ErrorLine msg={hotkeyErr} />
             </>
@@ -485,11 +483,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <>
               <div className="flex flex-col gap-1.5">
                 <h1 className="text-[20px] font-semibold text-[#fafaf9]">
-                  Try it now
+                  {t("onboard.try-title")}
                 </h1>
                 <p className="text-[13px] text-[rgba(255,255,255,0.5)] leading-relaxed">
-                  Click record, say a sentence, then click stop. Your words
-                  should appear in the box below.
+                  {t("onboard.try-desc")}
                 </p>
               </div>
 
@@ -523,7 +520,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   )}
                 </button>
                 <span className="text-[11px] text-[rgba(255,255,255,0.4)]">
-                  {recording ? "Recording… click to stop" : "Click to record"}
+                  {recording ? t("onboard.recording") : t("onboard.click-record")}
                 </span>
               </div>
 
@@ -531,7 +528,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 ref={taRef}
                 value={tryText}
                 onChange={(e) => setTryText(e.target.value)}
-                placeholder="Your dictated text will appear here…"
+                placeholder={t("onboard.try-ph")}
                 rows={4}
                 autoFocus
                 className="w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.08)] rounded-xl px-4 py-3 text-[13px] text-[#fafaf9] leading-relaxed focus:outline-none focus:border-[rgba(245,158,11,0.3)] resize-none"
@@ -540,25 +537,24 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               {tryResult && (
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-3 text-[10px] text-[rgba(255,255,255,0.35)]">
-                    <span>Latency: {tryResult.latency_ms} ms</span>
+                    <span>{t("onboard.latency")} {tryResult.latency_ms} ms</span>
                     {tryResult.stt_engine && (
-                      <span>Engine: {tryResult.stt_engine}</span>
+                      <span>{t("onboard.engine")} {tryResult.stt_engine}</span>
                     )}
                   </div>
                   {tryResult.text ? (
                     <div className="text-[11px] text-[rgba(255,255,255,0.5)] leading-relaxed">
                       <span className="text-[rgba(255,255,255,0.3)]">
-                        Transcript:{" "}
+                        {t("onboard.transcript")}{" "}
                       </span>
                       {tryResult.text}
                       <div className="text-[10px] text-[rgba(251,191,36,0.6)] mt-1">
-                        If nothing appeared in the box above, check the
-                        Accessibility permission in step 1.
+                        {t("onboard.inject-hint")}
                       </div>
                     </div>
                   ) : (
                     <div className="text-[11px] text-[rgba(255,255,255,0.4)]">
-                      No speech detected — try again and speak clearly.
+                      {t("onboard.no-speech")}
                     </div>
                   )}
                 </div>
@@ -576,7 +572,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           disabled={step === 0}
           className="px-4 py-2 rounded-lg text-[12px] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] transition-colors disabled:opacity-0"
         >
-          Back
+          {t("onboard.back")}
         </button>
 
         {step < 3 ? (
@@ -584,14 +580,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             onClick={() => setStep((s) => (s + 1) as Step)}
             className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
           >
-            Continue
+            {t("onboard.continue")}
           </button>
         ) : (
           <button
             onClick={handleFinish}
             className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90 transition-opacity"
           >
-            Finish
+            {t("onboard.finish")}
           </button>
         )}
       </div>

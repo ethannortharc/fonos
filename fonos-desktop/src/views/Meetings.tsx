@@ -13,6 +13,7 @@ import {
 import type { MeetingDetail } from "../lib/meeting-api";
 import type { Container, Entry } from "../lib/storage-api";
 import { deleteContainer } from "../lib/storage-api";
+import { t, useT } from "../lib/i18n";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -21,9 +22,9 @@ function formatDateTime(iso: string): string {
     const d = new Date(iso);
     const now = new Date();
     const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    if (d.toDateString() === now.toDateString()) return `Today ${time}`;
+    if (d.toDateString() === now.toDateString()) return `${t("meet.today")} ${time}`;
     const y = new Date(now.getTime() - 86400000);
-    if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
+    if (d.toDateString() === y.toDateString()) return `${t("meet.yesterday")} ${time}`;
     return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
   } catch {
     return iso;
@@ -37,18 +38,19 @@ function formatDuration(startIso: string, endIso: string): string {
     const diffMs = end - start;
     if (diffMs <= 0) return "";
     const mins = Math.round(diffMs / 60000);
-    if (mins < 1) return "< 1 min";
-    if (mins === 1) return "1 min";
-    return `${mins} min`;
+    if (mins < 1) return t("meet.less-1-min");
+    if (mins === 1) return `1 ${t("meet.min")}`;
+    return `${mins} ${t("meet.min")}`;
   } catch {
     return "";
   }
 }
 
 function summaryPreview(text: string, maxLen = 100): string {
-  const t = text?.trim() ?? "";
-  if (t.length === 0) return "(no summary)";
-  return t.length > maxLen ? t.slice(0, maxLen) + "…" : t;
+  const s = text?.trim() ?? "";
+  // Empty string signals "no summary" — translated at render site.
+  if (s.length === 0) return "";
+  return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
 }
 
 // ─── Markdown renderer ────────────────────────────────────────────────────────
@@ -372,6 +374,7 @@ interface MeetingDetailViewProps {
 }
 
 export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailViewProps) {
+  useT();
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -469,7 +472,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
         <button
           data-testid="meeting-back-btn"
           onClick={onBack}
-          title="Back to meetings"
+          title={t("meet.back-to-meetings")}
           style={{
             width: 28, height: 28, borderRadius: 8,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -486,7 +489,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
             color: "#fafaf9",
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
-            {meeting.title || "Untitled Meeting"}
+            {meeting.title || t("meet.untitled")}
           </div>
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 1 }}>
             {formatDateTime(meeting.created_at)}{duration ? ` · ${duration}` : ""}
@@ -499,7 +502,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
             data-testid="meeting-export-btn"
             onClick={() => setShowExportMenu((v) => !v)}
             disabled={exporting}
-            title="Export meeting"
+            title={t("meet.export-meeting")}
             style={{
               display: "flex", alignItems: "center", gap: 4,
               padding: "5px 10px", borderRadius: 8,
@@ -509,7 +512,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
             }}
           >
             {EXPORT_ICON}
-            <span style={{ marginLeft: 2 }}>Export</span>
+            <span style={{ marginLeft: 2 }}>{t("meet.export")}</span>
             {CHEVRON_DOWN_ICON}
           </button>
 
@@ -530,7 +533,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                   fontSize: 12, color: "rgba(255,255,255,0.7)",
                 }}
               >
-                Export as Markdown
+                {t("meet.export-md")}
               </button>
               <button
                 data-testid="meeting-export-json"
@@ -541,7 +544,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                   fontSize: 12, color: "rgba(255,255,255,0.7)",
                 }}
               >
-                Export as JSON
+                {t("meet.export-json")}
               </button>
             </div>
           )}
@@ -552,7 +555,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
           data-testid="meeting-delete-btn"
           onClick={handleDelete}
           disabled={deleting}
-          title={confirmDelete ? "Click again to confirm delete" : "Delete meeting"}
+          title={confirmDelete ? t("meet.confirm-delete") : t("meet.delete-meeting")}
           style={{
             width: 28, height: 28, borderRadius: 8,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -569,11 +572,11 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
       <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
         {loading ? (
           <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, textAlign: "center", padding: 40 }}>
-            Loading…
+            {t("meet.loading")}
           </div>
         ) : error ? (
           <div style={{ color: "rgba(239,68,68,0.7)", fontSize: 12, textAlign: "center", padding: 20 }}>
-            Error: {error}
+            {t("meet.error")}: {error}
           </div>
         ) : detail ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -586,7 +589,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                     transcriptEntries[0].created_at,
                     transcriptEntries[transcriptEntries.length - 1].created_at
                   ),
-                  `${transcriptEntries.length} segment${transcriptEntries.length === 1 ? "" : "s"}`,
+                  `${transcriptEntries.length} ${transcriptEntries.length === 1 ? t("meet.segment") : t("meet.segments")}`,
                 ].map((label, i) => (
                   <span
                     key={i}
@@ -624,11 +627,11 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                   {summaryOpen ? CHEVRON_DOWN_ICON : CHEVRON_RIGHT_ICON}
                 </span>
                 <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(251,191,36,0.7)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                  AI Summary
+                  {t("meet.ai-summary")}
                 </span>
                 {!summaryText && (
                   <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>
-                    not generated
+                    {t("meet.not-generated")}
                   </span>
                 )}
               </button>
@@ -658,7 +661,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                               fontWeight: summaryRendered ? 600 : 400,
                             }}
                           >
-                            Rendered
+                            {t("meet.rendered")}
                           </button>
                           <button
                             data-testid="summary-raw-btn"
@@ -673,7 +676,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                               fontWeight: !summaryRendered ? 600 : 400,
                             }}
                           >
-                            Raw
+                            {t("meet.raw")}
                           </button>
                         </div>
                       </div>
@@ -702,7 +705,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>
-                      Summary not generated
+                      {t("meet.summary-not-generated")}
                     </div>
                   )}
                 </div>
@@ -715,19 +718,19 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                 fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.3)",
                 letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 8,
               }}>
-                Transcript
+                {t("meet.transcript")}
               </div>
 
               {transcriptEntries.length === 0 ? (
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", fontStyle: "italic", padding: "8px 0" }}>
-                  No transcript entries
+                  {t("meet.no-transcript")}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {transcriptEntries.map((entry) => {
                     const isMe = entry.role === "user";
                     const speakerColor = isMe ? "#4ade80" : "#c084fc";
-                    const speakerLabel = isMe ? "Me" : "Other";
+                    const speakerLabel = isMe ? t("meet.me") : t("meet.other");
                     const text = entry.processed_text || entry.raw_text;
 
                     return (
@@ -769,7 +772,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                           color: "rgba(255,255,255,0.6)",
                           wordBreak: "break-word",
                         }}>
-                          {text || <span style={{ color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>(no text)</span>}
+                          {text || <span style={{ color: "rgba(255,255,255,0.2)", fontStyle: "italic" }}>{t("meet.no-text")}</span>}
                         </p>
                       </div>
                     );
@@ -826,22 +829,22 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
     >
       {/* Header */}
       <div style={{ padding: "16px 20px 8px", flexShrink: 0 }}>
-        {!embedded && <h2 style={{ fontSize: 13, fontWeight: 600, color: "#fafaf9", margin: 0 }}>Meetings</h2>}
+        {!embedded && <h2 style={{ fontSize: 13, fontWeight: 600, color: "#fafaf9", margin: 0 }}>{t("meet.title")}</h2>}
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "4px 20px 16px" }}>
         {error ? (
           <div style={{ color: "rgba(239,68,68,0.7)", fontSize: 12, padding: 20, textAlign: "center" }}>
-            Error loading meetings: {error}
+            {t("meet.error-loading")}: {error}
           </div>
         ) : loading ? (
           <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, padding: 40, textAlign: "center" }}>
-            Loading…
+            {t("meet.loading")}
           </div>
         ) : meetings.length === 0 ? (
           <div style={{ color: "rgba(255,255,255,0.2)", fontSize: 12, padding: 40, textAlign: "center" }}>
-            No meetings recorded yet. Press Option+M to start.
+            {t("meet.empty")}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -852,7 +855,7 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
               const summaryGenerated = !!(meeting.metadata as Record<string, unknown>)?.summary_generated;
               const summaryPreviewText = (meeting.metadata as Record<string, string>)?.summary_preview ?? "";
               const preview = summaryGenerated
-                ? (summaryPreviewText ? summaryPreview(summaryPreviewText) : "Summary available")
+                ? (summaryPreviewText ? summaryPreview(summaryPreviewText) : t("meet.summary-available"))
                 : summaryPreview(summaryPreviewText);
 
               return (
@@ -884,7 +887,7 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       marginBottom: 4,
                     }}>
-                      {meeting.title || "Untitled Meeting"}
+                      {meeting.title || t("meet.untitled")}
                     </div>
 
                     {/* Second row: date + duration */}
@@ -912,13 +915,13 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
                     {/* Summary preview */}
                     <div style={{
                       fontSize: 11, lineHeight: "1.4",
-                      color: preview === "(no summary)"
-                        ? "rgba(255,255,255,0.2)"
-                        : "rgba(255,255,255,0.45)",
-                      fontStyle: preview === "(no summary)" ? "italic" : "normal",
+                      color: preview
+                        ? "rgba(255,255,255,0.45)"
+                        : "rgba(255,255,255,0.2)",
+                      fontStyle: preview ? "normal" : "italic",
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                     }}>
-                      {preview}
+                      {preview || t("meet.no-summary")}
                     </div>
                   </div>
                 </button>
@@ -940,6 +943,7 @@ export default function Meetings({
   embedded?: boolean;
   onOpenDetail?: (meeting: Container) => void;
 } = {}) {
+  useT();
   const [view, setView] = useState<"list" | "detail">("list");
   const [selectedMeeting, setSelectedMeeting] = useState<Container | null>(null);
   const [listRefreshKey, setListRefreshKey] = useState(0);

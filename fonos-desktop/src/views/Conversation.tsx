@@ -51,12 +51,14 @@ export default function Conversation() {
   const [callSecs, setCallSecs] = useState(0);
   // Mirror of `inCall` for pointer handlers / timers (avoids stale closures).
   const inCallRef = useRef(false);
-  // Press disambiguation: a short tap toggles the call; a ≥250ms hold is the
+  // Press disambiguation: a short tap toggles the call; a longer hold is the
   // existing walkie-talkie press. `pressTimerRef` fires when the hold threshold
   // passes; `holdStartedRef` records that the walkie-talkie leg engaged.
+  // 450ms: relaxed clicks commonly dwell 200-350ms — a 250ms threshold
+  // misrouted them into a hold and produced spurious "No speech detected".
   const pressTimerRef = useRef<number | null>(null);
   const holdStartedRef = useRef(false);
-  const CLICK_MS = 250;
+  const CLICK_MS = 450;
 
   useEffect(() => {
     inCallRef.current = inCall;

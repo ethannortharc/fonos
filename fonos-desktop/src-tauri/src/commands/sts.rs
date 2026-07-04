@@ -90,6 +90,15 @@ async fn run_sts_turn_inner(
             }
         };
 
+    // Accidental tap: a near-zero recording with no speech. On the page path
+    // reset the UI quietly instead of surfacing "No speech detected" — the
+    // press was almost certainly a mis-detected click, not a real attempt.
+    if from_page && result.duration_secs < 0.4 && result.text.trim().is_empty() {
+        use fonos_core::sts::TurnSink;
+        sink.emit(fonos_core::sts::TurnEvent::TurnDone);
+        return Ok(String::new());
+    }
+
     execute_turn(&app, result.text, persona_override, &sink).await
 }
 

@@ -172,6 +172,10 @@ pub struct AppConfig {
     pub call_vad_sensitivity: f32,
     /// Call mode: trailing silence (ms) that ends an utterance (500–2000).
     pub call_vad_silence_ms: u32,
+    /// Call mode: allow the user to interrupt (barge in on) the spoken reply by
+    /// speaking over it. When `false`, the mic stays closed during playback
+    /// (the original one-turn-at-a-time behavior). Default `true`.
+    pub call_barge_in: bool,
 
     // ── Custom vocabulary ────────────────────────────────────────────────
 
@@ -244,6 +248,7 @@ impl Default for AppConfig {
             sts_max_turns: 8,
             call_vad_sensitivity: 0.5,
             call_vad_silence_ms: 800,
+            call_barge_in: true,
             transform_mode: "polish".to_string(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }

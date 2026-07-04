@@ -108,6 +108,9 @@ const en = {
   "speech.sensitivity.low": "Low",
   "speech.sensitivity.med": "Medium",
   "speech.sensitivity.high": "High",
+  "speech.barge": "Barge-in",
+  "speech.barge.hint": "speak to interrupt the reply · best with headphones or low volume",
+  "speech.barge.toggle": "Let me interrupt",
 
   // conversation page
   "conv.title": "Conversation",
@@ -127,6 +130,7 @@ const en = {
   "conv.hold": "Hold to talk",
   "conv.release": "Release to send",
   "conv.speaking": "speaking",
+  "conv.interrupted": " · interrupted",
   "conv.call.hint": "Click to start a call · hold to talk once",
   "conv.call.hangup": "Hang up",
   "conv.call.timeout": "Call ended — no speech for a while",
@@ -859,6 +863,9 @@ const zh: Partial<Record<Key, string>> = {
   "speech.sensitivity.low": "低",
   "speech.sensitivity.med": "中",
   "speech.sensitivity.high": "高",
+  "speech.barge": "插话打断",
+  "speech.barge.hint": "说话即可打断回复 · 建议戴耳机或降低音量",
+  "speech.barge.toggle": "允许打断",
 
   "conv.title": "实时对话",
   "conv.state.idle": "就绪",
@@ -877,6 +884,7 @@ const zh: Partial<Record<Key, string>> = {
   "conv.hold": "按住说话",
   "conv.release": "松开发送",
   "conv.speaking": "播报中",
+  "conv.interrupted": " · 已打断",
   "conv.call.hint": "点按开始通话 · 按住可说一句",
   "conv.call.hangup": "挂断",
   "conv.call.timeout": "通话已结束 — 一段时间没有说话",

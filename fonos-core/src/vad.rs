@@ -30,6 +30,17 @@ pub struct VadConfig {
     /// If no speech is ever confirmed within this window, give up with
     /// [`VadEvent::Timeout`] (the call loop hangs up). Default `60_000`.
     pub timeout_ms: u32,
+    /// Startup grace period: for the first `warmup_ms` of a session, chunks
+    /// only feed the adaptive noise floor — no speech detection, no timeout
+    /// accounting. Lets a barge-in session learn the speaker's echo/bleed as
+    /// its floor before it starts listening for a genuine interruption.
+    /// Default `0` (no warmup).
+    pub warmup_ms: u32,
+    /// Extra multiplier on the speech-detection threshold. `1.0` is neutral;
+    /// a barge-in session raises it (e.g. `1.6`) so only speech that clears the
+    /// learned bleed by a comfortable margin counts as an interruption.
+    /// Default `1.0`.
+    pub threshold_boost: f32,
 }
 
 impl Default for VadConfig {
@@ -40,6 +51,8 @@ impl Default for VadConfig {
             silence_hang_ms: 800,
             max_utterance_ms: 30_000,
             timeout_ms: 60_000,
+            warmup_ms: 0,
+            threshold_boost: 1.0,
         }
     }
 }
@@ -87,6 +100,8 @@ pub struct VadSession {
     silence_ms: u32,
     /// Total time fed while no speech has yet been confirmed (drives timeout).
     idle_ms: u32,
+    /// Remaining warmup budget (ms); while >0, pushes only adapt the floor.
+    warmup_remaining_ms: u32,
 }
 
 /// Sample count per millisecond at 16 kHz.
@@ -101,6 +116,7 @@ const FLOOR_ADAPT_ALPHA: f32 = 0.1;
 impl VadSession {
     /// Start a fresh session with the given tuning.
     pub fn new(config: VadConfig) -> Self {
+        let warmup_remaining_ms = config.warmup_ms;
         Self {
             config,
             phase: Phase::Idle,
@@ -109,6 +125,7 @@ impl VadSession {
             utterance_ms: 0,
             silence_ms: 0,
             idle_ms: 0,
+            warmup_remaining_ms,
         }
     }
 
@@ -121,7 +138,8 @@ impl VadSession {
         let factor = 4.0 - 2.5 * s;
         // Absolute floor: 120 … 48 RMS across the sensitivity range.
         let abs_min = 120.0 * (1.0 - 0.6 * s);
-        (self.noise_floor * factor).max(abs_min)
+        // `threshold_boost` (≥1.0) raises the whole bar for barge-in sessions.
+        (self.noise_floor * factor).max(abs_min) * self.config.threshold_boost.max(0.0)
     }
 
     /// Feed one chunk of 16 kHz mono i16 samples and get the resulting event.
@@ -137,6 +155,17 @@ impl VadSession {
             return VadEvent::None;
         }
         let rms = rms(samples);
+
+        // Warmup: for the first `warmup_ms` of the session, only learn the
+        // noise floor — no speech detection, no timeout accounting. A barge-in
+        // session uses this window to absorb the speaker's echo/bleed into its
+        // floor before it starts listening for a genuine interruption.
+        if self.warmup_remaining_ms > 0 {
+            self.adapt_floor(rms);
+            self.warmup_remaining_ms = self.warmup_remaining_ms.saturating_sub(chunk_ms);
+            return VadEvent::None;
+        }
+
         let above = rms > self.threshold();
 
         match self.phase {
@@ -313,5 +342,80 @@ mod tests {
         let events = feed(&mut vad, &signal);
         // Exactly one start and one end — the mid pause did not split it.
         assert_eq!(events, vec![VadEvent::SpeechStart, VadEvent::UtteranceEnd]);
+    }
+
+    /// The barge-in profile: warmup absorbs the playback bleed as the floor, so
+    /// bleed that continues at the SAME level after warmup is not mistaken for
+    /// the user speaking (the echo problem, without an AEC).
+    #[test]
+    fn warmup_learns_bleed_floor_so_same_level_does_not_trigger() {
+        let mut vad = VadSession::new(VadConfig {
+            warmup_ms: 300,
+            min_speech_ms: 450,
+            threshold_boost: 1.6,
+            ..Default::default()
+        });
+        // 300 ms of loud "bleed" during warmup: learns the floor, emits nothing.
+        let warm = feed(&mut vad, &tone(300, 2_000));
+        assert!(warm.is_empty(), "warmup must emit nothing: {warm:?}");
+        // The same bleed continues for a full second: still nothing, because it
+        // was learned as the noise floor.
+        let same = feed(&mut vad, &tone(1_000, 2_000));
+        assert!(same.is_empty(), "same-level post-warmup bleed must not trigger: {same:?}");
+    }
+
+    /// After warmup on bleed, speech that is clearly louder than the learned
+    /// floor still trips — a real interruption gets through.
+    #[test]
+    fn clearly_louder_speech_triggers_after_warmup() {
+        let mut vad = VadSession::new(VadConfig {
+            warmup_ms: 300,
+            min_speech_ms: 450,
+            threshold_boost: 1.6,
+            ..Default::default()
+        });
+        feed(&mut vad, &tone(300, 2_000)); // warmup on bleed
+        // A clearly-louder, sustained voice, well above the learned floor.
+        let events = feed(&mut vad, &tone(600, 9_000));
+        assert_eq!(events, vec![VadEvent::SpeechStart]);
+    }
+
+    /// `min_speech_ms` (450 ms in the barge profile) rejects short loud
+    /// transients after warmup — a click or a cough is not an interruption.
+    #[test]
+    fn min_speech_rejects_short_burst_after_warmup() {
+        let mut vad = VadSession::new(VadConfig {
+            warmup_ms: 300,
+            min_speech_ms: 450,
+            threshold_boost: 1.6,
+            ..Default::default()
+        });
+        feed(&mut vad, &tone(300, 2_000)); // warmup
+        // A loud but short burst (300 ms < 450 ms), then quiet: rejected.
+        let mut sig = tone(300, 9_000);
+        sig.extend(silence(500));
+        let events = feed(&mut vad, &sig);
+        assert!(events.is_empty(), "short burst must not confirm: {events:?}");
+    }
+
+    /// `threshold_boost` raises the whole bar: a borderline tone that confirms
+    /// at boost 1.0 is suppressed at 1.6.
+    #[test]
+    fn threshold_boost_raises_the_bar() {
+        let mut sig = tone(500, 180); // just over the un-boosted floor threshold
+        sig.extend(silence(1_000));
+        // Neutral boost: the tone confirms and ends normally.
+        let mut lo = VadSession::new(VadConfig { min_speech_ms: 250, ..Default::default() });
+        assert_eq!(
+            feed(&mut lo, &sig),
+            vec![VadEvent::SpeechStart, VadEvent::UtteranceEnd]
+        );
+        // 1.6× boost: the same tone no longer clears the threshold.
+        let mut hi = VadSession::new(VadConfig {
+            min_speech_ms: 250,
+            threshold_boost: 1.6,
+            ..Default::default()
+        });
+        assert!(feed(&mut hi, &sig).is_empty(), "boost should suppress the borderline tone");
     }
 }

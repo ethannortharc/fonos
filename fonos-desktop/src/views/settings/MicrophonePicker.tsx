@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import { listAudioInputs } from "../../lib/api";
+import { t, useT } from "../../lib/i18n";
 
 export default function MicrophonePicker({
   value,
@@ -14,6 +15,7 @@ export default function MicrophonePicker({
   value: string;
   onSelect: (name: string) => void;
 }) {
+  useT();
   const [audioInputs, setAudioInputs] = useState<string[]>([]);
 
   useEffect(() => {
@@ -23,10 +25,9 @@ export default function MicrophonePicker({
   return (
     <div className="flex flex-col gap-2.5">
       <div>
-        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">Microphone</div>
+        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">{t("mic.title")}</div>
         <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-          Auto Detect finds the best available mic (prefers external over built-in).
-          Select a specific device to lock to it.
+          {t("mic.desc")}
         </div>
       </div>
 
@@ -50,11 +51,11 @@ export default function MicrophonePicker({
                 selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
               ].join(" ")} />
               <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
-                {isAuto ? "Auto Detect" : name}
+                {isAuto ? t("mic.auto") : name}
               </span>
               {isAuto && (
                 <span className="text-[8px] text-[rgba(255,255,255,0.15)] ml-auto">
-                  prefers external
+                  {t("mic.prefers-external")}
                 </span>
               )}
             </button>
@@ -66,7 +67,7 @@ export default function MicrophonePicker({
         onClick={() => listAudioInputs().then(setAudioInputs).catch(() => {})}
         className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors self-start"
       >
-        Refresh Devices
+        {t("mic.refresh")}
       </button>
     </div>
   );

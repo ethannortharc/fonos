@@ -1,6 +1,7 @@
 // Modes tab — pipeline view, mode list, mode edit form.
 
 import { useState } from "react";
+import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModeEntry, ModelProfile } from "../../types";
 import { EMPTY_MODE } from "./constants";
 import { ModeIcon, MicIcon, BrainIcon } from "../../components/Icons";
@@ -70,15 +71,15 @@ function ModelSelector({
       className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none"
       style={{ backgroundImage: "none" }}
     >
-      {allowDefault && <option value="">Use default</option>}
-      {capKey === "stt" && <option value="apple-speech">Apple Speech (on-device)</option>}
+      {allowDefault && <option value="">{t("modes.use-default")}</option>}
+      {capKey === "stt" && <option value="apple-speech">{t("modes.stt.apple")}</option>}
       {filtered.map((p) => (
         <option key={p.id} value={p.id}>
           {p.name} ({p.model})
         </option>
       ))}
       {filtered.length === 0 && !((capKey === "stt")) && (
-        <option disabled value="">No {capKey.toUpperCase()} models</option>
+        <option disabled value="">{t("modes.no-models").replace("{cap}", capKey.toUpperCase())}</option>
       )}
     </select>
   );
@@ -127,10 +128,10 @@ function ModePipelineCard({
     ? "Apple Speech"
     : mode.stt_model
       ? (profiles.find((p) => p.id === mode.stt_model)?.name ?? mode.stt_model)
-      : (defaultStt?.name ?? "Not set");
+      : (defaultStt?.name ?? t("models.notset"));
   const llmModelName = mode.model
     ? (profiles.find((p) => p.id === mode.model)?.name ?? mode.model)
-    : (defaultLlm?.name ?? "Not set");
+    : (defaultLlm?.name ?? t("models.notset"));
 
   const handleResetOverride = async () => {
     if (!mode.builtin) return;
@@ -171,13 +172,13 @@ function ModePipelineCard({
           <div className="flex items-center gap-2">
             <span className="text-[#fafaf9] text-[12px] font-medium">{mode.name}</span>
             {mode.builtin && (
-              <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">Built-in</span>
+              <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">{t("common.builtin")}</span>
             )}
           </div>
           {/* Compact pipeline summary */}
           <div className="text-[9px] text-[rgba(255,255,255,0.2)] mt-0.5 truncate">
             {summaryBadges.join(" → ")}
-            {mode.auto_paste ? " → Insert" : ""}
+            {mode.auto_paste ? ` → ${t("modes.insert-short")}` : ""}
           </div>
         </div>
         {/* Expand chevron */}
@@ -201,7 +202,7 @@ function ModePipelineCard({
               })}
               className="text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.5)] text-[10px] px-1.5 transition-colors"
             >
-              Edit
+              {t("common.edit")}
             </button>
             <button
               onClick={() => onDelete(mode.id)}
@@ -216,20 +217,20 @@ function ModePipelineCard({
         <div className="px-3.5 pb-3 pt-0">
           <div className="border-t border-[rgba(255,255,255,0.04)] pt-3 pl-1">
             {/* Step 1: STT */}
-            <PipelineStep dotColor="#fbbf24" label="Step 1: Speech to Text" isLast={!hasLlm && (config.vocab_books ?? []).length === 0}>
+            <PipelineStep dotColor="#fbbf24" label={t("modes.step.stt")} isLast={!hasLlm && (config.vocab_books ?? []).length === 0}>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] text-[11px] text-[rgba(255,255,255,0.6)]">
                   <MicIcon size={11} /> {sttModelName}
                 </span>
                 <span className={["px-1.5 py-0.5 rounded text-[8px] font-medium",
                   mode.builtin && !sttOverridden ? "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.2)]" : "bg-[rgba(245,158,11,0.1)] text-[rgba(251,191,36,0.6)]",
-                ].join(" ")}>{mode.builtin && !sttOverridden ? "Default" : "Custom"}</span>
+                ].join(" ")}>{mode.builtin && !sttOverridden ? t("modes.badge.default") : t("modes.badge.custom")}</span>
               </div>
             </PipelineStep>
 
             {/* Vocabulary books mounted on this mode (in addition to Global) */}
             {(config.vocab_books ?? []).length > 0 && (
-              <PipelineStep dotColor="#4ade80" label="Vocabulary" isLast={false}>
+              <PipelineStep dotColor="#4ade80" label={t("modes.vocabulary")} isLast={false}>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(config.vocab_books ?? []).map((b) => {
                     const isGlobal = (config.global_vocab_books ?? []).includes(b.id);
@@ -238,10 +239,10 @@ function ModePipelineCard({
                       return (
                         <span
                           key={b.id}
-                          title="Applied to every dictation (Global book)"
+                          title={t("modes.vocab.global-title")}
                           className="px-2 py-0.5 rounded-full text-[9px] bg-[rgba(74,222,128,0.08)] border border-[rgba(74,222,128,0.15)] text-[rgba(74,222,128,0.5)]"
                         >
-                          {b.name} · global
+                          {b.name} · {t("modes.vocab.global-tag")}
                         </span>
                       );
                     }
@@ -255,7 +256,7 @@ function ModePipelineCard({
                             : [...current, b.id];
                           void onSaveMode({ ...modeToForm(mode), vocab_books: next });
                         }}
-                        title={mounted ? `Unmount ${b.name} from this mode` : `Mount ${b.name} on this mode`}
+                        title={mounted ? t("modes.vocab.unmount").replace("{name}", b.name) : t("modes.vocab.mount").replace("{name}", b.name)}
                         className={[
                           "px-2 py-0.5 rounded-full text-[9px] transition-all",
                           mounted
@@ -273,7 +274,7 @@ function ModePipelineCard({
 
             {/* Step 2: LLM */}
             {hasLlm && (
-              <PipelineStep dotColor="#86efac" label="Step 2: LLM Processing" isLast={false}>
+              <PipelineStep dotColor="#86efac" label={t("modes.step.llm")} isLast={false}>
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] text-[11px] text-[rgba(255,255,255,0.6)]">
@@ -281,16 +282,16 @@ function ModePipelineCard({
                     </span>
                     <span className={["px-1.5 py-0.5 rounded text-[8px] font-medium",
                       mode.builtin && !llmOverridden ? "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.2)]" : "bg-[rgba(245,158,11,0.1)] text-[rgba(251,191,36,0.6)]",
-                    ].join(" ")}>{mode.builtin && !llmOverridden ? "Default" : "Custom"}</span>
+                    ].join(" ")}>{mode.builtin && !llmOverridden ? t("modes.badge.default") : t("modes.badge.custom")}</span>
                     {mode.builtin && llmOverridden && (
-                      <button onClick={handleResetOverride} className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors">Reset</button>
+                      <button onClick={handleResetOverride} className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors">{t("modes.reset")}</button>
                     )}
                   </div>
                   {(mode.system || mode.user_template) && (
                     <div className="px-2.5 py-1.5 rounded-md bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[10px] text-[rgba(255,255,255,0.2)] font-mono leading-relaxed line-clamp-3">
-                      {mode.system && <><span className="text-[rgba(255,255,255,0.3)]">System:</span> {mode.system}</>}
+                      {mode.system && <><span className="text-[rgba(255,255,255,0.3)]">{t("modes.preview.system")}</span> {mode.system}</>}
                       {mode.system && mode.user_template && <br/>}
-                      {mode.user_template && <><span className="text-[rgba(255,255,255,0.3)]">User:</span> {mode.user_template.slice(0, 100)}{mode.user_template.length > 100 ? "..." : ""}</>}
+                      {mode.user_template && <><span className="text-[rgba(255,255,255,0.3)]">{t("modes.preview.user")}</span> {mode.user_template.slice(0, 100)}{mode.user_template.length > 100 ? "..." : ""}</>}
                     </div>
                   )}
                 </div>
@@ -298,11 +299,11 @@ function ModePipelineCard({
             )}
 
             {/* Output */}
-            <PipelineStep dotColor="rgba(255,255,255,0.3)" label="Output" isLast={true}>
+            <PipelineStep dotColor="rgba(255,255,255,0.3)" label={t("modes.output")} isLast={true}>
               <div className="flex items-center gap-3 text-[10px] text-[rgba(255,255,255,0.3)]">
-                {mode.auto_paste && <span>{"\u2713"} Insert at cursor</span>}
-                {mode.auto_press_enter && <span>{"\u2713"} Press Enter</span>}
-                {!mode.auto_paste && !mode.auto_press_enter && <span className="italic">Copy to clipboard</span>}
+                {mode.auto_paste && <span>{"\u2713"} {t("modes.insert-cursor")}</span>}
+                {mode.auto_press_enter && <span>{"\u2713"} {t("modes.press-enter")}</span>}
+                {!mode.auto_paste && !mode.auto_press_enter && <span className="italic">{t("modes.copy-clipboard")}</span>}
               </div>
             </PipelineStep>
           </div>
@@ -313,7 +314,7 @@ function ModePipelineCard({
               <button
                 onClick={() => onEdit(modeToForm(mode))}
                 className="text-[10px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors"
-              >Customize...</button>
+              >{t("modes.customize")}</button>
             </div>
           )}
         </div>
@@ -365,7 +366,7 @@ function ModeSection({
           <path d="M9 18l6-6-6-6" />
         </svg>
         <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold">
-          Modes
+          {t("modes.heading")}
         </span>
         <span className="text-[9px] text-[rgba(255,255,255,0.15)]">
           ({modes.length})
@@ -396,7 +397,7 @@ function ModeSection({
             onClick={onCreateNew}
             className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
           >
-            + Create Mode
+            {t("modes.create")}
           </button>
         </div>
       )}
@@ -417,6 +418,7 @@ export default function ModesTab({
   onSaveMode: (form: ModeForm) => Promise<void>;
   onDeleteMode: (id: string) => Promise<void>;
 }) {
+  useT();
   const [editingMode, setEditingMode] = useState<ModeForm | null>(null);
   const [editingModeIsBuiltin, setEditingModeIsBuiltin] = useState<boolean>(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -436,13 +438,13 @@ export default function ModesTab({
         /* ── Mode edit form -- pipeline-organized ── */
         <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-4">
           <div className="text-[12px] font-medium text-[#fafaf9]">
-            {editingMode.id && modes.some((m) => m.id === editingMode.id) ? "Edit Mode" : "New Mode"}
+            {editingMode.id && modes.some((m) => m.id === editingMode.id) ? t("modes.edit-mode") : t("modes.new-mode")}
           </div>
 
           {/* Section: Identity */}
           <div className="flex flex-col gap-2">
             <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-              Identity
+              {t("modes.identity")}
             </div>
             {!editingModeIsBuiltin && (
               <>
@@ -454,7 +456,7 @@ export default function ModesTab({
                       setEditingMode({ ...editingMode, icon: e.target.value })
                     }
                     className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-2 text-center text-[16px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-                    title="Emoji icon"
+                    title={t("modes.emoji-title")}
                   />
                   <input
                     type="text"
@@ -471,7 +473,7 @@ export default function ModesTab({
                     onChange={(e) =>
                       setEditingMode({ ...editingMode, name: e.target.value })
                     }
-                    placeholder="Display Name"
+                    placeholder={t("modes.ph.name")}
                     className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                   />
                 </div>
@@ -481,7 +483,7 @@ export default function ModesTab({
                   onChange={(e) =>
                     setEditingMode({ ...editingMode, description: e.target.value })
                   }
-                  placeholder="Short description of what this mode does"
+                  placeholder={t("modes.ph.desc")}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                 />
               </>
@@ -502,13 +504,13 @@ export default function ModesTab({
             <div className="flex items-center gap-2">
               <div className="rounded-full flex-shrink-0" style={{ width: 6, height: 6, backgroundColor: "#fbbf24" }} />
               <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-                Step 1: Speech to Text
+                {t("modes.step.stt")}
               </div>
             </div>
             <div className="flex flex-col gap-2 pl-4">
               {/* Basic: STT model selector */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">STT Model</label>
+                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.stt-model")}</label>
                 <ModelSelector
                   capKey="stt"
                   value={editingMode.stt_model}
@@ -523,31 +525,31 @@ export default function ModesTab({
                 className="text-[9px] text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.4)] transition-colors self-start flex items-center gap-1"
               >
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform duration-200 ${showSttAdvanced ? "rotate-90" : ""}`}><path d="M9 18l6-6-6-6"/></svg>
-                Advanced
+                {t("modes.advanced")}
               </button>
               {showSttAdvanced && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-[rgba(255,255,255,0.03)]">
                   <div className="text-[9px] text-[rgba(255,255,255,0.15)] italic mb-1">
-                    Passed to the Whisper-compatible API. Unsupported params are ignored.
+                    {t("modes.stt.advanced-note")}
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      Prompt hint
-                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">(guide vocabulary/style recognition)</span>
+                      {t("modes.stt.prompt-label")}
+                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">{t("modes.stt.prompt-hint")}</span>
                     </label>
                     <input
                       type="text"
                       value={editingMode.stt_prompt}
                       onChange={(e) => setEditingMode({ ...editingMode, stt_prompt: e.target.value })}
-                      placeholder="e.g. Fonos, TypeScript, React, API..."
+                      placeholder={t("modes.stt.prompt-ph")}
                       className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                     />
                   </div>
                   {(config.vocab_books ?? []).length > 0 && (
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                        Vocabulary books
-                        <span className="ml-1 text-[rgba(255,255,255,0.15)]">(mounted for this mode, in addition to Global books)</span>
+                        {t("modes.vocab-books-label")}
+                        <span className="ml-1 text-[rgba(255,255,255,0.15)]">{t("modes.vocab-books-hint")}</span>
                       </label>
                       <div className="flex flex-wrap gap-1.5">
                         {(config.vocab_books ?? []).map((b) => {
@@ -579,8 +581,8 @@ export default function ModesTab({
                   )}
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      Temperature
-                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">(0 = deterministic, higher = more creative)</span>
+                      {t("modes.temperature")}
+                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">{t("modes.temp-hint")}</span>
                     </label>
                     <input
                       type="number" min={0} max={1} step={0.1}
@@ -599,7 +601,7 @@ export default function ModesTab({
             <div className="flex items-center gap-2">
               <div className="rounded-full flex-shrink-0" style={{ width: 6, height: 6, backgroundColor: llmEnabled ? "#86efac" : "rgba(255,255,255,0.1)" }} />
               <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-                Step 2: LLM Processing
+                {t("modes.step.llm")}
               </div>
               <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
                 <input
@@ -616,13 +618,13 @@ export default function ModesTab({
                   }}
                   className="accent-[#fbbf24]"
                 />
-                <span className="text-[10px] text-[rgba(255,255,255,0.35)]">Enable</span>
+                <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.enable")}</span>
               </label>
             </div>
             {llmEnabled && <div className="flex flex-col gap-2 pl-4">
               {/* Basic: model + prompt */}
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">Model</label>
+                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.model")}</label>
                 <ModelSelector
                   capKey="llm"
                   value={editingMode.model}
@@ -632,11 +634,11 @@ export default function ModesTab({
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">System prompt</label>
+                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.system-prompt")}</label>
                 <textarea
                   value={editingMode.system}
                   onChange={(e) => setEditingMode({ ...editingMode, system: e.target.value })}
-                  placeholder="You are a helpful assistant that..."
+                  placeholder={t("modes.system-ph")}
                   rows={3}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] leading-relaxed focus:outline-none focus:border-[rgba(245,158,11,0.3)] resize-none font-mono"
                 />
@@ -647,14 +649,14 @@ export default function ModesTab({
                 className="text-[9px] text-[rgba(255,255,255,0.2)] hover:text-[rgba(255,255,255,0.4)] transition-colors self-start flex items-center gap-1"
               >
                 <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform duration-200 ${showLlmAdvanced ? "rotate-90" : ""}`}><path d="M9 18l6-6-6-6"/></svg>
-                Advanced
+                {t("modes.advanced")}
               </button>
               {showLlmAdvanced && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-[rgba(255,255,255,0.03)]">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
-                      User template
-                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">(use {"{text}"} for transcribed speech)</span>
+                      {t("modes.user-template")}
+                      <span className="ml-1 text-[rgba(255,255,255,0.15)]">{t("modes.user-template-hint")}</span>
                     </label>
                     <input
                       type="text"
@@ -666,7 +668,7 @@ export default function ModesTab({
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">Temperature</label>
+                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.temperature")}</label>
                       <input
                         type="number" min={0} max={2} step={0.1}
                         value={editingMode.temperature}
@@ -675,7 +677,7 @@ export default function ModesTab({
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">Max tokens</label>
+                      <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.max-tokens")}</label>
                       <input
                         type="number" min={1} max={128000} step={256}
                         value={editingMode.max_tokens}
@@ -693,27 +695,27 @@ export default function ModesTab({
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <div className="rounded-full flex-shrink-0" style={{ width: 6, height: 6, backgroundColor: "rgba(255,255,255,0.3)" }} />
-              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">Output</div>
+              <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("modes.output")}</div>
             </div>
             <div className="flex flex-col gap-2 pl-4">
               {/* Basic: checkboxes */}
               <div className="flex gap-4 text-[12px] text-[rgba(255,255,255,0.5)]">
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input type="checkbox" checked={editingMode.auto_paste} onChange={(e) => setEditingMode({ ...editingMode, auto_paste: e.target.checked })} className="accent-[#fbbf24]" />
-                  Insert at cursor
+                  {t("modes.insert-cursor")}
                 </label>
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input type="checkbox" checked={editingMode.auto_press_enter} onChange={(e) => setEditingMode({ ...editingMode, auto_press_enter: e.target.checked })} className="accent-[#fbbf24]" />
-                  Press Enter after
+                  {t("modes.press-enter-after")}
                 </label>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">Output language</label>
+                <label className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("modes.output-language")}</label>
                 <input
                   type="text"
                   value={editingMode.output_language}
                   onChange={(e) => setEditingMode({ ...editingMode, output_language: e.target.value })}
-                  placeholder="auto (follow input language)"
+                  placeholder={t("modes.output-lang-ph")}
                   className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
                 />
               </div>
@@ -726,13 +728,13 @@ export default function ModesTab({
               onClick={() => handleSaveModeLocal(editingMode)}
               className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity"
             >
-              {editingMode.id && modes.some((m) => m.id === editingMode.id) ? "Save Changes" : "Create Mode"}
+              {editingMode.id && modes.some((m) => m.id === editingMode.id) ? t("modes.save-changes") : t("modes.create-mode")}
             </button>
             <button
               onClick={() => { setEditingMode(null); setEditingModeIsBuiltin(false); }}
               className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         </div>

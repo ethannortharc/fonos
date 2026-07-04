@@ -133,7 +133,7 @@ function RuleRow({
       <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)] shrink-0">
         <button
           onClick={() => onPatch({ kind: isRegex ? "literal" : "regex" })}
-          title={isRegex ? "Regex pattern" : "Literal text (click for regex)"}
+          title={isRegex ? t("vocab.regex-title") : t("vocab.literal-title")}
           className={[
             "px-2 py-1.5 text-[9px] font-mono transition-colors",
             isRegex
@@ -145,7 +145,7 @@ function RuleRow({
         </button>
         <button
           onClick={() => onPatch({ case_insensitive: !rule.case_insensitive })}
-          title={rule.case_insensitive ? "Case-insensitive (click to match case)" : "Case-sensitive"}
+          title={rule.case_insensitive ? t("vocab.case-insensitive-title") : t("vocab.case-sensitive-title")}
           className={[
             "px-2 py-1.5 text-[9px] font-mono border-l border-[rgba(255,255,255,0.06)] transition-colors",
             rule.case_insensitive
@@ -158,7 +158,7 @@ function RuleRow({
       </div>
       <button
         onClick={onDelete}
-        title="Delete rule"
+        title={t("vocab.delete-rule")}
         className="w-5 h-5 rounded flex items-center justify-center text-[12px] leading-none text-[rgba(255,255,255,0.25)] opacity-0 group-hover:opacity-100 hover:text-[#ef4444] transition-all shrink-0"
       >
         ×
@@ -238,7 +238,7 @@ export default function VocabTab({
                   ].join(" ")}
                 />
                 <span className="text-[11.5px] font-medium text-[#fafaf9] truncate">
-                  {book.name || "(unnamed)"}
+                  {book.name || t("vocab.unnamed")}
                 </span>
                 {isGlobal && (
                   <span className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24] shrink-0">
@@ -300,7 +300,7 @@ export default function VocabTab({
                     </button>
                     <button
                       onClick={() => removeBook(book.id)}
-                      title="Delete book"
+                      title={t("vocab.delete-book")}
                       className="px-2 py-1.5 rounded-lg text-[13px] leading-none text-[rgba(255,255,255,0.3)] hover:text-[#ef4444] transition-colors"
                     >
                       ×

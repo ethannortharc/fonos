@@ -151,7 +151,7 @@ export default function App() {
           onClick={() => setCollapsed(!collapsed)}
           className="absolute w-[20px] h-[20px] rounded-[5px] flex items-center justify-center hover:bg-[rgba(255,255,255,0.07)] transition-colors"
           style={{ stroke: "#ffffff", top: "6px", left: "88px" }}
-          title={collapsed ? "Show sidebar" : "Hide sidebar"}
+          title={collapsed ? t("app.show-sidebar") : t("app.hide-sidebar")}
         >
           {/* Opaque stroke + wrapper alpha: overlapping strokes inside the
               glyph composite once, so joints don't render brighter. */}

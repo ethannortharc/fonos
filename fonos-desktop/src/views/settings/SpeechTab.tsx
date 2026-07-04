@@ -160,7 +160,7 @@ function VoicePicker({
       <button
         onClick={preview}
         disabled={previewing}
-        title="Synthesize a short sample with this voice"
+        title={t("speech.preview-title")}
         className="text-[9px] px-2.5 py-1.5 rounded-md bg-[rgba(251,191,36,0.08)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.16)] disabled:opacity-40 transition-colors shrink-0"
       >
         {previewing ? t("common.playing") : t("common.preview")}
@@ -246,7 +246,7 @@ export default function SpeechTab({
             onChange={(e) => onSave({ listen_voice_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default TTS profile</option>
+            <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -299,7 +299,7 @@ export default function SpeechTab({
             onChange={(e) => onSave({ sts_llm_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default LLM profile</option>
+            <option value="">{t("speech.default-llm-profile")}</option>
             {llmProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
@@ -313,7 +313,7 @@ export default function SpeechTab({
             onChange={(e) => onSave({ sts_voice_profile: e.target.value })}
             className={`${control} w-44`}
           >
-            <option value="">Default TTS profile</option>
+            <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}

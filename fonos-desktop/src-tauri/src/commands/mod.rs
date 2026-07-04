@@ -1,6 +1,7 @@
 //! Tauri command handlers exposed to the frontend via invoke().
 
 pub mod agent;
+pub mod call;
 pub mod config;
 pub mod dictation;
 pub mod doctor;
@@ -207,4 +208,7 @@ pub struct AppState {
     pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
     /// STS conversation memory (issue #24), reset when the app restarts.
     pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
+    /// Whether a hands-free "call mode" loop is running (issue #24). The loop
+    /// task polls this flag for cooperative cancellation; `call_stop` clears it.
+    pub call_active: Arc<std::sync::atomic::AtomicBool>,
 }

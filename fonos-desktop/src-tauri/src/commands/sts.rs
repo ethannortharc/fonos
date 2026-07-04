@@ -90,6 +90,20 @@ async fn run_sts_turn_inner(
             }
         };
 
+    execute_turn(&app, result.text, persona_override, &sink).await
+}
+
+/// Resolve the configured conversation pipeline (vocab corrections → persona
+/// LLM → voice) and run one turn for an already-transcribed utterance. Shared
+/// by the hold-to-talk path (page + hotkey, via [`run_sts_turn_inner`]) and the
+/// hands-free call loop, so the stage chain and config resolution live in one
+/// place. Config/profile errors are surfaced through `sink` before returning.
+pub(crate) async fn execute_turn(
+    app: &tauri::AppHandle,
+    transcript: String,
+    persona_override: Option<String>,
+    sink: &dyn fonos_core::sts::TurnSink,
+) -> Result<String, String> {
     let state: tauri::State<'_, AppState> = app.state();
 
     let (persona, llm_profile, voice_profile, voice, max_turns, global_books, books) = {
@@ -117,13 +131,11 @@ async fn run_sts_turn_inner(
     };
     if llm.base_url.trim().is_empty() {
         let e = "No LLM profile configured — pick one in Settings > Models.".to_string();
-        use fonos_core::sts::TurnSink;
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));
         return Err(e);
     }
     if tts_svc.base_url.trim().is_empty() {
         let e = "No TTS profile configured — pick one in Settings > Speech.".to_string();
-        use fonos_core::sts::TurnSink;
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));
         return Err(e);
     }
@@ -153,7 +165,7 @@ async fn run_sts_turn_inner(
 
     let mut session = state.sts_session.lock().await;
     session.max_turns = max_turns;
-    fonos_core::sts::run_turn(&mut session, result.text, &stages, &tts, &audio, &sink).await
+    fonos_core::sts::run_turn(&mut session, transcript, &stages, &tts, &audio, sink).await
 }
 
 /// Clear the conversation memory.

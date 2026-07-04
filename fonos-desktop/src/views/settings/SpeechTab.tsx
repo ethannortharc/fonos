@@ -343,7 +343,47 @@ export default function SpeechTab({
             className={`${control} w-20`}
           />
         </Row>
+        <Row label={t("speech.sensitivity")} hint={t("speech.sensitivity.hint")}>
+          <SensitivityPicker
+            value={config.call_vad_sensitivity ?? 0.5}
+            onChange={(v) => onSave({ call_vad_sensitivity: v })}
+          />
+        </Row>
       </div>
+    </div>
+  );
+}
+
+/** Three-step Low / Medium / High selector for the call-mode VAD sensitivity
+ *  (0.0–1.0). Buckets map Low → 0.25, Medium → 0.5, High → 0.8; the button
+ *  nearest the stored value is highlighted. */
+function SensitivityPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const steps = [
+    { val: 0.25, label: t("speech.sensitivity.low") },
+    { val: 0.5, label: t("speech.sensitivity.med") },
+    { val: 0.8, label: t("speech.sensitivity.high") },
+  ];
+  const activeIdx = steps.reduce(
+    (best, s, i) => (Math.abs(s.val - value) < Math.abs(steps[best].val - value) ? i : best),
+    0,
+  );
+  return (
+    <div className="inline-flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)]">
+      {steps.map((s, i) => (
+        <button
+          key={s.val}
+          onClick={() => onChange(s.val)}
+          className={`px-3 py-1.5 text-[10.5px] transition-colors ${
+            i > 0 ? "border-l border-[rgba(255,255,255,0.06)]" : ""
+          } ${
+            i === activeIdx
+              ? "bg-[rgba(251,191,36,0.14)] text-[#fbbf24]"
+              : "bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
+          }`}
+        >
+          {s.label}
+        </button>
+      ))}
     </div>
   );
 }

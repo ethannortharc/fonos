@@ -313,11 +313,31 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
     Ok(())
 }
 
+/// Silently clear the recording flag. Used by the hands-free call loop, which
+/// drives capture directly (draining chunks for VAD) instead of going through
+/// `stop_recording`, so it needs to reset the flag without the "was stuck"
+/// warning `force_reset_recording` prints.
+pub(crate) fn clear_recording_flag() {
+    IS_RECORDING.store(false, Ordering::SeqCst);
+}
+
+/// A zeroed [`SttResult`] (empty transcript). Returned by the no-op stop paths.
+fn empty_stt_result() -> SttResult {
+    SttResult {
+        text: String::new(),
+        audio_path: String::new(),
+        latency_ms: 0,
+        duration_secs: 0.0,
+        stt_engine: String::new(),
+        stt_model: String::new(),
+        noise_removed_pct: 0.0,
+        gain_db: 0.0,
+    }
+}
+
 /// Stop recording, save WAV, transcribe via HTTP API, inject text at cursor.
 #[tauri::command]
 pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppState>, mode_override: Option<String>) -> Result<SttResult, String> {
-    let stop_time = std::time::Instant::now();
-
     // 1. Stop mic and drain all samples. The IS_RECORDING flag is flipped under
     //    the same lock start_recording uses, so a concurrent start/stop pair
     //    can't interleave (see the invariant note in start_recording).
@@ -325,16 +345,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
         if !IS_RECORDING.swap(false, Ordering::SeqCst) {
             // Not recording — nothing to stop.
-            return Ok(SttResult {
-                text: String::new(),
-                audio_path: String::new(),
-                latency_ms: 0,
-                duration_secs: 0.0,
-                stt_engine: String::new(),
-                stt_model: String::new(),
-                noise_removed_pct: 0.0,
-                gain_db: 0.0,
-            });
+            return Ok(empty_stt_result());
         }
         match guard.as_mut() {
             Some(capture) => {
@@ -349,6 +360,23 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         }
     };
 
+    transcribe_samples(&app, state.inner(), all_samples, mode_override).await
+}
+
+/// Preprocess, save, transcribe (Apple / Whisper-HTTP / chat) and record a set
+/// of already-captured 16 kHz mono i16 samples, returning the transcript and
+/// metrics. Shared by [`stop_recording`] (which drains the live capture first)
+/// and the hands-free call loop (which accumulates chunks itself while running
+/// VAD), so both take exactly the same STT + vocab + stats + storage path.
+/// `mode_override` selects the STT profile and gates the float-pill lifecycle
+/// just as before ("sts-page" and "agent" stay silent).
+pub(crate) async fn transcribe_samples(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    all_samples: Vec<i16>,
+    mode_override: Option<String>,
+) -> Result<SttResult, String> {
+    let stop_time = std::time::Instant::now();
     let recording_duration = all_samples.len() as f64 / 16000.0;
 
     // Immediately signal the float pill to switch from recording → processing.
@@ -359,16 +387,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
     }
 
     if all_samples.is_empty() {
-        return Ok(SttResult {
-            text: String::new(),
-            audio_path: String::new(),
-            latency_ms: 0,
-            duration_secs: 0.0,
-            stt_engine: String::new(),
-            stt_model: String::new(),
-            noise_removed_pct: 0.0,
-            gain_db: 0.0,
-        });
+        return Ok(empty_stt_result());
     }
 
 
@@ -485,7 +504,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 // state; the caller (hotkey / Dictation view) also gets the Err.
                 let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
                 if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
-                    crate::error_surface::emit_float_error(&app, &msg);
+                    crate::error_surface::emit_float_error(app, &msg);
                 } else {
                     eprintln!("fonos: {msg}");
                 }
@@ -532,7 +551,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             if let Err(e) = inject_text(&transcript, &inj_cfg) {
                 delivered = false;
                 let msg = format!("Injection failed: {e}");
-                crate::error_surface::emit_float_error(&app, &msg);
+                crate::error_surface::emit_float_error(app, &msg);
             }
             raw_e2e_done = delivered;
         }

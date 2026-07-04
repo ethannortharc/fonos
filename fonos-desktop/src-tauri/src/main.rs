@@ -356,6 +356,7 @@ fn main() {
         note_target: Arc::new(Mutex::new(None)),
         agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
         sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
+        call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     // `mut` is only exercised on Linux (the global-shortcut plugin block below);
@@ -400,6 +401,8 @@ fn main() {
             commands::sts::sts_page_start,
             commands::sts::sts_page_stop,
             commands::sts::get_sts_history,
+            commands::call::call_start,
+            commands::call::call_stop,
             commands::tts::list_model_voices,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
@@ -1265,6 +1268,13 @@ fn main() {
                             "sts" => {
                                 // Hold-to-talk conversation turn (issue #24):
                                 // key-down records, key-up transcribes → chat → speaks.
+                                // Disabled entirely while a hands-free call owns the mic.
+                                {
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    if commands::call::is_call_active(&state) {
+                                        return;
+                                    }
+                                }
                                 if is_down {
                                     // Never start a second recording while a turn is
                                     // still thinking/speaking or another recording is

@@ -28,6 +28,7 @@ export interface AppConfig {
   sts_voice_profile?: string;
   sts_voice?: string;
   sts_max_turns?: number;
+  call_vad_sensitivity?: number;
   stt_language: string;
   model_profiles: ModelProfile[];
   stt_profile: string;

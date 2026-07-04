@@ -166,6 +166,10 @@ pub struct AppConfig {
     pub sts_voice: String,
     /// Conversation memory: max user/assistant turn pairs kept.
     pub sts_max_turns: usize,
+    /// Call-mode voice-activity sensitivity (0.0–1.0). Higher detects speech
+    /// more eagerly (ends turns sooner); lower waits for louder, clearer
+    /// speech. Default `0.5`.
+    pub call_vad_sensitivity: f32,
 
     // ── Custom vocabulary ────────────────────────────────────────────────
 
@@ -236,6 +240,7 @@ impl Default for AppConfig {
             sts_voice_profile: String::new(),
             sts_voice: "default".to_string(),
             sts_max_turns: 8,
+            call_vad_sensitivity: 0.5,
             transform_mode: "polish".to_string(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }

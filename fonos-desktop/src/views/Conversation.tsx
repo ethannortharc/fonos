@@ -62,11 +62,12 @@ export default function Conversation() {
 
   // Live turn events from the Rust bridge.
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        unlisten = await listen<{ kind: string; text: string }>("sts:event", (e) => {
+        const un = await listen<{ kind: string; text: string }>("sts:event", (e) => {
           const { kind, text } = e.payload;
           if (kind === "transcript") {
             setMessages((m) => [...m, { role: "user", text }]);
@@ -82,11 +83,19 @@ export default function Conversation() {
             setTurnState("idle");
           }
         });
+        // The effect may have been cleaned up while `listen` was resolving
+        // (StrictMode double-mount, tab switches) — drop the subscription
+        // immediately instead of leaking a duplicate listener.
+        if (disposed) un();
+        else unlisten = un;
       } catch {
         // demo mode: no event bridge
       }
     })();
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   // Auto-scroll on new content.

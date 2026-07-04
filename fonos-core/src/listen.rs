@@ -151,16 +151,25 @@ pub fn split_for_tts(text: &str, max_chars: usize) -> Vec<String> {
 }
 
 /// Split a reply into speech clauses for paced synthesis: boundaries at
-/// sentence enders AND commas, a deliberately small first chunk (fast
-/// time-to-first-sound), larger ones after. With generation slower than
-/// real-time, playback gaps then land between clauses — natural pauses —
-/// never mid-word.
+/// sentence enders AND commas. Chunk targets are graded — a tiny first chunk
+/// (speech starts at the first comma, minimizing time-to-first-sound on
+/// slower-than-real-time engines), a small second, larger after — so early
+/// playback buys synthesis time for the rest. Chunks close at clause
+/// boundaries; only pathological boundary-less text is force-cut.
 pub fn split_for_speech(text: &str) -> Vec<String> {
     const BOUNDARIES: &[char] = &[
         '。', '！', '？', '．', '.', '!', '?', '\n', '；', ';', '，', ',', '、', '：', ':',
     ];
-    const FIRST_BUDGET: usize = 24;
-    const REST_BUDGET: usize = 100;
+    /// Close the chunk at the first clause boundary past this many chars.
+    fn target(chunk_idx: usize) -> usize {
+        match chunk_idx {
+            0 => 10,
+            1 => 40,
+            _ => 90,
+        }
+    }
+    /// Boundary-less safety cap: force-cut runs longer than this.
+    const HARD_CAP: usize = 160;
 
     // Cut into clauses (keeping their trailing delimiter).
     let mut clauses: Vec<String> = Vec::new();
@@ -179,28 +188,34 @@ pub fn split_for_speech(text: &str) -> Vec<String> {
         clauses.push(cur);
     }
 
-    // Greedy pack under per-chunk budgets; force-cut single overlong clauses.
+    // Pack clauses until the current chunk reaches its target size.
     let mut chunks: Vec<String> = Vec::new();
     let mut acc = String::new();
     for clause in clauses {
-        let budget = if chunks.is_empty() { FIRST_BUDGET } else { REST_BUDGET };
-        if !acc.is_empty() && acc.chars().count() + clause.chars().count() > budget {
-            chunks.push(std::mem::take(&mut acc).trim().to_string());
-        }
         acc.push_str(&clause);
-        let budget = if chunks.is_empty() { FIRST_BUDGET } else { REST_BUDGET };
-        while acc.chars().count() > budget {
-            let cut: String = acc.chars().take(budget).collect();
-            let rest: String = acc.chars().skip(budget).collect();
-            chunks.push(cut.trim().to_string());
-            acc = rest;
+        if acc.chars().count() >= target(chunks.len()) {
+            chunks.push(std::mem::take(&mut acc).trim().to_string());
         }
     }
     if !acc.trim().is_empty() {
         chunks.push(acc.trim().to_string());
     }
-    chunks.retain(|c| !c.is_empty());
-    chunks
+
+    // Safety: force-cut anything still over the hard cap.
+    let mut out = Vec::new();
+    for chunk in chunks {
+        let mut rest = chunk;
+        while rest.chars().count() > HARD_CAP {
+            let cut: String = rest.chars().take(HARD_CAP).collect();
+            rest = rest.chars().skip(HARD_CAP).collect();
+            out.push(cut.trim().to_string());
+        }
+        if !rest.trim().is_empty() {
+            out.push(rest.trim().to_string());
+        }
+    }
+    out.retain(|c| !c.is_empty());
+    out
 }
 
 /// Concatenate several 16-bit PCM WAV files into one.
@@ -360,7 +375,7 @@ mod tests {
         let text = "你好呀，今天天气真不错。我们出去散散步怎么样？顺便可以买一杯咖啡。";
         let chunks = split_for_speech(text);
         assert!(chunks.len() >= 2);
-        assert!(chunks[0].chars().count() <= 24, "first chunk small: {:?}", chunks[0]);
+        assert!(chunks[0].chars().count() <= 14, "first chunk small: {:?}", chunks[0]);
         assert_eq!(chunks.join(""), text);
     }
 
@@ -371,9 +386,10 @@ mod tests {
 
     #[test]
     fn speech_split_force_cuts_no_boundary_text() {
-        let long = "x".repeat(300);
+        let long = "x".repeat(400);
         let chunks = split_for_speech(&long);
-        assert!(chunks.len() >= 3);
+        assert!(chunks.len() >= 2);
+        assert!(chunks.iter().all(|c| c.chars().count() <= 160));
         assert_eq!(chunks.join(""), long);
     }
 

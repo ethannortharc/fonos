@@ -297,9 +297,11 @@ All shortcuts are remappable in **Settings -> Hotkeys**.
 |---|---|
 | [`fonos-desktop/`](fonos-desktop) | Tauri desktop app: Rust backend plus React / TypeScript UI. |
 | [`fonos-core/`](fonos-core) | Platform-independent Rust core: pipelines, clients, vocab, storage, stats, scenarios, doctor, Listen, and Talk. |
-| [`fonos-ios/`](fonos-ios) | SwiftUI companion app experiments: app, keyboard extension, widget, and App Intents. |
 | [`assets/`](assets) | README hero, screenshots, and demo media. |
 | [`experiments/`](experiments) | Exploratory prototypes such as desktop companion experiments. |
+
+The iOS companion app (SwiftUI app, dictation keyboard, widget, App Intents)
+lives in its own repository: [fonos-ios](https://github.com/ethannortharc/fonos-ios).
 
 ## Tech Stack
 

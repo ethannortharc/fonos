@@ -100,7 +100,11 @@ pub async fn call_stop(state: tauri::State<'_, AppState>) -> Result<(), String> 
 /// stay hot while the reply plays without the assistant's own voice bleeding in
 /// and self-triggering the barge detector:
 /// - macOS: the `fonos-voice-capture` helper (AVAudioEngine VPIO — AEC + noise
-///   suppression + AGC). Self-owned; never touches the shared cpal capture.
+///   suppression + AGC), running FULL-DUPLEX: the reply's TTS also plays
+///   through the helper's engine, because VPIO cancels only its own engine's
+///   output — TTS played via rodio would leave the canceller with a silent
+///   reference and cancel nothing. Self-owned; never touches the shared cpal
+///   capture or the rodio sink.
 /// - Linux: `module-echo-cancel` routed via [`crate::audio::linux_aec`], with a
 ///   plain cpal capture reading the (now-default) ec source.
 /// - Fallback: the shared cpal capture, armed per phase via `start_recording`,
@@ -156,6 +160,57 @@ impl CallAudio {
     fn drain_stale(&self, shared: &Arc<Mutex<Option<AudioCapture>>>) {
         while self.take_chunk(VAD_CHUNK_MS, shared).is_some() {}
     }
+
+    /// Whether the assistant's reply is audible right now. macOS voice mode
+    /// plays TTS through the helper (rodio stays silent), so the signal comes
+    /// from the helper's playback state; everywhere else it is the rodio queue.
+    fn is_reply_playing(&self, playback: &Arc<Mutex<Option<AudioPlayback>>>) -> bool {
+        #[cfg(target_os = "macos")]
+        if let CallAudio::MacVoice(v) = self {
+            return v.is_playing();
+        }
+        playback
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|p| !p.queue_empty()))
+            .unwrap_or(false)
+    }
+
+    /// Cut the reply off NOW — barge interrupt / hangup. macOS voice mode
+    /// flushes the helper's playback queue (the zero-length control frame);
+    /// other paths stop the rodio sink as before.
+    fn cut_reply_playback(&self, playback: &Arc<Mutex<Option<AudioPlayback>>>) {
+        #[cfg(target_os = "macos")]
+        if let CallAudio::MacVoice(v) = self {
+            v.flush_playback();
+            return;
+        }
+        if let Ok(g) = playback.lock() {
+            if let Some(p) = g.as_ref() {
+                p.stop();
+            }
+        }
+    }
+}
+
+/// Run one conversation turn for the call loop, routing the spoken reply
+/// through the call's audio source: macOS voice mode plays TTS via the helper
+/// engine (so VPIO's echo canceller sees the true reference), everything else
+/// keeps the default rodio playback + envelope reference.
+async fn run_call_turn(
+    app: &tauri::AppHandle,
+    audio: &CallAudio,
+    transcript: String,
+    bridge: &crate::adapters::TurnEventBridge,
+) -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    if let CallAudio::MacVoice(v) = audio {
+        let out = v.audio_out();
+        return super::sts::execute_turn_with_audio(app, transcript, None, bridge, &out).await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = audio; // only matched on macOS
+    execute_turn(app, transcript, None, bridge).await
 }
 
 /// Pick the call's audio source. With barge-in enabled, try platform system echo
@@ -176,7 +231,21 @@ fn setup_call_audio(
         let mut v = crate::audio::voice_capture::VoiceProcessedCapture::new(device_name);
         return match v.start() {
             Ok(()) => {
+                // The helper prints READY once its engine is actually running;
+                // a spawn that then failed VPIO/engine setup falls back here
+                // instead of leaving the call deaf.
+                if !v.wait_ready(Duration::from_secs(5)) {
+                    eprintln!(
+                        "fonos: call AEC unavailable (helper not READY); \
+                         falling back to cpal + envelope gating"
+                    );
+                    return CallAudio::Fallback;
+                }
                 eprintln!("fonos: call AEC engaged — macOS voice-processing capture (VPIO)");
+                eprintln!(
+                    "fonos: call TTS — helper playback engaged (full-duplex; \
+                     VPIO gets the true echo reference)"
+                );
                 CallAudio::MacVoice(v)
             }
             Err(e) => {
@@ -381,7 +450,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // Run the reply and a barge monitor concurrently. The turn future
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
-            let turn_fut = execute_turn(&app, transcript, None, &bridge);
+            let turn_fut = run_call_turn(&app, &audio, transcript, &bridge);
             let barge_fut = barge_monitor(&app, &audio, &capture, &playback, &active);
             tokio::pin!(turn_fut);
             tokio::pin!(barge_fut);
@@ -398,15 +467,15 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                 barged = &mut barge_fut => {
                     match barged {
                         Some(carry) => {
-                            // Cut the reply off: stop playback now, and let the
-                            // turn future drop (below) — that cancels any
-                            // in-flight synthesis HTTP. NOTE: because we abort
-                            // mid-turn, run_turn's end-of-turn session-history
-                            // push never runs, so the truncated reply is not
-                            // remembered — intended, the user cut it off.
-                            if let Ok(g) = playback.lock() {
-                                if let Some(p) = g.as_ref() { p.stop(); }
-                            }
+                            // Cut the reply off: stop playback now (helper
+                            // flush in macOS voice mode, rodio stop elsewhere),
+                            // and let the turn future drop (below) — that
+                            // cancels any in-flight synthesis HTTP. NOTE:
+                            // because we abort mid-turn, run_turn's end-of-turn
+                            // session-history push never runs, so the truncated
+                            // reply is not remembered — intended, the user cut
+                            // it off.
+                            audio.cut_reply_playback(&playback);
                             emit_call(&app, "barge", "");
                             // Mic stays live: carry the interrupting words into
                             // the next listen, which starts immediately.
@@ -436,8 +505,12 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 
     // ── CLEANUP ──
     // Fallback path: stop the shared cpal capture (no-op in AEC mode, where it
-    // was never armed). Then stop playback and tear down the AEC source.
+    // was never armed). Then stop playback — every hangup path (`call_stop`
+    // included; it just flips `active`) funnels through here, so this is also
+    // where macOS voice mode flushes the helper's playback queue — and tear
+    // down the AEC source.
     stop_capture(&capture);
+    audio.cut_reply_playback(&playback);
     if let Ok(g) = playback.lock() {
         if let Some(p) = g.as_ref() {
             p.stop();
@@ -509,12 +582,7 @@ async fn barge_monitor(
         }
         // Drain the ring buffer so no stale pre-playback audio survives.
         audio.drain_stale(capture);
-        let playing = playback
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().map(|p| !p.queue_empty()))
-            .unwrap_or(false);
-        if playing {
+        if audio.is_reply_playing(playback) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
@@ -534,7 +602,11 @@ async fn barge_monitor(
         match chunk {
             Some(samples) => {
                 // Mic energy for this chunk, and the live playback reference it
-                // is gated against (0.0 when the queue has drained).
+                // is gated against (0.0 when the queue has drained). macOS
+                // voice mode plays TTS through the helper, so the rodio
+                // reference reads 0 there — intended: with true AEC the
+                // residual bleed is tiny and the detector's absolute floor
+                // (its ref_rms == 0 fallback) governs.
                 let mic_rms = rms(&samples);
                 let ref_rms = playback
                     .lock()

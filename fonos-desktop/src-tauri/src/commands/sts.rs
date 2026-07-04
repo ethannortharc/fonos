@@ -107,11 +107,32 @@ async fn run_sts_turn_inner(
 /// by the hold-to-talk path (page + hotkey, via [`run_sts_turn_inner`]) and the
 /// hands-free call loop, so the stage chain and config resolution live in one
 /// place. Config/profile errors are surfaced through `sink` before returning.
+///
+/// Plays through the default speaker path ([`crate::adapters::PlaybackAudioOut`]
+/// on the shared rodio playback); callers that need the reply routed elsewhere
+/// (call mode's voice-processing helper) use [`execute_turn_with_audio`].
 pub(crate) async fn execute_turn(
     app: &tauri::AppHandle,
     transcript: String,
     persona_override: Option<String>,
     sink: &dyn fonos_core::sts::TurnSink,
+) -> Result<String, String> {
+    let state: tauri::State<'_, AppState> = app.state();
+    let audio = crate::adapters::PlaybackAudioOut::new(state.audio_playback.clone());
+    execute_turn_with_audio(app, transcript, persona_override, sink, &audio).await
+}
+
+/// [`execute_turn`] with a caller-supplied speaker port. Call mode on macOS
+/// passes the voice-processing helper's [`AudioOut`] so the TTS plays through
+/// the helper's engine — giving Apple's echo canceller its true reference.
+///
+/// [`AudioOut`]: fonos_core::sts::AudioOut
+pub(crate) async fn execute_turn_with_audio(
+    app: &tauri::AppHandle,
+    transcript: String,
+    persona_override: Option<String>,
+    sink: &dyn fonos_core::sts::TurnSink,
+    audio: &dyn fonos_core::sts::AudioOut,
 ) -> Result<String, String> {
     let state: tauri::State<'_, AppState> = app.state();
 
@@ -170,11 +191,10 @@ pub(crate) async fn execute_turn(
         voice: super::tts::resolve_voice(&voice),
         speed: 1.0,
     };
-    let audio = crate::adapters::PlaybackAudioOut::new(state.audio_playback.clone());
 
     let mut session = state.sts_session.lock().await;
     session.max_turns = max_turns;
-    fonos_core::sts::run_turn(&mut session, transcript, &stages, &tts, &audio, sink).await
+    fonos_core::sts::run_turn(&mut session, transcript, &stages, &tts, audio, sink).await
 }
 
 /// Clear the conversation memory.

@@ -84,12 +84,21 @@ pub fn update_entry(
 
 /// Delete an entry by its row ID.
 #[tauri::command(rename_all = "snake_case")]
-pub fn delete_entry(
-    state: tauri::State<'_, AppState>,
-    id: i64,
-) -> Result<(), String> {
+pub fn delete_entry(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    storage::delete_entry(&conn, id).map_err(|e| e.to_string())
+    // Listen items own an audio file under the app data dir — remove it with
+    // the row (only ever paths inside our own listen/ directory).
+    let audio_ref = storage::get_entry(&conn, id)
+        .ok()
+        .and_then(|e| e.audio_ref);
+    storage::delete_entry(&conn, id).map_err(|e| e.to_string())?;
+    if let Some(path) = audio_ref {
+        let listen_dir = fonos_core::config::AppConfig::config_dir().join("listen");
+        if std::path::Path::new(&path).starts_with(&listen_dir) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    Ok(())
 }
 
 // ─── Container commands ───────────────────────────────────────────────────────

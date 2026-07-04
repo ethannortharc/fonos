@@ -8,7 +8,10 @@ use super::AppState;
 
 /// Resolve voice: if it's a local cloned voice, return the absolute file path
 /// to the reference audio. The OMLX server accepts file paths in the "voice" field.
-fn resolve_voice(voice: &str) -> String {
+/// Map a voice identifier to what the TTS server expects: cloned voices
+/// (from the voice store) resolve to their reference-audio path; anything
+/// else passes through as a named model speaker.
+pub(crate) fn resolve_voice(voice: &str) -> String {
     if voice == "default" || voice.is_empty() {
         return voice.to_string();
     }
@@ -277,4 +280,23 @@ pub fn resume_playback(state: tauri::State<'_, AppState>) -> Result<(), String> 
         playback.resume();
     }
     Ok(())
+}
+
+/// Built-in speaker names for a TTS profile's model, from the server's
+/// voices endpoint (OMLX extension). Empty when the profile is unset or the
+/// server has no such endpoint — the UI falls back to curated lists.
+#[tauri::command]
+pub async fn list_model_voices(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+) -> Result<Vec<String>, String> {
+    let svc = if profile_id.is_empty() {
+        super::get_service_config(&state, "tts")
+    } else {
+        super::get_service_config_for_profile(&state, &profile_id)
+    };
+    if svc.base_url.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(fonos_core::tts::list_model_voices(&svc).await.unwrap_or_default())
 }

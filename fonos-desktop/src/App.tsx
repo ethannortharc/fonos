@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Dictation from "./views/Dictation";
-import Voice from "./views/Voice";
+import Conversation from "./views/Conversation";
 import Stats from "./views/Stats";
 import Settings from "./views/Settings";
 import History from "./views/History";
@@ -34,12 +34,13 @@ const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   },
   {
     id: "voice",
-    label: "Voice",
+    label: "Talk",
     icon: (
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+        <line x1="9" y1="10" x2="9" y2="13" />
+        <line x1="12" y1="8" x2="12" y2="15" />
+        <line x1="15" y1="10" x2="15" y2="13" />
       </svg>
     ),
   },
@@ -233,7 +234,7 @@ export default function App() {
         {/* Content area */}
         <div className="flex-1 overflow-hidden bg-[#1a1917]">
           {activeTab === "dictation" && <Dictation />}
-          {activeTab === "voice" && <Voice />}
+          {activeTab === "voice" && <Conversation />}
           {activeTab === "stats" && <Stats />}
           {activeTab === "settings" && <Settings />}
           {activeTab === "history" && <History preset={historyPreset} />}

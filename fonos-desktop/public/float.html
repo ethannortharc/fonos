@@ -328,7 +328,13 @@ function openSettings(){
 
 function startRec(){
   if(isRec)return;isRec=true;closeMenu();clearErr();
-  document.getElementById('pill').classList.add('recording');
+  var p=document.getElementById('pill');
+  // A new cycle can begin while a previous one is still showing (success
+  // revert pending, STS turn still speaking) — stale state classes left on
+  // the pill make the panes overlap and the layout collapse into a bare
+  // rectangle. Recording always starts from a clean slate.
+  p.classList.remove('processing','success','error');
+  p.classList.add('recording');
   document.getElementById('rec-dur').textContent='0s';
   let t0=Date.now();
   if(durTm)clearInterval(durTm);

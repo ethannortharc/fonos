@@ -17,6 +17,16 @@ export interface AppConfig {
   audio_output_device: string;
   show_floating_indicator: boolean;
   warmup_enabled?: boolean;
+  hotkey_listen?: string;
+  listen_mode?: string;
+  listen_voice_profile?: string;
+  listen_voice?: string;
+  hotkey_sts?: string;
+  sts_persona?: string;
+  sts_llm_profile?: string;
+  sts_voice_profile?: string;
+  sts_voice?: string;
+  sts_max_turns?: number;
   stt_language: string;
   model_profiles: ModelProfile[];
   stt_profile: string;

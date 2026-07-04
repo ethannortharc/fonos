@@ -349,3 +349,25 @@ export async function deleteCustomSkill(id: string): Promise<void> {
 export async function testSkill(id: string, input: string): Promise<string> {
   return invoke<string>("test_skill", { id, input });
 }
+
+// ── STS conversation (issue #24) ──────────────────────────────────────────
+
+export async function stsPageStart(): Promise<void> {
+  return invoke<void>("sts_page_start");
+}
+
+export async function stsPageStop(persona?: string): Promise<string> {
+  return invoke<string>("sts_page_stop", { persona: persona ?? null });
+}
+
+export async function getStsHistory(): Promise<[string, string][]> {
+  return invoke<[string, string][]>("get_sts_history");
+}
+
+export async function resetStsSession(): Promise<void> {
+  return invoke<void>("reset_sts_session");
+}
+
+export async function listModelVoices(profileId: string): Promise<string[]> {
+  return invoke<string[]>("list_model_voices", { profileId });
+}

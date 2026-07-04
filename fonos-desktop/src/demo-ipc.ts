@@ -96,8 +96,28 @@ const config = {
   meeting_audio_source: "mic+system",
   // Demo mode is already "set up" — never trigger the first-run wizard.
   has_completed_onboarding: true,
-  vocab_books: [],
-  global_vocab_books: [],
+  vocab_books: [
+    {
+      id: "coding",
+      name: "Coding",
+      enabled: true,
+      terms: ["Kubernetes", "OpenRouter", "Qwen3-ASR", "ScreenCaptureKit"],
+      rules: [
+        { from: "Whisper Flow", to: "Wispr Flow", kind: "literal", case_insensitive: true },
+        { from: "\\bOMLX\\b", to: "OMLX", kind: "regex", case_insensitive: false },
+      ],
+    },
+    {
+      id: "product-launch",
+      name: "Product launch",
+      enabled: true,
+      terms: ["Product Hunt", "Show HN", "local-first", "voice terminal"],
+      rules: [
+        { from: "tap lines", to: "Taplines", kind: "literal", case_insensitive: true },
+      ],
+    },
+  ],
+  global_vocab_books: ["product-launch"],
   saved_scenarios: [
     // Models-only bundle — just the model profiles + role assignments.
     {
@@ -346,9 +366,9 @@ const entries = [
     role: "user",
     mode: "polish",
     raw_text:
-      "Make the readme explain that this is like Whisper Flow but for terminal and notes.",
+      "Make the readme explain that this is like Wispr Flow but for terminal and notes.",
     processed_text:
-      "Fonos is a voice terminal inspired by Whisper Flow and Taplines: hold a hotkey, speak, and send polished text to your cursor, notes, meetings, or an AI agent.",
+      "Fonos is a voice terminal inspired by Wispr Flow and Taplines: hold a hotkey, speak, and send polished text to your cursor, notes, meetings, or an AI agent.",
     container_id: null,
     audio_ref: null,
     metadata: {},
@@ -456,7 +476,7 @@ export function installDemoIpc() {
     switch (cmd) {
       case "plugin:app|version":
       case "plugin:app|get_version":
-        return "0.1.0";
+        return "0.3.0";
       case "play_audio_file":
       case "stop_playback":
         return null;

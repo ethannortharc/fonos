@@ -20,7 +20,8 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": false,
-        "resizable": true
+        "resizable": true,
+        "backgroundColor": "#1a1917"
       },
       {
         "label": "float",

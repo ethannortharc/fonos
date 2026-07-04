@@ -187,18 +187,37 @@ guard let outFormat = AVAudioFormat(
 }
 
 // AVAudioConverter is stateful across calls (it carries resampler state), so we
-// build it once, lazily, from the real post-VPIO input format and reuse it.
+// build it once, lazily, and reuse it. CRITICAL: we convert from a MONO view of
+// channel 0, never from the full multi-channel buffer — multi-mic devices (the
+// owner's "External Microphone" reports 3ch) carry differential channel pairs,
+// and AVAudioConverter's default N→1 downmix averages them into silence
+// (verified: 3ch downmix rms=0.0 while ch0 alone carries full signal).
 var converter: AVAudioConverter?
+var monoInFormat: AVAudioFormat?
 
 input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
     if converter == nil {
-        converter = AVAudioConverter(from: buffer.format, to: outFormat)
+        monoInFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: buffer.format.sampleRate,
+            channels: 1,
+            interleaved: false
+        )
+        if let mf = monoInFormat {
+            converter = AVAudioConverter(from: mf, to: outFormat)
+        }
         logErr("fonos-voice-capture: input \(Int(buffer.format.sampleRate))Hz " +
-               "\(buffer.format.channelCount)ch → 16000Hz mono i16")
+               "\(buffer.format.channelCount)ch (ch0 only) → 16000Hz mono i16")
     }
-    guard let conv = converter else { return }
+    guard let conv = converter, let mf = monoInFormat,
+          let srcCh0 = buffer.floatChannelData?[0],
+          buffer.frameLength > 0,
+          let monoBuf = AVAudioPCMBuffer(pcmFormat: mf, frameCapacity: buffer.frameLength)
+    else { return }
+    monoBuf.frameLength = buffer.frameLength
+    monoBuf.floatChannelData![0].update(from: srcCh0, count: Int(buffer.frameLength))
 
-    let ratio = outFormat.sampleRate / buffer.format.sampleRate
+    let ratio = outFormat.sampleRate / mf.sampleRate
     let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
     guard capacity > 0,
           let outBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity)
@@ -215,7 +234,7 @@ input.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
         }
         supplied = true
         inputStatus.pointee = .haveData
-        return buffer
+        return monoBuf
     }
     if status == .error {
         if let e = convError {

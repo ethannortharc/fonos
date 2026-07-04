@@ -524,3 +524,45 @@ fn find_voice_capture_binary() -> Option<String> {
     );
     None
 }
+
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+
+    /// Replicates the app's spawn path (pipes + reader threads).
+    ///     cargo test -p fonos-desktop --lib vc_live -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn vc_live_plain() {
+        let mut v = VoiceProcessedCapture::new("auto");
+        v.start().expect("start");
+        assert!(v.wait_ready(std::time::Duration::from_secs(5)), "READY");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let alive = v.child.as_mut().map(|c| c.try_wait().unwrap().is_none()).unwrap_or(false);
+        let chunk = v.take_chunk(500);
+        eprintln!("plain: alive={alive} chunk={:?}", chunk.as_ref().map(|c| c.len()));
+        assert!(alive, "helper died in plain harness");
+        assert!(chunk.is_some(), "no audio in plain harness");
+        v.stop();
+    }
+
+    /// Same, but with a rodio output stream open first — mirrors the app,
+    /// where AudioPlayback holds the output device when the call starts.
+    #[test]
+    #[ignore]
+    fn vc_live_with_rodio_open() {
+        let playback = crate::audio::playback::AudioPlayback::new().expect("rodio");
+        // keep the output stream alive during capture startup
+        let mut v = VoiceProcessedCapture::new("auto");
+        v.start().expect("start");
+        assert!(v.wait_ready(std::time::Duration::from_secs(5)), "READY");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let alive = v.child.as_mut().map(|c| c.try_wait().unwrap().is_none()).unwrap_or(false);
+        let chunk = v.take_chunk(500);
+        eprintln!("with-rodio: alive={alive} chunk={:?}", chunk.as_ref().map(|c| c.len()));
+        drop(playback);
+        assert!(alive, "helper died with rodio open");
+        assert!(chunk.is_some(), "no audio with rodio open");
+        v.stop();
+    }
+}

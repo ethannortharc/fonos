@@ -10,6 +10,13 @@ use tauri::Manager;
 /// dropped while a turn is in flight.
 static TURN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
+/// Whether a conversation turn is currently running (hotkey key-down checks
+/// this so it never starts a second recording mid-turn — the abandoned
+/// recording used to corrupt the pill's state display).
+pub fn turn_in_flight() -> bool {
+    TURN_IN_FLIGHT.load(Ordering::SeqCst)
+}
+
 /// Hotkey key-up entry point: stop recording, transcribe, run one turn with
 /// pill progress.
 pub async fn run_sts_turn(app: tauri::AppHandle) -> Result<String, String> {

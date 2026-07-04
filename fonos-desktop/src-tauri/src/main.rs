@@ -1252,11 +1252,23 @@ fn main() {
                                 // Hold-to-talk conversation turn (issue #24):
                                 // key-down records, key-up transcribes → chat → speaks.
                                 if is_down {
+                                    // Never start a second recording while a turn is
+                                    // still thinking/speaking or another recording is
+                                    // live — the orphaned recording would corrupt the
+                                    // pill state and hijack the next key-up.
+                                    if commands::sts::turn_in_flight() || commands::dictation::is_recording() {
+                                        return;
+                                    }
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
                                         crate::error_surface::emit_float_error(&handle, &e);
                                     }
                                 } else {
+                                    // Skip key-ups whose key-down was suppressed (turn
+                                    // was in flight) or when no recording is live.
+                                    if commands::sts::turn_in_flight() || !commands::dictation::is_recording() {
+                                        return;
+                                    }
                                     let _ = commands::sts::run_sts_turn(handle.clone()).await;
                                 }
                             }

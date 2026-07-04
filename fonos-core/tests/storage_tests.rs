@@ -25,6 +25,7 @@ use fonos_core::storage::{
     get_entries,
     get_entry,
     update_entry,
+    update_entry_processed_text,
     delete_entry,
     search_entries,
     insert_container,
@@ -295,6 +296,37 @@ mod c01_entry_schema {
         let fetched = get_entry(&conn, id).expect("get after update");
         assert_eq!(fetched.raw_text, "Edited text");
         assert_eq!(fetched.processed_text, Some("Edited text.".to_string()));
+    }
+
+    /// Unit: Correction flow updates only processed_text, leaving raw_text intact.
+    #[test]
+    fn entry_update_processed_text_preserves_raw() {
+        let conn = open_db();
+
+        let entry = Entry {
+            id: None,
+            created_at: ts(0),
+            source_type: SourceType::Dictation,
+            role: EntryRole::User,
+            mode: "raw".to_string(),
+            raw_text: "please look at this 衣袖 in the log".to_string(),
+            processed_text: Some("please look at this 衣袖 in the log".to_string()),
+            container_id: None,
+            audio_ref: None,
+            metadata: serde_json::Value::Null,
+        };
+        let id = insert_entry(&conn, &entry).expect("insert");
+
+        update_entry_processed_text(&conn, id, "please look at this issue in the log")
+            .expect("update_entry_processed_text failed");
+
+        let fetched = get_entry(&conn, id).expect("get after update");
+        // Raw transcript is untouched; only the display text is corrected.
+        assert_eq!(fetched.raw_text, "please look at this 衣袖 in the log");
+        assert_eq!(
+            fetched.processed_text,
+            Some("please look at this issue in the log".to_string())
+        );
     }
 
     /// Unit: Delete entry removes it from the database.

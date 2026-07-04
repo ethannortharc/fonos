@@ -82,6 +82,19 @@ pub fn update_entry(
     storage::update_entry(&conn, id, &text, None).map_err(|e| e.to_string())
 }
 
+/// Update only an entry's processed (display) text, preserving the raw
+/// transcript. Used by the History correction flow after a vocab rule/term is
+/// saved.
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_entry_text(
+    state: tauri::State<'_, AppState>,
+    id: i64,
+    text: String,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    storage::update_entry_processed_text(&conn, id, &text).map_err(|e| e.to_string())
+}
+
 /// Delete an entry by its row ID.
 #[tauri::command(rename_all = "snake_case")]
 pub fn delete_entry(state: tauri::State<'_, AppState>, id: i64) -> Result<(), String> {

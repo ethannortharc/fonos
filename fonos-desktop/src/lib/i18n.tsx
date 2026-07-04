@@ -601,6 +601,19 @@ const en = {
   "vocab.delete-rule": "Delete rule",
   "vocab.unnamed": "(unnamed)",
   "vocab.delete-book": "Delete book",
+
+  // correction capture (issue #31) — select mis-transcribed text → save as rule/term
+  "correct.menu": "Correct “{sel}”",
+  "correct.title": "Correct this word",
+  "correct.changeto": "Change to",
+  "correct.changeto-ph": "correct spelling",
+  "correct.will-fix": "Applies to all future dictations",
+  "correct.asrule": "Save as rule",
+  "correct.asterm": "Term only",
+  "correct.newbook": "+ New book…",
+  "correct.bookname": "Book name",
+  "correct.save": "Save & fix this entry",
+  "correct.savenote": "Also fixes this word in this entry",
 };
 
 export type TKey = keyof typeof en;
@@ -1163,6 +1176,19 @@ const zh: Partial<Record<Key, string>> = {
   "vocab.delete-rule": "删除规则",
   "vocab.unnamed": "(未命名)",
   "vocab.delete-book": "删除词汇本",
+
+  // correction capture (issue #31)
+  "correct.menu": "纠正“{sel}”",
+  "correct.title": "纠正这个词",
+  "correct.changeto": "改为",
+  "correct.changeto-ph": "正确写法",
+  "correct.will-fix": "今后自动纠正",
+  "correct.asrule": "保存为规则",
+  "correct.asterm": "仅作为词条",
+  "correct.newbook": "＋ 新建词本…",
+  "correct.bookname": "词本名称",
+  "correct.save": "保存并修正本条",
+  "correct.savenote": "同时修正当前这条记录里的这个词",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

@@ -78,6 +78,12 @@ export async function updateEntry(
   return invoke<void>("update_entry", { id, text: processedText });
 }
 
+/** Update only an entry's processed/display text, preserving the raw
+ *  transcript. Used by the History correction flow (issue #31). */
+export async function updateEntryText(id: number, text: string): Promise<void> {
+  return invoke<void>("update_entry_text", { id, text });
+}
+
 /** Delete a container by its row ID. */
 export async function deleteContainer(id: number): Promise<void> {
   return invoke<void>("delete_container", { id });

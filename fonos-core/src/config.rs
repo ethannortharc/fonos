@@ -174,6 +174,13 @@ pub struct AppConfig {
     pub vocab_books: Vec<crate::vocab::VocabBook>,
     /// Book ids applied to every dictation regardless of mode.
     pub global_vocab_books: Vec<String>,
+
+    // ── Saved scenarios (issue #29) ──────────────────────────────────────
+
+    /// Saved, switchable configuration bundles — each a self-contained
+    /// snapshot of the profiles behind the default assignments plus those
+    /// assignments. Applied / imported / exported from the Scenarios view.
+    pub saved_scenarios: Vec<crate::scenarios::SavedScenario>,
 }
 
 impl Default for AppConfig {
@@ -237,6 +244,7 @@ impl Default for AppConfig {
             has_completed_onboarding: false,
             vocab_books: Vec::new(),
             global_vocab_books: Vec::new(),
+            saved_scenarios: Vec::new(),
         }
     }
 }

@@ -385,6 +385,15 @@ fn main() {
 
             commands::doctor::run_doctor,
             commands::doctor::apply_doctor_fix,
+            // Scenario setup commands (issue #29)
+            commands::scenarios::scan_models,
+            commands::scenarios::scenario_probe,
+            commands::scenarios::save_scenario,
+            commands::scenarios::apply_saved_scenario,
+            commands::scenarios::delete_saved_scenario,
+            commands::scenarios::export_scenario,
+            commands::scenarios::import_scenario,
+            commands::scenarios::import_scenario_json,
             // Permission commands
             commands::listen::create_listen_from_text,
             commands::sts::reset_sts_session,

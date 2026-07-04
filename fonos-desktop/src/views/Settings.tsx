@@ -181,6 +181,7 @@ export default function Settings() {
             config={config}
             onSave={handleSave}
             setError={setError}
+            onReload={loadAll}
           />
         )}
 

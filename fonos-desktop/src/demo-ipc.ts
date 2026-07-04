@@ -98,6 +98,27 @@ const config = {
   has_completed_onboarding: true,
   vocab_books: [],
   global_vocab_books: [],
+  saved_scenarios: [
+    {
+      id: "saved-local-omlx-demo",
+      name: "Local · OMLX",
+      created_at: String(Math.floor(now.getTime() / 1000) - 3600),
+      profiles: [
+        { id: "scenario-omlx-qwen3-asr-1-7b", name: "Qwen3-ASR-1.7B", provider: "omlx", model: "Qwen3-ASR-1.7B", base_url: "http://localhost:8000", capabilities: ["stt"], stt_api: "whisper" },
+        { id: "scenario-omlx-qwen3-8b-instruct", name: "Qwen3-8B-Instruct", provider: "omlx", model: "Qwen3-8B-Instruct", base_url: "http://localhost:8000", capabilities: ["llm"] },
+        { id: "scenario-omlx-kokoro-82m", name: "Kokoro-82M", provider: "omlx", model: "Kokoro-82M", base_url: "http://localhost:8000", capabilities: ["tts"] },
+      ],
+      assignments: {
+        stt_profile: "scenario-omlx-qwen3-asr-1-7b",
+        llm_profile: "scenario-omlx-qwen3-8b-instruct",
+        tts_profile: "scenario-omlx-kokoro-82m",
+        sts_voice_profile: "scenario-omlx-kokoro-82m",
+        listen_voice_profile: "scenario-omlx-kokoro-82m",
+        sts_voice: "default",
+        listen_voice: "default",
+      },
+    },
+  ],
 };
 
 const modes = [
@@ -514,6 +535,71 @@ export function installDemoIpc() {
         ];
       case "apply_doctor_fix":
         return null;
+      case "scan_models": {
+        // Only the OMLX/vLLM default port (8000) "answers" in the demo.
+        const url = String(payload.baseUrl ?? "");
+        const reachable = url.includes(":8000");
+        return {
+          reachable,
+          latency_ms: reachable ? 47 : 0,
+          models: reachable
+            ? ["Qwen3-ASR-1.7B", "Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct", "Kokoro-82M", "Qwen3-TTS-1.7B", "bge-m3-embed", "DeepFilterNet3-SE"]
+            : [],
+        };
+      }
+      case "scenario_probe": {
+        const models = ["Qwen3-ASR-1.7B", "Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct", "Kokoro-82M", "Qwen3-TTS-1.7B", "bge-m3-embed", "DeepFilterNet3-SE"];
+        return {
+          reachable: true,
+          latency_ms: 47,
+          models,
+          classified: {
+            stt: ["Qwen3-ASR-1.7B"],
+            llm: ["Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct"],
+            tts: ["Kokoro-82M", "Qwen3-TTS-1.7B"],
+          },
+          tts_rtfs: { "Kokoro-82M": 0.5, "Qwen3-TTS-1.7B": 1.8 },
+          plan: {
+            stt: "Qwen3-ASR-1.7B",
+            llm: "Qwen3-8B-Instruct",
+            conversation_tts: "Kokoro-82M",
+            listen_tts: "Qwen3-TTS-1.7B",
+          },
+        };
+      }
+      case "save_scenario":
+        return {
+          id: "saved-new-" + Date.now(),
+          name: String(payload.name ?? "Setup"),
+          created_at: String(Math.floor(Date.now() / 1000)),
+          profiles: [],
+          assignments: {
+            stt_profile: "openai-gpt-4o-mini-transcribe",
+            llm_profile: "openrouter-gemini",
+            tts_profile: "openai-tts",
+            sts_voice_profile: "openai-tts",
+            listen_voice_profile: "openai-tts",
+            sts_voice: "default",
+            listen_voice: "default",
+          },
+        };
+      case "apply_saved_scenario":
+      case "delete_saved_scenario":
+        return null;
+      case "export_scenario":
+        return "/Users/demo/Downloads/fonos-scenario-demo.json";
+      case "import_scenario":
+      case "import_scenario_json":
+        return {
+          id: "saved-imported-" + Date.now(),
+          name: "Imported setup",
+          created_at: String(Math.floor(Date.now() / 1000)),
+          profiles: [],
+          assignments: {
+            stt_profile: "", llm_profile: "", tts_profile: "",
+            sts_voice_profile: "", listen_voice_profile: "", sts_voice: "default", listen_voice: "default",
+          },
+        };
       default:
         return null;
     }

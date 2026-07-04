@@ -8,6 +8,7 @@ pub mod listen;
 pub mod llm;
 pub mod meeting;
 pub mod permissions;
+pub mod scenarios;
 pub mod selection;
 pub mod sts;
 pub mod stats;

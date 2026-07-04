@@ -74,6 +74,8 @@ export interface AppConfig {
   has_completed_onboarding?: boolean;
   vocab_books?: VocabBook[];
   global_vocab_books?: string[];
+  // Saved scenarios (issue #29)
+  saved_scenarios?: SavedScenario[];
 }
 
 /** A per-app override for the text injection strategy. */
@@ -110,6 +112,60 @@ export interface ModelProfile {
   capabilities?: string[];
   /** STT API path: "whisper" (multipart /v1/audio/transcriptions) or "chat" (base64 audio in chat completions). Default: "whisper". */
   stt_api?: "whisper" | "chat";
+}
+
+// ─── Scenario setup (issue #29) ─────────────────────────────────────────────
+
+/** Result of scan_models — probing a server's /v1/models endpoint. */
+export interface ScanResult {
+  reachable: boolean;
+  latency_ms: number;
+  models: string[];
+}
+
+/** STT / LLM / TTS candidate buckets — mirrors fonos_core::scenarios::ClassifiedModels. */
+export interface ClassifiedModels {
+  stt: string[];
+  llm: string[];
+  tts: string[];
+}
+
+/** Auto-assigned role → model plan — mirrors fonos_core::scenarios::ModelPlan. */
+export interface ModelPlan {
+  stt: string | null;
+  llm: string | null;
+  conversation_tts: string | null;
+  listen_tts: string | null;
+}
+
+/** Full step-2 probe result — mirrors commands::scenarios::ScenarioProbe. */
+export interface ScenarioProbe {
+  reachable: boolean;
+  latency_ms: number;
+  models: string[];
+  classified: ClassifiedModels;
+  tts_rtfs: Record<string, number>;
+  plan: ModelPlan;
+}
+
+/** Default-service assignments captured in a SavedScenario. */
+export interface ScenarioAssignments {
+  stt_profile: string;
+  llm_profile: string;
+  tts_profile: string;
+  sts_voice_profile: string;
+  listen_voice_profile: string;
+  sts_voice: string;
+  listen_voice: string;
+}
+
+/** A saved, switchable configuration bundle — mirrors fonos_core::scenarios::SavedScenario. */
+export interface SavedScenario {
+  id: string;
+  name: string;
+  created_at: string;
+  profiles: ModelProfile[];
+  assignments: ScenarioAssignments;
 }
 
 // ─── Setup Doctor (issue #30) ───────────────────────────────────────────────

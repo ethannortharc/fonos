@@ -3,10 +3,10 @@
 // Extracted verbatim from ModelsTab so the model-profile shape and logic stay
 // in ONE place and can't drift. Used by:
 //   • ModelsTab  — the Settings › Models "Registered Models" section.
-//   • Onboarding — the first-run wizard's backend step.
 //
-// Behaviour is identical to the original ModelsTab implementation. Two optional
-// props layer on wizard-only conveniences without changing Settings behaviour:
+// The two optional props below layer on extra conveniences for embedding
+// callers without changing Settings behaviour (they were originally added for
+// the first-run wizard, since replaced by the scenario setup in Scenarios.tsx):
 //   • onProfilesAdded — fired with the newly-saved profile(s) so a caller can
 //                       assign default services (wizard sets stt_profile/llm_profile).
 //   • startInAddMode  — auto-open the "Add Model" provider picker on mount when

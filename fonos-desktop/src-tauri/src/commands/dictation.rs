@@ -351,8 +351,9 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     let recording_duration = all_samples.len() as f64 / 16000.0;
 
-    // Immediately signal the float pill to switch from recording → processing
-    {
+    // Immediately signal the float pill to switch from recording → processing.
+    // Conversation-page turns never touch the pill (they render in-app).
+    if mode_override.as_deref() != Some("sts-page") {
         use tauri::Emitter;
         let _ = app.emit("float:processing", ());
     }
@@ -483,7 +484,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
                 // silently. The float pill shows the error and leaves processing
                 // state; the caller (hotkey / Dictation view) also gets the Err.
                 let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
-                if dictation_mode != "agent" {
+                if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
                     crate::error_surface::emit_float_error(&app, &msg);
                 } else {
                     eprintln!("fonos: {msg}");
@@ -510,7 +511,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
 
     // 4. Notify float window (stops the recording animation) — skip for agent mode
     eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
-    if dictation_mode != "agent" {
+    if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
         // Does this mode run a downstream LLM step? Same predicate main.rs uses
         // for `has_llm`. When it does, the STT transcript is NOT the final
         // output — the LLM caller (the hotkey pipelines in main.rs, or the
@@ -547,7 +548,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             }
         }
     } else {
-        eprintln!("fonos: agent mode — skipping float:stop and inject");
+        eprintln!("fonos: {dictation_mode} mode — skipping float:stop and inject");
     }
 
     // Record STT event to stats DB (legacy)
@@ -574,7 +575,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
             // Write to v2 unified entries table — all activity is recorded.
             // Recent view shows everything; Notes view filters to note-only.
             let source = match dictation_mode.as_str() {
-                "agent" => fonos_core::storage::SourceType::Agent,
+                "agent" | "sts-page" => fonos_core::storage::SourceType::Agent,
                 "note" => fonos_core::storage::SourceType::Note,
                 _ => fonos_core::storage::SourceType::Dictation,
             };

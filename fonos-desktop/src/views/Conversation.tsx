@@ -37,6 +37,9 @@ export default function Conversation() {
   const [personaOpen, setPersonaOpen] = useState(false);
   const [personaDirty, setPersonaDirty] = useState(false);
   const holdingRef = useRef(false);
+  // Mic lifecycle phase, tracked in a ref so mouse handlers never race React
+  // renders: idle → starting (start_recording in flight) → recording.
+  const phaseRef = useRef<"idle" | "starting" | "recording">("idle");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Initial load: config (persona default) + session history.
@@ -91,29 +94,51 @@ export default function Conversation() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, turnState]);
 
-  const holdStart = useCallback(async () => {
-    if (holdingRef.current || turnState === "listening") return;
-    holdingRef.current = true;
-    try {
-      await stsPageStart();
-      setTurnState("listening");
-    } catch (err) {
-      holdingRef.current = false;
-      setMessages((m) => [...m, { role: "error", text: String(err) }]);
-    }
-  }, [turnState]);
-
-  const holdStop = useCallback(async () => {
-    if (!holdingRef.current) return;
-    holdingRef.current = false;
+  // Backend failures surface via the sts:event bridge (error bubble + idle);
+  // the promise rejection here only needs to unstick the local state.
+  const finishTurn = useCallback(async () => {
     setTurnState("thinking");
     try {
       // Page persona (possibly edited) overrides config for this turn.
       await stsPageStop(persona.trim() ? persona : undefined);
     } catch {
-      // errors surface via the sts:event bridge
+      setTurnState((s) => (s === "thinking" ? "idle" : s));
     }
   }, [persona]);
+
+  const holdStart = useCallback(async () => {
+    if (holdingRef.current || phaseRef.current !== "idle") return;
+    holdingRef.current = true;
+    phaseRef.current = "starting";
+    try {
+      await stsPageStart();
+    } catch (err) {
+      holdingRef.current = false;
+      phaseRef.current = "idle";
+      setMessages((m) => [...m, { role: "error", text: String(err) }]);
+      setTurnState("idle");
+      return;
+    }
+    if (holdingRef.current) {
+      phaseRef.current = "recording";
+      setTurnState("listening");
+    } else {
+      // Released before the mic finished starting: the recording IS live now,
+      // so finish the turn instead of leaving it running.
+      phaseRef.current = "idle";
+      finishTurn();
+    }
+  }, [finishTurn]);
+
+  const holdStop = useCallback(() => {
+    if (!holdingRef.current) return;
+    holdingRef.current = false;
+    if (phaseRef.current === "recording") {
+      phaseRef.current = "idle";
+      finishTurn();
+    }
+    // else phase "starting": holdStart's tail finishes the turn.
+  }, [finishTurn]);
 
   const handleReset = async () => {
     stopPlayback().catch(() => {});

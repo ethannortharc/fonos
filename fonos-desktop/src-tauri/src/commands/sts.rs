@@ -62,15 +62,28 @@ async fn run_sts_turn_inner(
     persona_override: Option<String>,
     from_page: bool,
 ) -> Result<String, String> {
-    // Agent mode override: no injection, no float:stop — the TurnSink owns
-    // the pill lifecycle from here (stop_recording already emitted
-    // float:processing).
+    // The bridge exists before anything can fail so every error — including
+    // recording/STT failures — reaches the page as an sts:event.
+    let sink = crate::adapters::TurnEventBridge::new(app.clone(), !from_page);
+
+    // agent/sts-page overrides: no injection, no float lifecycle from
+    // stop_recording — the TurnSink owns rendering from here. "sts-page"
+    // additionally suppresses the pill entirely (in-app turns).
+    let mode = if from_page { "sts-page" } else { "agent" };
     let state: tauri::State<'_, AppState> = app.state();
     let result =
-        super::dictation::stop_recording(app.clone(), state, Some("agent".to_string())).await?;
+        match super::dictation::stop_recording(app.clone(), state, Some(mode.to_string())).await {
+            Ok(r) => r,
+            Err(e) => {
+                use fonos_core::sts::TurnSink;
+                sink.emit(fonos_core::sts::TurnEvent::Failed(
+                    fonos_core::error_class::classify_error(&e),
+                ));
+                return Err(e);
+            }
+        };
 
     let state: tauri::State<'_, AppState> = app.state();
-    let sink = crate::adapters::TurnEventBridge::new(app.clone(), !from_page);
 
     let (persona, llm_profile, voice_profile, voice, max_turns, global_books, books) = {
         let cfg = state.config.lock().map_err(|e| e.to_string())?;

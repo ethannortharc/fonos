@@ -85,13 +85,17 @@ enum Outcome {
 /// The call loop: runs until the active flag clears or the VAD times out.
 async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     // Snapshot the tuning + shared handles once.
-    let sensitivity = app
+    let (sensitivity, silence_ms) = app
         .state::<AppState>()
         .config
         .lock()
-        .map(|c| c.call_vad_sensitivity)
-        .unwrap_or(0.5);
-    let vad_cfg = VadConfig { sensitivity, ..Default::default() };
+        .map(|c| (c.call_vad_sensitivity, c.call_vad_silence_ms))
+        .unwrap_or((0.5, 800));
+    let vad_cfg = VadConfig {
+        sensitivity,
+        silence_hang_ms: silence_ms.clamp(500, 2000),
+        ..Default::default()
+    };
     let capture = app.state::<AppState>().audio_capture.clone();
     let playback = app.state::<AppState>().audio_playback.clone();
     // No pill for call-mode turns — everything renders in the Conversation page.

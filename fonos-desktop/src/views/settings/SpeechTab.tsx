@@ -349,6 +349,12 @@ export default function SpeechTab({
             onChange={(v) => onSave({ call_vad_sensitivity: v })}
           />
         </Row>
+        <Row label={t("speech.silence")} hint={t("speech.silence.hint")}>
+          <SilenceSlider
+            value={config.call_vad_silence_ms ?? 800}
+            onChange={(v) => onSave({ call_vad_silence_ms: v })}
+          />
+        </Row>
       </div>
     </div>
   );
@@ -357,6 +363,28 @@ export default function SpeechTab({
 /** Three-step Low / Medium / High selector for the call-mode VAD sensitivity
  *  (0.0–1.0). Buckets map Low → 0.25, Medium → 0.5, High → 0.8; the button
  *  nearest the stored value is highlighted. */
+/** Draggable 0.5–2.0s slider for the end-of-utterance silence window. */
+function SilenceSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [live, setLive] = useState(value);
+  useEffect(() => setLive(value), [value]);
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        type="range"
+        min={500}
+        max={2000}
+        step={100}
+        value={live}
+        onChange={(e) => setLive(parseInt(e.target.value))}
+        onPointerUp={() => { if (live !== value) onChange(live); }}
+        onKeyUp={() => { if (live !== value) onChange(live); }}
+        className="w-44 accent-[#fbbf24]"
+      />
+      <span className="text-[11px] text-[#fafaf9] tabular-nums w-10">{(live / 1000).toFixed(1)}s</span>
+    </div>
+  );
+}
+
 function SensitivityPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const steps = [
     { val: 0.25, label: t("speech.sensitivity.low") },

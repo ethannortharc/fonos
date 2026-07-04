@@ -170,6 +170,8 @@ pub struct AppConfig {
     /// more eagerly (ends turns sooner); lower waits for louder, clearer
     /// speech. Default `0.5`.
     pub call_vad_sensitivity: f32,
+    /// Call mode: trailing silence (ms) that ends an utterance (500–2000).
+    pub call_vad_silence_ms: u32,
 
     // ── Custom vocabulary ────────────────────────────────────────────────
 
@@ -241,6 +243,7 @@ impl Default for AppConfig {
             sts_voice: "default".to_string(),
             sts_max_turns: 8,
             call_vad_sensitivity: 0.5,
+            call_vad_silence_ms: 800,
             transform_mode: "polish".to_string(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }

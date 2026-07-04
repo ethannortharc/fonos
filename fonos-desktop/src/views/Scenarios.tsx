@@ -31,6 +31,12 @@ import { t, td, useT, type TKey } from "../lib/i18n";
 
 const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+// Shared control styling for every input/select in the scenario flow —
+// comfortable padding, rounded-lg, amber focus border. Append `font-mono` and
+// width utilities (`w-full`, `flex-1 min-w-0`) at the call site.
+const control =
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(251,191,36,0.35)] transition-colors";
+
 /** Whether the app already has a usable STT configuration — a set default STT
  *  profile, or any model profile advertising the "stt" capability. Used by the
  *  first-run gate so existing installs never see the setup screen. */
@@ -612,7 +618,7 @@ export default function Scenarios({
               value={zeroKey}
               onChange={(e) => setZeroKey(e.target.value)}
               placeholder={t("scen.apikey.ph")}
-              className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-[11.5px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+              className={`${control} font-mono w-full`}
             />
             {zeroKey.trim() ? (
               <PlanRowStatic role="llm" value={OPENROUTER_FREE_LLM} />
@@ -793,27 +799,27 @@ function LocalStep({
 
       {/* URL + key + probe */}
       <div className="flex items-end gap-2 flex-wrap">
-        <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
+        <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
           <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.baseurl")}</span>
           <input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-1.5 text-[11px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+            className={`${control} font-mono w-full`}
           />
         </label>
-        <label className="flex flex-col gap-1 w-[150px]">
+        <label className="flex flex-col gap-1 w-[168px]">
           <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.apikey")}</span>
           <input
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="—"
-            className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-1.5 text-[11px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+            className={`${control} font-mono w-full`}
           />
         </label>
         <button
           onClick={onProbe}
           disabled={probing}
-          className="px-3.5 py-1.5 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] text-[11px] text-[rgba(255,255,255,0.7)] hover:text-[#fafaf9] transition-colors disabled:opacity-50"
+          className="px-3.5 py-2 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] text-[11px] text-[rgba(255,255,255,0.7)] hover:text-[#fafaf9] transition-colors disabled:opacity-50"
         >
           {probing ? t("scen.probing") : probe ? t("scen.reprobe") : t("scen.probe")}
         </button>
@@ -930,7 +936,7 @@ function CloudStep({
           value={cloudKey}
           onChange={(e) => setCloudKey(e.target.value)}
           placeholder={t("scen.apikey.ph")}
-          className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-1.5 text-[11px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+          className={`${control} font-mono w-full`}
         />
       </label>
 
@@ -972,13 +978,15 @@ function PlanRowSelect({
   onChange: (v: string) => void;
   tag?: { kind: "fast" | "hq"; text: string };
 }) {
+  const selectedLabel = options.find((o) => o.value === value)?.label ?? value;
   return (
     <div className="flex items-center gap-2.5 px-3 py-2.5">
       <span className="w-[92px] flex-none text-[10.5px] text-[rgba(255,255,255,0.4)]">{t(ROLE_LABEL[role])}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="flex-1 min-w-0 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-[11px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+        title={selectedLabel}
+        className={`${control} font-mono flex-1 min-w-0 truncate`}
       >
         {options.length === 0 && <option value="">—</option>}
         {options.map((o) => (
@@ -1025,6 +1033,48 @@ function relDate(epochSecs: string): string {
 
 const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google"]);
 
+/** Host (with port) of a base URL — "http://localhost:8000" → "localhost:8000",
+ *  "https://api.openai.com" → "api.openai.com". Empty for keyless/local. */
+function hostOf(url?: string): string {
+  const u = (url ?? "").trim();
+  if (!u) return "";
+  try {
+    return new URL(u).host;
+  } catch {
+    return u.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+  }
+}
+
+/** One role row inside a saved-scenario preview — mirrors the step-2 plan rows:
+ *  role label (muted, fixed width) → model (mono) + base-URL host (muted) +
+ *  optional voice name, with an amber "needs key" chip when a key is missing. */
+function PreviewRow({
+  role,
+  profile,
+  voice,
+}: {
+  role: RoleKey;
+  profile: ModelProfile;
+  voice?: string;
+}) {
+  const host = hostOf(profile.base_url);
+  const needsKey = KEY_PROVIDERS.has(profile.provider) && !(profile.api_key ?? "");
+  const showVoice = (role === "conv" || role === "listen") && !!voice && voice !== "default";
+  return (
+    <div className="flex items-center gap-2 px-3 py-2">
+      <span className="w-[92px] flex-none text-[10px] text-[rgba(255,255,255,0.4)]">{t(ROLE_LABEL[role])}</span>
+      <span className="min-w-0 text-[11px] text-[#fafaf9] font-mono truncate">{profile.model || profile.name || "—"}</span>
+      {host && <span className="flex-none text-[9px] text-[rgba(255,255,255,0.3)] font-mono">{host}</span>}
+      {showVoice && <span className="flex-none text-[9px] text-[rgba(255,255,255,0.3)]">{voice}</span>}
+      {needsKey && (
+        <span className="ml-auto flex-none text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
+          {t("scen.saved.needkey")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SavedSection({
   scenarios,
   canSaveCurrent,
@@ -1055,7 +1105,7 @@ function SavedSection({
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
                 placeholder={t("scen.saved.nameph")}
-                className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(251,191,36,0.35)] w-[140px]"
+                className={`${control} w-[168px]`}
               />
               <button
                 onClick={() => {
@@ -1107,6 +1157,7 @@ function SavedRow({
   onApply: (id: string, name: string) => void;
   onDelete: (id: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [includeKeys, setIncludeKeys] = useState(false);
   const [exportedPath, setExportedPath] = useState("");
@@ -1127,72 +1178,122 @@ function SavedRow({
     }
   };
 
+  // One preview row per assigned role, resolved to its snapshot profile. The
+  // conversation voice is anchored on sts_voice_profile (falling back to the
+  // plain tts_profile), mirroring how Apply writes both from the "conv" role.
+  const a = scenario.assignments;
+  const byId = (id: string) => scenario.profiles.find((p) => p.id === id);
+  const roleRows: { role: RoleKey; profile: ModelProfile; voice?: string }[] = [];
+  const pushRole = (role: RoleKey, id: string, voice?: string) => {
+    const profile = id ? byId(id) : undefined;
+    if (profile) roleRows.push({ role, profile, voice });
+  };
+  pushRole("stt", a.stt_profile);
+  pushRole("llm", a.llm_profile);
+  pushRole("conv", a.sts_voice_profile || a.tts_profile, a.sts_voice);
+  pushRole("listen", a.listen_voice_profile, a.listen_voice);
+
   return (
-    <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3 py-2.5 flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[11.5px] font-medium text-[#fafaf9]">{scenario.name || "—"}</span>
-        <span className="text-[9.5px] text-[rgba(255,255,255,0.3)]">{relDate(scenario.created_at)}</span>
-        <span className="text-[9px] text-[rgba(255,255,255,0.3)]">·</span>
-        <span className="text-[9px] text-[rgba(255,255,255,0.3)]">{t("scen.saved.covers")}</span>
+    <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
+      {/* Collapsed header — click toggles the preview. Kept clean: name + badges. */}
+      <div
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
+      >
+        <span className="text-[11.5px] font-medium text-[#fafaf9] truncate">{scenario.name || "—"}</span>
         <CoverBadges scenario={scenario} />
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={() => onApply(scenario.id, scenario.name)}
-            className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]"
-          >
-            {t("scen.saved.apply")}
-          </button>
-          <button
-            onClick={() => setExporting((v) => !v)}
-            className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)] hover:text-[#fafaf9] transition-colors"
-          >
-            {t("scen.share.export")}
-          </button>
-          <button
-            onClick={() => onDelete(scenario.id)}
-            className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.35)] hover:text-[#f87171] transition-colors"
-          >
-            {t("scen.saved.delete")}
-          </button>
-        </div>
+        <span className="flex-1" />
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="rgba(255,255,255,0.25)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className={`flex-none transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+        >
+          <path d="M9 18l6-6-6-6" />
+        </svg>
       </div>
 
-      {exporting && (
-        <div className="flex flex-col gap-2 pt-1">
-          <label className="flex items-center gap-2 text-[10px] text-[rgba(255,255,255,0.5)]">
-            <input type="checkbox" checked={includeKeys} onChange={(e) => setIncludeKeys(e.target.checked)} />
-            {t("scen.share.includekeys")}
-          </label>
-          <div className="flex items-center gap-2">
+      {expanded && (
+        <div className="px-3 pb-3 pt-2.5 border-t border-[rgba(255,255,255,0.04)] flex flex-col gap-2.5">
+          {/* Configuration preview — same visual language as the step-2 plan. */}
+          {roleRows.length > 0 && (
+            <div className="rounded-lg border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
+              {roleRows.map((r) => (
+                <PreviewRow key={r.role} role={r.role} profile={r.profile} voice={r.voice} />
+              ))}
+            </div>
+          )}
+
+          {/* Footer: N profiles · saved <relative date> */}
+          <div className="text-[9.5px] text-[rgba(255,255,255,0.3)]">
+            {td("scen.saved.profiles", [String(scenario.profiles.length)])} ·{" "}
+            {td("scen.saved.savedat", [relDate(scenario.created_at)])}
+          </div>
+
+          {/* Actions — Apply is one click from here. */}
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={doExport}
-              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)]"
+              onClick={() => onApply(scenario.id, scenario.name)}
+              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]"
+            >
+              {t("scen.saved.apply")}
+            </button>
+            <button
+              onClick={() => setExporting((v) => !v)}
+              className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)] hover:text-[#fafaf9] transition-colors"
             >
               {t("scen.share.export")}
             </button>
-            {exportedPath && (
-              <>
-                <span className="text-[10px] text-[#4ade80] truncate max-w-[300px]">
-                  {td("scen.share.exported", [exportedPath])}
-                </span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard?.writeText(exportedPath).then(
-                      () => {
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 1500);
-                      },
-                      () => {}
-                    );
-                  }}
-                  className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)]"
-                >
-                  {copied ? t("scen.share.copied") : t("scen.share.copy")}
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => onDelete(scenario.id)}
+              className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.35)] hover:text-[#f87171] transition-colors"
+            >
+              {t("scen.saved.delete")}
+            </button>
           </div>
-          {err && <span className="text-[10px] text-[#f87171]">{err}</span>}
+
+          {exporting && (
+            <div className="flex flex-col gap-2 pt-1">
+              <label className="flex items-center gap-2 text-[10px] text-[rgba(255,255,255,0.5)]">
+                <input type="checkbox" checked={includeKeys} onChange={(e) => setIncludeKeys(e.target.checked)} />
+                {t("scen.share.includekeys")}
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={doExport}
+                  className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)]"
+                >
+                  {t("scen.share.export")}
+                </button>
+                {exportedPath && (
+                  <>
+                    <span className="text-[10px] text-[#4ade80] truncate max-w-[300px]">
+                      {td("scen.share.exported", [exportedPath])}
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(exportedPath).then(
+                          () => {
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 1500);
+                          },
+                          () => {}
+                        );
+                      }}
+                      className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)]"
+                    >
+                      {copied ? t("scen.share.copied") : t("scen.share.copy")}
+                    </button>
+                  </>
+                )}
+              </div>
+              {err && <span className="text-[10px] text-[#f87171]">{err}</span>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1265,7 +1366,7 @@ function ImportZone({ onImported }: { onImported: () => void }) {
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder={t("scen.share.pathph")}
-            className="flex-1 min-w-0 bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] rounded-md px-2 py-1 text-[10.5px] text-[#fafaf9] font-mono focus:outline-none focus:border-[rgba(251,191,36,0.35)]"
+            className={`${control} font-mono flex-1 min-w-0`}
           />
           <button
             onClick={importFromPath}

@@ -118,6 +118,26 @@ const config = {
         listen_voice: "default",
       },
     },
+    {
+      id: "saved-cloud-openai-demo",
+      name: "Fast cloud · OpenAI",
+      created_at: String(Math.floor(now.getTime() / 1000) - 2 * 86400),
+      // Keys stripped (as an exported/shared bundle would be) → "needs key" chips.
+      profiles: [
+        { id: "scenario-openai-transcribe", name: "gpt-4o-mini-transcribe", provider: "openai", model: "gpt-4o-mini-transcribe", base_url: "https://api.openai.com", api_key: "", capabilities: ["stt"], stt_api: "whisper" },
+        { id: "scenario-openai-gpt-4o-mini", name: "gpt-4o-mini", provider: "openai", model: "gpt-4o-mini", base_url: "https://api.openai.com", api_key: "", capabilities: ["llm"] },
+        { id: "scenario-openai-tts", name: "gpt-4o-mini-tts", provider: "openai", model: "gpt-4o-mini-tts", base_url: "https://api.openai.com", api_key: "", capabilities: ["tts"] },
+      ],
+      assignments: {
+        stt_profile: "scenario-openai-transcribe",
+        llm_profile: "scenario-openai-gpt-4o-mini",
+        tts_profile: "scenario-openai-tts",
+        sts_voice_profile: "scenario-openai-tts",
+        listen_voice_profile: "scenario-openai-tts",
+        sts_voice: "alloy",
+        listen_voice: "nova",
+      },
+    },
   ],
 };
 

@@ -19,6 +19,7 @@ pub mod error_class;
 pub mod modes;
 pub mod pipeline;
 pub mod model_caps;
+pub mod scenarios;
 pub mod services;
 pub mod stats;
 pub mod stt;

@@ -1,4 +1,6 @@
 // Models tab — default service dropdowns + the shared model-profile editor.
+// Saved configuration bundles and the setup templates now live in the dedicated
+// Settings › Scenarios tab.
 
 import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
@@ -117,8 +119,10 @@ export default function ModelsTab({
     <div className="flex flex-col gap-4">
       {/* ── Section 1: Default Services ── */}
       <div className="flex flex-col gap-2">
-        <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
-          {t("models.defaults")}
+        <div className="flex items-center">
+          <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
+            {t("models.defaults")}
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <ServiceCardDropdown

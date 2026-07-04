@@ -13,6 +13,9 @@ import type {
   ModeEntry,
   ModelCaps,
   SaveModeOptions,
+  SavedScenario,
+  ScanResult,
+  ScenarioProbe,
   SkillInfo,
   SttResult,
   TodaySummary,
@@ -216,6 +219,67 @@ export async function runDoctor(): Promise<DoctorFinding[]> {
 /** Apply one doctor fix, then re-run the doctor to refresh the card. */
 export async function applyDoctorFix(fix: DoctorFix): Promise<void> {
   return invoke<void>("apply_doctor_fix", { fix });
+}
+
+// ─── Scenario setup (issue #29) ─────────────────────────────────────────────
+
+/** Probe a server's /v1/models endpoint (used for card detection). */
+export async function scanModels(baseUrl: string, apiKey: string): Promise<ScanResult> {
+  return invoke<ScanResult>("scan_models", { baseUrl, apiKey });
+}
+
+/** Scan + classify + measure TTS speeds + build a default plan for a server. */
+export async function scenarioProbe(
+  baseUrl: string,
+  apiKey: string,
+  voice?: string
+): Promise<ScenarioProbe> {
+  return invoke<ScenarioProbe>("scenario_probe", { baseUrl, apiKey, voice: voice ?? null });
+}
+
+/** Snapshot the live config as a new saved scenario, capturing the chosen
+ *  sections (models / dictation / speech). */
+export async function saveScenario(
+  name: string,
+  includeModels: boolean,
+  includeDictation: boolean,
+  includeSpeech: boolean,
+  includeVocab: boolean,
+  includeHotkeys: boolean
+): Promise<SavedScenario> {
+  return invoke<SavedScenario>("save_scenario", {
+    name,
+    includeModels,
+    includeDictation,
+    includeSpeech,
+    includeVocab,
+    includeHotkeys,
+  });
+}
+
+/** Apply a saved scenario by id (upsert profiles + restore assignments). */
+export async function applySavedScenario(id: string): Promise<void> {
+  return invoke<void>("apply_saved_scenario", { id });
+}
+
+/** Delete a saved scenario by id. */
+export async function deleteSavedScenario(id: string): Promise<void> {
+  return invoke<void>("delete_saved_scenario", { id });
+}
+
+/** Write a scenario JSON blob to ~/Downloads and return the full path. */
+export async function exportScenario(scenarioJson: string, name: string): Promise<string> {
+  return invoke<string>("export_scenario", { scenarioJson, name });
+}
+
+/** Validate + import a scenario from raw JSON text (drag-drop path). */
+export async function importScenarioJson(json: string): Promise<SavedScenario> {
+  return invoke<SavedScenario>("import_scenario_json", { json });
+}
+
+/** Validate + import a scenario from a file path. */
+export async function importScenario(path: string): Promise<SavedScenario> {
+  return invoke<SavedScenario>("import_scenario", { path });
 }
 
 // ─── Stats & History ──────────────────────────────────────────────────────────

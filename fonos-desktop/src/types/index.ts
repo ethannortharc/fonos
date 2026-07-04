@@ -74,6 +74,8 @@ export interface AppConfig {
   has_completed_onboarding?: boolean;
   vocab_books?: VocabBook[];
   global_vocab_books?: string[];
+  // Saved scenarios (issue #29)
+  saved_scenarios?: SavedScenario[];
 }
 
 /** A per-app override for the text injection strategy. */
@@ -110,6 +112,118 @@ export interface ModelProfile {
   capabilities?: string[];
   /** STT API path: "whisper" (multipart /v1/audio/transcriptions) or "chat" (base64 audio in chat completions). Default: "whisper". */
   stt_api?: "whisper" | "chat";
+}
+
+// ─── Scenario setup (issue #29) ─────────────────────────────────────────────
+
+/** Result of scan_models — probing a server's /v1/models endpoint. */
+export interface ScanResult {
+  reachable: boolean;
+  latency_ms: number;
+  models: string[];
+}
+
+/** STT / LLM / TTS candidate buckets — mirrors fonos_core::scenarios::ClassifiedModels. */
+export interface ClassifiedModels {
+  stt: string[];
+  llm: string[];
+  tts: string[];
+}
+
+/** Auto-assigned role → model plan — mirrors fonos_core::scenarios::ModelPlan. */
+export interface ModelPlan {
+  stt: string | null;
+  llm: string | null;
+  conversation_tts: string | null;
+  listen_tts: string | null;
+}
+
+/** Full step-2 probe result — mirrors commands::scenarios::ScenarioProbe. */
+export interface ScenarioProbe {
+  reachable: boolean;
+  latency_ms: number;
+  models: string[];
+  classified: ClassifiedModels;
+  tts_rtfs: Record<string, number>;
+  plan: ModelPlan;
+}
+
+/** Default-service assignments captured in a SavedScenario's models section. */
+export interface ScenarioAssignments {
+  stt_profile: string;
+  llm_profile: string;
+  tts_profile: string;
+  sts_voice_profile: string;
+  listen_voice_profile: string;
+  sts_voice: string;
+  listen_voice: string;
+}
+
+/** The models section — profiles + role assignments. */
+export interface ModelsSection {
+  profiles: ModelProfile[];
+  assignments: ScenarioAssignments;
+}
+
+/** The dictation section — user-modes map (modes.json) + config fields. */
+export interface DictationSection {
+  /** id → Mode, exactly as persisted in modes.json. */
+  user_modes: Record<string, Mode>;
+  dictation_mode: string;
+  translate_target: string;
+}
+
+/** The speech section — Listen + STS conversation configuration. */
+export interface SpeechSection {
+  listen_mode: string;
+  listen_voice_profile: string;
+  listen_voice: string;
+  sts_persona: string;
+  sts_llm_profile: string;
+  sts_voice_profile: string;
+  sts_voice: string;
+  sts_max_turns: number;
+}
+
+/** The vocab section — custom vocabulary books + globally-applied book ids. */
+export interface VocabSection {
+  vocab_books: VocabBook[];
+  global_vocab_books: string[];
+}
+
+/** The hotkeys section — every global + notebook hotkey binding. */
+export interface HotkeysSection {
+  hotkey_dictation: string;
+  hotkey_dictation_toggle: string;
+  hotkey_tts: string;
+  hotkey_agent: string;
+  hotkey_agent_panel: string;
+  hotkey_note: string;
+  hotkey_note_1: string;
+  hotkey_note_2: string;
+  hotkey_note_3: string;
+  notebook_hotkey_1: number;
+  notebook_hotkey_2: number;
+  notebook_hotkey_3: number;
+  hotkey_meeting: string;
+  hotkey_transform: string;
+  hotkey_listen: string;
+  hotkey_sts: string;
+}
+
+/** A saved, switchable configuration bundle — mirrors
+ *  fonos_core::scenarios::SavedScenario. Sectioned: each of models / dictation /
+ *  speech / vocab / hotkeys is optional and present only when the save
+ *  included it. */
+export interface SavedScenario {
+  id: string;
+  name: string;
+  created_at: string;
+  models?: ModelsSection;
+  dictation?: DictationSection;
+  speech?: SpeechSection;
+  vocab?: VocabSection;
+  hotkeys?: HotkeysSection;
 }
 
 // ─── Setup Doctor (issue #30) ───────────────────────────────────────────────

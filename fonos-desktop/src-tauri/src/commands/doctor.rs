@@ -174,15 +174,59 @@ async fn find_kokoro_switch(svc: &ServiceConfig, profile_id: &str) -> Option<Fix
     None
 }
 
-/// Measure the conversation voice's real-time factor by synthesizing a short
-/// fixed phrase and comparing wall-clock time to audio duration. Skips silently
-/// when TTS is unconfigured or the synth fails/times out.
-/// Cache the last RTF measurement so opening Settings repeatedly doesn't
-/// re-synthesize: (model+profile key, measured rtf, when). Re-measured after
-/// 30 minutes or when the profile/model changes.
-static RTF_CACHE: std::sync::Mutex<Option<(String, f64, Instant)>> = std::sync::Mutex::new(None);
+/// Cache measured RTFs so opening Settings / re-probing a scenario repeatedly
+/// doesn't re-synthesize. Keyed by `base_url::model::voice`, re-measured after
+/// 30 minutes.
+static RTF_CACHE: std::sync::Mutex<std::collections::BTreeMap<String, (f64, Instant)>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 const RTF_CACHE_TTL: Duration = Duration::from_secs(30 * 60);
 
+/// Measure a TTS model's real-time factor (wall-clock synth time ÷ audio
+/// seconds) by synthesizing one short fixed phrase. Shared by the Setup Doctor
+/// and the scenario probe (issue #29). Returns `None` when the service is
+/// unconfigured, Apple on-device, or the synth fails / times out. Results are
+/// cached ~30 min per `(base_url, model, voice)`.
+pub(crate) async fn measure_tts_rtf(svc: &ServiceConfig, voice: &str) -> Option<f64> {
+    if svc.base_url.trim().is_empty() || svc.provider == "apple" {
+        return None;
+    }
+    let phrase = "Fonos conversation speed check, one two three.";
+    let key = format!("{}::{}::{}", svc.base_url.trim_end_matches('/'), svc.model, voice);
+
+    let cached = RTF_CACHE
+        .lock()
+        .ok()
+        .and_then(|g| g.get(&key).copied())
+        .filter(|(_, at)| at.elapsed() < RTF_CACHE_TTL)
+        .map(|(rtf, _)| rtf);
+    if let Some(rtf) = cached {
+        return Some(rtf);
+    }
+
+    let t0 = Instant::now();
+    let synth = tokio::time::timeout(
+        Duration::from_secs(8),
+        fonos_core::tts::synthesize_wav(svc, phrase, voice, 1.0),
+    )
+    .await;
+    let wav = match synth {
+        Ok(Ok(w)) => w,
+        _ => return None, // unreachable / slow / error — skip gracefully
+    };
+    let wall = t0.elapsed().as_secs_f64();
+    let audio = match fonos_core::listen::wav_duration_secs(&wav) {
+        Some(d) if d > 0.05 => d,
+        _ => return None,
+    };
+    let rtf = wall / audio;
+    if let Ok(mut g) = RTF_CACHE.lock() {
+        g.insert(key, (rtf, Instant::now()));
+    }
+    Some(rtf)
+}
+
+/// Measure the conversation voice's real-time factor and advise a faster model
+/// when it stutters. Skips silently when TTS is unconfigured or the synth fails.
 async fn check_conversation_rtf(config: &AppConfig) -> Vec<Finding> {
     // The conversation reply uses sts_voice_profile, falling back to tts_profile.
     let profile_id = if !config.sts_voice_profile.trim().is_empty() {
@@ -202,39 +246,10 @@ async fn check_conversation_rtf(config: &AppConfig) -> Vec<Finding> {
         let v = config.sts_voice.trim();
         if v.is_empty() { "default".to_string() } else { v.to_string() }
     };
-    let phrase = "Fonos conversation speed check, one two three.";
 
-    let cache_key = format!("{profile_id}::{}", svc.model);
-    let cached = RTF_CACHE
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .filter(|(k, _, at)| *k == cache_key && at.elapsed() < RTF_CACHE_TTL)
-        .map(|(_, rtf, _)| rtf);
-
-    let rtf = if let Some(rtf) = cached {
-        rtf
-    } else {
-        let t0 = Instant::now();
-        let synth = tokio::time::timeout(
-            Duration::from_secs(8),
-            fonos_core::tts::synthesize_wav(&svc, phrase, &voice, 1.0),
-        )
-        .await;
-        let wav = match synth {
-            Ok(Ok(w)) => w,
-            _ => return Vec::new(), // unreachable/slow/error — skip gracefully
-        };
-        let wall = t0.elapsed().as_secs_f64();
-        let audio = match fonos_core::listen::wav_duration_secs(&wav) {
-            Some(d) if d > 0.05 => d,
-            _ => return Vec::new(),
-        };
-        let measured = wall / audio;
-        if let Ok(mut g) = RTF_CACHE.lock() {
-            *g = Some((cache_key, measured, Instant::now()));
-        }
-        measured
+    let rtf = match measure_tts_rtf(&svc, &voice).await {
+        Some(rtf) => rtf,
+        None => return Vec::new(),
     };
 
     if rtf > 1.5 {

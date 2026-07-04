@@ -5,7 +5,7 @@ import Stats from "./views/Stats";
 import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
-import Onboarding, { isSttConfigured } from "./views/Onboarding";
+import Scenarios, { isSttConfigured } from "./views/Scenarios";
 import { getConfig } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
@@ -81,7 +81,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("");
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
   // environments (where getConfig throws) so the shell renders unchanged.
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
   const [historyPreset, setHistoryPreset] = useState<{ filter: HistoryFilter; nonce: number }>();
   // Don't paint the shell until the gate is decided — otherwise a genuine
   // first run flashes the full app for a frame before the wizard mounts.
@@ -99,7 +99,7 @@ export default function App() {
         // is unset AND there's no usable STT config. Existing installs that
         // already configured models via Settings skip the wizard even with the
         // flag unset; skipping still persists the flag.
-        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowOnboarding(true);
+        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowSetup(true);
       })
       .catch(() => {})
       .finally(() => setGateReady(true));
@@ -136,8 +136,8 @@ export default function App() {
   if (!gateReady) {
     return <div className="h-screen bg-[#1a1917]" />;
   }
-  if (showOnboarding) {
-    return <Onboarding onDone={() => setShowOnboarding(false)} />;
+  if (showSetup) {
+    return <Scenarios mode="fullscreen" onDone={() => setShowSetup(false)} />;
   }
 
   return (

@@ -98,6 +98,95 @@ const config = {
   has_completed_onboarding: true,
   vocab_books: [],
   global_vocab_books: [],
+  saved_scenarios: [
+    // Models-only bundle — just the model profiles + role assignments.
+    {
+      id: "saved-local-omlx-demo",
+      name: "Local · OMLX",
+      created_at: String(Math.floor(now.getTime() / 1000) - 3600),
+      models: {
+        profiles: [
+          { id: "scenario-omlx-qwen3-asr-1-7b", name: "Qwen3-ASR-1.7B", provider: "omlx", model: "Qwen3-ASR-1.7B", base_url: "http://localhost:8000", capabilities: ["stt"], stt_api: "whisper" },
+          { id: "scenario-omlx-qwen3-8b-instruct", name: "Qwen3-8B-Instruct", provider: "omlx", model: "Qwen3-8B-Instruct", base_url: "http://localhost:8000", capabilities: ["llm"] },
+          { id: "scenario-omlx-kokoro-82m", name: "Kokoro-82M", provider: "omlx", model: "Kokoro-82M", base_url: "http://localhost:8000", capabilities: ["tts"] },
+        ],
+        assignments: {
+          stt_profile: "scenario-omlx-qwen3-asr-1-7b",
+          llm_profile: "scenario-omlx-qwen3-8b-instruct",
+          tts_profile: "scenario-omlx-kokoro-82m",
+          sts_voice_profile: "scenario-omlx-kokoro-82m",
+          listen_voice_profile: "scenario-omlx-kokoro-82m",
+          sts_voice: "default",
+          listen_voice: "default",
+        },
+      },
+    },
+    // Full bundle — models + dictation (custom modes) + speech.
+    {
+      id: "saved-cloud-openai-demo",
+      name: "Fast cloud · OpenAI",
+      created_at: String(Math.floor(now.getTime() / 1000) - 2 * 86400),
+      models: {
+        // Keys stripped (as an exported/shared bundle would be) → "needs key" chips.
+        profiles: [
+          { id: "scenario-openai-transcribe", name: "gpt-4o-mini-transcribe", provider: "openai", model: "gpt-4o-mini-transcribe", base_url: "https://api.openai.com", api_key: "", capabilities: ["stt"], stt_api: "whisper" },
+          { id: "scenario-openai-gpt-4o-mini", name: "gpt-4o-mini", provider: "openai", model: "gpt-4o-mini", base_url: "https://api.openai.com", api_key: "", capabilities: ["llm"] },
+          { id: "scenario-openai-tts", name: "gpt-4o-mini-tts", provider: "openai", model: "gpt-4o-mini-tts", base_url: "https://api.openai.com", api_key: "", capabilities: ["tts"] },
+        ],
+        assignments: {
+          stt_profile: "scenario-openai-transcribe",
+          llm_profile: "scenario-openai-gpt-4o-mini",
+          tts_profile: "scenario-openai-tts",
+          sts_voice_profile: "scenario-openai-tts",
+          listen_voice_profile: "scenario-openai-tts",
+          sts_voice: "alloy",
+          listen_voice: "nova",
+        },
+      },
+      dictation: {
+        user_modes: {
+          terminal: { name: "Terminal", description: "Convert speech into a shell-friendly command.", icon: "⌨️", temperature: 0.1 },
+        },
+        dictation_mode: "polish",
+        translate_target: "English",
+      },
+      speech: {
+        listen_mode: "listen",
+        listen_voice_profile: "scenario-openai-tts",
+        listen_voice: "nova",
+        sts_persona: "You are a friendly voice assistant. Keep replies short and spoken.",
+        sts_llm_profile: "scenario-openai-gpt-4o-mini",
+        sts_voice_profile: "scenario-openai-tts",
+        sts_voice: "alloy",
+        sts_max_turns: 8,
+      },
+      vocab: {
+        vocab_books: [
+          { id: "vb-med", name: "Medical", enabled: true, terms: ["myocardium", "tachycardia"], rules: [] },
+          { id: "vb-eng", name: "Engineering", enabled: true, terms: ["Kubernetes"], rules: [] },
+        ],
+        global_vocab_books: ["vb-med"],
+      },
+      hotkeys: {
+        hotkey_dictation: "cmd+shift+space",
+        hotkey_dictation_toggle: "cmd+shift+d",
+        hotkey_tts: "cmd+shift+s",
+        hotkey_agent: "cmd+shift+a",
+        hotkey_agent_panel: "cmd+shift+g",
+        hotkey_note: "option+n",
+        hotkey_note_1: "option+1",
+        hotkey_note_2: "",
+        hotkey_note_3: "",
+        notebook_hotkey_1: 0,
+        notebook_hotkey_2: 0,
+        notebook_hotkey_3: 0,
+        hotkey_meeting: "option+m",
+        hotkey_transform: "cmd+shift+t",
+        hotkey_listen: "option+l",
+        hotkey_sts: "option+s",
+      },
+    },
+  ],
 };
 
 const modes = [
@@ -514,6 +603,106 @@ export function installDemoIpc() {
         ];
       case "apply_doctor_fix":
         return null;
+      case "scan_models": {
+        // Only the OMLX/vLLM default port (8000) "answers" in the demo.
+        const url = String(payload.baseUrl ?? "");
+        const reachable = url.includes(":8000");
+        return {
+          reachable,
+          latency_ms: reachable ? 47 : 0,
+          models: reachable
+            ? ["Qwen3-ASR-1.7B", "Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct", "Kokoro-82M", "Qwen3-TTS-1.7B", "bge-m3-embed", "DeepFilterNet3-SE"]
+            : [],
+        };
+      }
+      case "scenario_probe": {
+        const models = ["Qwen3-ASR-1.7B", "Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct", "Kokoro-82M", "Qwen3-TTS-1.7B", "bge-m3-embed", "DeepFilterNet3-SE"];
+        return {
+          reachable: true,
+          latency_ms: 47,
+          models,
+          classified: {
+            stt: ["Qwen3-ASR-1.7B"],
+            llm: ["Qwen3-4B-Instruct-2507", "Qwen3-8B-Instruct"],
+            tts: ["Kokoro-82M", "Qwen3-TTS-1.7B"],
+          },
+          tts_rtfs: { "Kokoro-82M": 0.5, "Qwen3-TTS-1.7B": 1.8 },
+          plan: {
+            stt: "Qwen3-ASR-1.7B",
+            llm: "Qwen3-8B-Instruct",
+            conversation_tts: "Kokoro-82M",
+            listen_tts: "Qwen3-TTS-1.7B",
+          },
+        };
+      }
+      case "save_scenario":
+        return {
+          id: "saved-new-" + Date.now(),
+          name: String(payload.name ?? "Setup"),
+          created_at: String(Math.floor(Date.now() / 1000)),
+          ...(payload.includeModels !== false
+            ? {
+                models: {
+                  profiles: [],
+                  assignments: {
+                    stt_profile: "openai-gpt-4o-mini-transcribe",
+                    llm_profile: "openrouter-gemini",
+                    tts_profile: "openai-tts",
+                    sts_voice_profile: "openai-tts",
+                    listen_voice_profile: "openai-tts",
+                    sts_voice: "default",
+                    listen_voice: "default",
+                  },
+                },
+              }
+            : {}),
+          ...(payload.includeDictation
+            ? { dictation: { user_modes: {}, dictation_mode: "polish", translate_target: "English" } }
+            : {}),
+          ...(payload.includeSpeech
+            ? {
+                speech: {
+                  listen_mode: "listen", listen_voice_profile: "", listen_voice: "default",
+                  sts_persona: "You are a friendly voice assistant.", sts_llm_profile: "",
+                  sts_voice_profile: "", sts_voice: "default", sts_max_turns: 8,
+                },
+              }
+            : {}),
+          ...(payload.includeVocab
+            ? { vocab: { vocab_books: [], global_vocab_books: [] } }
+            : {}),
+          ...(payload.includeHotkeys
+            ? {
+                hotkeys: {
+                  hotkey_dictation: "cmd+shift+space", hotkey_dictation_toggle: "", hotkey_tts: "cmd+shift+s",
+                  hotkey_agent: "cmd+shift+a", hotkey_agent_panel: "cmd+shift+g", hotkey_note: "option+n",
+                  hotkey_note_1: "", hotkey_note_2: "", hotkey_note_3: "",
+                  notebook_hotkey_1: 0, notebook_hotkey_2: 0, notebook_hotkey_3: 0,
+                  hotkey_meeting: "option+m", hotkey_transform: "cmd+shift+t",
+                  hotkey_listen: "option+l", hotkey_sts: "option+s",
+                },
+              }
+            : {}),
+        };
+      case "apply_saved_scenario":
+      case "delete_saved_scenario":
+        return null;
+      case "export_scenario":
+        return "/Users/demo/Downloads/fonos-scenario-demo.json";
+      case "import_scenario":
+      case "import_scenario_json":
+        return {
+          id: "saved-imported-" + Date.now(),
+          name: "Imported setup",
+          created_at: String(Math.floor(Date.now() / 1000)),
+          models: {
+            profiles: [],
+            assignments: {
+              stt_profile: "", llm_profile: "", tts_profile: "",
+              sts_voice_profile: "", listen_voice_profile: "", sts_voice: "default", listen_voice: "default",
+            },
+          },
+        };
       default:
         return null;
     }

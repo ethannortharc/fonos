@@ -442,6 +442,7 @@ fn main() {
             commands::storage::list_entries,
             commands::storage::get_entry,
             commands::storage::update_entry,
+            commands::storage::update_entry_text,
             commands::storage::delete_entry,
             commands::storage::search_entries,
             commands::storage::create_container,

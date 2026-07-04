@@ -416,6 +416,7 @@ export function installDemoIpc() {
       case "save_custom_mode":
       case "delete_custom_mode":
       case "update_entry":
+      case "update_entry_text":
       case "delete_entry":
       case "delete_container":
       case "set_note_notebook":

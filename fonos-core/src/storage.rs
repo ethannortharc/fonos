@@ -345,6 +345,20 @@ pub fn update_entry(
     Ok(())
 }
 
+/// Update only the processed (display) text of an entry, leaving `raw_text`
+/// intact.
+///
+/// Used by the History correction flow: applying a vocabulary correction
+/// rewrites the entry's shown text without discarding the original transcript.
+pub fn update_entry_processed_text(conn: &Connection, id: i64, text: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET processed_text = ?2 WHERE id = ?1",
+        params![id, text],
+    )
+    .map_err(|e| Error::Database(format!("update_entry_processed_text: {e}")))?;
+    Ok(())
+}
+
 /// Delete an entry by ID.
 pub fn delete_entry(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM entries WHERE id = ?1", params![id])
@@ -934,4 +948,55 @@ fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seed_entry(conn: &Connection, raw: &str, processed: Option<&str>) -> i64 {
+        let entry = Entry {
+            id: None,
+            created_at: now_iso8601(),
+            source_type: SourceType::Dictation,
+            role: EntryRole::User,
+            mode: "raw".to_string(),
+            raw_text: raw.to_string(),
+            processed_text: processed.map(|s| s.to_string()),
+            container_id: None,
+            audio_ref: None,
+            metadata: serde_json::Value::Null,
+        };
+        insert_entry(conn, &entry).expect("insert_entry")
+    }
+
+    #[test]
+    fn update_entry_processed_text_rewrites_only_display_text() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let id = seed_entry(&conn, "look at this 衣袖 issue", Some("look at this 衣袖 issue"));
+        update_entry_processed_text(&conn, id, "look at this issue issue")
+            .expect("update_entry_processed_text");
+
+        let got = get_entry(&conn, id).expect("get_entry");
+        // Correction only touches processed_text; the raw transcript is preserved.
+        assert_eq!(got.raw_text, "look at this 衣袖 issue");
+        assert_eq!(got.processed_text.as_deref(), Some("look at this issue issue"));
+    }
+
+    #[test]
+    fn update_entry_processed_text_populates_null_processed() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let id = seed_entry(&conn, "raw only", None);
+        assert!(get_entry(&conn, id).unwrap().processed_text.is_none());
+
+        update_entry_processed_text(&conn, id, "corrected only").expect("update");
+        assert_eq!(
+            get_entry(&conn, id).unwrap().processed_text.as_deref(),
+            Some("corrected only")
+        );
+    }
 }

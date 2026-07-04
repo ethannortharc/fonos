@@ -367,3 +367,7 @@ export async function getStsHistory(): Promise<[string, string][]> {
 export async function resetStsSession(): Promise<void> {
   return invoke<void>("reset_sts_session");
 }
+
+export async function listModelVoices(profileId: string): Promise<string[]> {
+  return invoke<string[]>("list_model_voices", { profileId });
+}

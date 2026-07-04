@@ -224,6 +224,33 @@ impl WavStreamParser {
     }
 }
 
+/// Query the server for a TTS model's built-in speaker names
+/// (`GET /v1/audio/voices?model=…` — an OMLX extension). Servers without
+/// the endpoint yield Err; callers fall back to curated lists.
+pub async fn list_model_voices(tts: &ServiceConfig) -> Result<Vec<String>, String> {
+    let url = format!("{}/v1/audio/voices", tts.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.get(&url).query(&[("model", tts.model.as_str())]);
+    if !tts.api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", tts.api_key));
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("voices endpoint: {}", resp.status()));
+    }
+    #[derive(serde::Deserialize)]
+    struct VoicesResponse {
+        voices: Vec<String>,
+    }
+    resp.json::<VoicesResponse>()
+        .await
+        .map(|v| v.voices)
+        .map_err(|e| e.to_string())
+}
+
 /// POST to `/v1/audio/speech` and return raw WAV bytes.
 pub async fn synthesize_wav(
     tts: &ServiceConfig,

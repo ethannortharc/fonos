@@ -388,6 +388,7 @@ fn main() {
             commands::sts::sts_page_start,
             commands::sts::sts_page_stop,
             commands::sts::get_sts_history,
+            commands::tts::list_model_voices,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
             // TTS commands

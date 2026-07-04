@@ -281,3 +281,22 @@ pub fn resume_playback(state: tauri::State<'_, AppState>) -> Result<(), String> 
     }
     Ok(())
 }
+
+/// Built-in speaker names for a TTS profile's model, from the server's
+/// voices endpoint (OMLX extension). Empty when the profile is unset or the
+/// server has no such endpoint — the UI falls back to curated lists.
+#[tauri::command]
+pub async fn list_model_voices(
+    state: tauri::State<'_, AppState>,
+    profile_id: String,
+) -> Result<Vec<String>, String> {
+    let svc = if profile_id.is_empty() {
+        super::get_service_config(&state, "tts")
+    } else {
+        super::get_service_config_for_profile(&state, &profile_id)
+    };
+    if svc.base_url.trim().is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(fonos_core::tts::list_model_voices(&svc).await.unwrap_or_default())
+}

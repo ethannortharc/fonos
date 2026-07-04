@@ -482,6 +482,8 @@ export function installDemoIpc() {
           llm_latency_avg: 309,
           tokens_total: 12200,
         };
+      case "list_model_voices":
+        return ["zf_xiaoxiao", "zm_yunjian", "af_heart"];
       case "list_voices":
         return {
           voices: [

@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types";
-import { listVoices, generateAndPlay } from "../../lib/api";
+import { listVoices, listModelVoices, generateAndPlay } from "../../lib/api";
 import { HotkeyInput } from "./HotkeysTab";
 
 const PREVIEW_TEXT = "你好，这是这个音色的试听效果。Hello, this is a preview of this voice.";
@@ -70,14 +70,20 @@ function VoicePicker({
   value,
   voices,
   modelName,
+  serverVoices,
   onChange,
 }: {
   value: string;
   voices: VoiceEntry[];
   modelName: string;
+  serverVoices: string[];
   onChange: (v: string) => void;
 }) {
-  const speakerGroups = modelSpeakers(modelName);
+  // Server-reported speakers (OMLX voices endpoint) beat the curated lists.
+  const speakerGroups =
+    serverVoices.length > 0
+      ? [{ group: "Model speakers", names: serverVoices }]
+      : modelSpeakers(modelName);
   const known =
     value === "default" ||
     voices.some((v) => v.name === value) ||
@@ -176,12 +182,24 @@ export default function SpeechTab({
   const llmProfiles = profiles.filter((p) => p.capabilities?.includes("llm"));
   const llmModes = modes.filter((m) => m.system || m.user_template);
   const [voices, setVoices] = useState<VoiceEntry[]>([]);
+  const [serverVoices, setServerVoices] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     listVoices()
       .then((l) => setVoices(l.voices.filter((v) => v.status === "ready")))
       .catch(() => {});
   }, []);
+
+  // Ask the server which speakers each selected voice profile's model has.
+  const listenProfileId = config.listen_voice_profile ?? "";
+  const stsProfileId = config.sts_voice_profile ?? "";
+  useEffect(() => {
+    for (const id of new Set([listenProfileId, stsProfileId])) {
+      listModelVoices(id)
+        .then((v) => setServerVoices((m) => ({ ...m, [id]: v })))
+        .catch(() => {});
+    }
+  }, [listenProfileId, stsProfileId]);
 
   const effectiveTtsModel = (profileId: string) => {
     const p =
@@ -238,7 +256,8 @@ export default function SpeechTab({
           <VoicePicker
             value={config.listen_voice ?? "default"}
             voices={voices}
-            modelName={effectiveTtsModel(config.listen_voice_profile ?? "")}
+            modelName={effectiveTtsModel(listenProfileId)}
+            serverVoices={serverVoices[listenProfileId] ?? []}
             onChange={(v) => onSave({ listen_voice: v })}
           />
         </Row>
@@ -304,7 +323,8 @@ export default function SpeechTab({
           <VoicePicker
             value={config.sts_voice ?? "default"}
             voices={voices}
-            modelName={effectiveTtsModel(config.sts_voice_profile ?? "")}
+            modelName={effectiveTtsModel(stsProfileId)}
+            serverVoices={serverVoices[stsProfileId] ?? []}
             onChange={(v) => onSave({ sts_voice: v })}
           />
         </Row>

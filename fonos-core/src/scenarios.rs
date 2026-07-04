@@ -331,8 +331,60 @@ pub struct ScenarioAssignments {
     pub listen_voice: String,
 }
 
-/// A self-contained, shareable snapshot of a working configuration: the model
-/// profiles referenced by the default assignments, plus those assignments.
+/// The **models** section of a saved scenario: the model profiles referenced by
+/// the default assignments, plus those assignments. Present when a save includes
+/// the model/role configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModelsSection {
+    /// Snapshot of the model-profile JSON entries the assignments reference.
+    pub profiles: Vec<serde_json::Value>,
+    /// The default-service assignments to restore.
+    pub assignments: ScenarioAssignments,
+}
+
+/// The **dictation** section of a saved scenario: the user's custom modes (as
+/// stored verbatim in `modes.json`) plus the two config fields that drive
+/// dictation behaviour. Applied by writing modes.json (shell) + config fields
+/// (core).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DictationSection {
+    /// The user-modes map exactly as persisted in `modes.json` (id → Mode).
+    pub user_modes: serde_json::Value,
+    /// Default dictation mode id.
+    pub dictation_mode: String,
+    /// Target language for translation mode.
+    pub translate_target: String,
+}
+
+/// The **speech** section of a saved scenario: the Listen queue + STS
+/// conversation configuration (voice output pipelines).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpeechSection {
+    /// Mode id used to process captured Listen text.
+    pub listen_mode: String,
+    /// TTS profile id for Listen synthesis.
+    pub listen_voice_profile: String,
+    /// Voice identifier for Listen synthesis.
+    pub listen_voice: String,
+    /// Persona / system prompt for the conversation stage.
+    pub sts_persona: String,
+    /// LLM profile id for conversation.
+    pub sts_llm_profile: String,
+    /// TTS profile id for the spoken reply.
+    pub sts_voice_profile: String,
+    /// Voice identifier for the spoken reply.
+    pub sts_voice: String,
+    /// Conversation memory: max user/assistant turn pairs kept.
+    pub sts_max_turns: usize,
+}
+
+/// A self-contained, shareable snapshot of a working configuration. Evolved from
+/// a flat models-only bundle into a **sectioned** bundle: each of models /
+/// dictation / speech is an independent, optional section, so a save can carry
+/// any subset and an apply restores only the sections present.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SavedScenario {
@@ -342,10 +394,33 @@ pub struct SavedScenario {
     pub name: String,
     /// Creation time as a unix-epoch-seconds string (formatted by the frontend).
     pub created_at: String,
-    /// Snapshot of the model-profile JSON entries the assignments reference.
-    pub profiles: Vec<serde_json::Value>,
-    /// The default-service assignments to restore.
-    pub assignments: ScenarioAssignments,
+    /// Model profiles + role assignments, when the save includes models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<ModelsSection>,
+    /// Custom modes + dictation config fields, when the save includes dictation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dictation: Option<DictationSection>,
+    /// Listen + STS conversation config, when the save includes speech.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speech: Option<SpeechSection>,
+}
+
+impl SavedScenario {
+    /// The section badges this scenario carries, in fixed order: any of
+    /// `"models"`, `"dictation"`, `"speech"` whose section is present.
+    pub fn sections(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.models.is_some() {
+            out.push("models");
+        }
+        if self.dictation.is_some() {
+            out.push("dictation");
+        }
+        if self.speech.is_some() {
+            out.push("speech");
+        }
+        out
+    }
 }
 
 /// Milliseconds since the unix epoch (monotonic-enough id seed).
@@ -396,12 +471,9 @@ pub fn scenario_slug(name: &str) -> String {
     slug(name)
 }
 
-/// Snapshot the live config into a [`SavedScenario`] named `name`.
-///
-/// Captures every model profile referenced by the current default assignments
-/// (STT / LLM / TTS / conversation / listen), de-duplicated, plus the
-/// assignment values themselves.
-pub fn snapshot_current(config: &AppConfig, name: &str) -> SavedScenario {
+/// Capture the model profiles referenced by the current default assignments
+/// (STT / LLM / TTS / conversation / listen), de-duplicated in reference order.
+fn referenced_profiles(config: &AppConfig) -> Vec<serde_json::Value> {
     let referenced = [
         config.stt_profile.trim(),
         config.llm_profile.trim(),
@@ -424,11 +496,26 @@ pub fn snapshot_current(config: &AppConfig, name: &str) -> SavedScenario {
             profiles.push(p.clone());
         }
     }
-    SavedScenario {
-        id: generate_scenario_id(name),
-        name: name.to_string(),
-        created_at: epoch_secs_string(),
-        profiles,
+    profiles
+}
+
+/// Snapshot the live config into a sectioned [`SavedScenario`] named `name`,
+/// capturing only the sections whose `include_*` flag is set.
+///
+/// * **models** — the referenced model profiles + the default role assignments.
+/// * **dictation** — `user_modes` (the modes.json map, supplied by the shell)
+///   plus the dictation-mode / translate-target config fields.
+/// * **speech** — the Listen + STS conversation configuration.
+pub fn snapshot_current(
+    config: &AppConfig,
+    name: &str,
+    user_modes: serde_json::Value,
+    include_models: bool,
+    include_dictation: bool,
+    include_speech: bool,
+) -> SavedScenario {
+    let models = include_models.then(|| ModelsSection {
+        profiles: referenced_profiles(config),
         assignments: ScenarioAssignments {
             stt_profile: config.stt_profile.clone(),
             llm_profile: config.llm_profile.clone(),
@@ -438,57 +525,133 @@ pub fn snapshot_current(config: &AppConfig, name: &str) -> SavedScenario {
             sts_voice: config.sts_voice.clone(),
             listen_voice: config.listen_voice.clone(),
         },
+    });
+    let dictation = include_dictation.then(|| DictationSection {
+        user_modes,
+        dictation_mode: config.dictation_mode.clone(),
+        translate_target: config.translate_target.clone(),
+    });
+    let speech = include_speech.then(|| SpeechSection {
+        listen_mode: config.listen_mode.clone(),
+        listen_voice_profile: config.listen_voice_profile.clone(),
+        listen_voice: config.listen_voice.clone(),
+        sts_persona: config.sts_persona.clone(),
+        sts_llm_profile: config.sts_llm_profile.clone(),
+        sts_voice_profile: config.sts_voice_profile.clone(),
+        sts_voice: config.sts_voice.clone(),
+        sts_max_turns: config.sts_max_turns,
+    });
+    SavedScenario {
+        id: generate_scenario_id(name),
+        name: name.to_string(),
+        created_at: epoch_secs_string(),
+        models,
+        dictation,
+        speech,
     }
 }
 
-/// Apply a [`SavedScenario`] to `config`: upsert its snapshot profiles by id
-/// (replacing a same-id profile, else appending — **never** deleting unrelated
-/// profiles), then restore the default assignments.
-pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) {
-    for p in &scenario.profiles {
-        let pid = p["id"].as_str().unwrap_or("");
-        if pid.is_empty() {
-            continue;
+/// Apply a [`SavedScenario`] to `config`, restoring **only the sections that are
+/// present** (a section-selective apply):
+///
+/// * **models** — upsert the snapshot profiles by id (replacing a same-id
+///   profile, else appending — **never** deleting unrelated profiles), then
+///   restore the role assignments.
+/// * **speech** — set the Listen + STS conversation fields.
+/// * **dictation** — set the dictation-mode / translate-target config fields
+///   here; the custom-modes map is **returned** for the shell to persist into
+///   `modes.json` (core cannot touch that file).
+///
+/// Returns `Some(user_modes)` when a dictation section was applied, else `None`.
+pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<serde_json::Value> {
+    if let Some(m) = &scenario.models {
+        for p in &m.profiles {
+            let pid = p["id"].as_str().unwrap_or("");
+            if pid.is_empty() {
+                continue;
+            }
+            if let Some(existing) = config
+                .model_profiles
+                .iter_mut()
+                .find(|e| e["id"].as_str() == Some(pid))
+            {
+                *existing = p.clone();
+            } else {
+                config.model_profiles.push(p.clone());
+            }
         }
-        if let Some(existing) = config
-            .model_profiles
-            .iter_mut()
-            .find(|e| e["id"].as_str() == Some(pid))
-        {
-            *existing = p.clone();
-        } else {
-            config.model_profiles.push(p.clone());
+        let a = &m.assignments;
+        config.stt_profile = a.stt_profile.clone();
+        config.llm_profile = a.llm_profile.clone();
+        config.tts_profile = a.tts_profile.clone();
+        config.sts_voice_profile = a.sts_voice_profile.clone();
+        config.listen_voice_profile = a.listen_voice_profile.clone();
+        if !a.sts_voice.trim().is_empty() {
+            config.sts_voice = a.sts_voice.clone();
+        }
+        if !a.listen_voice.trim().is_empty() {
+            config.listen_voice = a.listen_voice.clone();
         }
     }
-    let a = &scenario.assignments;
-    config.stt_profile = a.stt_profile.clone();
-    config.llm_profile = a.llm_profile.clone();
-    config.tts_profile = a.tts_profile.clone();
-    config.sts_voice_profile = a.sts_voice_profile.clone();
-    config.listen_voice_profile = a.listen_voice_profile.clone();
-    if !a.sts_voice.trim().is_empty() {
-        config.sts_voice = a.sts_voice.clone();
+
+    if let Some(s) = &scenario.speech {
+        config.listen_mode = s.listen_mode.clone();
+        config.listen_voice_profile = s.listen_voice_profile.clone();
+        config.sts_persona = s.sts_persona.clone();
+        config.sts_llm_profile = s.sts_llm_profile.clone();
+        config.sts_voice_profile = s.sts_voice_profile.clone();
+        config.sts_max_turns = s.sts_max_turns;
+        if !s.listen_voice.trim().is_empty() {
+            config.listen_voice = s.listen_voice.clone();
+        }
+        if !s.sts_voice.trim().is_empty() {
+            config.sts_voice = s.sts_voice.clone();
+        }
     }
-    if !a.listen_voice.trim().is_empty() {
-        config.listen_voice = a.listen_voice.clone();
+
+    if let Some(d) = &scenario.dictation {
+        config.dictation_mode = d.dictation_mode.clone();
+        config.translate_target = d.translate_target.clone();
+        return Some(d.user_modes.clone());
     }
+    None
 }
 
 /// Parse and validate an imported scenario JSON string, returning it with a
 /// **fresh id** (so imports never collide with existing saved scenarios).
 ///
-/// Rejects any JSON that isn't an object carrying an `assignments` object and a
-/// `profiles` array, so an arbitrary file produces a clear error rather than a
-/// silently-defaulted empty scenario.
+/// Accepts both the current **sectioned** shape (at least one of `models` /
+/// `dictation` / `speech`) and the legacy **flat** shape (top-level `profiles`
+/// array + `assignments` object), which is migrated into a `models` section.
+/// Any other JSON produces a clear error rather than a silently-defaulted empty
+/// scenario.
 pub fn parse_saved_scenario(json: &str) -> Result<SavedScenario, String> {
-    let value: serde_json::Value =
+    let mut value: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
-    let shape_ok = value.is_object()
-        && value.get("assignments").map_or(false, |a| a.is_object())
-        && value.get("profiles").map_or(false, |p| p.is_array());
-    if !shape_ok {
+    if !value.is_object() {
         return Err("not a fonos scenario file".to_string());
     }
+
+    let has_section = ["models", "dictation", "speech"]
+        .iter()
+        .any(|k| value.get(*k).map_or(false, |v| !v.is_null()));
+
+    if !has_section {
+        // Migrate the legacy flat shape (top-level profiles + assignments).
+        let old_shape = value.get("profiles").map_or(false, |p| p.is_array())
+            && value.get("assignments").map_or(false, |a| a.is_object());
+        if !old_shape {
+            return Err("not a fonos scenario file".to_string());
+        }
+        let obj = value.as_object_mut().unwrap();
+        let profiles = obj.remove("profiles").unwrap_or_else(|| serde_json::json!([]));
+        let assignments = obj.remove("assignments").unwrap_or_else(|| serde_json::json!({}));
+        obj.insert(
+            "models".to_string(),
+            serde_json::json!({ "profiles": profiles, "assignments": assignments }),
+        );
+    }
+
     let mut scenario: SavedScenario =
         serde_json::from_value(value).map_err(|e| format!("invalid scenario: {e}"))?;
     scenario.id = generate_scenario_id(&scenario.name);
@@ -635,26 +798,94 @@ mod tests {
         c.tts_profile = String::new();
         c.sts_voice_profile = String::new();
         c.listen_voice_profile = String::new();
+        c.dictation_mode = "polish".into();
+        c.translate_target = "German".into();
+        c.listen_mode = "listen".into();
+        c.sts_persona = "Be terse.".into();
+        c.sts_max_turns = 5;
         c
+    }
+
+    /// A user-modes map as it would appear in modes.json.
+    fn user_modes() -> serde_json::Value {
+        json!({ "my-mode": { "name": "My Mode", "icon": "🔧", "temperature": 0.2 } })
     }
 
     #[test]
     fn snapshot_captures_referenced_profiles_and_assignments() {
         let c = cfg_with_profiles();
-        let snap = snapshot_current(&c, "My Local");
+        let snap = snapshot_current(&c, "My Local", json!(null), true, false, false);
         assert_eq!(snap.name, "My Local");
         assert!(snap.id.starts_with("saved-my-local-"));
+        let m = snap.models.as_ref().expect("models section present");
         // Only stt1 + llm1 are referenced; "unrelated" is not captured.
-        let captured: Vec<&str> = snap.profiles.iter().map(|p| p["id"].as_str().unwrap()).collect();
+        let captured: Vec<&str> = m.profiles.iter().map(|p| p["id"].as_str().unwrap()).collect();
         assert_eq!(captured, vec!["stt1", "llm1"]);
-        assert_eq!(snap.assignments.stt_profile, "stt1");
-        assert_eq!(snap.assignments.llm_profile, "llm1");
+        assert_eq!(m.assignments.stt_profile, "stt1");
+        assert_eq!(m.assignments.llm_profile, "llm1");
+    }
+
+    #[test]
+    fn snapshot_is_section_selective() {
+        let c = cfg_with_profiles();
+        // Models only.
+        let s = snapshot_current(&c, "M", json!(null), true, false, false);
+        assert!(s.models.is_some() && s.dictation.is_none() && s.speech.is_none());
+        assert_eq!(s.sections(), vec!["models"]);
+        // Dictation only — carries the user-modes map + config fields.
+        let s = snapshot_current(&c, "D", user_modes(), false, true, false);
+        assert_eq!(s.sections(), vec!["dictation"]);
+        let d = s.dictation.unwrap();
+        assert_eq!(d.dictation_mode, "polish");
+        assert_eq!(d.translate_target, "German");
+        assert_eq!(d.user_modes["my-mode"]["name"], "My Mode");
+        // Speech only.
+        let s = snapshot_current(&c, "S", json!(null), false, false, true);
+        assert_eq!(s.sections(), vec!["speech"]);
+        let sp = s.speech.unwrap();
+        assert_eq!(sp.sts_persona, "Be terse.");
+        assert_eq!(sp.sts_max_turns, 5);
+        // All three.
+        let s = snapshot_current(&c, "All", user_modes(), true, true, true);
+        assert_eq!(s.sections(), vec!["models", "dictation", "speech"]);
+    }
+
+    #[test]
+    fn sections_reports_present_badges() {
+        let mut s = SavedScenario::default();
+        assert!(s.sections().is_empty());
+        s.models = Some(ModelsSection::default());
+        s.speech = Some(SpeechSection::default());
+        // Fixed order regardless of assignment order: models, dictation, speech.
+        assert_eq!(s.sections(), vec!["models", "speech"]);
+        s.dictation = Some(DictationSection::default());
+        assert_eq!(s.sections(), vec!["models", "dictation", "speech"]);
+    }
+
+    #[test]
+    fn snapshot_then_apply_all_sections_round_trips() {
+        let source = cfg_with_profiles();
+        let snap = snapshot_current(&source, "Full", user_modes(), true, true, true);
+
+        let mut target = AppConfig::default();
+        let returned = apply_saved(&mut target, &snap).expect("dictation returns user modes");
+        // Models restored.
+        assert_eq!(target.stt_profile, "stt1");
+        assert_eq!(target.llm_profile, "llm1");
+        assert!(target.model_profiles.iter().any(|p| p["id"].as_str() == Some("stt1")));
+        // Speech restored.
+        assert_eq!(target.sts_persona, "Be terse.");
+        assert_eq!(target.sts_max_turns, 5);
+        // Dictation config restored + user modes handed back.
+        assert_eq!(target.dictation_mode, "polish");
+        assert_eq!(target.translate_target, "German");
+        assert_eq!(returned["my-mode"]["name"], "My Mode");
     }
 
     #[test]
     fn apply_saved_upserts_without_deleting_unrelated() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Local");
+        let snap = snapshot_current(&source, "Local", json!(null), true, false, false);
 
         // A different machine: only has an unrelated profile + a stale stt1.
         let mut target = AppConfig::default();
@@ -663,7 +894,8 @@ mod tests {
             json!({ "id": "stt1", "name": "STALE", "provider": "omlx", "model": "old", "base_url": "http://localhost:9999", "capabilities": ["stt"] }),
         ];
 
-        apply_saved(&mut target, &snap);
+        let modes = apply_saved(&mut target, &snap);
+        assert!(modes.is_none(), "models-only apply returns no user modes");
 
         // stt1 upserted (replaced), llm1 appended, keepme untouched.
         let by_id = |id: &str| target.model_profiles.iter().find(|p| p["id"].as_str() == Some(id)).cloned();
@@ -675,9 +907,33 @@ mod tests {
     }
 
     #[test]
+    fn apply_only_touches_present_sections() {
+        let source = cfg_with_profiles();
+
+        // Speech-only scenario must not clear the target's model assignments.
+        let speech = snapshot_current(&source, "Speech", json!(null), false, false, true);
+        let mut target = AppConfig::default();
+        target.stt_profile = "keep-stt".into();
+        target.llm_profile = "keep-llm".into();
+        apply_saved(&mut target, &speech);
+        assert_eq!(target.stt_profile, "keep-stt", "speech apply leaves models untouched");
+        assert_eq!(target.llm_profile, "keep-llm");
+        assert_eq!(target.sts_persona, "Be terse.");
+        assert_eq!(target.sts_max_turns, 5);
+
+        // Dictation apply sets config fields and returns the user-modes map.
+        let dict = snapshot_current(&source, "Dict", user_modes(), false, true, false);
+        let mut target = AppConfig::default();
+        let returned = apply_saved(&mut target, &dict).expect("dictation returns user modes");
+        assert_eq!(target.dictation_mode, "polish");
+        assert_eq!(target.translate_target, "German");
+        assert_eq!(returned["my-mode"]["name"], "My Mode");
+    }
+
+    #[test]
     fn parse_saved_scenario_validates_shape_and_refreshes_id() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Shareable");
+        let snap = snapshot_current(&source, "Shareable", json!(null), true, false, false);
         let mut value = serde_json::to_value(&snap).unwrap();
         value["id"] = json!("original-id-should-be-replaced");
         let text = serde_json::to_string(&value).unwrap();
@@ -685,10 +941,30 @@ mod tests {
         let parsed = parse_saved_scenario(&text).unwrap();
         assert_ne!(parsed.id, "original-id-should-be-replaced");
         assert!(parsed.id.starts_with("saved-shareable-"));
-        assert_eq!(parsed.profiles.len(), 2);
+        assert_eq!(parsed.models.unwrap().profiles.len(), 2);
 
         // Garbage / wrong-shape input is rejected.
         assert!(parse_saved_scenario("{\"hello\":true}").is_err());
         assert!(parse_saved_scenario("not json").is_err());
+    }
+
+    #[test]
+    fn parse_tolerates_legacy_flat_shape() {
+        // An old export with top-level profiles + assignments migrates into a
+        // models section rather than being rejected.
+        let legacy = json!({
+            "id": "saved-old",
+            "name": "Legacy",
+            "created_at": "1700000000",
+            "profiles": [
+                { "id": "stt1", "name": "ASR", "provider": "omlx", "model": "Qwen3-ASR-1.7B", "base_url": "http://localhost:8000", "capabilities": ["stt"] }
+            ],
+            "assignments": { "stt_profile": "stt1", "llm_profile": "" }
+        });
+        let parsed = parse_saved_scenario(&legacy.to_string()).unwrap();
+        assert_eq!(parsed.sections(), vec!["models"]);
+        let m = parsed.models.unwrap();
+        assert_eq!(m.profiles.len(), 1);
+        assert_eq!(m.assignments.stt_profile, "stt1");
     }
 }

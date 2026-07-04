@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use fonos_core::llm::ServiceConfig;
+use fonos_core::modes::{self, Mode};
 use fonos_core::scenarios::{self, ClassifiedModels, ModelPlan, SavedScenario};
 
 use super::AppState;
@@ -147,12 +148,34 @@ fn save_config(state: &AppState) -> Result<(), String> {
     guard.save().map_err(|e| format!("failed to save config: {e}"))
 }
 
-/// Snapshot the live config into a new [`SavedScenario`], append it, and persist.
+/// Snapshot the live config into a new sectioned [`SavedScenario`], append it,
+/// and persist. The `include_*` flags choose which sections are captured; the
+/// dictation section (when included) reads the user's custom modes from
+/// `modes.json`.
 #[tauri::command]
-pub fn save_scenario(state: tauri::State<'_, AppState>, name: String) -> Result<SavedScenario, String> {
+pub fn save_scenario(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    include_models: bool,
+    include_dictation: bool,
+    include_speech: bool,
+) -> Result<SavedScenario, String> {
+    // Read the user-modes map (modes.json) so a dictation section can carry it.
+    let user_modes = if include_dictation {
+        serde_json::to_value(modes::load_custom_modes()).unwrap_or(serde_json::Value::Null)
+    } else {
+        serde_json::Value::Null
+    };
     let scenario = {
         let mut guard = state.config.lock().map_err(|e| e.to_string())?;
-        let scenario = scenarios::snapshot_current(&guard, name.trim());
+        let scenario = scenarios::snapshot_current(
+            &guard,
+            name.trim(),
+            user_modes,
+            include_models,
+            include_dictation,
+            include_speech,
+        );
         guard.saved_scenarios.push(scenario.clone());
         scenario
     };
@@ -160,10 +183,13 @@ pub fn save_scenario(state: tauri::State<'_, AppState>, name: String) -> Result<
     Ok(scenario)
 }
 
-/// Apply a saved scenario by id: upsert its profiles + restore its assignments.
+/// Apply a saved scenario by id: restore the sections it carries. Core mutates
+/// the config (profiles/assignments + speech + dictation config fields); when a
+/// dictation section is present its custom-modes map is written back to
+/// `modes.json` here (replacing the user modes wholesale — built-ins are code).
 #[tauri::command]
 pub fn apply_saved_scenario(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
-    {
+    let user_modes = {
         let mut guard = state.config.lock().map_err(|e| e.to_string())?;
         let scenario = guard
             .saved_scenarios
@@ -171,9 +197,20 @@ pub fn apply_saved_scenario(state: tauri::State<'_, AppState>, id: String) -> Re
             .find(|s| s.id == id)
             .cloned()
             .ok_or_else(|| format!("saved scenario '{id}' not found"))?;
-        scenarios::apply_saved(&mut guard, &scenario);
+        scenarios::apply_saved(&mut guard, &scenario)
+    };
+    save_config(&state)?;
+
+    if let Some(modes_value) = user_modes {
+        let custom: std::collections::BTreeMap<String, Mode> = if modes_value.is_null() {
+            std::collections::BTreeMap::new()
+        } else {
+            serde_json::from_value(modes_value)
+                .map_err(|e| format!("invalid modes in scenario: {e}"))?
+        };
+        modes::save_custom_modes(&custom).map_err(|e| e.to_string())?;
     }
-    save_config(&state)
+    Ok(())
 }
 
 /// Delete a saved scenario by id.

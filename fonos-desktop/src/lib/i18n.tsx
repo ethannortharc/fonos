@@ -45,6 +45,7 @@ const en = {
   // settings tabs
   "tab.general": "General",
   "tab.models": "Models",
+  "tab.scenarios": "Scenarios",
   "tab.dictation": "Dictation",
   "tab.speech": "Speech",
   "tab.vocab": "Vocabulary",
@@ -747,6 +748,27 @@ const en = {
   "scen.share.imported": "Imported “{0}” — apply it from Saved setups",
   "scen.share.invalid": "That file isn't a valid Fonos scenario",
   "scen.share.needkeys": "Fill in API keys for: {0}",
+
+  "scen.section.models": "Models",
+  "scen.section.dictation": "Dictation",
+  "scen.section.speech": "Speech",
+
+  "scen.tab.current": "Current configuration",
+  "scen.tab.nomodels": "No default models set yet",
+  "scen.tab.templates": "Setup templates",
+  "scen.tab.template.desc": "Start from a ready-made scenario — Local, Fast cloud, or Zero-cost.",
+  "scen.tab.template.btn": "Start from a template…",
+
+  "scen.sum.mode": "Default mode",
+  "scen.sum.custom": "Custom modes",
+  "scen.sum.custommodes": "{0} custom",
+  "scen.sum.translate": "Translate →",
+  "scen.sum.listen": "Listen",
+  "scen.sum.persona": "Persona",
+  "scen.sum.convo": "Conversation",
+  "scen.sum.turns": "{0} turns memory",
+  "scen.sum.defaultvoice": "default voice",
+  "scen.sum.vocab": "{0} vocab books",
 };
 
 export type TKey = keyof typeof en;
@@ -763,6 +785,7 @@ const zh: Partial<Record<Key, string>> = {
 
   "tab.general": "通用",
   "tab.models": "模型",
+  "tab.scenarios": "场景",
   "tab.dictation": "听写",
   "tab.speech": "语音",
   "tab.vocab": "词汇",
@@ -1440,6 +1463,27 @@ const zh: Partial<Record<Key, string>> = {
   "scen.share.imported": "已导入「{0}」— 在「已保存的配置」中应用",
   "scen.share.invalid": "该文件不是有效的 fonos 场景",
   "scen.share.needkeys": "请为以下配置填入 API Key:{0}",
+
+  "scen.section.models": "模型",
+  "scen.section.dictation": "听写",
+  "scen.section.speech": "语音",
+
+  "scen.tab.current": "当前配置",
+  "scen.tab.nomodels": "尚未设置默认模型",
+  "scen.tab.templates": "配置模板",
+  "scen.tab.template.desc": "从现成场景开始 — 本地、极速云端或零成本。",
+  "scen.tab.template.btn": "从模板开始…",
+
+  "scen.sum.mode": "默认模式",
+  "scen.sum.custom": "自定义模式",
+  "scen.sum.custommodes": "{0} 个自定义",
+  "scen.sum.translate": "翻译 →",
+  "scen.sum.listen": "朗读",
+  "scen.sum.persona": "人设",
+  "scen.sum.convo": "对话",
+  "scen.sum.turns": "记忆 {0} 轮",
+  "scen.sum.defaultvoice": "默认音色",
+  "scen.sum.vocab": "{0} 个词汇本",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

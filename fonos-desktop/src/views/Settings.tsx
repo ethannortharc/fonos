@@ -15,6 +15,7 @@ import { TABS } from "./settings/constants";
 import type { SettingsTab, ModeForm } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
+import ScenariosTab from "./settings/ScenariosTab";
 import ModesTab from "./settings/ModesTab";
 import HotkeysTab from "./settings/HotkeysTab";
 import SpeechTab from "./settings/SpeechTab";
@@ -181,7 +182,16 @@ export default function Settings() {
             config={config}
             onSave={handleSave}
             setError={setError}
+          />
+        )}
+
+        {/* ────────────── Scenarios tab (saved bundles + templates) ────────────── */}
+        {settingsTab === "scenarios" && (
+          <ScenariosTab
+            config={config}
+            modes={modes}
             onReload={loadAll}
+            setError={setError}
           />
         )}
 

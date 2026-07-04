@@ -237,9 +237,20 @@ export async function scenarioProbe(
   return invoke<ScenarioProbe>("scenario_probe", { baseUrl, apiKey, voice: voice ?? null });
 }
 
-/** Snapshot the live config as a new saved scenario. */
-export async function saveScenario(name: string): Promise<SavedScenario> {
-  return invoke<SavedScenario>("save_scenario", { name });
+/** Snapshot the live config as a new saved scenario, capturing the chosen
+ *  sections (models / dictation / speech). */
+export async function saveScenario(
+  name: string,
+  includeModels: boolean,
+  includeDictation: boolean,
+  includeSpeech: boolean
+): Promise<SavedScenario> {
+  return invoke<SavedScenario>("save_scenario", {
+    name,
+    includeModels,
+    includeDictation,
+    includeSpeech,
+  });
 }
 
 /** Apply a saved scenario by id (upsert profiles + restore assignments). */

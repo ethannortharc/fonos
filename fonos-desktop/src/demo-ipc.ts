@@ -99,43 +99,66 @@ const config = {
   vocab_books: [],
   global_vocab_books: [],
   saved_scenarios: [
+    // Models-only bundle — just the model profiles + role assignments.
     {
       id: "saved-local-omlx-demo",
       name: "Local · OMLX",
       created_at: String(Math.floor(now.getTime() / 1000) - 3600),
-      profiles: [
-        { id: "scenario-omlx-qwen3-asr-1-7b", name: "Qwen3-ASR-1.7B", provider: "omlx", model: "Qwen3-ASR-1.7B", base_url: "http://localhost:8000", capabilities: ["stt"], stt_api: "whisper" },
-        { id: "scenario-omlx-qwen3-8b-instruct", name: "Qwen3-8B-Instruct", provider: "omlx", model: "Qwen3-8B-Instruct", base_url: "http://localhost:8000", capabilities: ["llm"] },
-        { id: "scenario-omlx-kokoro-82m", name: "Kokoro-82M", provider: "omlx", model: "Kokoro-82M", base_url: "http://localhost:8000", capabilities: ["tts"] },
-      ],
-      assignments: {
-        stt_profile: "scenario-omlx-qwen3-asr-1-7b",
-        llm_profile: "scenario-omlx-qwen3-8b-instruct",
-        tts_profile: "scenario-omlx-kokoro-82m",
-        sts_voice_profile: "scenario-omlx-kokoro-82m",
-        listen_voice_profile: "scenario-omlx-kokoro-82m",
-        sts_voice: "default",
-        listen_voice: "default",
+      models: {
+        profiles: [
+          { id: "scenario-omlx-qwen3-asr-1-7b", name: "Qwen3-ASR-1.7B", provider: "omlx", model: "Qwen3-ASR-1.7B", base_url: "http://localhost:8000", capabilities: ["stt"], stt_api: "whisper" },
+          { id: "scenario-omlx-qwen3-8b-instruct", name: "Qwen3-8B-Instruct", provider: "omlx", model: "Qwen3-8B-Instruct", base_url: "http://localhost:8000", capabilities: ["llm"] },
+          { id: "scenario-omlx-kokoro-82m", name: "Kokoro-82M", provider: "omlx", model: "Kokoro-82M", base_url: "http://localhost:8000", capabilities: ["tts"] },
+        ],
+        assignments: {
+          stt_profile: "scenario-omlx-qwen3-asr-1-7b",
+          llm_profile: "scenario-omlx-qwen3-8b-instruct",
+          tts_profile: "scenario-omlx-kokoro-82m",
+          sts_voice_profile: "scenario-omlx-kokoro-82m",
+          listen_voice_profile: "scenario-omlx-kokoro-82m",
+          sts_voice: "default",
+          listen_voice: "default",
+        },
       },
     },
+    // Full bundle — models + dictation (custom modes) + speech.
     {
       id: "saved-cloud-openai-demo",
       name: "Fast cloud · OpenAI",
       created_at: String(Math.floor(now.getTime() / 1000) - 2 * 86400),
-      // Keys stripped (as an exported/shared bundle would be) → "needs key" chips.
-      profiles: [
-        { id: "scenario-openai-transcribe", name: "gpt-4o-mini-transcribe", provider: "openai", model: "gpt-4o-mini-transcribe", base_url: "https://api.openai.com", api_key: "", capabilities: ["stt"], stt_api: "whisper" },
-        { id: "scenario-openai-gpt-4o-mini", name: "gpt-4o-mini", provider: "openai", model: "gpt-4o-mini", base_url: "https://api.openai.com", api_key: "", capabilities: ["llm"] },
-        { id: "scenario-openai-tts", name: "gpt-4o-mini-tts", provider: "openai", model: "gpt-4o-mini-tts", base_url: "https://api.openai.com", api_key: "", capabilities: ["tts"] },
-      ],
-      assignments: {
-        stt_profile: "scenario-openai-transcribe",
-        llm_profile: "scenario-openai-gpt-4o-mini",
-        tts_profile: "scenario-openai-tts",
-        sts_voice_profile: "scenario-openai-tts",
+      models: {
+        // Keys stripped (as an exported/shared bundle would be) → "needs key" chips.
+        profiles: [
+          { id: "scenario-openai-transcribe", name: "gpt-4o-mini-transcribe", provider: "openai", model: "gpt-4o-mini-transcribe", base_url: "https://api.openai.com", api_key: "", capabilities: ["stt"], stt_api: "whisper" },
+          { id: "scenario-openai-gpt-4o-mini", name: "gpt-4o-mini", provider: "openai", model: "gpt-4o-mini", base_url: "https://api.openai.com", api_key: "", capabilities: ["llm"] },
+          { id: "scenario-openai-tts", name: "gpt-4o-mini-tts", provider: "openai", model: "gpt-4o-mini-tts", base_url: "https://api.openai.com", api_key: "", capabilities: ["tts"] },
+        ],
+        assignments: {
+          stt_profile: "scenario-openai-transcribe",
+          llm_profile: "scenario-openai-gpt-4o-mini",
+          tts_profile: "scenario-openai-tts",
+          sts_voice_profile: "scenario-openai-tts",
+          listen_voice_profile: "scenario-openai-tts",
+          sts_voice: "alloy",
+          listen_voice: "nova",
+        },
+      },
+      dictation: {
+        user_modes: {
+          terminal: { name: "Terminal", description: "Convert speech into a shell-friendly command.", icon: "⌨️", temperature: 0.1 },
+        },
+        dictation_mode: "polish",
+        translate_target: "English",
+      },
+      speech: {
+        listen_mode: "listen",
         listen_voice_profile: "scenario-openai-tts",
-        sts_voice: "alloy",
         listen_voice: "nova",
+        sts_persona: "You are a friendly voice assistant. Keep replies short and spoken.",
+        sts_llm_profile: "scenario-openai-gpt-4o-mini",
+        sts_voice_profile: "scenario-openai-tts",
+        sts_voice: "alloy",
+        sts_max_turns: 8,
       },
     },
   ],
@@ -592,16 +615,34 @@ export function installDemoIpc() {
           id: "saved-new-" + Date.now(),
           name: String(payload.name ?? "Setup"),
           created_at: String(Math.floor(Date.now() / 1000)),
-          profiles: [],
-          assignments: {
-            stt_profile: "openai-gpt-4o-mini-transcribe",
-            llm_profile: "openrouter-gemini",
-            tts_profile: "openai-tts",
-            sts_voice_profile: "openai-tts",
-            listen_voice_profile: "openai-tts",
-            sts_voice: "default",
-            listen_voice: "default",
-          },
+          ...(payload.includeModels !== false
+            ? {
+                models: {
+                  profiles: [],
+                  assignments: {
+                    stt_profile: "openai-gpt-4o-mini-transcribe",
+                    llm_profile: "openrouter-gemini",
+                    tts_profile: "openai-tts",
+                    sts_voice_profile: "openai-tts",
+                    listen_voice_profile: "openai-tts",
+                    sts_voice: "default",
+                    listen_voice: "default",
+                  },
+                },
+              }
+            : {}),
+          ...(payload.includeDictation
+            ? { dictation: { user_modes: {}, dictation_mode: "polish", translate_target: "English" } }
+            : {}),
+          ...(payload.includeSpeech
+            ? {
+                speech: {
+                  listen_mode: "listen", listen_voice_profile: "", listen_voice: "default",
+                  sts_persona: "You are a friendly voice assistant.", sts_llm_profile: "",
+                  sts_voice_profile: "", sts_voice: "default", sts_max_turns: 8,
+                },
+              }
+            : {}),
         };
       case "apply_saved_scenario":
       case "delete_saved_scenario":
@@ -614,10 +655,12 @@ export function installDemoIpc() {
           id: "saved-imported-" + Date.now(),
           name: "Imported setup",
           created_at: String(Math.floor(Date.now() / 1000)),
-          profiles: [],
-          assignments: {
-            stt_profile: "", llm_profile: "", tts_profile: "",
-            sts_voice_profile: "", listen_voice_profile: "", sts_voice: "default", listen_voice: "default",
+          models: {
+            profiles: [],
+            assignments: {
+              stt_profile: "", llm_profile: "", tts_profile: "",
+              sts_voice_profile: "", listen_voice_profile: "", sts_voice: "default", listen_voice: "default",
+            },
           },
         };
       default:

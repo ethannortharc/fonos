@@ -148,7 +148,7 @@ export interface ScenarioProbe {
   plan: ModelPlan;
 }
 
-/** Default-service assignments captured in a SavedScenario. */
+/** Default-service assignments captured in a SavedScenario's models section. */
 export interface ScenarioAssignments {
   stt_profile: string;
   llm_profile: string;
@@ -159,13 +159,42 @@ export interface ScenarioAssignments {
   listen_voice: string;
 }
 
-/** A saved, switchable configuration bundle — mirrors fonos_core::scenarios::SavedScenario. */
+/** The models section — profiles + role assignments. */
+export interface ModelsSection {
+  profiles: ModelProfile[];
+  assignments: ScenarioAssignments;
+}
+
+/** The dictation section — user-modes map (modes.json) + config fields. */
+export interface DictationSection {
+  /** id → Mode, exactly as persisted in modes.json. */
+  user_modes: Record<string, Mode>;
+  dictation_mode: string;
+  translate_target: string;
+}
+
+/** The speech section — Listen + STS conversation configuration. */
+export interface SpeechSection {
+  listen_mode: string;
+  listen_voice_profile: string;
+  listen_voice: string;
+  sts_persona: string;
+  sts_llm_profile: string;
+  sts_voice_profile: string;
+  sts_voice: string;
+  sts_max_turns: number;
+}
+
+/** A saved, switchable configuration bundle — mirrors
+ *  fonos_core::scenarios::SavedScenario. Sectioned: each of models / dictation /
+ *  speech is optional and present only when the save included it. */
 export interface SavedScenario {
   id: string;
   name: string;
   created_at: string;
-  profiles: ModelProfile[];
-  assignments: ScenarioAssignments;
+  models?: ModelsSection;
+  dictation?: DictationSection;
+  speech?: SpeechSection;
 }
 
 // ─── Setup Doctor (issue #30) ───────────────────────────────────────────────

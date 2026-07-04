@@ -14,27 +14,21 @@ import {
   saveConfig,
   scanModels,
   scenarioProbe,
-  saveScenario,
-  applySavedScenario,
-  deleteSavedScenario,
-  exportScenario,
-  importScenario,
-  importScenarioJson,
 } from "../lib/api";
 import type {
   AppConfig,
   ModelProfile,
-  SavedScenario,
   ScenarioProbe,
 } from "../types";
 import { t, td, useT, type TKey } from "../lib/i18n";
 
-const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
+export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // Shared control styling for every input/select in the scenario flow —
 // comfortable padding, rounded-lg, amber focus border. Append `font-mono` and
-// width utilities (`w-full`, `flex-1 min-w-0`) at the call site.
-const control =
+// width utilities (`w-full`, `flex-1 min-w-0`) at the call site. Exported so the
+// Settings › Scenarios tab reuses the same visual language.
+export const control =
   "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(251,191,36,0.35)] transition-colors";
 
 /** Whether the app already has a usable STT configuration — a set default STT
@@ -132,7 +126,7 @@ interface ProfileSpec {
   capabilities: string[];
   stt_api?: "whisper" | "chat";
 }
-type RoleKey = "stt" | "llm" | "conv" | "listen";
+export type RoleKey = "stt" | "llm" | "conv" | "listen";
 
 const normUrl = (u: string) => u.replace(/\/+$/, "");
 
@@ -245,26 +239,6 @@ function Dots({ n }: { n: number }) {
         </span>
       ))}
     </span>
-  );
-}
-
-function CoverBadges({ scenario }: { scenario: SavedScenario }) {
-  const a = scenario.assignments;
-  const covers: string[] = [];
-  if (a.stt_profile) covers.push("STT");
-  if (a.llm_profile) covers.push("LLM");
-  if (a.tts_profile || a.listen_voice_profile) covers.push("TTS");
-  return (
-    <>
-      {covers.map((c) => (
-        <span
-          key={c}
-          className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.4)]"
-        >
-          {c}
-        </span>
-      ))}
-    </>
   );
 }
 
@@ -469,29 +443,6 @@ export default function Scenarios({
     onDone();
   }, [onDone]);
 
-  // ── render helpers ─────────────────────────────────────────────────────────
-
-  const savedScenarios = config?.saved_scenarios ?? [];
-
-  const applySaved = async (id: string, name: string) => {
-    setError("");
-    try {
-      await applySavedScenario(id);
-      if (mode === "fullscreen") {
-        await saveConfig(JSON.stringify({ has_completed_onboarding: true }));
-      }
-      await reloadConfig();
-      setApplied(true);
-      setSelected(null);
-      setError("");
-      // Surface which was applied via the summary title fallback.
-      setAppliedName(name);
-    } catch (e) {
-      setError(errStr(e));
-    }
-  };
-  const [appliedName, setAppliedName] = useState("");
-
   // ── applied summary ─────────────────────────────────────────────────────────
   if (applied) {
     return (
@@ -501,7 +452,7 @@ export default function Scenarios({
             ✓
           </div>
           <div className="text-[16px] font-semibold text-[#fafaf9]">
-            {appliedName ? td("scen.saved.applied", [appliedName]) : t("scen.done.title")}
+            {t("scen.done.title")}
           </div>
           <p className="text-[12px] text-[rgba(255,255,255,0.5)] max-w-[380px]">{t("scen.done.desc")}</p>
           {error && <div className="text-[11px] text-[#f87171]">{error}</div>}
@@ -644,30 +595,6 @@ export default function Scenarios({
           </span>
         </div>
       )}
-
-      {/* Saved setups + sharing */}
-      <SavedSection
-        scenarios={savedScenarios}
-        canSaveCurrent={!!config && isSttConfigured(config)}
-        onApply={applySaved}
-        onDelete={async (id) => {
-          try {
-            await deleteSavedScenario(id);
-            await reloadConfig();
-          } catch (e) {
-            setError(errStr(e));
-          }
-        }}
-        onSaveCurrent={async (name) => {
-          try {
-            await saveScenario(name);
-            await reloadConfig();
-          } catch (e) {
-            setError(errStr(e));
-          }
-        }}
-        onImported={reloadConfig}
-      />
 
       {/* Skip (first-run only) */}
       {mode === "fullscreen" && (
@@ -958,7 +885,7 @@ function CloudStep({
 
 // ── plan rows ────────────────────────────────────────────────────────────────
 
-const ROLE_LABEL: Record<RoleKey, TKey> = {
+export const ROLE_LABEL: Record<RoleKey, TKey> = {
   stt: "scen.role.stt",
   llm: "scen.role.llm",
   conv: "scen.role.conv",
@@ -1019,9 +946,10 @@ function PlanRowStatic({ role, value, note }: { role: RoleKey; value: string; no
   );
 }
 
-// ── saved setups + sharing ───────────────────────────────────────────────────
+// ── saved-scenario preview helpers (shared with Settings › Scenarios) ─────────
 
-function relDate(epochSecs: string): string {
+/** Relative "saved N ago" label from an epoch-seconds string. */
+export function relDate(epochSecs: string): string {
   const n = parseInt(epochSecs, 10);
   if (!n) return "";
   const diff = Math.max(0, Math.floor(Date.now() / 1000) - n);
@@ -1031,11 +959,11 @@ function relDate(epochSecs: string): string {
   return td("scen.saved.day", [String(Math.floor(diff / 86400))]);
 }
 
-const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google"]);
+export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google"]);
 
 /** Host (with port) of a base URL — "http://localhost:8000" → "localhost:8000",
  *  "https://api.openai.com" → "api.openai.com". Empty for keyless/local. */
-function hostOf(url?: string): string {
+export function hostOf(url?: string): string {
   const u = (url ?? "").trim();
   if (!u) return "";
   try {
@@ -1047,8 +975,9 @@ function hostOf(url?: string): string {
 
 /** One role row inside a saved-scenario preview — mirrors the step-2 plan rows:
  *  role label (muted, fixed width) → model (mono) + base-URL host (muted) +
- *  optional voice name, with an amber "needs key" chip when a key is missing. */
-function PreviewRow({
+ *  optional voice name, with an amber "needs key" chip when a key is missing.
+ *  Exported so the Settings › Scenarios tab renders the same preview rows. */
+export function PreviewRow({
   role,
   profile,
   voice,
@@ -1071,316 +1000,6 @@ function PreviewRow({
           {t("scen.saved.needkey")}
         </span>
       )}
-    </div>
-  );
-}
-
-function SavedSection({
-  scenarios,
-  canSaveCurrent,
-  onApply,
-  onDelete,
-  onSaveCurrent,
-  onImported,
-}: {
-  scenarios: SavedScenario[];
-  canSaveCurrent: boolean;
-  onApply: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
-  onSaveCurrent: (name: string) => void;
-  onImported: () => void;
-}) {
-  const [saveName, setSaveName] = useState("");
-  const [showSave, setShowSave] = useState(false);
-
-  return (
-    <div className="mt-7 pt-5 border-t border-[rgba(255,255,255,0.06)] flex flex-col gap-2.5">
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] uppercase tracking-wider text-[rgba(255,255,255,0.35)]">{t("scen.saved.title")}</span>
-        <div className="ml-auto">
-          {showSave ? (
-            <div className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                placeholder={t("scen.saved.nameph")}
-                className={`${control} w-[168px]`}
-              />
-              <button
-                onClick={() => {
-                  if (saveName.trim()) {
-                    onSaveCurrent(saveName.trim());
-                    setSaveName("");
-                    setShowSave(false);
-                  }
-                }}
-                className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]"
-              >
-                {t("scen.saved.save")}
-              </button>
-            </div>
-          ) : (
-            canSaveCurrent && (
-              <button
-                onClick={() => setShowSave(true)}
-                className="text-[10px] px-2.5 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.55)] hover:text-[#fafaf9] transition-colors"
-              >
-                {t("scen.saved.savecurrent")}
-              </button>
-            )
-          )}
-        </div>
-      </div>
-
-      {scenarios.length === 0 ? (
-        <div className="text-[10.5px] text-[rgba(255,255,255,0.3)]">{t("scen.saved.empty")}</div>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          {scenarios.map((s) => (
-            <SavedRow key={s.id} scenario={s} onApply={onApply} onDelete={onDelete} />
-          ))}
-        </div>
-      )}
-
-      <ImportZone onImported={onImported} />
-    </div>
-  );
-}
-
-function SavedRow({
-  scenario,
-  onApply,
-  onDelete,
-}: {
-  scenario: SavedScenario;
-  onApply: (id: string, name: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [includeKeys, setIncludeKeys] = useState(false);
-  const [exportedPath, setExportedPath] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [err, setErr] = useState("");
-
-  const doExport = async () => {
-    setErr("");
-    try {
-      const profiles = includeKeys
-        ? scenario.profiles
-        : scenario.profiles.map((p) => ({ ...p, api_key: "" }));
-      const payload = { ...scenario, profiles };
-      const path = await exportScenario(JSON.stringify(payload, null, 2), scenario.name);
-      setExportedPath(path);
-    } catch (e) {
-      setErr(errStr(e));
-    }
-  };
-
-  // One preview row per assigned role, resolved to its snapshot profile. The
-  // conversation voice is anchored on sts_voice_profile (falling back to the
-  // plain tts_profile), mirroring how Apply writes both from the "conv" role.
-  const a = scenario.assignments;
-  const byId = (id: string) => scenario.profiles.find((p) => p.id === id);
-  const roleRows: { role: RoleKey; profile: ModelProfile; voice?: string }[] = [];
-  const pushRole = (role: RoleKey, id: string, voice?: string) => {
-    const profile = id ? byId(id) : undefined;
-    if (profile) roleRows.push({ role, profile, voice });
-  };
-  pushRole("stt", a.stt_profile);
-  pushRole("llm", a.llm_profile);
-  pushRole("conv", a.sts_voice_profile || a.tts_profile, a.sts_voice);
-  pushRole("listen", a.listen_voice_profile, a.listen_voice);
-
-  return (
-    <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
-      {/* Collapsed header — click toggles the preview. Kept clean: name + badges. */}
-      <div
-        onClick={() => setExpanded((v) => !v)}
-        className="flex items-center gap-2 px-3 py-2.5 cursor-pointer select-none"
-      >
-        <span className="text-[11.5px] font-medium text-[#fafaf9] truncate">{scenario.name || "—"}</span>
-        <CoverBadges scenario={scenario} />
-        <span className="flex-1" />
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="rgba(255,255,255,0.25)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          className={`flex-none transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-      </div>
-
-      {expanded && (
-        <div className="px-3 pb-3 pt-2.5 border-t border-[rgba(255,255,255,0.04)] flex flex-col gap-2.5">
-          {/* Configuration preview — same visual language as the step-2 plan. */}
-          {roleRows.length > 0 && (
-            <div className="rounded-lg border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
-              {roleRows.map((r) => (
-                <PreviewRow key={r.role} role={r.role} profile={r.profile} voice={r.voice} />
-              ))}
-            </div>
-          )}
-
-          {/* Footer: N profiles · saved <relative date> */}
-          <div className="text-[9.5px] text-[rgba(255,255,255,0.3)]">
-            {td("scen.saved.profiles", [String(scenario.profiles.length)])} ·{" "}
-            {td("scen.saved.savedat", [relDate(scenario.created_at)])}
-          </div>
-
-          {/* Actions — Apply is one click from here. */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => onApply(scenario.id, scenario.name)}
-              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]"
-            >
-              {t("scen.saved.apply")}
-            </button>
-            <button
-              onClick={() => setExporting((v) => !v)}
-              className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)] hover:text-[#fafaf9] transition-colors"
-            >
-              {t("scen.share.export")}
-            </button>
-            <button
-              onClick={() => onDelete(scenario.id)}
-              className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.08)] text-[rgba(255,255,255,0.35)] hover:text-[#f87171] transition-colors"
-            >
-              {t("scen.saved.delete")}
-            </button>
-          </div>
-
-          {exporting && (
-            <div className="flex flex-col gap-2 pt-1">
-              <label className="flex items-center gap-2 text-[10px] text-[rgba(255,255,255,0.5)]">
-                <input type="checkbox" checked={includeKeys} onChange={(e) => setIncludeKeys(e.target.checked)} />
-                {t("scen.share.includekeys")}
-              </label>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={doExport}
-                  className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.7)]"
-                >
-                  {t("scen.share.export")}
-                </button>
-                {exportedPath && (
-                  <>
-                    <span className="text-[10px] text-[#4ade80] truncate max-w-[300px]">
-                      {td("scen.share.exported", [exportedPath])}
-                    </span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard?.writeText(exportedPath).then(
-                          () => {
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 1500);
-                          },
-                          () => {}
-                        );
-                      }}
-                      className="text-[10px] px-2 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.5)]"
-                    >
-                      {copied ? t("scen.share.copied") : t("scen.share.copy")}
-                    </button>
-                  </>
-                )}
-              </div>
-              {err && <span className="text-[10px] text-[#f87171]">{err}</span>}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ImportZone({ onImported }: { onImported: () => void }) {
-  const [path, setPath] = useState("");
-  const [drag, setDrag] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
-  const [needKeys, setNeedKeys] = useState<string[]>([]);
-
-  const report = (s: SavedScenario) => {
-    setErr("");
-    setMsg(td("scen.share.imported", [s.name || "—"]));
-    const needing = s.profiles
-      .filter((p) => KEY_PROVIDERS.has(p.provider) && !(p.api_key ?? ""))
-      .map((p) => p.name || p.model);
-    setNeedKeys(needing);
-    onImported();
-  };
-  const fail = () => {
-    setMsg("");
-    setNeedKeys([]);
-    setErr(t("scen.share.invalid"));
-  };
-
-  const importFromText = async (text: string) => {
-    try {
-      report(await importScenarioJson(text));
-    } catch {
-      fail();
-    }
-  };
-  const importFromPath = async () => {
-    if (!path.trim()) return;
-    try {
-      report(await importScenario(path.trim()));
-    } catch {
-      fail();
-    }
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    file.text().then(importFromText, fail);
-  };
-
-  return (
-    <div className="mt-2 flex flex-col gap-2">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={onDrop}
-        className={[
-          "rounded-lg border border-dashed px-3 py-3 text-center transition-colors",
-          drag ? "border-[rgba(251,191,36,0.5)] bg-[rgba(251,191,36,0.05)]" : "border-[rgba(255,255,255,0.1)]",
-        ].join(" ")}
-      >
-        <div className="text-[10.5px] text-[rgba(255,255,255,0.4)]">{t("scen.share.importhint")}</div>
-        <div className="flex items-center gap-1.5 mt-2 max-w-[440px] mx-auto">
-          <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={t("scen.share.pathph")}
-            className={`${control} font-mono flex-1 min-w-0`}
-          />
-          <button
-            onClick={importFromPath}
-            className="text-[10px] px-2.5 py-1 rounded-md border border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.6)] hover:text-[#fafaf9] transition-colors"
-          >
-            {t("scen.share.importbtn")}
-          </button>
-        </div>
-      </div>
-      {msg && <div className="text-[10px] text-[#4ade80]">{msg}</div>}
-      {needKeys.length > 0 && (
-        <div className="text-[10px] text-[#fbbf24]">{td("scen.share.needkeys", [needKeys.join(", ")])}</div>
-      )}
-      {err && <div className="text-[10px] text-[#f87171]">{err}</div>}
     </div>
   );
 }

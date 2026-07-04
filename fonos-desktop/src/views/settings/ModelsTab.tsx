@@ -1,12 +1,11 @@
 // Models tab — default service dropdowns + the shared model-profile editor.
-// A quiet "Apply a scenario…" button (top-right) re-opens the scenario setup
-// (issue #29) as an overlay so configurations can be switched / A/B-tested.
+// Saved configuration bundles and the setup templates now live in the dedicated
+// Settings › Scenarios tab.
 
 import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModelProfile } from "../../types";
 import ModelProfileEditor from "./ModelProfileEditor";
-import Scenarios from "../Scenarios";
 
 // ─── Default Service Card Dropdown ───────────────────────────────────────────
 
@@ -110,38 +109,20 @@ export default function ModelsTab({
   config,
   onSave,
   setError,
-  onReload,
 }: {
   config: AppConfig;
   onSave: (updates: Partial<AppConfig>) => void;
   setError: (e: string) => void;
-  onReload?: () => void;
 }) {
   useT();
-  const [showScenarios, setShowScenarios] = useState(false);
   return (
     <div className="flex flex-col gap-4">
-      {showScenarios && (
-        <Scenarios
-          mode="overlay"
-          onDone={() => {
-            setShowScenarios(false);
-            onReload?.();
-          }}
-        />
-      )}
       {/* ── Section 1: Default Services ── */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
           <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">
             {t("models.defaults")}
           </div>
-          <button
-            onClick={() => setShowScenarios(true)}
-            className="ml-auto text-[10px] px-2.5 py-1 rounded-md border border-[rgba(251,191,36,0.25)] bg-[rgba(251,191,36,0.08)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.14)] transition-colors"
-          >
-            {t("scen.settings.button")}
-          </button>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <ServiceCardDropdown

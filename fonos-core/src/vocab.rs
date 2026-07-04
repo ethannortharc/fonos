@@ -29,7 +29,7 @@ pub enum RuleKind {
 }
 
 /// A single find → replace correction applied to transcripts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VocabRule {
     /// Text or pattern to find.
@@ -54,7 +54,7 @@ impl Default for VocabRule {
 }
 
 /// A named vocabulary: domain terms plus correction rules.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VocabBook {
     /// Stable identifier referenced from config / modes.

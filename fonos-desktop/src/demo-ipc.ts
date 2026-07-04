@@ -160,6 +160,31 @@ const config = {
         sts_voice: "alloy",
         sts_max_turns: 8,
       },
+      vocab: {
+        vocab_books: [
+          { id: "vb-med", name: "Medical", enabled: true, terms: ["myocardium", "tachycardia"], rules: [] },
+          { id: "vb-eng", name: "Engineering", enabled: true, terms: ["Kubernetes"], rules: [] },
+        ],
+        global_vocab_books: ["vb-med"],
+      },
+      hotkeys: {
+        hotkey_dictation: "cmd+shift+space",
+        hotkey_dictation_toggle: "cmd+shift+d",
+        hotkey_tts: "cmd+shift+s",
+        hotkey_agent: "cmd+shift+a",
+        hotkey_agent_panel: "cmd+shift+g",
+        hotkey_note: "option+n",
+        hotkey_note_1: "option+1",
+        hotkey_note_2: "",
+        hotkey_note_3: "",
+        notebook_hotkey_1: 0,
+        notebook_hotkey_2: 0,
+        notebook_hotkey_3: 0,
+        hotkey_meeting: "option+m",
+        hotkey_transform: "cmd+shift+t",
+        hotkey_listen: "option+l",
+        hotkey_sts: "option+s",
+      },
     },
   ],
 };
@@ -640,6 +665,21 @@ export function installDemoIpc() {
                   listen_mode: "listen", listen_voice_profile: "", listen_voice: "default",
                   sts_persona: "You are a friendly voice assistant.", sts_llm_profile: "",
                   sts_voice_profile: "", sts_voice: "default", sts_max_turns: 8,
+                },
+              }
+            : {}),
+          ...(payload.includeVocab
+            ? { vocab: { vocab_books: [], global_vocab_books: [] } }
+            : {}),
+          ...(payload.includeHotkeys
+            ? {
+                hotkeys: {
+                  hotkey_dictation: "cmd+shift+space", hotkey_dictation_toggle: "", hotkey_tts: "cmd+shift+s",
+                  hotkey_agent: "cmd+shift+a", hotkey_agent_panel: "cmd+shift+g", hotkey_note: "option+n",
+                  hotkey_note_1: "", hotkey_note_2: "", hotkey_note_3: "",
+                  notebook_hotkey_1: 0, notebook_hotkey_2: 0, notebook_hotkey_3: 0,
+                  hotkey_meeting: "option+m", hotkey_transform: "cmd+shift+t",
+                  hotkey_listen: "option+l", hotkey_sts: "option+s",
                 },
               }
             : {}),

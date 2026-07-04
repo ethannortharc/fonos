@@ -243,13 +243,17 @@ export async function saveScenario(
   name: string,
   includeModels: boolean,
   includeDictation: boolean,
-  includeSpeech: boolean
+  includeSpeech: boolean,
+  includeVocab: boolean,
+  includeHotkeys: boolean
 ): Promise<SavedScenario> {
   return invoke<SavedScenario>("save_scenario", {
     name,
     includeModels,
     includeDictation,
     includeSpeech,
+    includeVocab,
+    includeHotkeys,
   });
 }
 

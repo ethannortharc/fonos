@@ -381,10 +381,62 @@ pub struct SpeechSection {
     pub sts_max_turns: usize,
 }
 
+/// The **vocab** section of a saved scenario: the user's custom vocabulary
+/// books plus the globally-applied book ids. Pure config fields — applied by
+/// overwriting `vocab_books` / `global_vocab_books`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VocabSection {
+    /// User-defined vocab books, captured verbatim.
+    pub vocab_books: Vec<crate::vocab::VocabBook>,
+    /// Book ids applied to every dictation regardless of mode.
+    pub global_vocab_books: Vec<String>,
+}
+
+/// The **hotkeys** section of a saved scenario: every global-hotkey binding plus
+/// the three notebook-shortcut bindings. Pure config fields; applying them takes
+/// effect live once the hotkey manager re-registers (the shell emits the reload).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HotkeysSection {
+    /// Hold-to-talk dictation combo.
+    pub hotkey_dictation: String,
+    /// Toggle dictation combo (press to start / stop).
+    pub hotkey_dictation_toggle: String,
+    /// TTS playback combo.
+    pub hotkey_tts: String,
+    /// Press-and-hold agent voice combo.
+    pub hotkey_agent: String,
+    /// Toggle agent panel combo.
+    pub hotkey_agent_panel: String,
+    /// Toggle note panel combo.
+    pub hotkey_note: String,
+    /// Notebook shortcut 1 combo.
+    pub hotkey_note_1: String,
+    /// Notebook shortcut 2 combo.
+    pub hotkey_note_2: String,
+    /// Notebook shortcut 3 combo.
+    pub hotkey_note_3: String,
+    /// Container id bound to notebook shortcut 1 (0 = unbound).
+    pub notebook_hotkey_1: i64,
+    /// Container id bound to notebook shortcut 2 (0 = unbound).
+    pub notebook_hotkey_2: i64,
+    /// Container id bound to notebook shortcut 3 (0 = unbound).
+    pub notebook_hotkey_3: i64,
+    /// Toggle meeting-mode combo.
+    pub hotkey_meeting: String,
+    /// Quick-transform combo.
+    pub hotkey_transform: String,
+    /// Capture-into-Listen-queue combo.
+    pub hotkey_listen: String,
+    /// Hold-to-talk conversation combo.
+    pub hotkey_sts: String,
+}
+
 /// A self-contained, shareable snapshot of a working configuration. Evolved from
 /// a flat models-only bundle into a **sectioned** bundle: each of models /
-/// dictation / speech is an independent, optional section, so a save can carry
-/// any subset and an apply restores only the sections present.
+/// dictation / speech / vocab / hotkeys is an independent, optional section, so a
+/// save can carry any subset and an apply restores only the sections present.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SavedScenario {
@@ -403,11 +455,18 @@ pub struct SavedScenario {
     /// Listen + STS conversation config, when the save includes speech.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speech: Option<SpeechSection>,
+    /// Custom vocabulary books + global book ids, when the save includes vocab.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocab: Option<VocabSection>,
+    /// Global + notebook hotkey bindings, when the save includes hotkeys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hotkeys: Option<HotkeysSection>,
 }
 
 impl SavedScenario {
     /// The section badges this scenario carries, in fixed order: any of
-    /// `"models"`, `"dictation"`, `"speech"` whose section is present.
+    /// `"models"`, `"dictation"`, `"speech"`, `"vocab"`, `"hotkeys"` whose
+    /// section is present.
     pub fn sections(&self) -> Vec<&'static str> {
         let mut out = Vec::new();
         if self.models.is_some() {
@@ -418,6 +477,12 @@ impl SavedScenario {
         }
         if self.speech.is_some() {
             out.push("speech");
+        }
+        if self.vocab.is_some() {
+            out.push("vocab");
+        }
+        if self.hotkeys.is_some() {
+            out.push("hotkeys");
         }
         out
     }
@@ -506,6 +571,8 @@ fn referenced_profiles(config: &AppConfig) -> Vec<serde_json::Value> {
 /// * **dictation** — `user_modes` (the modes.json map, supplied by the shell)
 ///   plus the dictation-mode / translate-target config fields.
 /// * **speech** — the Listen + STS conversation configuration.
+/// * **vocab** — the custom vocabulary books + globally-applied book ids.
+/// * **hotkeys** — every global + notebook hotkey binding.
 pub fn snapshot_current(
     config: &AppConfig,
     name: &str,
@@ -513,6 +580,8 @@ pub fn snapshot_current(
     include_models: bool,
     include_dictation: bool,
     include_speech: bool,
+    include_vocab: bool,
+    include_hotkeys: bool,
 ) -> SavedScenario {
     let models = include_models.then(|| ModelsSection {
         profiles: referenced_profiles(config),
@@ -541,6 +610,28 @@ pub fn snapshot_current(
         sts_voice: config.sts_voice.clone(),
         sts_max_turns: config.sts_max_turns,
     });
+    let vocab = include_vocab.then(|| VocabSection {
+        vocab_books: config.vocab_books.clone(),
+        global_vocab_books: config.global_vocab_books.clone(),
+    });
+    let hotkeys = include_hotkeys.then(|| HotkeysSection {
+        hotkey_dictation: config.hotkey_dictation.clone(),
+        hotkey_dictation_toggle: config.hotkey_dictation_toggle.clone(),
+        hotkey_tts: config.hotkey_tts.clone(),
+        hotkey_agent: config.hotkey_agent.clone(),
+        hotkey_agent_panel: config.hotkey_agent_panel.clone(),
+        hotkey_note: config.hotkey_note.clone(),
+        hotkey_note_1: config.hotkey_note_1.clone(),
+        hotkey_note_2: config.hotkey_note_2.clone(),
+        hotkey_note_3: config.hotkey_note_3.clone(),
+        notebook_hotkey_1: config.notebook_hotkey_1,
+        notebook_hotkey_2: config.notebook_hotkey_2,
+        notebook_hotkey_3: config.notebook_hotkey_3,
+        hotkey_meeting: config.hotkey_meeting.clone(),
+        hotkey_transform: config.hotkey_transform.clone(),
+        hotkey_listen: config.hotkey_listen.clone(),
+        hotkey_sts: config.hotkey_sts.clone(),
+    });
     SavedScenario {
         id: generate_scenario_id(name),
         name: name.to_string(),
@@ -548,6 +639,8 @@ pub fn snapshot_current(
         models,
         dictation,
         speech,
+        vocab,
+        hotkeys,
     }
 }
 
@@ -558,6 +651,9 @@ pub fn snapshot_current(
 ///   profile, else appending — **never** deleting unrelated profiles), then
 ///   restore the role assignments.
 /// * **speech** — set the Listen + STS conversation fields.
+/// * **vocab** — overwrite the vocabulary books + global book ids.
+/// * **hotkeys** — overwrite every global + notebook hotkey binding (the shell
+///   re-registers them after this returns).
 /// * **dictation** — set the dictation-mode / translate-target config fields
 ///   here; the custom-modes map is **returned** for the shell to persist into
 ///   `modes.json` (core cannot touch that file).
@@ -609,6 +705,30 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
         }
     }
 
+    if let Some(v) = &scenario.vocab {
+        config.vocab_books = v.vocab_books.clone();
+        config.global_vocab_books = v.global_vocab_books.clone();
+    }
+
+    if let Some(h) = &scenario.hotkeys {
+        config.hotkey_dictation = h.hotkey_dictation.clone();
+        config.hotkey_dictation_toggle = h.hotkey_dictation_toggle.clone();
+        config.hotkey_tts = h.hotkey_tts.clone();
+        config.hotkey_agent = h.hotkey_agent.clone();
+        config.hotkey_agent_panel = h.hotkey_agent_panel.clone();
+        config.hotkey_note = h.hotkey_note.clone();
+        config.hotkey_note_1 = h.hotkey_note_1.clone();
+        config.hotkey_note_2 = h.hotkey_note_2.clone();
+        config.hotkey_note_3 = h.hotkey_note_3.clone();
+        config.notebook_hotkey_1 = h.notebook_hotkey_1;
+        config.notebook_hotkey_2 = h.notebook_hotkey_2;
+        config.notebook_hotkey_3 = h.notebook_hotkey_3;
+        config.hotkey_meeting = h.hotkey_meeting.clone();
+        config.hotkey_transform = h.hotkey_transform.clone();
+        config.hotkey_listen = h.hotkey_listen.clone();
+        config.hotkey_sts = h.hotkey_sts.clone();
+    }
+
     if let Some(d) = &scenario.dictation {
         config.dictation_mode = d.dictation_mode.clone();
         config.translate_target = d.translate_target.clone();
@@ -621,10 +741,10 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
 /// **fresh id** (so imports never collide with existing saved scenarios).
 ///
 /// Accepts both the current **sectioned** shape (at least one of `models` /
-/// `dictation` / `speech`) and the legacy **flat** shape (top-level `profiles`
-/// array + `assignments` object), which is migrated into a `models` section.
-/// Any other JSON produces a clear error rather than a silently-defaulted empty
-/// scenario.
+/// `dictation` / `speech` / `vocab` / `hotkeys`) and the legacy **flat** shape
+/// (top-level `profiles` array + `assignments` object), which is migrated into a
+/// `models` section. Any other JSON produces a clear error rather than a
+/// silently-defaulted empty scenario.
 pub fn parse_saved_scenario(json: &str) -> Result<SavedScenario, String> {
     let mut value: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
@@ -632,7 +752,7 @@ pub fn parse_saved_scenario(json: &str) -> Result<SavedScenario, String> {
         return Err("not a fonos scenario file".to_string());
     }
 
-    let has_section = ["models", "dictation", "speech"]
+    let has_section = ["models", "dictation", "speech", "vocab", "hotkeys"]
         .iter()
         .any(|k| value.get(*k).map_or(false, |v| !v.is_null()));
 
@@ -803,6 +923,19 @@ mod tests {
         c.listen_mode = "listen".into();
         c.sts_persona = "Be terse.".into();
         c.sts_max_turns = 5;
+        // Custom vocabulary.
+        c.vocab_books = vec![crate::vocab::VocabBook {
+            id: "vb1".into(),
+            name: "Med Terms".into(),
+            enabled: true,
+            terms: vec!["myocardium".into()],
+            rules: Vec::new(),
+        }];
+        c.global_vocab_books = vec!["vb1".into()];
+        // A couple of non-default hotkey bindings.
+        c.hotkey_dictation = "option+space".into();
+        c.hotkey_listen = "option+l".into();
+        c.notebook_hotkey_1 = 42;
         c
     }
 
@@ -814,7 +947,7 @@ mod tests {
     #[test]
     fn snapshot_captures_referenced_profiles_and_assignments() {
         let c = cfg_with_profiles();
-        let snap = snapshot_current(&c, "My Local", json!(null), true, false, false);
+        let snap = snapshot_current(&c, "My Local", json!(null), true, false, false, false, false);
         assert_eq!(snap.name, "My Local");
         assert!(snap.id.starts_with("saved-my-local-"));
         let m = snap.models.as_ref().expect("models section present");
@@ -829,25 +962,44 @@ mod tests {
     fn snapshot_is_section_selective() {
         let c = cfg_with_profiles();
         // Models only.
-        let s = snapshot_current(&c, "M", json!(null), true, false, false);
+        let s = snapshot_current(&c, "M", json!(null), true, false, false, false, false);
         assert!(s.models.is_some() && s.dictation.is_none() && s.speech.is_none());
         assert_eq!(s.sections(), vec!["models"]);
         // Dictation only — carries the user-modes map + config fields.
-        let s = snapshot_current(&c, "D", user_modes(), false, true, false);
+        let s = snapshot_current(&c, "D", user_modes(), false, true, false, false, false);
         assert_eq!(s.sections(), vec!["dictation"]);
         let d = s.dictation.unwrap();
         assert_eq!(d.dictation_mode, "polish");
         assert_eq!(d.translate_target, "German");
         assert_eq!(d.user_modes["my-mode"]["name"], "My Mode");
         // Speech only.
-        let s = snapshot_current(&c, "S", json!(null), false, false, true);
+        let s = snapshot_current(&c, "S", json!(null), false, false, true, false, false);
         assert_eq!(s.sections(), vec!["speech"]);
         let sp = s.speech.unwrap();
         assert_eq!(sp.sts_persona, "Be terse.");
         assert_eq!(sp.sts_max_turns, 5);
-        // All three.
-        let s = snapshot_current(&c, "All", user_modes(), true, true, true);
-        assert_eq!(s.sections(), vec!["models", "dictation", "speech"]);
+        // All five.
+        let s = snapshot_current(&c, "All", user_modes(), true, true, true, true, true);
+        assert_eq!(s.sections(), vec!["models", "dictation", "speech", "vocab", "hotkeys"]);
+    }
+
+    #[test]
+    fn snapshot_vocab_and_hotkeys_selective() {
+        let c = cfg_with_profiles();
+        // Vocab only — captures books + global ids, nothing else.
+        let s = snapshot_current(&c, "V", json!(null), false, false, false, true, false);
+        assert_eq!(s.sections(), vec!["vocab"]);
+        let v = s.vocab.unwrap();
+        assert_eq!(v.vocab_books.len(), 1);
+        assert_eq!(v.vocab_books[0].id, "vb1");
+        assert_eq!(v.global_vocab_books, vec!["vb1".to_string()]);
+        // Hotkeys only — captures every binding.
+        let s = snapshot_current(&c, "H", json!(null), false, false, false, false, true);
+        assert_eq!(s.sections(), vec!["hotkeys"]);
+        let h = s.hotkeys.unwrap();
+        assert_eq!(h.hotkey_dictation, "option+space");
+        assert_eq!(h.hotkey_listen, "option+l");
+        assert_eq!(h.notebook_hotkey_1, 42);
     }
 
     #[test]
@@ -856,16 +1008,18 @@ mod tests {
         assert!(s.sections().is_empty());
         s.models = Some(ModelsSection::default());
         s.speech = Some(SpeechSection::default());
-        // Fixed order regardless of assignment order: models, dictation, speech.
-        assert_eq!(s.sections(), vec!["models", "speech"]);
+        s.hotkeys = Some(HotkeysSection::default());
+        // Fixed order regardless of assignment order.
+        assert_eq!(s.sections(), vec!["models", "speech", "hotkeys"]);
         s.dictation = Some(DictationSection::default());
-        assert_eq!(s.sections(), vec!["models", "dictation", "speech"]);
+        s.vocab = Some(VocabSection::default());
+        assert_eq!(s.sections(), vec!["models", "dictation", "speech", "vocab", "hotkeys"]);
     }
 
     #[test]
     fn snapshot_then_apply_all_sections_round_trips() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Full", user_modes(), true, true, true);
+        let snap = snapshot_current(&source, "Full", user_modes(), true, true, true, true, true);
 
         let mut target = AppConfig::default();
         let returned = apply_saved(&mut target, &snap).expect("dictation returns user modes");
@@ -876,6 +1030,14 @@ mod tests {
         // Speech restored.
         assert_eq!(target.sts_persona, "Be terse.");
         assert_eq!(target.sts_max_turns, 5);
+        // Vocab restored.
+        assert_eq!(target.vocab_books.len(), 1);
+        assert_eq!(target.vocab_books[0].id, "vb1");
+        assert_eq!(target.global_vocab_books, vec!["vb1".to_string()]);
+        // Hotkeys restored.
+        assert_eq!(target.hotkey_dictation, "option+space");
+        assert_eq!(target.hotkey_listen, "option+l");
+        assert_eq!(target.notebook_hotkey_1, 42);
         // Dictation config restored + user modes handed back.
         assert_eq!(target.dictation_mode, "polish");
         assert_eq!(target.translate_target, "German");
@@ -883,9 +1045,35 @@ mod tests {
     }
 
     #[test]
+    fn apply_vocab_and_hotkeys_are_selective() {
+        let source = cfg_with_profiles();
+
+        // Vocab-only apply overwrites vocab, leaves models + hotkeys untouched.
+        let vocab = snapshot_current(&source, "Vocab", json!(null), false, false, false, true, false);
+        let mut target = AppConfig::default();
+        target.stt_profile = "keep-stt".into();
+        let default_hotkey = target.hotkey_dictation.clone();
+        let modes = apply_saved(&mut target, &vocab);
+        assert!(modes.is_none(), "vocab-only apply returns no user modes");
+        assert_eq!(target.stt_profile, "keep-stt", "vocab apply leaves models untouched");
+        assert_eq!(target.hotkey_dictation, default_hotkey, "vocab apply leaves hotkeys untouched");
+        assert_eq!(target.vocab_books.len(), 1);
+        assert_eq!(target.global_vocab_books, vec!["vb1".to_string()]);
+
+        // Hotkeys-only apply overwrites bindings, leaves vocab untouched.
+        let hotkeys = snapshot_current(&source, "Keys", json!(null), false, false, false, false, true);
+        let mut target = AppConfig::default();
+        target.global_vocab_books = vec!["keep-book".into()];
+        apply_saved(&mut target, &hotkeys);
+        assert_eq!(target.hotkey_dictation, "option+space");
+        assert_eq!(target.notebook_hotkey_1, 42);
+        assert_eq!(target.global_vocab_books, vec!["keep-book".to_string()], "hotkeys apply leaves vocab untouched");
+    }
+
+    #[test]
     fn apply_saved_upserts_without_deleting_unrelated() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Local", json!(null), true, false, false);
+        let snap = snapshot_current(&source, "Local", json!(null), true, false, false, false, false);
 
         // A different machine: only has an unrelated profile + a stale stt1.
         let mut target = AppConfig::default();
@@ -911,7 +1099,7 @@ mod tests {
         let source = cfg_with_profiles();
 
         // Speech-only scenario must not clear the target's model assignments.
-        let speech = snapshot_current(&source, "Speech", json!(null), false, false, true);
+        let speech = snapshot_current(&source, "Speech", json!(null), false, false, true, false, false);
         let mut target = AppConfig::default();
         target.stt_profile = "keep-stt".into();
         target.llm_profile = "keep-llm".into();
@@ -922,7 +1110,7 @@ mod tests {
         assert_eq!(target.sts_max_turns, 5);
 
         // Dictation apply sets config fields and returns the user-modes map.
-        let dict = snapshot_current(&source, "Dict", user_modes(), false, true, false);
+        let dict = snapshot_current(&source, "Dict", user_modes(), false, true, false, false, false);
         let mut target = AppConfig::default();
         let returned = apply_saved(&mut target, &dict).expect("dictation returns user modes");
         assert_eq!(target.dictation_mode, "polish");
@@ -933,7 +1121,7 @@ mod tests {
     #[test]
     fn parse_saved_scenario_validates_shape_and_refreshes_id() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Shareable", json!(null), true, false, false);
+        let snap = snapshot_current(&source, "Shareable", json!(null), true, false, false, false, false);
         let mut value = serde_json::to_value(&snap).unwrap();
         value["id"] = json!("original-id-should-be-replaced");
         let text = serde_json::to_string(&value).unwrap();

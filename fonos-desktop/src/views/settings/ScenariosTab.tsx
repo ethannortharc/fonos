@@ -13,10 +13,12 @@ import { useState } from "react";
 import { t, td, useT, type TKey } from "../../lib/i18n";
 import type {
   AppConfig,
+  HotkeysSection,
   ModeEntry,
   ModelProfile,
   SavedScenario,
   ScenarioAssignments,
+  VocabBook,
 } from "../../types";
 import {
   saveScenario,
@@ -90,7 +92,52 @@ const SECTION_LABEL: Record<string, TKey> = {
   models: "scen.section.models",
   dictation: "scen.section.dictation",
   speech: "scen.section.speech",
+  vocab: "scen.section.vocab",
+  hotkeys: "scen.section.hotkeys",
 };
+
+// ── hotkey combo formatting ───────────────────────────────────────────────────
+
+const MOD_SYMBOL: Record<string, string> = {
+  cmd: "⌘", command: "⌘", meta: "⌘",
+  ctrl: "⌃", control: "⌃",
+  alt: "⌥", option: "⌥", opt: "⌥",
+  shift: "⇧",
+};
+
+/** Render a stored combo like "cmd+shift+space" as "⌘⇧Space". */
+function formatCombo(combo: string): string {
+  return combo
+    .split("+")
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean)
+    .map((p) => {
+      if (MOD_SYMBOL[p]) return MOD_SYMBOL[p];
+      if (p === "space") return "Space";
+      return p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1);
+    })
+    .join("");
+}
+
+/** The (label, combo) pairs to preview for a hotkeys section, non-empty only. */
+function hotkeyItems(h: HotkeysSection): { label: string; combo: string }[] {
+  const raw: [string, string][] = [
+    [t("hotkeys.dictation"), h.hotkey_dictation],
+    [t("hotkeys.dictationtoggle"), h.hotkey_dictation_toggle],
+    ["TTS", h.hotkey_tts],
+    [t("hotkeys.agentspeak"), h.hotkey_agent],
+    [t("hotkeys.agentpanel"), h.hotkey_agent_panel],
+    [t("hotkeys.notepanel"), h.hotkey_note],
+    [`${t("hotkeys.shortcut")} 1`, h.hotkey_note_1],
+    [`${t("hotkeys.shortcut")} 2`, h.hotkey_note_2],
+    [`${t("hotkeys.shortcut")} 3`, h.hotkey_note_3],
+    [t("hotkeys.meeting"), h.hotkey_meeting],
+    [t("hotkeys.transform"), h.hotkey_transform],
+    [t("scen.sum.listen"), h.hotkey_listen],
+    [t("scen.sum.convo"), h.hotkey_sts],
+  ];
+  return raw.filter(([, c]) => c && c.trim()).map(([label, combo]) => ({ label, combo }));
+}
 
 function SectionBadges({ sections }: { sections: string[] }) {
   return (
@@ -160,6 +207,43 @@ function SpeechSummary({
   );
 }
 
+function VocabSummary({ books }: { books: VocabBook[] }) {
+  const names = books.map((b) => b.name).filter(Boolean);
+  const shown = names.slice(0, 3).join(", ");
+  const more = names.length > 3 ? ", …" : "";
+  const value =
+    books.length === 0
+      ? t("scen.sum.vocabnone")
+      : names.length
+        ? `${td("scen.sum.vocabbooks", [String(books.length)])} · ${shown}${more}`
+        : td("scen.sum.vocabbooks", [String(books.length)]);
+  return (
+    <SummaryCard>
+      <SummaryRow label={t("scen.section.vocab")} value={value} />
+    </SummaryCard>
+  );
+}
+
+function HotkeysSummary({ hotkeys }: { hotkeys: HotkeysSection }) {
+  const items = hotkeyItems(hotkeys);
+  if (items.length === 0) {
+    return (
+      <SummaryCard>
+        <SummaryRow label={t("scen.section.hotkeys")} value={t("scen.sum.hotkeysnone")} />
+      </SummaryCard>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-[rgba(255,255,255,0.06)] px-3 py-2 flex flex-wrap gap-x-2.5 gap-y-1">
+      {items.map((it) => (
+        <span key={it.label} className="text-[10px] text-[rgba(255,255,255,0.4)] whitespace-nowrap">
+          {it.label} <span className="font-mono text-[#fafaf9]">{formatCombo(it.combo)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ── overview card (live config) ───────────────────────────────────────────────
 
 function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[] }) {
@@ -177,7 +261,25 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
   const defaultMode = config.dictation_mode || "raw";
   const modeName = modes.find((m) => m.id === defaultMode)?.name ?? defaultMode;
   const customCount = modes.filter((m) => !m.builtin).length;
-  const vocabCount = (config.vocab_books ?? []).length;
+
+  const liveHotkeys: HotkeysSection = {
+    hotkey_dictation: config.hotkey_dictation ?? "",
+    hotkey_dictation_toggle: config.hotkey_dictation_toggle ?? "",
+    hotkey_tts: config.hotkey_tts ?? "",
+    hotkey_agent: config.hotkey_agent ?? "",
+    hotkey_agent_panel: config.hotkey_agent_panel ?? "",
+    hotkey_note: config.hotkey_note ?? "",
+    hotkey_note_1: config.hotkey_note_1 ?? "",
+    hotkey_note_2: config.hotkey_note_2 ?? "",
+    hotkey_note_3: config.hotkey_note_3 ?? "",
+    notebook_hotkey_1: config.notebook_hotkey_1 ?? 0,
+    notebook_hotkey_2: config.notebook_hotkey_2 ?? 0,
+    notebook_hotkey_3: config.notebook_hotkey_3 ?? 0,
+    hotkey_meeting: config.hotkey_meeting ?? "",
+    hotkey_transform: config.hotkey_transform ?? "",
+    hotkey_listen: config.hotkey_listen ?? "",
+    hotkey_sts: config.hotkey_sts ?? "",
+  };
 
   return (
     <div className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4 flex flex-col gap-3">
@@ -185,11 +287,6 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
         <span className="text-[11px] uppercase tracking-wider text-[rgba(255,255,255,0.35)]">
           {t("scen.tab.current")}
         </span>
-        {vocabCount > 0 && (
-          <span className="ml-auto text-[9.5px] text-[rgba(255,255,255,0.35)]">
-            {td("scen.sum.vocab", [String(vocabCount)])}
-          </span>
-        )}
       </div>
 
       {rows.length > 0 ? (
@@ -221,6 +318,19 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
             turns={config.sts_max_turns ?? 0}
           />
         </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
+            {t("scen.section.vocab")}
+          </span>
+          <VocabSummary books={config.vocab_books ?? []} />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
+          {t("scen.section.hotkeys")}
+        </span>
+        <HotkeysSummary hotkeys={liveHotkeys} />
       </div>
     </div>
   );
@@ -248,6 +358,8 @@ function SavedRow({
   if (scenario.models) sections.push("models");
   if (scenario.dictation) sections.push("dictation");
   if (scenario.speech) sections.push("speech");
+  if (scenario.vocab) sections.push("vocab");
+  if (scenario.hotkeys) sections.push("hotkeys");
 
   const modelProfiles = scenario.models?.profiles ?? [];
   const roleRows = scenario.models
@@ -324,6 +436,10 @@ function SavedRow({
               turns={speech.sts_max_turns}
             />
           )}
+
+          {scenario.vocab && <VocabSummary books={scenario.vocab.vocab_books ?? []} />}
+
+          {scenario.hotkeys && <HotkeysSummary hotkeys={scenario.hotkeys} />}
 
           <div className="text-[9.5px] text-[rgba(255,255,255,0.3)]">
             {scenario.models && `${td("scen.saved.profiles", [String(modelProfiles.length)])} · `}
@@ -493,14 +609,21 @@ function IncludeCheck({ v, set, label }: { v: boolean; set: (b: boolean) => void
   );
 }
 
-function SaveCurrent({ onSave }: { onSave: (name: string, m: boolean, d: boolean, s: boolean) => void }) {
+function SaveCurrent({
+  onSave,
+}: {
+  onSave: (name: string, m: boolean, d: boolean, s: boolean, v: boolean, h: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [incModels, setIncModels] = useState(true);
   const [incDictation, setIncDictation] = useState(true);
   const [incSpeech, setIncSpeech] = useState(true);
+  const [incVocab, setIncVocab] = useState(true);
+  const [incHotkeys, setIncHotkeys] = useState(true);
 
-  const canSave = name.trim().length > 0 && (incModels || incDictation || incSpeech);
+  const canSave =
+    name.trim().length > 0 && (incModels || incDictation || incSpeech || incVocab || incHotkeys);
 
   if (!open) {
     return (
@@ -526,7 +649,7 @@ function SaveCurrent({ onSave }: { onSave: (name: string, m: boolean, d: boolean
         <button
           disabled={!canSave}
           onClick={() => {
-            onSave(name.trim(), incModels, incDictation, incSpeech);
+            onSave(name.trim(), incModels, incDictation, incSpeech, incVocab, incHotkeys);
             setName("");
             setOpen(false);
           }}
@@ -535,10 +658,12 @@ function SaveCurrent({ onSave }: { onSave: (name: string, m: boolean, d: boolean
           {t("scen.saved.save")}
         </button>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
         <IncludeCheck v={incModels} set={setIncModels} label={t("scen.section.models")} />
         <IncludeCheck v={incDictation} set={setIncDictation} label={t("scen.section.dictation")} />
         <IncludeCheck v={incSpeech} set={setIncSpeech} label={t("scen.section.speech")} />
+        <IncludeCheck v={incVocab} set={setIncVocab} label={t("scen.section.vocab")} />
+        <IncludeCheck v={incHotkeys} set={setIncHotkeys} label={t("scen.section.hotkeys")} />
       </div>
     </div>
   );
@@ -599,10 +724,10 @@ export default function ScenariosTab({
           </span>
           <div className="ml-auto">
             <SaveCurrent
-              onSave={async (name, m, d, s) => {
+              onSave={async (name, m, d, s, v, h) => {
                 setError("");
                 try {
-                  await saveScenario(name, m, d, s);
+                  await saveScenario(name, m, d, s, v, h);
                   onReload();
                 } catch (e) {
                   setError(errStr(e));

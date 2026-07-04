@@ -185,9 +185,36 @@ export interface SpeechSection {
   sts_max_turns: number;
 }
 
+/** The vocab section — custom vocabulary books + globally-applied book ids. */
+export interface VocabSection {
+  vocab_books: VocabBook[];
+  global_vocab_books: string[];
+}
+
+/** The hotkeys section — every global + notebook hotkey binding. */
+export interface HotkeysSection {
+  hotkey_dictation: string;
+  hotkey_dictation_toggle: string;
+  hotkey_tts: string;
+  hotkey_agent: string;
+  hotkey_agent_panel: string;
+  hotkey_note: string;
+  hotkey_note_1: string;
+  hotkey_note_2: string;
+  hotkey_note_3: string;
+  notebook_hotkey_1: number;
+  notebook_hotkey_2: number;
+  notebook_hotkey_3: number;
+  hotkey_meeting: string;
+  hotkey_transform: string;
+  hotkey_listen: string;
+  hotkey_sts: string;
+}
+
 /** A saved, switchable configuration bundle — mirrors
  *  fonos_core::scenarios::SavedScenario. Sectioned: each of models / dictation /
- *  speech is optional and present only when the save included it. */
+ *  speech / vocab / hotkeys is optional and present only when the save
+ *  included it. */
 export interface SavedScenario {
   id: string;
   name: string;
@@ -195,6 +222,8 @@ export interface SavedScenario {
   models?: ModelsSection;
   dictation?: DictationSection;
   speech?: SpeechSection;
+  vocab?: VocabSection;
+  hotkeys?: HotkeysSection;
 }
 
 // ─── Setup Doctor (issue #30) ───────────────────────────────────────────────

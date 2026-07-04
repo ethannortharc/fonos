@@ -769,6 +769,12 @@ const en = {
   "scen.sum.turns": "{0} turns memory",
   "scen.sum.defaultvoice": "default voice",
   "scen.sum.vocab": "{0} vocab books",
+
+  "scen.section.vocab": "Vocabulary",
+  "scen.section.hotkeys": "Hotkeys",
+  "scen.sum.vocabbooks": "{0} books",
+  "scen.sum.vocabnone": "No vocab books",
+  "scen.sum.hotkeysnone": "No custom hotkeys",
 };
 
 export type TKey = keyof typeof en;
@@ -1484,6 +1490,12 @@ const zh: Partial<Record<Key, string>> = {
   "scen.sum.turns": "记忆 {0} 轮",
   "scen.sum.defaultvoice": "默认音色",
   "scen.sum.vocab": "{0} 个词汇本",
+
+  "scen.section.vocab": "词汇",
+  "scen.section.hotkeys": "快捷键",
+  "scen.sum.vocabbooks": "{0} 个词汇本",
+  "scen.sum.vocabnone": "无词汇本",
+  "scen.sum.hotkeysnone": "无自定义快捷键",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

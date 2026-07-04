@@ -7,7 +7,6 @@ import type { TKey } from "../../lib/i18n";
 export const TABS: { key: SettingsTab; label: TKey }[] = [
   { key: "general", label: "tab.general" },
   { key: "models", label: "tab.models" },
-  { key: "scenarios", label: "tab.scenarios" },
   { key: "dictation", label: "tab.dictation" },
   { key: "speech", label: "tab.speech" },
   { key: "vocab", label: "tab.vocab" },
@@ -15,6 +14,7 @@ export const TABS: { key: SettingsTab; label: TKey }[] = [
   { key: "notes", label: "tab.notes" },
   { key: "meeting", label: "tab.meeting" },
   { key: "hotkeys", label: "tab.hotkeys" },
+  { key: "scenarios", label: "tab.scenarios" },
 ];
 
 export const PROVIDERS = [

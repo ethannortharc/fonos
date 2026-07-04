@@ -159,6 +159,8 @@ pub fn save_scenario(
     include_models: bool,
     include_dictation: bool,
     include_speech: bool,
+    include_vocab: bool,
+    include_hotkeys: bool,
 ) -> Result<SavedScenario, String> {
     // Read the user-modes map (modes.json) so a dictation section can carry it.
     let user_modes = if include_dictation {
@@ -175,6 +177,8 @@ pub fn save_scenario(
             include_models,
             include_dictation,
             include_speech,
+            include_vocab,
+            include_hotkeys,
         );
         guard.saved_scenarios.push(scenario.clone());
         scenario
@@ -184,12 +188,18 @@ pub fn save_scenario(
 }
 
 /// Apply a saved scenario by id: restore the sections it carries. Core mutates
-/// the config (profiles/assignments + speech + dictation config fields); when a
-/// dictation section is present its custom-modes map is written back to
-/// `modes.json` here (replacing the user modes wholesale — built-ins are code).
+/// the config (profiles/assignments + speech + vocab + hotkeys + dictation config
+/// fields); when a dictation section is present its custom-modes map is written
+/// back to `modes.json` here (replacing the user modes wholesale — built-ins are
+/// code). When a hotkeys section is applied we emit `hotkey:reload` so the global
+/// hotkey manager re-registers the new bindings live (same path Settings uses).
 #[tauri::command]
-pub fn apply_saved_scenario(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
-    let user_modes = {
+pub fn apply_saved_scenario(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let (user_modes, hotkeys_applied) = {
         let mut guard = state.config.lock().map_err(|e| e.to_string())?;
         let scenario = guard
             .saved_scenarios
@@ -197,7 +207,8 @@ pub fn apply_saved_scenario(state: tauri::State<'_, AppState>, id: String) -> Re
             .find(|s| s.id == id)
             .cloned()
             .ok_or_else(|| format!("saved scenario '{id}' not found"))?;
-        scenarios::apply_saved(&mut guard, &scenario)
+        let hotkeys_applied = scenario.hotkeys.is_some();
+        (scenarios::apply_saved(&mut guard, &scenario), hotkeys_applied)
     };
     save_config(&state)?;
 
@@ -209,6 +220,13 @@ pub fn apply_saved_scenario(state: tauri::State<'_, AppState>, id: String) -> Re
                 .map_err(|e| format!("invalid modes in scenario: {e}"))?
         };
         modes::save_custom_modes(&custom).map_err(|e| e.to_string())?;
+    }
+
+    // Re-register global hotkeys if the applied scenario carried a hotkeys
+    // section (config fields are already saved above).
+    if hotkeys_applied {
+        use tauri::Emitter;
+        let _ = app.emit("hotkey:reload", ());
     }
     Ok(())
 }

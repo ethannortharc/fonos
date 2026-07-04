@@ -8,7 +8,10 @@ use super::AppState;
 
 /// Resolve voice: if it's a local cloned voice, return the absolute file path
 /// to the reference audio. The OMLX server accepts file paths in the "voice" field.
-fn resolve_voice(voice: &str) -> String {
+/// Map a voice identifier to what the TTS server expects: cloned voices
+/// (from the voice store) resolve to their reference-audio path; anything
+/// else passes through as a named model speaker.
+pub(crate) fn resolve_voice(voice: &str) -> String {
     if voice == "default" || voice.is_empty() {
         return voice.to_string();
     }

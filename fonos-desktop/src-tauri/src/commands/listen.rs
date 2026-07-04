@@ -104,7 +104,11 @@ async fn do_create(
         return Err("No TTS profile configured — pick one in Settings > Speech.".into());
     }
 
-    let engine = fonos_core::tts::HttpTts { service: tts_svc, voice, speed: 1.0 };
+    let engine = fonos_core::tts::HttpTts {
+        service: tts_svc,
+        voice: super::tts::resolve_voice(&voice),
+        speed: 1.0,
+    };
     let item =
         fonos_core::listen::create_listen_item(text, mode, &llm, &translate_target, &engine).await?;
 

@@ -144,7 +144,11 @@ async fn run_sts_turn_inner(
         }),
     ];
 
-    let tts = fonos_core::tts::HttpTts { service: tts_svc, voice, speed: 1.0 };
+    let tts = fonos_core::tts::HttpTts {
+        service: tts_svc,
+        voice: super::tts::resolve_voice(&voice),
+        speed: 1.0,
+    };
     let audio = crate::adapters::PlaybackAudioOut::new(state.audio_playback.clone());
 
     let mut session = state.sts_session.lock().await;

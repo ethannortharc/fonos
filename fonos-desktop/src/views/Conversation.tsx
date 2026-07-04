@@ -51,6 +51,9 @@ export default function Conversation() {
   // ── Hands-free call mode ──
   const [inCall, setInCall] = useState(false);
   const [callSecs, setCallSecs] = useState(0);
+  // Which audio path the live call engaged, for the AEC truth chip. `null`
+  // until the backend's `call_started` reports it (or once the call ends).
+  const [audioPath, setAudioPath] = useState<"aec" | "ec" | "fallback" | null>(null);
   // Mirror of `inCall` for pointer handlers / timers (avoids stale closures).
   const inCallRef = useRef(false);
   // Press disambiguation: a short tap toggles the call; a longer hold is the
@@ -102,8 +105,8 @@ export default function Conversation() {
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        const un = await listen<{ kind: string; text: string }>("sts:event", (e) => {
-          const { kind, text } = e.payload;
+        const un = await listen<{ kind: string; text: string; audio?: string }>("sts:event", (e) => {
+          const { kind, text, audio } = e.payload;
           if (kind === "transcript") {
             setMessages((m) => [...m, { role: "user", text }]);
             setTurnState("thinking");
@@ -131,12 +134,16 @@ export default function Conversation() {
             setTurnState("idle");
           } else if (kind === "call_started") {
             setInCall(true);
+            if (audio === "aec" || audio === "ec" || audio === "fallback") {
+              setAudioPath(audio);
+            }
           } else if (kind === "call_listening") {
             setInCall(true);
             setTurnState("listening");
           } else if (kind === "call_ended") {
             setInCall(false);
             setTurnState("idle");
+            setAudioPath(null);
             if (text === "timeout") {
               setMessages((m) => [...m, { role: "error", text: t("conv.call.timeout") }]);
             }
@@ -317,6 +324,19 @@ export default function Conversation() {
             />
             {t(meta.label)}
           </span>
+          {inCall && audioPath && (
+            <span
+              title={t(audioPath === "fallback" ? "conv.call.noaec.title" : "conv.call.aec.title")}
+              className="text-[9px] px-1.5 py-0.5 rounded-full"
+              style={
+                audioPath === "fallback"
+                  ? { background: "rgba(251,191,36,0.12)", color: "#fbbf24" }
+                  : { background: "rgba(74,222,128,0.12)", color: "#4ade80" }
+              }
+            >
+              {t(audioPath === "fallback" ? "conv.call.noaec" : "conv.call.aec")}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

@@ -21,13 +21,16 @@
 //! words straight into the next listen. With barge-in off, the mic stays closed
 //! during playback (the original behavior).
 
+use std::collections::VecDeque;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager};
 
-use fonos_core::vad::{rms, BargeDetector, VadConfig, VadEvent, VadSession};
+use fonos_core::config::AppConfig;
+use fonos_core::vad::{rms, speech_threshold_factor, BargeDetector, VadConfig, VadEvent, VadSession};
 
 use crate::audio::capture::AudioCapture;
 use crate::audio::playback::AudioPlayback;
@@ -50,6 +53,89 @@ const BARGE_SUSTAINED_MS: u32 = 450;
 /// Pre-roll carried into the next listen so the interrupting words aren't lost
 /// (16 000 samples ≈ 1 s at 16 kHz).
 const BARGE_PREROLL_SAMPLES: usize = 16_000;
+/// Extra margin on top of the listen VAD's speech-threshold factor when seeding
+/// the barge floor from the quiet-phase ambient noise: a barge must be *clearly*
+/// louder than what merely counted as speech while nothing played.
+const BARGE_AMBIENT_MARGIN: f32 = 1.5;
+/// How many `(mic_rms, ref_rms, threshold)` triples to keep for the pre-barge
+/// diagnostic dump.
+const BARGE_HISTORY: usize = 10;
+/// Cap on retained per-call diagnostic logs (this one plus the 4 most recent).
+const CALL_LOG_KEEP: usize = 5;
+
+/// A per-call diagnostic log at `config_dir()/logs/call-<unix_ts>.log`.
+///
+/// Plain text, one line per event, each stamped with milliseconds since the
+/// call started. Entirely best-effort: if the directory or file can't be opened
+/// every method degrades to a no-op, so diagnostics can never break a call. On
+/// construction it prunes older logs, keeping only the [`CALL_LOG_KEEP`] most
+/// recent (including the one about to be written).
+struct CallLog {
+    file: Mutex<Option<std::fs::File>>,
+    start: Instant,
+}
+
+impl CallLog {
+    /// Open (creating the `logs/` dir) and prune. Never fails — a filesystem
+    /// error just yields a log whose methods are silent no-ops.
+    fn new() -> Self {
+        Self {
+            file: Mutex::new(Self::open().ok()),
+            start: Instant::now(),
+        }
+    }
+
+    fn open() -> std::io::Result<std::fs::File> {
+        let dir = AppConfig::config_dir().join("logs");
+        std::fs::create_dir_all(&dir)?;
+        Self::prune(&dir);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join(format!("call-{ts}.log")))
+    }
+
+    /// Delete the oldest `call-*.log` files so that, once this call's file is
+    /// added, at most [`CALL_LOG_KEEP`] remain.
+    fn prune(dir: &std::path::Path) {
+        let mut logs: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("call-") && n.ends_with(".log"))
+            })
+            .collect();
+        // Oldest first (missing mtimes sort as the epoch → pruned first).
+        logs.sort_by_key(|p| {
+            std::fs::metadata(p)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH)
+        });
+        let max_existing = CALL_LOG_KEEP.saturating_sub(1);
+        while logs.len() > max_existing {
+            let _ = std::fs::remove_file(logs.remove(0));
+        }
+    }
+
+    /// Append one timestamped line. Silent on any error.
+    fn line(&self, msg: &str) {
+        if let Ok(mut g) = self.file.lock() {
+            if let Some(f) = g.as_mut() {
+                let ms = self.start.elapsed().as_millis();
+                let _ = writeln!(f, "[{ms:>8}ms] {msg}");
+                let _ = f.flush();
+            }
+        }
+    }
+}
 
 /// Whether a hands-free call is currently running (checked by the ⌥S hotkey so
 /// hold-to-talk stays disabled for the duration of a call).
@@ -72,7 +158,9 @@ pub async fn call_start(
     }
     let active = state.call_active.clone();
     let app2 = app.clone();
-    emit_call(&app, "call_started", "");
+    // `call_started` is emitted from the loop once the audio path is known, so it
+    // can carry which path engaged (the UI's AEC truth chip). The frontend shows
+    // the call UI optimistically on the button press, so nothing waits on this.
     tauri::async_runtime::spawn(async move {
         run_call_loop(app2, active).await;
     });
@@ -134,6 +222,18 @@ impl CallAudio {
     /// `start_recording`/`stop_capture`).
     fn is_aec(&self) -> bool {
         !matches!(self, CallAudio::Fallback)
+    }
+
+    /// Short tag for the live audio path — carried in the `call_started` event
+    /// (the UI's "AEC" / "no AEC" truth chip) and the diagnostic log.
+    fn path_label(&self) -> &'static str {
+        match self {
+            #[cfg(target_os = "macos")]
+            CallAudio::MacVoice(_) => "aec",
+            #[cfg(target_os = "linux")]
+            CallAudio::LinuxEc { .. } => "ec",
+            CallAudio::Fallback => "fallback",
+        }
     }
 
     /// Drain the oldest `ms` of audio from whichever source is active. For the
@@ -221,8 +321,10 @@ fn setup_call_audio(
     barge_enabled: bool,
     device_name: &str,
     playback: &Arc<Mutex<Option<AudioPlayback>>>,
+    log: &CallLog,
 ) -> CallAudio {
     if !barge_enabled {
+        log.line("audio: barge-in disabled → Fallback (plain cpal, mic per-phase)");
         return CallAudio::Fallback;
     }
 
@@ -235,10 +337,14 @@ fn setup_call_audio(
                 // a spawn that then failed VPIO/engine setup falls back here
                 // instead of leaving the call deaf.
                 if !v.wait_ready(Duration::from_secs(5)) {
+                    let why = "helper spawned but never reported READY within 5s \
+                               (VPIO/engine setup failed, or mic permission denied \
+                               for the child process)";
                     eprintln!(
-                        "fonos: call AEC unavailable (helper not READY); \
+                        "fonos: call AEC unavailable ({why}); \
                          falling back to cpal + envelope gating"
                     );
+                    log.line(&format!("audio: Fallback — AEC unavailable: {why}"));
                     return CallAudio::Fallback;
                 }
                 eprintln!("fonos: call AEC engaged — macOS voice-processing capture (VPIO)");
@@ -246,12 +352,17 @@ fn setup_call_audio(
                     "fonos: call TTS — helper playback engaged (full-duplex; \
                      VPIO gets the true echo reference)"
                 );
+                log.line(
+                    "audio: MacVoice engaged — VPIO full-duplex (mic hot whole call; \
+                     TTS routed through the helper engine)",
+                );
                 CallAudio::MacVoice(v)
             }
             Err(e) => {
                 eprintln!(
                     "fonos: call AEC unavailable ({e}); falling back to cpal + envelope gating"
                 );
+                log.line(&format!("audio: Fallback — helper start failed: {e}"));
                 CallAudio::Fallback
             }
         };
@@ -275,20 +386,24 @@ fn setup_call_audio(
                     Ok(c) => c,
                     Err(e) => {
                         eprintln!("fonos: call AEC — mic open failed ({e}); falling back");
+                        log.line(&format!("audio: Fallback — ec mic open failed: {e}"));
                         return CallAudio::Fallback; // guard drops → routing restored
                     }
                 };
                 if let Err(e) = capture.start() {
                     eprintln!("fonos: call AEC — mic start failed ({e}); falling back");
+                    log.line(&format!("audio: Fallback — ec mic start failed: {e}"));
                     return CallAudio::Fallback; // guard drops → routing restored
                 }
                 eprintln!("fonos: call AEC engaged — Linux module-echo-cancel");
+                log.line("audio: LinuxEc engaged — module-echo-cancel source");
                 return CallAudio::LinuxEc { capture, _guard: guard };
             }
             Err(e) => {
                 eprintln!(
                     "fonos: call AEC unavailable ({e}); falling back to cpal + envelope gating"
                 );
+                log.line(&format!("audio: Fallback — module-echo-cancel setup failed: {e}"));
                 return CallAudio::Fallback;
             }
         }
@@ -296,6 +411,7 @@ fn setup_call_audio(
 
     #[allow(unreachable_code)]
     {
+        log.line("audio: Fallback — no system AEC on this platform");
         CallAudio::Fallback
     }
 }
@@ -334,12 +450,25 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     let capture = app.state::<AppState>().audio_capture.clone();
     let playback = app.state::<AppState>().audio_playback.clone();
 
+    // Per-call diagnostic log (best-effort; see [`CallLog`]).
+    let log = CallLog::new();
+    log.line(&format!(
+        "call: start — sensitivity={sensitivity:.2} silence_hang_ms={} barge_in={barge_enabled} \
+         device={device_name:?}",
+        vad_cfg.silence_hang_ms
+    ));
+
     // Choose the audio source for the whole call. With barge-in on, this engages
     // system echo cancellation (macOS VPIO / Linux module-echo-cancel) and keeps
     // the mic hot for the entire session; on failure or with barge-in off it is
     // the plain cpal path armed per phase. The BargeDetector envelope gating runs
     // on top of all three (belt and braces).
-    let audio = setup_call_audio(barge_enabled, &device_name, &playback);
+    let audio = setup_call_audio(barge_enabled, &device_name, &playback, &log);
+    // Tell the page which audio path is live so it can render the AEC truth chip.
+    emit_call_started(&app, audio.path_label());
+    // The barge floor's ambient-seed multiplier: the same "clearly louder than
+    // the quiet room" notion the listen VAD uses, plus an extra margin.
+    let ambient_k = speech_threshold_factor(sensitivity) * BARGE_AMBIENT_MARGIN;
     // No pill for call-mode turns — everything renders in the Conversation page.
     let bridge = crate::adapters::TurnEventBridge::new(app.clone(), false);
 
@@ -412,16 +541,27 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             stop_capture(&capture);
         }
 
+        // The listen VAD's learned ambient noise floor — the user's real room
+        // level, measured while nothing played — seeds the barge floor below.
+        let ambient_floor = vad.noise_floor();
+
         match outcome {
             Outcome::Cancelled => {
                 ended = "hangup";
                 break 'session;
             }
             Outcome::Timeout => {
+                log.line("listen: VAD timeout — no speech; hanging up");
                 ended = "timeout";
                 break 'session;
             }
-            Outcome::Utterance => {}
+            Outcome::Utterance => {
+                log.line(&format!(
+                    "listen: utterance end — {} samples (~{} ms), learned noise_floor={ambient_floor:.0}",
+                    buf.len(),
+                    buf.len() / 16
+                ));
+            }
         }
 
         // ── TRANSCRIBE the accumulated utterance (shared STT path) ──
@@ -433,6 +573,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             Ok(r) => r.text.trim().to_string(),
             Err(e) => {
                 // STT failed — surface it, but keep the call alive and re-arm.
+                log.line(&format!("stt: error — {e}"));
                 emit_call(&app, "error", &e);
                 continue 'session;
             }
@@ -440,8 +581,10 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
         if transcript.is_empty() {
             // VAD produced an empty / too-short utterance: no "No speech
             // detected" bubble in call mode — just listen again.
+            log.line("stt: empty transcript — re-listening");
             continue 'session;
         }
+        log.line(&format!("stt: transcript ({} chars)", transcript.chars().count()));
 
         // ── THINK + SPEAK ──
         // Errors surface through the bridge; keep the call alive on failure so
@@ -451,15 +594,23 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
             let turn_fut = run_call_turn(&app, &audio, transcript, &bridge);
-            let barge_fut = barge_monitor(&app, &audio, &capture, &playback, &active);
+            let barge_fut =
+                barge_monitor(&app, &audio, &capture, &playback, &active, &log, ambient_floor, ambient_k);
             tokio::pin!(turn_fut);
             tokio::pin!(barge_fut);
             tokio::select! {
-                _ = &mut turn_fut => {
+                reply = &mut turn_fut => {
                     // The reply finished on its own — tear down the monitor
                     // capture and discard whatever it buffered (any speech there
                     // that didn't trip the barge was sub-threshold bleed). AEC
                     // keeps the mic hot; the next listen drains its stale tail.
+                    match reply {
+                        Ok(text) => log.line(&format!(
+                            "speak: reply played to completion ({} chars)",
+                            text.chars().count()
+                        )),
+                        Err(e) => log.line(&format!("speak: turn error — {e}")),
+                    }
                     if !audio.is_aec() {
                         stop_capture(&capture);
                     }
@@ -476,6 +627,12 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                             // reply is not remembered — intended, the user cut
                             // it off.
                             audio.cut_reply_playback(&playback);
+                            log.line(&format!(
+                                "speak: BARGE confirmed — cutting reply, carrying {} samples \
+                                 (~{} ms) into next listen",
+                                carry.len(),
+                                carry.len() / 16
+                            ));
                             emit_call(&app, "barge", "");
                             // Mic stays live: carry the interrupting words into
                             // the next listen, which starts immediately.
@@ -483,6 +640,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                         }
                         None => {
                             // Cancelled / capture failed during the reply.
+                            log.line("speak: monitor ended without barge (cancelled/capture-fail)");
                             if !audio.is_aec() {
                                 stop_capture(&capture);
                             }
@@ -533,6 +691,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     }
     let _ = was_aec; // only read on Linux
     active.store(false, Ordering::SeqCst);
+    log.line(&format!("call: end — reason={ended}"));
     emit_call(&app, "call_ended", ended);
 }
 
@@ -552,12 +711,16 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// and discards everything the mic hears until the reply is actually audible,
 /// so [`BargeDetector`] learns the speaker→mic coupling (not the pre-playback
 /// quiet) before it starts listening for the user talking over it.
+#[allow(clippy::too_many_arguments)]
 async fn barge_monitor(
     app: &tauri::AppHandle,
     audio: &CallAudio,
     capture: &Arc<Mutex<Option<AudioCapture>>>,
     playback: &Arc<Mutex<Option<AudioPlayback>>>,
     active: &Arc<AtomicBool>,
+    log: &CallLog,
+    ambient_floor: f32,
+    ambient_k: f32,
 ) -> Option<Vec<i16>> {
     // Arm the mic (skip the float pill — call mode never shows it). With AEC the
     // mic is already hot for the whole call, so we skip arming and just drain
@@ -587,13 +750,27 @@ async fn barge_monitor(
         }
         tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
     }
+    log.line(&format!(
+        "speak: playback audible — barge detector armed \
+         (ambient_floor={ambient_floor:.0} k={ambient_k:.2} ambient_seed={:.0} \
+         warmup={BARGE_WARMUP_MS}ms sustained={BARGE_SUSTAINED_MS}ms)",
+        ambient_floor * ambient_k
+    ));
 
     // Phase 2 — warmup + detect. Buffer everything; the detector learns the
     // playback→mic coupling during warmup, then confirms a barge only when the
     // mic sustains energy clearly above the bleed expected for the reference
-    // playing at that instant.
-    let mut detector = BargeDetector::new(BARGE_WARMUP_MS, BARGE_SUSTAINED_MS);
+    // playing at that instant. Its absolute floor is seeded with the listen
+    // phase's ambient noise so post-AEC residual can't self-trigger.
+    let mut detector =
+        BargeDetector::new(BARGE_WARMUP_MS, BARGE_SUSTAINED_MS, ambient_floor, ambient_k);
     let mut buf: Vec<i16> = Vec::new();
+    // Diagnostics: last N (mic, ref, threshold) triples for the pre-barge dump,
+    // and a rolling per-second min/avg/max of mic/ref energy.
+    let mut recent: VecDeque<(f32, f32, f32)> = VecDeque::with_capacity(BARGE_HISTORY);
+    let mut sec_mic: Vec<f32> = Vec::new();
+    let mut sec_ref: Vec<f32> = Vec::new();
+    let mut sec_ms: u32 = 0;
     loop {
         if !active.load(Ordering::SeqCst) {
             return None;
@@ -615,7 +792,54 @@ async fn barge_monitor(
                     .unwrap_or(0.0);
                 let chunk_ms = (samples.len() as u32) / 16; // 16 samples/ms @ 16 kHz
                 buf.extend_from_slice(&samples);
-                if detector.push(mic_rms, ref_rms, chunk_ms) {
+
+                let was_warming = detector.is_warming_up();
+                let barged = detector.push(mic_rms, ref_rms, chunk_ms);
+                // Log the warmup summary exactly once, when warmup ends.
+                if was_warming && !detector.is_warming_up() {
+                    log.line(&format!(
+                        "speak: warmup done — coupling={:.3} peak_bleed={:.0} abs_floor={:.0}",
+                        detector.coupling(),
+                        detector.peak_bleed(),
+                        detector.abs_floor()
+                    ));
+                }
+                // Post-warmup chunks feed the diagnostics.
+                if !was_warming {
+                    if recent.len() == BARGE_HISTORY {
+                        recent.pop_front();
+                    }
+                    recent.push_back((mic_rms, ref_rms, detector.last_threshold()));
+                    sec_mic.push(mic_rms);
+                    sec_ref.push(ref_rms);
+                    sec_ms += chunk_ms;
+                    if sec_ms >= 1_000 {
+                        log.line(&format!(
+                            "speak: {}s — mic[min/avg/max]={:.0}/{:.0}/{:.0} \
+                             ref[min/avg/max]={:.0}/{:.0}/{:.0}",
+                            sec_ms / 1_000,
+                            min(&sec_mic),
+                            avg(&sec_mic),
+                            max(&sec_mic),
+                            min(&sec_ref),
+                            avg(&sec_ref),
+                            max(&sec_ref)
+                        ));
+                        sec_mic.clear();
+                        sec_ref.clear();
+                        sec_ms = 0;
+                    }
+                }
+
+                if barged {
+                    log.line(&format!(
+                        "speak: BARGE trigger — sustained_run={}ms; last {} chunks (mic,ref,thr):",
+                        detector.run_ms(),
+                        recent.len()
+                    ));
+                    for (m, r, t) in &recent {
+                        log.line(&format!("    mic={m:.0} ref={r:.0} thr={t:.0}"));
+                    }
                     // Keep a short pre-roll (the words that led up to the
                     // trigger) plus everything after it.
                     let start = buf.len().saturating_sub(BARGE_PREROLL_SAMPLES);
@@ -624,6 +848,23 @@ async fn barge_monitor(
             }
             None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,
         }
+    }
+}
+
+/// Min of an RMS slice (`0.0` if empty).
+fn min(xs: &[f32]) -> f32 {
+    xs.iter().copied().fold(f32::INFINITY, f32::min).min(max(xs))
+}
+/// Max of an RMS slice (`0.0` if empty).
+fn max(xs: &[f32]) -> f32 {
+    xs.iter().copied().fold(0.0, f32::max)
+}
+/// Mean of an RMS slice (`0.0` if empty).
+fn avg(xs: &[f32]) -> f32 {
+    if xs.is_empty() {
+        0.0
+    } else {
+        xs.iter().sum::<f32>() / xs.len() as f32
     }
 }
 
@@ -643,4 +884,13 @@ fn stop_capture(capture: &Arc<Mutex<Option<AudioCapture>>>) {
 /// page listens on (same shape as [`crate::adapters::TurnEventBridge`]).
 fn emit_call(app: &tauri::AppHandle, kind: &str, text: &str) {
     let _ = app.emit("sts:event", serde_json::json!({ "kind": kind, "text": text }));
+}
+
+/// The `call_started` event, carrying which audio path engaged (`"aec"` / `"ec"`
+/// / `"fallback"`) so the Conversation page can render its AEC truth chip.
+fn emit_call_started(app: &tauri::AppHandle, audio: &str) {
+    let _ = app.emit(
+        "sts:event",
+        serde_json::json!({ "kind": "call_started", "text": "", "audio": audio }),
+    );
 }

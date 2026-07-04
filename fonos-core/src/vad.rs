@@ -112,16 +112,23 @@ impl VadSession {
         }
     }
 
+    /// The adaptive noise floor (RMS units) as it stands right now — a slow EMA
+    /// of the room's non-speech energy. Read by the call loop when an utterance
+    /// ends: this is the user's real ambient level, measured while nothing was
+    /// playing, and it seeds the barge detector's absolute floor for the reply
+    /// that follows (so a quiet-phase noise level can't masquerade as a barge).
+    pub fn noise_floor(&self) -> f32 {
+        self.noise_floor
+    }
+
     /// Speech-detection threshold in RMS units: the noise floor scaled by a
     /// sensitivity-derived factor, but never below an absolute minimum so a
     /// near-silent room still demands real speech energy.
     fn threshold(&self) -> f32 {
         let s = self.config.sensitivity.clamp(0.0, 1.0);
-        // Higher sensitivity → smaller factor (easier to trip): 4.0 … 1.5.
-        let factor = 4.0 - 2.5 * s;
         // Absolute floor: 120 … 48 RMS across the sensitivity range.
         let abs_min = 120.0 * (1.0 - 0.6 * s);
-        (self.noise_floor * factor).max(abs_min)
+        (self.noise_floor * speech_threshold_factor(s)).max(abs_min)
     }
 
     /// Feed one chunk of 16 kHz mono i16 samples and get the resulting event.
@@ -216,6 +223,15 @@ impl VadSession {
     }
 }
 
+/// How many times over the noise floor a chunk must sit before it counts as
+/// speech in the listen VAD, as a function of `sensitivity` (0.0 … 1.0). Higher
+/// sensitivity → smaller factor (easier to trip): 4.0 … 1.5. Exposed so the
+/// call loop can seed the barge detector's ambient floor with the *same* notion
+/// of "clearly louder than the quiet room" the listen phase used.
+pub fn speech_threshold_factor(sensitivity: f32) -> f32 {
+    4.0 - 2.5 * sensitivity.clamp(0.0, 1.0)
+}
+
 /// Root-mean-square amplitude of a chunk, in i16 units. Shared by the shell's
 /// call loop so its barge detector measures mic energy on the same scale the
 /// [`VadSession`] uses internally.
@@ -265,29 +281,83 @@ pub struct BargeDetector {
     coupling: f32,
     /// Peak mic bleed observed during warmup, in RMS units.
     peak_bleed: f32,
+    /// The listen phase's learned ambient noise floor (RMS units) — the user's
+    /// real room noise, measured while nothing played. Seeds the absolute floor
+    /// so post-AEC residual / room noise at ambient level can never barge.
+    ambient_floor: f32,
+    /// Multiplier on `ambient_floor`: the listen VAD's speech-threshold factor
+    /// times an extra margin, so a barge must be *clearly* louder than what
+    /// counted as speech in the quiet phase.
+    ambient_k: f32,
     /// Consecutive excess time accumulated in the current run.
     run_ms: u32,
+    /// The detection threshold used on the most recent detect-phase push — kept
+    /// only so the diagnostic log can record the `(mic, ref, threshold)` triples
+    /// leading up to a barge. `0.0` until the first post-warmup push.
+    last_threshold: f32,
 }
 
 impl BargeDetector {
     /// Create a detector that spends `warmup_ms` learning the playback→mic
     /// coupling and bleed floor, then confirms a barge after `sustained_ms` of
     /// consecutive excess mic energy.
-    pub fn new(warmup_ms: u32, sustained_ms: u32) -> Self {
+    ///
+    /// `ambient_floor` is the listen phase's learned room-noise level and
+    /// `ambient_k` the multiplier applied to it (see [`Self::abs_floor`]); pass
+    /// `0.0` for either to disable ambient seeding (the pre-seeding behavior).
+    pub fn new(warmup_ms: u32, sustained_ms: u32, ambient_floor: f32, ambient_k: f32) -> Self {
         Self {
             warmup_remaining_ms: warmup_ms,
             sustained_ms,
             coupling: 0.0,
             peak_bleed: 0.0,
+            ambient_floor,
+            ambient_k,
             run_ms: 0,
+            last_threshold: 0.0,
         }
     }
 
-    /// The absolute floor (RMS units): the warmup peak bleed scaled up, but
-    /// never below the hard minimum. Governs detection whenever there is no
-    /// live reference (`ref_rms == 0`, e.g. a gap between clauses).
-    fn abs_floor(&self) -> f32 {
-        (self.peak_bleed * BARGE_PEAK_BLEED_MULT).max(BARGE_ABS_MIN_RMS)
+    /// The absolute floor (RMS units): the loudest of the warmup peak bleed
+    /// scaled up, the ambient room noise scaled by `ambient_k`, and the hard
+    /// minimum. Governs detection whenever there is no live reference
+    /// (`ref_rms == 0`, e.g. a gap between clauses). With working AEC the warmup
+    /// sees near-silence, so the peak-bleed term collapses to the hard minimum;
+    /// the ambient term is what keeps the bar above the user's real room noise.
+    pub fn abs_floor(&self) -> f32 {
+        (self.peak_bleed * BARGE_PEAK_BLEED_MULT)
+            .max(self.ambient_floor * self.ambient_k)
+            .max(BARGE_ABS_MIN_RMS)
+    }
+
+    /// Learned speaker→mic coupling ratio (peak `mic_rms / ref_rms`). For the
+    /// diagnostic log's warmup summary.
+    pub fn coupling(&self) -> f32 {
+        self.coupling
+    }
+
+    /// Peak mic bleed observed during warmup (RMS units). For the log.
+    pub fn peak_bleed(&self) -> f32 {
+        self.peak_bleed
+    }
+
+    /// The threshold applied on the most recent detect-phase push. For the log's
+    /// pre-barge `(mic, ref, threshold)` triples.
+    pub fn last_threshold(&self) -> f32 {
+        self.last_threshold
+    }
+
+    /// Length (ms) of the current consecutive-excess run — the sustained-run
+    /// length at the moment a barge fires. For the log.
+    pub fn run_ms(&self) -> u32 {
+        self.run_ms
+    }
+
+    /// Whether the detector is still in its warmup window (learning, not
+    /// detecting). Lets the monitor log the one-shot warmup summary exactly when
+    /// warmup ends.
+    pub fn is_warming_up(&self) -> bool {
+        self.warmup_remaining_ms > 0
     }
 
     /// Feed one chunk. Returns `true` once excess mic energy has been sustained
@@ -311,6 +381,7 @@ impl BargeDetector {
         // ── Detect: the bar tracks the live reference; `ref_rms == 0` falls
         // back to the absolute floor alone (both are covered by the `max`). ──
         let threshold = self.abs_floor().max(self.coupling * ref_rms * BARGE_MARGIN);
+        self.last_threshold = threshold;
         let excess = mic_rms > threshold;
 
         if excess {
@@ -442,7 +513,7 @@ mod tests {
     /// Nothing is ever confirmed during the warmup window, however loud the mic.
     #[test]
     fn barge_no_detection_during_warmup() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         // Three 100 ms warmup chunks with a very loud mic: no barge.
         assert!(!d.push(9_000.0, 2_000.0, 100));
         assert!(!d.push(9_000.0, 2_000.0, 100));
@@ -453,7 +524,7 @@ mod tests {
     /// peak mic energy seen.
     #[test]
     fn barge_warmup_learns_peak_coupling_and_bleed() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         d.push(200.0, 2_000.0, 100); // ratio 0.10, bleed 200
         d.push(360.0, 2_000.0, 100); // ratio 0.18, bleed 360  ← the peaks
         d.push(150.0, 2_000.0, 100); // ratio 0.075
@@ -466,7 +537,7 @@ mod tests {
     /// bleed scales *with* the reference it is gated against.
     #[test]
     fn barge_dynamic_assistant_speech_never_triggers() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         // Warmup on moderate playback: coupling ≈ 0.15, bleed 300.
         feed_barge(&mut d, 300.0, 2_000.0, 3);
         // Now the assistant swells to 3× (ref 6000) with proportional bleed
@@ -480,7 +551,7 @@ mod tests {
     /// is confirmed once it sustains past `sustained_ms`.
     #[test]
     fn barge_genuine_user_speech_triggers() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         feed_barge(&mut d, 300.0, 2_000.0, 3); // coupling ≈ 0.15
         // The assistant keeps talking (ref 2000, expected bleed ~300) but the
         // mic jumps to 5000 — the user talking over it — and holds it.
@@ -491,7 +562,7 @@ mod tests {
     /// A short shout (200 ms, under `sustained_ms`) is not a barge.
     #[test]
     fn barge_short_shout_does_not_trigger() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         feed_barge(&mut d, 300.0, 2_000.0, 3);
         // 200 ms of loud excess, then the mic falls back to bleed: no barge.
         assert!(!feed_barge(&mut d, 5_000.0, 2_000.0, 2), "200 ms < 450 ms sustained");
@@ -503,7 +574,7 @@ mod tests {
     /// unbroken run does.
     #[test]
     fn barge_run_resets_on_non_excess_chunk() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         feed_barge(&mut d, 300.0, 2_000.0, 3);
         assert!(!feed_barge(&mut d, 5_000.0, 2_000.0, 4), "400 ms run");
         assert!(!d.push(300.0, 2_000.0, 100), "quiet chunk resets the run");
@@ -517,7 +588,7 @@ mod tests {
     /// stays quiet, but a loud voice in the gap still barges.
     #[test]
     fn barge_ref_gap_falls_back_to_floor() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         feed_barge(&mut d, 300.0, 2_000.0, 3); // bleed 300 → abs_floor = 390
         // Gap: ref 0, mic still at bleed level 300 < 390 floor → no barge.
         assert!(!feed_barge(&mut d, 300.0, 0.0, 30), "residual bleed in a gap");
@@ -529,7 +600,7 @@ mod tests {
     /// saw almost no bleed — so faint reference noise cannot barge.
     #[test]
     fn barge_abs_floor_has_a_hard_minimum() {
-        let mut d = BargeDetector::new(300, 450);
+        let mut d = BargeDetector::new(300, 450, 0.0, 0.0);
         // Near-silent warmup: peak bleed 10 → 10·1.3 = 13, clamped up to 80.
         feed_barge(&mut d, 10.0, 20.0, 3);
         // ref 0, mic 60 sits under the 80 floor: no barge.
@@ -543,7 +614,7 @@ mod tests {
     /// self-corrects instead of leaking false positives — and never triggers.
     #[test]
     fn barge_coupling_ema_self_corrects_upward() {
-        let mut d = BargeDetector::new(100, 450);
+        let mut d = BargeDetector::new(100, 450, 0.0, 0.0);
         d.push(200.0, 2_000.0, 100); // warmup underestimates: coupling = 0.10
         assert!((d.coupling - 0.10).abs() < 1e-6);
         // Steady bleed at ratio 0.175 (mic 350). abs_floor = max(260, 80) = 260;
@@ -556,5 +627,33 @@ mod tests {
         let before = d.coupling;
         d.push(20.0, 2_000.0, 100); // observed 0.01 ≪ coupling
         assert!((d.coupling - before).abs() < 1e-6, "coupling only ratchets upward");
+    }
+
+    /// The self-trigger fix: with working AEC the warmup sees near-silence, so
+    /// the peak-bleed term collapses to the 80 hard-min and *any* post-AEC
+    /// residual or room noise sustained past 450 ms used to barge. Seeding the
+    /// floor with the listen phase's real ambient level (× K) raises the bar
+    /// above that residual — so it never triggers however long it sustains —
+    /// while a genuine voice, clearly louder than the quiet room, still barges.
+    #[test]
+    fn barge_ambient_seed_raises_the_bar() {
+        // The user's quiet room measured ~220 RMS during the listen phase, at
+        // sensitivity 0.5 → K = speech_threshold_factor(0.5) · 1.5 = 2.75 · 1.5
+        // = 4.125, so the ambient-seeded floor is 220 · 4.125 ≈ 907.
+        let ambient = 220.0;
+        let k = speech_threshold_factor(0.5) * 1.5;
+        let mut d = BargeDetector::new(300, 450, ambient, k);
+        // Near-silent AEC warmup: peak bleed ~30 (would give abs_floor 80).
+        feed_barge(&mut d, 30.0, 0.0, 3);
+        assert!(d.abs_floor() > 900.0, "ambient seed lifts the floor well above 80");
+
+        // Post-AEC residual / room noise at ~600 RMS — comfortably above the old
+        // 80 floor, and sustained for seconds — must NOT barge now.
+        assert!(
+            !feed_barge(&mut d, 600.0, 0.0, 50),
+            "residual below ambient·K never triggers, even sustained"
+        );
+        // A genuine voice, clearly louder than the quiet room, still barges.
+        assert!(feed_barge(&mut d, 2_000.0, 0.0, 6), "real speech clears the seeded floor");
     }
 }

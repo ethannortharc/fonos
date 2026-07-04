@@ -5,6 +5,7 @@ import { useT, setLocale, resolveLocale } from "../../lib/i18n";
 import type { AppConfig, InjectionAppOverride } from "../../types";
 import { LANGUAGES, TARGET_LANGUAGES } from "./constants";
 import MicrophonePicker from "./MicrophonePicker";
+import DoctorCard from "./DoctorCard";
 
 const FREQUENT_CODES = ["auto", "Chinese", "English", "Japanese", "Korean", "Cantonese", "French", "Spanish"];
 
@@ -71,6 +72,11 @@ export default function GeneralTab({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Setup Doctor (resident config-health card) ── */}
+      <DoctorCard />
+
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
       {/* ── Interface language ── */}
       <div className="flex flex-col gap-2">
         <div className="text-[12px] font-medium text-[#fafaf9]">{t("general.language")}</div>

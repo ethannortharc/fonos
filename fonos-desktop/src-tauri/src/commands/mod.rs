@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod config;
 pub mod dictation;
+pub mod doctor;
 pub mod listen;
 pub mod llm;
 pub mod meeting;

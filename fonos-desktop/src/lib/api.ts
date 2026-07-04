@@ -7,6 +7,8 @@ import type {
   AgentResult,
   AppConfig,
   DailyStat,
+  DoctorFinding,
+  DoctorFix,
   LlmResult,
   ModeEntry,
   ModelCaps,
@@ -202,6 +204,18 @@ export async function saveCustomMode(opts: SaveModeOptions): Promise<void> {
 /** Delete a custom mode by ID. */
 export async function deleteCustomMode(id: string): Promise<void> {
   return invoke<void>("delete_custom_mode", { id });
+}
+
+// ─── Setup Doctor (issue #30) ───────────────────────────────────────────────
+
+/** Run all config-health checks (config lint + endpoint/permission/RTF probes). */
+export async function runDoctor(): Promise<DoctorFinding[]> {
+  return invoke<DoctorFinding[]>("run_doctor");
+}
+
+/** Apply one doctor fix, then re-run the doctor to refresh the card. */
+export async function applyDoctorFix(fix: DoctorFix): Promise<void> {
+  return invoke<void>("apply_doctor_fix", { fix });
 }
 
 // ─── Stats & History ──────────────────────────────────────────────────────────

@@ -614,6 +614,46 @@ const en = {
   "correct.bookname": "Book name",
   "correct.save": "Save & fix this entry",
   "correct.savenote": "Also fixes this word in this entry",
+  // ── Setup Doctor (issue #30) ──────────────────────────────────────────────
+  // Card chrome
+  "doctor.title": "Config health",
+  "doctor.chip.passed": "{0} passed",
+  "doctor.chip.warnings": "{0} warnings",
+  "doctor.chip.suggestions": "{0} suggestions",
+  "doctor.allpassed": "All checks passed · {0} checks",
+  "doctor.checking": "Checking…",
+  "doctor.checked.justnow": "checked just now",
+  "doctor.checked.min": "checked {0}m ago",
+  "doctor.error": "Check failed: {0}",
+  // Fix button labels (by action)
+  "doctor.fix.attach": "Attach globally",
+  "doctor.fix.reset": "Reset",
+  "doctor.fix.switch": "Switch",
+  "doctor.fix.opensettings": "Open System Settings",
+  "doctor.fixing": "Fixing…",
+  // Findings — connectivity / permissions / RTF (shell)
+  "doctor.endpoint_ok": "{0} connected",
+  "doctor.endpoint_unreachable": "Can't reach {0} — check the server is running",
+  "doctor.permissions_ok": "Microphone and Accessibility permissions granted",
+  "doctor.permission_mic": "Microphone permission not granted — dictation can't hear you",
+  "doctor.permission_accessibility": "Accessibility permission not granted — hotkeys and paste won't work",
+  "doctor.rtf_ok": "Conversation voice keeps up with real time",
+  "doctor.rtf_slow": "Conversation voice runs at {0}× real time — replies will stutter between sentences",
+  // Findings — config lint (core)
+  "doctor.hotkeys_ok": "No hotkey conflicts",
+  "doctor.duplicate_hotkey": "Hotkey {0} is assigned to more than one action — only one will respond",
+  "doctor.vocab_ok": "Vocabulary books are attached and within budget",
+  "doctor.vocab_unattached": "Vocabulary book \"{0}\" isn't attached anywhere — its terms and rules never apply",
+  "doctor.vocab_budget": "Vocabulary terms total {0} characters, over the {1}-char budget — the extras are dropped from recognition",
+  "doctor.refs_ok": "Listen / conversation model references are intact",
+  "doctor.mode_model_missing": "Mode \"{0}\" points to a model profile that no longer exists — it silently falls back",
+  "doctor.mode_vocab_missing": "Mode \"{0}\" references a vocabulary book that no longer exists",
+  "doctor.listen_mode_unknown": "Listen uses an unknown mode \"{0}\" — captured text won't be processed",
+  "doctor.dangling_listen_voice": "The Listen voice profile no longer exists — Listen falls back silently",
+  "doctor.dangling_sts_llm": "The conversation LLM profile no longer exists — it falls back silently",
+  "doctor.dangling_sts_voice": "The conversation voice profile no longer exists — it falls back silently",
+  "doctor.llm_ok": "LLM is configured for prompted modes",
+  "doctor.llm_unconfigured": "Some modes use LLM prompts but no LLM profile is set — they return the raw transcript",
 };
 
 export type TKey = keyof typeof en;
@@ -1189,6 +1229,42 @@ const zh: Partial<Record<Key, string>> = {
   "correct.bookname": "词本名称",
   "correct.save": "保存并修正本条",
   "correct.savenote": "同时修正当前这条记录里的这个词",
+  // ── Setup Doctor (issue #30) ──────────────────────────────────────────────
+  "doctor.title": "配置体检",
+  "doctor.chip.passed": "{0} 通过",
+  "doctor.chip.warnings": "{0} 警告",
+  "doctor.chip.suggestions": "{0} 建议",
+  "doctor.allpassed": "全部检查通过 · 共 {0} 项",
+  "doctor.checking": "检查中…",
+  "doctor.checked.justnow": "刚刚检查",
+  "doctor.checked.min": "{0} 分钟前检查",
+  "doctor.error": "检查失败:{0}",
+  "doctor.fix.attach": "挂到全局",
+  "doctor.fix.reset": "重置",
+  "doctor.fix.switch": "切换",
+  "doctor.fix.opensettings": "打开系统设置",
+  "doctor.fixing": "修复中…",
+  "doctor.endpoint_ok": "{0} 连接正常",
+  "doctor.endpoint_unreachable": "无法连接 {0} — 请检查服务是否在运行",
+  "doctor.permissions_ok": "麦克风与辅助功能权限已授予",
+  "doctor.permission_mic": "未授予麦克风权限 — 听写无法收音",
+  "doctor.permission_accessibility": "未授予辅助功能权限 — 快捷键和粘贴将失效",
+  "doctor.rtf_ok": "对话语音跟得上实时",
+  "doctor.rtf_slow": "对话语音 RTF 为 {0}×,慢于实时 — 会逐句停顿",
+  "doctor.hotkeys_ok": "热键无冲突",
+  "doctor.duplicate_hotkey": "热键 {0} 被分配给了多个操作 — 只有一个会响应",
+  "doctor.vocab_ok": "词汇本均已挂载且在预算内",
+  "doctor.vocab_unattached": "词汇本「{0}」未挂载到任何地方 — 词条和规则不会生效",
+  "doctor.vocab_budget": "词汇本词条共 {0} 字,超过 {1} 字预算 — 超出部分会从识别中丢弃",
+  "doctor.refs_ok": "Listen / 对话的模型引用完整",
+  "doctor.mode_model_missing": "模式「{0}」引用了已不存在的模型配置 — 会静默回退",
+  "doctor.mode_vocab_missing": "模式「{0}」引用了已不存在的词汇本",
+  "doctor.listen_mode_unknown": "Listen 使用了未知模式「{0}」 — 捕获的文本不会被处理",
+  "doctor.dangling_listen_voice": "Listen 语音配置已不存在 — Listen 会静默回退",
+  "doctor.dangling_sts_llm": "对话 LLM 配置已不存在 — 会静默回退",
+  "doctor.dangling_sts_voice": "对话语音配置已不存在 — 会静默回退",
+  "doctor.llm_ok": "LLM 已为需提示词的模式配置",
+  "doctor.llm_unconfigured": "部分模式使用了 LLM 提示词,但未设置 LLM 配置 — 它们只会返回原始转写",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };
@@ -1196,6 +1272,18 @@ const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };
 /** Translate a key in the active locale (falls back to English). */
 export function t(key: Key): string {
   return dicts[current][key] ?? en[key];
+}
+
+/**
+ * Translate a *dynamic* key (e.g. a `doctor.*` message key coming from a Rust
+ * finding) with positional `{0}`, `{1}`, … substitution. Falls back to English,
+ * then to the raw key. Reactivity is via `useT()` in the consuming component.
+ */
+export function td(key: string, params: string[] = []): string {
+  const localized = dicts[current] as Record<string, string>;
+  const fallback = en as Record<string, string>;
+  const raw = localized[key] ?? fallback[key] ?? key;
+  return raw.replace(/\{(\d+)\}/g, (_m, i) => params[Number(i)] ?? "");
 }
 
 /** Reactive translator: re-renders the component when the locale changes. */

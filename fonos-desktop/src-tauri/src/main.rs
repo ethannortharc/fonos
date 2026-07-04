@@ -382,6 +382,9 @@ fn main() {
             commands::dictation::stop_recording,
             commands::dictation::test_stt,
             commands::dictation::transcribe_file,
+
+            commands::doctor::run_doctor,
+            commands::doctor::apply_doctor_fix,
             // Permission commands
             commands::listen::create_listen_from_text,
             commands::sts::reset_sts_session,

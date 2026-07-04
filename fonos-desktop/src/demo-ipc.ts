@@ -503,6 +503,17 @@ export function installDemoIpc() {
         ];
       case "test_stt":
         return "OK — demo endpoint responded";
+      case "run_doctor":
+        return [
+          { id: "endpoint_ok:localhost:8000", severity: "pass", message_key: "doctor.endpoint_ok", message_params: ["STT · LLM · TTS", "localhost:8000 · 47ms"], fix: null },
+          { id: "permissions_ok", severity: "pass", message_key: "doctor.permissions_ok", message_params: [], fix: null },
+          { id: "hotkeys_ok", severity: "pass", message_key: "doctor.hotkeys_ok", message_params: [], fix: null },
+          { id: "vocab_unattached:coding", severity: "warn", message_key: "doctor.vocab_unattached", message_params: ["Coding"], fix: { kind: "attach_book_global", book_id: "coding" } },
+          { id: "rtf_slow", severity: "advise", message_key: "doctor.rtf_slow", message_params: ["2.3"], fix: { kind: "switch_tts_model", profile_id: "openai-tts", model: "kokoro-82m" } },
+          { id: "refs_ok", severity: "pass", message_key: "doctor.refs_ok", message_params: [], fix: null },
+        ];
+      case "apply_doctor_fix":
+        return null;
       default:
         return null;
     }

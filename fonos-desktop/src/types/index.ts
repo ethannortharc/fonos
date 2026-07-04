@@ -112,6 +112,29 @@ export interface ModelProfile {
   stt_api?: "whisper" | "chat";
 }
 
+// ─── Setup Doctor (issue #30) ───────────────────────────────────────────────
+
+/** Severity of a doctor Finding — mirrors fonos_core::doctor::Severity. */
+export type DoctorSeverity = "pass" | "warn" | "advise";
+
+/** A typed one-click fix — mirrors fonos_core::doctor::FixAction (tag: "kind"). */
+export type DoctorFix =
+  | { kind: "attach_book_global"; book_id: string }
+  | { kind: "clear_profile_ref"; field: string }
+  | { kind: "reset_listen_mode" }
+  | { kind: "point_mode_model_to_default"; mode_id: string }
+  | { kind: "switch_tts_model"; profile_id: string; model: string }
+  | { kind: "open_settings_pane"; pane: string };
+
+/** One doctor result row — mirrors fonos_core::doctor::Finding. */
+export interface DoctorFinding {
+  id: string;
+  severity: DoctorSeverity;
+  message_key: string;
+  message_params: string[];
+  fix: DoctorFix | null;
+}
+
 // ─── Modes ────────────────────────────────────────────────────────────────────
 
 /** A processing mode that defines how spoken text is transformed by an LLM. */

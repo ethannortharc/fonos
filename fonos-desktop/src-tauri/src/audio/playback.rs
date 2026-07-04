@@ -1,11 +1,11 @@
 //! Audio playback: buffers and plays back TTS audio received from Fonos API.
 
-use std::collections::VecDeque;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
+
+use crate::audio::ref_envelope::RefEnvelope;
 
 /// Represents the current state of audio playback.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,76 +61,6 @@ struct PlaybackInner {
     _stream: OutputStream,
     _stream_handle: OutputStreamHandle,
     sink: Sink,
-}
-
-/// Per-100ms RMS timeline of the audio pushed into the current playback queue.
-///
-/// We own every PCM chunk we play, so we can record how loud the output *is* on
-/// a timeline and, given the wall-clock elapsed since the queue started, answer
-/// "how loud is the assistant right now?" — the reference the barge detector
-/// gates the mic against. All values are i16 RMS units, matching
-/// [`fonos_core::vad::rms`].
-#[derive(Default)]
-struct RefEnvelope {
-    /// `(block_rms, block_ms)` for each ~100 ms block, in play order.
-    blocks: VecDeque<(f32, u32)>,
-    /// Total duration (ms) represented by `blocks`.
-    total_ms: u64,
-    /// Wall-clock instant the current queue began playing (first append after
-    /// the queue was empty). `None` when idle.
-    queue_start: Option<Instant>,
-}
-
-/// Target block length for the reference timeline.
-const REF_BLOCK_MS: u32 = 100;
-/// Half-width (ms) of the window searched around the estimated playback
-/// position — wide enough to stay conservative against position error.
-const REF_WINDOW_MS: u64 = 400;
-
-impl RefEnvelope {
-    /// Drop the whole timeline (queue drained, stopped, or replaced).
-    fn reset(&mut self) {
-        self.blocks.clear();
-        self.total_ms = 0;
-        self.queue_start = None;
-    }
-
-    /// Append the per-100ms-block RMS of `samples` (interleaved i16 at
-    /// `sample_rate` × `channels`) to the timeline.
-    fn push_samples(&mut self, samples: &[i16], sample_rate: u32, channels: u16) {
-        if samples.is_empty() || sample_rate == 0 || channels == 0 {
-            return;
-        }
-        // Samples per full block (all channels), and the samples-per-ms factor.
-        let block_len =
-            ((sample_rate as usize * REF_BLOCK_MS as usize / 1000) * channels as usize).max(1);
-        let per_ms = (sample_rate as u64 * channels as u64).max(1); // samples/sec·ch → /1000 below
-        for block in samples.chunks(block_len) {
-            let sum_sq: f64 = block.iter().map(|&s| (s as f64) * (s as f64)).sum();
-            let rms = (sum_sq / block.len() as f64).sqrt() as f32;
-            let block_ms = ((block.len() as u64 * 1000) / per_ms).max(1) as u32;
-            self.blocks.push_back((rms, block_ms));
-            self.total_ms += block_ms as u64;
-        }
-    }
-
-    /// Max block RMS within ±[`REF_WINDOW_MS`] of `pos_ms` along the timeline.
-    fn max_rms_around(&self, pos_ms: u64) -> f32 {
-        let lo = pos_ms.saturating_sub(REF_WINDOW_MS);
-        let hi = pos_ms + REF_WINDOW_MS;
-        let mut cursor = 0u64;
-        let mut peak = 0.0f32;
-        for &(rms, block_ms) in &self.blocks {
-            let start = cursor;
-            let end = cursor + block_ms as u64;
-            // Overlap test between [start, end) and [lo, hi].
-            if end > lo && start <= hi && rms > peak {
-                peak = rms;
-            }
-            cursor = end;
-        }
-        peak
-    }
 }
 
 // Safety: `OutputStream` and `Sink` are not `Send`/`Sync` on all platforms due
@@ -239,8 +169,7 @@ impl AudioPlayback {
             let mut env = self.ref_env.lock().unwrap();
             // A fresh append onto an empty queue starts a new playback timeline.
             if was_empty {
-                env.reset();
-                env.queue_start = Some(Instant::now());
+                env.begin();
             }
             env.push_samples(&samples, sample_rate, channels);
         }
@@ -273,17 +202,14 @@ impl AudioPlayback {
         // Check emptiness without holding the sink lock across the env lock.
         let empty = self.inner.lock().unwrap().sink.empty();
         let mut env = self.ref_env.lock().unwrap();
-        if empty || env.blocks.is_empty() {
+        if empty {
             // Queue drained: drop the stale timeline and report silence.
             env.reset();
             return 0.0;
         }
-        let Some(start) = env.queue_start else {
-            return 0.0;
-        };
-        let elapsed_ms = start.elapsed().as_millis() as u64;
-        let pos_ms = elapsed_ms.min(env.total_ms);
-        env.max_rms_around(pos_ms)
+        // The queue is still playing; the envelope's own position query returns
+        // 0 if it happens to hold no anchored blocks.
+        env.reference_rms()
     }
 }
 

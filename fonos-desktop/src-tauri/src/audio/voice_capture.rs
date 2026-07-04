@@ -34,6 +34,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::audio::ref_envelope::RefEnvelope;
+
 /// Ring buffer capacity: 5 minutes of 16 kHz mono audio (matches the mic path).
 const RING_CAPACITY: usize = 300 * 16_000;
 
@@ -68,6 +70,12 @@ struct PlaybackLink {
     stdin: Mutex<Option<ChildStdin>>,
     state: Mutex<PlaybackFlags>,
     cond: Condvar,
+    /// Loudness timeline of the TTS we push to the helper — the call loop's
+    /// barge reference in full-duplex mode (TTS plays through the helper, not
+    /// rodio, so [`crate::audio::playback::AudioPlayback::reference_rms`] reads 0
+    /// here; this is the equivalent). Anchored on the first frame after idle,
+    /// reset on `DRAIN`/flush/teardown. See [`PlaybackLink::reference_rms`].
+    ref_env: Mutex<RefEnvelope>,
 }
 
 #[derive(Default)]
@@ -88,14 +96,36 @@ impl PlaybackLink {
             stdin: Mutex::new(None),
             state: Mutex::new(PlaybackFlags::default()),
             cond: Condvar::new(),
+            ref_env: Mutex::new(RefEnvelope::default()),
         }
     }
 
     /// Send one playback frame (16 kHz mono i16 PCM bytes) to the helper.
     fn play_pcm(&self, pcm: &[u8]) -> Result<(), String> {
         // Mark pending BEFORE the bytes hit the pipe so a (theoretical)
-        // instant DRAIN can never race ahead of the flag.
-        self.state.lock().map_err(|e| e.to_string())?.pending = true;
+        // instant DRAIN can never race ahead of the flag. Capture the idle→live
+        // edge so the reference envelope anchors its clock on the first frame.
+        let was_idle = {
+            let mut st = self.state.lock().map_err(|e| e.to_string())?;
+            let was_idle = !st.pending;
+            st.pending = true;
+            was_idle
+        };
+        // Record this frame's loudness on the barge reference timeline. Frames
+        // are the resampled TTS at unit gain (16 kHz mono i16) — the same signal
+        // VPIO plays and cancels; the BargeDetector's learned COUPLING ratio
+        // absorbs the constant scale gap between this and the makeup-gained mic.
+        {
+            let mut env = self.ref_env.lock().map_err(|e| e.to_string())?;
+            if was_idle {
+                env.begin();
+            }
+            let samples: Vec<i16> = pcm
+                .chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            env.push_samples(&samples, 16_000, 1);
+        }
         let write = (|| -> std::io::Result<()> {
             let mut guard = self
                 .stdin
@@ -112,6 +142,10 @@ impl PlaybackLink {
             if let Ok(mut st) = self.state.lock() {
                 st.pending = false;
                 self.cond.notify_all();
+            }
+            // The bytes never reached the speaker: drop the timeline we anchored.
+            if let Ok(mut env) = self.ref_env.lock() {
+                env.reset();
             }
             return Err(format!("fonos-voice-capture playback write failed: {e}"));
         }
@@ -132,6 +166,25 @@ impl PlaybackLink {
             st.pending = false;
             self.cond.notify_all();
         }
+        // Everything scheduled is discarded — drop the reference timeline too.
+        if let Ok(mut env) = self.ref_env.lock() {
+            env.reset();
+        }
+    }
+
+    /// Current TTS playback loudness (i16 RMS units) for the barge detector —
+    /// the full-duplex equivalent of
+    /// [`crate::audio::playback::AudioPlayback::reference_rms`]. `0.0` while
+    /// nothing is scheduled (mirrors rodio's empty-queue reference); otherwise
+    /// the envelope's wall-clock position query.
+    fn reference_rms(&self) -> f32 {
+        if !self.state.lock().map(|st| st.pending).unwrap_or(false) {
+            return 0.0;
+        }
+        self.ref_env
+            .lock()
+            .map(|env| env.reference_rms())
+            .unwrap_or(0.0)
     }
 
     /// Block until everything played (a `DRAIN` arrived after the most recent
@@ -194,6 +247,13 @@ impl PlaybackLink {
                 if let Ok(mut st) = self.state.lock() {
                     st.pending = false;
                     self.cond.notify_all();
+                }
+                // Playback queue emptied — retire the reference timeline so the
+                // barge bar falls back to the absolute floor until the next frame
+                // re-anchors it (a late DRAIN that raced a new `play_pcm` will be
+                // followed by that frame's `begin`, so no reference is lost).
+                if let Ok(mut env) = self.ref_env.lock() {
+                    env.reset();
                 }
                 true
             }
@@ -296,6 +356,9 @@ impl VoiceProcessedCapture {
             st.ready = false;
             self.link.cond.notify_all();
         }
+        if let Ok(mut env) = self.link.ref_env.lock() {
+            env.reset();
+        }
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
@@ -346,6 +409,15 @@ impl VoiceProcessedCapture {
     /// drained) — the call loop's "reply is audible" signal in this mode.
     pub fn is_playing(&self) -> bool {
         self.link.is_playing()
+    }
+
+    /// Live TTS playback loudness (i16 RMS units) the barge detector gates the
+    /// mic against in full-duplex mode. TTS plays through the helper here, so the
+    /// rodio [`crate::audio::playback::AudioPlayback::reference_rms`] reads 0;
+    /// this reports the helper link's own reference envelope so the coupling×ref
+    /// dynamic bar re-engages. `0.0` while nothing is scheduled.
+    pub fn reference_rms(&self) -> f32 {
+        self.link.reference_rms()
     }
 
     /// Block until the helper's engine is confirmed running (`READY` on
@@ -477,6 +549,9 @@ fn stderr_thread(stderr: ChildStderr, link: Arc<PlaybackLink>) {
         st.pending = false;
         st.ready = false;
         link.cond.notify_all();
+    }
+    if let Ok(mut env) = link.ref_env.lock() {
+        env.reset();
     }
 }
 

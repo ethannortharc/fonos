@@ -309,6 +309,23 @@ impl CallAudio {
             .unwrap_or(false)
     }
 
+    /// Live playback loudness (i16 RMS units) the barge detector gates the mic
+    /// against right now. macOS voice mode plays TTS through the helper, so the
+    /// reference comes from the helper's own envelope (the rodio reference reads
+    /// 0 there); every other path reads the rodio playback envelope. `0.0` when
+    /// nothing is audible — the detector then leans on its absolute floor.
+    fn reference_rms(&self, playback: &Arc<Mutex<Option<AudioPlayback>>>) -> f32 {
+        #[cfg(target_os = "macos")]
+        if let CallAudio::MacVoice(v) = self {
+            return v.reference_rms();
+        }
+        playback
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|p| p.reference_rms()))
+            .unwrap_or(0.0)
+    }
+
     /// Cut the reply off NOW — barge interrupt / hangup. macOS voice mode
     /// flushes the helper's playback queue (the zero-length control frame);
     /// other paths stop the rodio sink as before.
@@ -780,8 +797,10 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// uninterrupted, monitoring continues).
 ///
 /// Detection is reference-gated: because we own the TTS PCM, each mic chunk is
-/// compared against [`AudioPlayback::reference_rms`] — the loudness the speaker
-/// is emitting *right now*. The assistant's own voice bleeds into the mic in
+/// compared against the loudness the speaker is emitting *right now* — the rodio
+/// [`AudioPlayback::reference_rms`], or on the macOS full-duplex path the helper
+/// link's own envelope (both via [`CallAudio::reference_rms`]). The assistant's
+/// own voice bleeds into the mic in
 /// proportion to that reference, so it never trips the detector however loud it
 /// swells; only mic energy with no matching reference rise (the user talking
 /// over it) counts. Warmup is aligned with playback: the monitor first drains
@@ -869,17 +888,13 @@ async fn barge_monitor(
         match chunk {
             Some(samples) => {
                 // Mic energy for this chunk, and the live playback reference it
-                // is gated against (0.0 when the queue has drained). macOS
-                // voice mode plays TTS through the helper, so the rodio
-                // reference reads 0 there — intended: with true AEC the
-                // residual bleed is tiny and the detector's absolute floor
-                // (its ref_rms == 0 fallback) governs.
+                // is gated against (0.0 when the queue has drained). macOS voice
+                // mode plays TTS through the helper, so this reads the helper's
+                // own playback envelope (the rodio reference reads 0 there) —
+                // the coupling×ref dynamic bar tracks the reply's loudness on
+                // that path too, not just an absolute floor.
                 let mic_rms = rms(&samples);
-                let ref_rms = playback
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.as_ref().map(|p| p.reference_rms()))
-                    .unwrap_or(0.0);
+                let ref_rms = audio.reference_rms(playback);
                 let chunk_ms = (samples.len() as u32) / 16; // 16 samples/ms @ 16 kHz
                 buf.extend_from_slice(&samples);
 
@@ -906,14 +921,15 @@ async fn barge_monitor(
                     if sec_ms >= 1_000 {
                         log.line(&format!(
                             "speak: {}s — mic[min/avg/max]={:.0}/{:.0}/{:.0} \
-                             ref[min/avg/max]={:.0}/{:.0}/{:.0}",
+                             ref[min/avg/max]={:.0}/{:.0}/{:.0} coupling={:.3}",
                             sec_ms / 1_000,
                             min(&sec_mic),
                             avg(&sec_mic),
                             max(&sec_mic),
                             min(&sec_ref),
                             avg(&sec_ref),
-                            max(&sec_ref)
+                            max(&sec_ref),
+                            detector.coupling()
                         ));
                         sec_mic.clear();
                         sec_ref.clear();
@@ -954,14 +970,12 @@ async fn barge_monitor(
                         match audio.take_chunk(VAD_CHUNK_MS, capture) {
                             Some(samples) => {
                                 let mic_rms = rms(&samples);
-                                // Live playback loudness for the coupling bar
-                                // (0.0 on the macOS helper path — abs_floor
-                                // governs there).
-                                let ref_rms = playback
-                                    .lock()
-                                    .ok()
-                                    .and_then(|g| g.as_ref().map(|p| p.reference_rms()))
-                                    .unwrap_or(0.0);
+                                // Live playback loudness for the coupling bar —
+                                // real on the macOS helper path now (its own
+                                // envelope), so the raised verify bar scales with
+                                // the reply during verification too, not just the
+                                // absolute floor.
+                                let ref_rms = audio.reference_rms(playback);
                                 let bar = detector.threshold_for(ref_rms, BARGE_VERIFY_BAR_MULT);
                                 last_bar = bar;
                                 let chunk_ms = (samples.len() as u32) / 16;

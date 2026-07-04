@@ -6,6 +6,10 @@ pub mod playback;
 pub mod system_capture;
 pub mod dual_capture;
 
+/// Shared per-100ms playback-loudness timeline, used as the barge detector's
+/// live reference by both the rodio playback and the macOS helper link.
+pub(crate) mod ref_envelope;
+
 /// macOS voice-processing (VPIO) mic capture helper — system echo cancellation
 /// for call mode. Only built on macOS (spawns the `fonos-voice-capture` helper).
 #[cfg(target_os = "macos")]

@@ -27,7 +27,7 @@ fonos-desktop                  Tauri adapter + assembly
 ├── error_surface  PipelineEvent/classified error → float:* Tauri events (EventSink adapter)
 └── commands/*  thin Tauri command wrappers around core
 
-fonos-ios                      second consumer of the same core (validates ports)
+fonos-ios (separate repository)  second consumer of the same core (validates ports)
 ```
 
 ## Rules

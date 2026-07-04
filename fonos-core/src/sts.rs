@@ -30,6 +30,19 @@ pub enum TurnEvent {
     Failed(SurfacedError),
 }
 
+/// Coarse phase of a hands-free "call mode" loop, for renderers that show a
+/// state chip. The per-turn detail (transcript, reply, speaking) still flows
+/// through [`TurnEvent`]; this is only the outer listen → think → speak cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallState {
+    /// Mic is live, waiting for / capturing the user's utterance.
+    Listening,
+    /// Transcribing and running the LLM.
+    Thinking,
+    /// Playing the spoken reply (mic is off).
+    Speaking,
+}
+
 /// Renderer port for turn events.
 pub trait TurnSink: Send + Sync {
     /// Deliver one event to the renderer.

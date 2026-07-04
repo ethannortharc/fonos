@@ -101,6 +101,13 @@ const en = {
   "speech.voices.cloned": "Your cloned voices",
   "speech.voices.model": "Model speakers",
   "speech.voices.placeholder": "speaker name…",
+  "speech.sensitivity": "Call sensitivity",
+  "speech.sensitivity.hint": "how soon it decides you're done",
+  "speech.silence": "End-of-speech pause",
+  "speech.silence.hint": "how long a pause ends your turn",
+  "speech.sensitivity.low": "Low",
+  "speech.sensitivity.med": "Medium",
+  "speech.sensitivity.high": "High",
 
   // conversation page
   "conv.title": "Conversation",
@@ -120,6 +127,9 @@ const en = {
   "conv.hold": "Hold to talk",
   "conv.release": "Release to send",
   "conv.speaking": "speaking",
+  "conv.call.hint": "Click to start a call · hold to talk once",
+  "conv.call.hangup": "Hang up",
+  "conv.call.timeout": "Call ended — no speech for a while",
 
   // history
   "history.search": "Search everything…",
@@ -842,6 +852,13 @@ const zh: Partial<Record<Key, string>> = {
   "speech.voices.cloned": "你的克隆音色",
   "speech.voices.model": "模型内置音色",
   "speech.voices.placeholder": "说话人名称…",
+  "speech.sensitivity": "通话灵敏度",
+  "speech.sensitivity.hint": "多快判定你说完了",
+  "speech.silence": "停顿判定",
+  "speech.silence.hint": "停顿多久算说完",
+  "speech.sensitivity.low": "低",
+  "speech.sensitivity.med": "中",
+  "speech.sensitivity.high": "高",
 
   "conv.title": "实时对话",
   "conv.state.idle": "就绪",
@@ -860,6 +877,9 @@ const zh: Partial<Record<Key, string>> = {
   "conv.hold": "按住说话",
   "conv.release": "松开发送",
   "conv.speaking": "播报中",
+  "conv.call.hint": "点按开始通话 · 按住可说一句",
+  "conv.call.hangup": "挂断",
+  "conv.call.timeout": "通话已结束 — 一段时间没有说话",
 
   "history.search": "搜索全部内容…",
   "history.filter.all": "全部",

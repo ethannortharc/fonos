@@ -482,6 +482,8 @@ export function installDemoIpc() {
         return null;
       case "reset_sts_session":
       case "sts_page_start":
+      case "call_start":
+      case "call_stop":
         return null;
       case "sts_page_stop":
         return "This is a demo reply.";

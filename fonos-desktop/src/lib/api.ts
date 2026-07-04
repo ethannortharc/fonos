@@ -446,6 +446,16 @@ export async function resetStsSession(): Promise<void> {
   return invoke<void>("reset_sts_session");
 }
 
+/** Start a hands-free call (listen → reply loop) until hung up. */
+export async function callStart(): Promise<void> {
+  return invoke<void>("call_start");
+}
+
+/** Hang up the hands-free call. Safe to call in any phase. */
+export async function callStop(): Promise<void> {
+  return invoke<void>("call_stop");
+}
+
 export async function listModelVoices(profileId: string): Promise<string[]> {
   return invoke<string[]>("list_model_voices", { profileId });
 }

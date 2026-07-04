@@ -37,8 +37,9 @@ you want history, setup, stats, or deeper editing.
 
 ## Demo
 
-Recorded from the real v0.3 demo app and cropped for README readability: hold
-to dictate, release, run STT + Polish, then review the saved result in History.
+Recorded from the real v0.3 desktop app window and lightly cropped for README
+readability: hold to dictate, release, run STT + Polish, then review the saved
+result in History.
 A launch-ready MP4 is also available at
 [`assets/demo/fonos-demo.mp4`](assets/demo/fonos-demo.mp4).
 

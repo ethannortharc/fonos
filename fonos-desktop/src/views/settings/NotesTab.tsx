@@ -5,6 +5,7 @@ import { PinIcon } from "../../components/Icons";
 import { listContainers, createContainer, deleteContainer } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig, ModelProfile } from "../../types";
+import { t, useT } from "../../lib/i18n";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -15,10 +16,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 const PROCESSORS = [
-  { id: "light_polish", label: "Light Polish" },
-  { id: "none", label: "Raw (no processing)" },
-  { id: "summarize", label: "Summarize" },
-];
+  { id: "light_polish", label: "ntab.proc.light" },
+  { id: "none", label: "ntab.proc.raw" },
+  { id: "summarize", label: "ntab.proc.summarize" },
+] as const;
 
 const selectClass = "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
 const inputClass = "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
@@ -57,28 +58,28 @@ function NbConfigFields({
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>Processor</label>
+        <label className={labelClass}>{t("ntab.processor")}</label>
         <select value={cfg.processor} onChange={(e) => onChange("processor", e.target.value)} className={selectClass}>
-          {PROCESSORS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          {PROCESSORS.map((p) => <option key={p.id} value={p.id}>{t(p.label)}</option>)}
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>STT Model</label>
+        <label className={labelClass}>{t("ntab.stt-model")}</label>
         <select value={cfg.stt_profile} onChange={(e) => onChange("stt_profile", e.target.value)} className={selectClass}>
-          <option value="">Default (global)</option>
-          <option value="apple-speech">Apple Speech (on-device)</option>
+          <option value="">{t("ntab.default-global")}</option>
+          <option value="apple-speech">{t("ntab.apple-speech")}</option>
           {sttProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.model})</option>)}
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>LLM Model</label>
+        <label className={labelClass}>{t("ntab.llm-model")}</label>
         <select value={cfg.llm_profile} onChange={(e) => onChange("llm_profile", e.target.value)} className={selectClass}>
-          <option value="">Default (global)</option>
+          <option value="">{t("ntab.default-global")}</option>
           {llmProfiles.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.model})</option>)}
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label className={labelClass}>Processing Prompt</label>
+        <label className={labelClass}>{t("ntab.prompt")}</label>
         <textarea value={cfg.prompt} onChange={(e) => onChange("prompt", e.target.value)} rows={2} className={textareaClass} />
       </div>
     </div>
@@ -127,11 +128,11 @@ function NotebookEditor({
           {/* Show bound hotkey if any (read-only — configure in Hotkeys tab) */}
           {boundHotkey && (
             <div className="flex items-center gap-2 pb-1">
-              <label className={labelClass}>Hotkey</label>
+              <label className={labelClass}>{t("ntab.hotkey")}</label>
               <span className="text-[11px] text-[#fbbf24] font-mono bg-[rgba(245,158,11,0.08)] rounded px-2 py-0.5">
                 {boundHotkey}
               </span>
-              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">(change in Hotkeys tab)</span>
+              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">{t("ntab.change-in-hotkeys")}</span>
             </div>
           )}
 
@@ -142,7 +143,7 @@ function NotebookEditor({
               onClick={() => onDelete(notebook.id)}
               className="text-[10px] text-[rgba(239,68,68,0.5)] hover:text-[#ef4444] px-2 py-1 rounded-md bg-[rgba(239,68,68,0.04)] border border-[rgba(239,68,68,0.08)] hover:border-[rgba(239,68,68,0.2)] transition-colors"
             >
-              Delete
+              {t("ntab.delete")}
             </button>
           </div>
         </div>
@@ -154,6 +155,7 @@ function NotebookEditor({
 // ─── Main NotesTab ──────────────────────────────────────────────────────────
 
 export default function NotesTab({ config, onSave }: { config: AppConfig; onSave: (u: Partial<AppConfig>) => void }) {
+  useT();
   const [notebooks, setNotebooks] = useState<Container[]>([]);
   const [quickNote, setQuickNote] = useState<Container | null>(null);
   const [newTitle, setNewTitle] = useState("");
@@ -247,18 +249,18 @@ export default function NotesTab({ config, onSave }: { config: AppConfig; onSave
 
       {/* ── Quick Note (Default Notebook) ── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel><span className="inline-flex items-center gap-1"><PinIcon size={11} /> Quick Note (Default)</span></SectionLabel>
+        <SectionLabel><span className="inline-flex items-center gap-1"><PinIcon size={11} /> {t("ntab.quick-note")}</span></SectionLabel>
         <p className="text-[9px] text-[rgba(255,255,255,0.2)] -mt-1">
-          The default notebook for notes without a specific target. Hotkey: <span className="font-mono text-[rgba(255,255,255,0.3)]">{config.hotkey_note || "option+n"}</span>
+          {t("ntab.quick-note-desc")} <span className="font-mono text-[rgba(255,255,255,0.3)]">{config.hotkey_note || "option+n"}</span>
         </p>
         <NbConfigFields cfg={qnCfg} profiles={profiles} onChange={handleQnChange} />
       </div>
 
       {/* ── Other Notebooks ── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Notebooks</SectionLabel>
+        <SectionLabel>{t("ntab.notebooks")}</SectionLabel>
         <p className="text-[9px] text-[rgba(255,255,255,0.2)] -mt-1">
-          Click "+ Key" to assign a hotkey shortcut (max 3). Hotkey-bound notebooks sort to the top.
+          {t("ntab.notebooks-hint")}
         </p>
 
         {/* Create new */}
@@ -267,7 +269,7 @@ export default function NotesTab({ config, onSave }: { config: AppConfig; onSave
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            placeholder="New notebook name..."
+            placeholder={t("ntab.new-placeholder")}
             className={inputClass + " flex-1"}
           />
           <button
@@ -279,14 +281,14 @@ export default function NotesTab({ config, onSave }: { config: AppConfig; onSave
               creating || !newTitle.trim() ? "opacity-30" : "hover:opacity-90",
             ].join(" ")}
           >
-            + Create
+            {t("ntab.create")}
           </button>
         </div>
 
         {/* Notebook list */}
         {sortedNotebooks.length === 0 ? (
           <div className="text-[rgba(255,255,255,0.15)] text-[11px] py-3 text-center">
-            No custom notebooks yet.
+            {t("ntab.empty")}
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">

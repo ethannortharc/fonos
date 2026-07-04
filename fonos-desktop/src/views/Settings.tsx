@@ -10,7 +10,7 @@ import {
   deleteCustomMode,
 } from "../lib/api";
 import type { AppConfig, ModeEntry } from "../types";
-import { useT } from "../lib/i18n";
+import { t, useT } from "../lib/i18n";
 import { TABS } from "./settings/constants";
 import type { SettingsTab, ModeForm } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
@@ -87,7 +87,7 @@ export default function Settings() {
   const handleSaveMode = useCallback(
     async (form: ModeForm) => {
       if (!form.id || !form.name) {
-        setError("Mode ID and name are required");
+        setError(t("settings.mode-required"));
         return;
       }
       setError("");
@@ -135,7 +135,7 @@ export default function Settings() {
   if (!config) {
     return (
       <div className="flex items-center justify-center h-full bg-[#1a1917]">
-        <span className="text-[rgba(255,255,255,0.3)] text-sm">Loading...</span>
+        <span className="text-[rgba(255,255,255,0.3)] text-sm">{t("settings.loading")}</span>
       </div>
     );
   }
@@ -230,7 +230,7 @@ export default function Settings() {
 
         {saving && (
           <div className="text-center text-[rgba(255,255,255,0.25)] text-[10px] mt-3">
-            Saving...
+            {t("settings.saving")}
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import { useState, KeyboardEvent } from "react";
 import type { AppConfig, ModelProfile } from "../../types";
+import { t, useT } from "../../lib/i18n";
 
 // ─── Section label style (matches ModesTab) ───────────────────────────────────
 
@@ -55,7 +56,7 @@ function Chip({
         onMouseLeave={(e) => {
           (e.currentTarget as HTMLButtonElement).style.color = colorStyle.xText;
         }}
-        aria-label={`Remove ${value}`}
+        aria-label={`${t("agent.remove")} ${value}`}
       >
         &#10005;
       </button>
@@ -115,7 +116,7 @@ function ChipListEditor({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={addItem}
-          placeholder="+ add"
+          placeholder={t("agent.add")}
           className="px-2 py-0.5 rounded text-[9px] text-[#fafaf9] w-14 focus:outline-none focus:border-[rgba(255,255,255,0.1)]"
           style={{
             background: "rgba(255,255,255,0.02)",
@@ -142,7 +143,7 @@ function TimeoutSlider({
 
   return (
     <div className="flex items-center gap-2.5">
-      <span className="text-[10px] text-[rgba(255,255,255,0.3)] w-16">Timeout</span>
+      <span className="text-[10px] text-[rgba(255,255,255,0.3)] w-16">{t("agent.timeout")}</span>
       <div className="flex-1 h-1 bg-[rgba(255,255,255,0.06)] rounded-full relative cursor-pointer">
         {/* Filled portion */}
         <div
@@ -180,6 +181,7 @@ interface AgentTabProps {
 }
 
 export default function AgentTab({ config, onSave }: AgentTabProps) {
+  useT();
   // Model profiles by capability
   const llmProfiles: ModelProfile[] = (config.model_profiles ?? []).filter(
     (p) => p.capabilities && p.capabilities.includes("llm")
@@ -201,7 +203,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
 
       {/* ── LLM Model ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>LLM Model</SectionLabel>
+        <SectionLabel>{t("agent.llm-model")}</SectionLabel>
         <select
           value={config.agent_llm_profile ?? ""}
           onChange={(e) => onSave({ agent_llm_profile: e.target.value })}
@@ -211,7 +213,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
             border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <option value="">— none —</option>
+          <option value="">{t("agent.none")}</option>
           {llmProfiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -219,13 +221,13 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
           ))}
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          Separate from dictation LLM. Agent needs tool-use support.
+          {t("agent.llm-hint")}
         </div>
       </div>
 
       {/* ── STT Model ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>STT Model</SectionLabel>
+        <SectionLabel>{t("agent.stt-model")}</SectionLabel>
         <select
           value={config.agent_stt_profile ?? ""}
           onChange={(e) => onSave({ agent_stt_profile: e.target.value })}
@@ -235,7 +237,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
             border: "1px solid rgba(255,255,255,0.06)",
           }}
         >
-          <option value="">Default (global STT profile)</option>
+          <option value="">{t("agent.stt-default")}</option>
           {sttProfiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name} ({p.model})
@@ -243,13 +245,13 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
           ))}
         </select>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          STT model for agent voice input. Defaults to global STT profile if not set.
+          {t("agent.stt-hint")}
         </div>
       </div>
 
       {/* ── System Prompt ─────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>System Prompt</SectionLabel>
+        <SectionLabel>{t("agent.system-prompt")}</SectionLabel>
         <textarea
           rows={4}
           value={config.agent_system_prompt ?? ""}
@@ -259,20 +261,20 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
             background: "rgba(255,255,255,0.03)",
             border: "1px solid rgba(255,255,255,0.06)",
           }}
-          placeholder="You are a helpful macOS desktop assistant..."
+          placeholder={t("agent.prompt-ph")}
         />
       </div>
 
       {/* ── Safety Rules ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Safety Rules</SectionLabel>
+        <SectionLabel>{t("agent.safety")}</SectionLabel>
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic mb-0.5">
-          Extra rules on top of built-in defaults. Defaults are enforced by the backend.
+          {t("agent.safety-hint")}
         </div>
 
         {/* Allowed commands — green chips */}
         <ChipListEditor
-          label="Allowed commands"
+          label={t("agent.allowed")}
           color="green"
           values={config.agent_safety_allowlist ?? []}
           onChange={(next) => onSave({ agent_safety_allowlist: next })}
@@ -281,7 +283,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
         {/* Blocked patterns — red chips */}
         <div className="mt-1">
           <ChipListEditor
-            label="Blocked patterns"
+            label={t("agent.blocked")}
             color="red"
             values={config.agent_safety_blocklist ?? []}
             onChange={(next) => onSave({ agent_safety_blocklist: next })}
@@ -291,7 +293,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
 
       {/* ── Execution ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Execution</SectionLabel>
+        <SectionLabel>{t("agent.execution")}</SectionLabel>
 
         {/* Timeout slider */}
         <TimeoutSlider
@@ -304,7 +306,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
 
         {/* Max turns */}
         <div className="flex items-center gap-2.5">
-          <span className="text-[10px] text-[rgba(255,255,255,0.3)] w-16">Max turns</span>
+          <span className="text-[10px] text-[rgba(255,255,255,0.3)] w-16">{t("agent.max-turns")}</span>
           <input
             type="number"
             min={1}
@@ -328,7 +330,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
 
       {/* ── Response ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <SectionLabel>Response</SectionLabel>
+        <SectionLabel>{t("agent.response")}</SectionLabel>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
@@ -337,7 +339,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
             className="accent-[#fbbf24]"
           />
           <span className="text-[12px] text-[rgba(255,255,255,0.5)]">
-            Speak responses via TTS
+            {t("agent.tts")}
           </span>
         </label>
       </div>

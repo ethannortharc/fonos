@@ -544,7 +544,7 @@ function EntryCard({
           <>
             <div
               onMouseUp={emitSelection}
-              className="text-[11px] leading-relaxed text-[rgba(255,255,255,0.7)] whitespace-pre-wrap break-words"
+              className="text-[11px] leading-relaxed text-[rgba(255,255,255,0.7)] whitespace-pre-wrap break-words select-text cursor-text"
             >
               {text || <span className="italic text-[rgba(255,255,255,0.2)]">{t("history.no-content")}</span>}
             </div>
@@ -582,7 +582,7 @@ function EntryCard({
         ) : (
           <div
             onMouseUp={emitSelection}
-            className={["text-[11px] leading-normal break-words", text ? "text-[rgba(255,255,255,0.55)]" : "italic text-[rgba(255,255,255,0.2)]"].join(" ")}
+            className={["text-[11px] leading-normal break-words select-text cursor-text", text ? "text-[rgba(255,255,255,0.55)]" : "italic text-[rgba(255,255,255,0.2)]"].join(" ")}
           >
             {preview(text) || t("history.no-content")}
           </div>

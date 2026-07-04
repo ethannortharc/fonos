@@ -36,7 +36,7 @@ pub trait TtsEngine: Send + Sync {
 }
 
 /// Decode sample-rate and channel count from a WAV `fmt ` chunk body.
-fn wav_fmt(fmt: &[u8]) -> Result<(u32, u16), String> {
+pub(crate) fn wav_fmt(fmt: &[u8]) -> Result<(u32, u16), String> {
     if fmt.len() < 8 {
         return Err("WAV fmt chunk too short".to_string());
     }

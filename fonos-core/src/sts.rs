@@ -161,15 +161,38 @@ pub async fn run_turn(
     }
     sink.emit(TurnEvent::Reply(reply.clone()));
 
-    // Streamed speak: TTS PCM flows straight into the speaker as it is
-    // generated — playback starts after the first synthesized sentence, not
-    // after the whole reply.
+    // Clause-paced speak. Measured on OMLX Qwen3-TTS: generation is ~2.3x
+    // slower than real-time, so feeding raw stream chunks straight to the
+    // speaker underruns constantly (word-by-word stutter). Instead each
+    // clause is synthesized whole and appended to the playback queue: gaps
+    // can only fall BETWEEN clauses (natural pauses), the first clause is
+    // small for fast time-to-first-sound, and with a faster-than-real-time
+    // engine the queue never drains — seamless by construction.
     sink.emit(TurnEvent::SpeakingStarted);
-    let pcm_sink: &dyn PcmSink = audio;
-    if let Err(e) = tts.synthesize_stream(&reply, pcm_sink).await {
-        let e = format!("TTS failed: {e}");
-        sink.emit(TurnEvent::Failed(classify_error(&e)));
-        return Err(e);
+    let mut began = false;
+    for chunk in crate::listen::split_for_speech(&reply) {
+        let wav = match tts.synthesize(&chunk).await {
+            Ok(w) => w,
+            Err(e) => {
+                let e = format!("TTS failed: {e}");
+                sink.emit(TurnEvent::Failed(classify_error(&e)));
+                return Err(e);
+            }
+        };
+        let step = (|| -> Result<(), String> {
+            let parsed = crate::listen::parse_wav(&wav)?;
+            if !began {
+                let (rate, channels) = crate::tts::wav_fmt(parsed.fmt)?;
+                audio.begin(rate, channels)?;
+            }
+            audio.push(parsed.data)
+        })();
+        began = true;
+        if let Err(e) = step {
+            let e = format!("Playback failed: {e}");
+            sink.emit(TurnEvent::Failed(classify_error(&e)));
+            return Err(e);
+        }
     }
     if let Err(e) = audio.finish().await {
         let e = format!("Playback failed: {e}");
@@ -224,17 +247,36 @@ mod tests {
         }
     }
 
+    /// Wrap `payload` (padded to frame size) in a minimal valid WAV.
+    fn make_wav(payload: &str) -> Vec<u8> {
+        let mut pcm = payload.as_bytes().to_vec();
+        if pcm.len() % 2 == 1 {
+            pcm.push(b' ');
+        }
+        let mut out = Vec::new();
+        out.extend_from_slice(b"RIFF");
+        out.extend_from_slice(&((36 + pcm.len()) as u32).to_le_bytes());
+        out.extend_from_slice(b"WAVE");
+        out.extend_from_slice(b"fmt ");
+        out.extend_from_slice(&16u32.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&16000u32.to_le_bytes());
+        out.extend_from_slice(&32000u32.to_le_bytes());
+        out.extend_from_slice(&2u16.to_le_bytes());
+        out.extend_from_slice(&16u16.to_le_bytes());
+        out.extend_from_slice(b"data");
+        out.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+        out.extend_from_slice(&pcm);
+        out
+    }
+
     struct FakeTts(Mutex<Vec<String>>);
     #[async_trait::async_trait]
     impl TtsEngine for FakeTts {
         async fn synthesize(&self, text: &str) -> Result<Vec<u8>, String> {
             self.0.lock().unwrap().push(text.to_string());
-            Ok(text.as_bytes().to_vec())
-        }
-        async fn synthesize_stream(&self, text: &str, sink: &dyn PcmSink) -> Result<(), String> {
-            self.0.lock().unwrap().push(text.to_string());
-            sink.begin(16000, 1)?;
-            sink.push(text.as_bytes())
+            Ok(make_wav(text))
         }
     }
     /// Records the streamed lifecycle: begin(fmt) → pcm… → finish.
@@ -245,7 +287,10 @@ mod tests {
             Ok(())
         }
         fn push(&self, pcm: &[u8]) -> Result<(), String> {
-            self.0.lock().unwrap().push(format!("pcm:{}", String::from_utf8_lossy(pcm)));
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("pcm:{}", String::from_utf8_lossy(pcm).trim_end()));
             Ok(())
         }
     }
@@ -305,6 +350,23 @@ mod tests {
         run_turn(&mut session, "hello".into(), &stages, &tts, &audio, &sink).await.unwrap();
         let calls = audio.0.lock().unwrap();
         assert_eq!(*calls, vec!["begin 16000/1", "pcm:hello.", "finish"]);
+    }
+
+    #[tokio::test]
+    async fn long_replies_speak_clause_by_clause() {
+        let (sink, tts, audio) = ports();
+        let mut session = StsSession::default();
+        let long = "第一小句，第二小句。然后是第二句话，比较长一些。最后一句结束。".repeat(5);
+        let stages: Vec<Box<dyn TextStage>> = vec![Box::new(SuffixStage(""))];
+        run_turn(&mut session, long.clone(), &stages, &tts, &audio, &sink).await.unwrap();
+        let calls = audio.0.lock().unwrap();
+        let begins = calls.iter().filter(|c| c.starts_with("begin")).count();
+        let pcms: Vec<&String> = calls.iter().filter(|c| c.starts_with("pcm:")).collect();
+        assert_eq!(begins, 1, "begin exactly once");
+        assert!(pcms.len() >= 3, "multiple clause chunks, got {}", pcms.len());
+        assert_eq!(calls.last().unwrap(), "finish");
+        let spoken: String = pcms.iter().map(|c| c.trim_start_matches("pcm:")).collect();
+        assert_eq!(spoken, long);
     }
 
     #[tokio::test]

@@ -385,6 +385,9 @@ fn main() {
             // Permission commands
             commands::listen::create_listen_from_text,
             commands::sts::reset_sts_session,
+            commands::sts::sts_page_start,
+            commands::sts::sts_page_stop,
+            commands::sts::get_sts_history,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
             // TTS commands

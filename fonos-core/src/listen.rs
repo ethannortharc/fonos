@@ -150,6 +150,59 @@ pub fn split_for_tts(text: &str, max_chars: usize) -> Vec<String> {
     chunks
 }
 
+/// Split a reply into speech clauses for paced synthesis: boundaries at
+/// sentence enders AND commas, a deliberately small first chunk (fast
+/// time-to-first-sound), larger ones after. With generation slower than
+/// real-time, playback gaps then land between clauses — natural pauses —
+/// never mid-word.
+pub fn split_for_speech(text: &str) -> Vec<String> {
+    const BOUNDARIES: &[char] = &[
+        '。', '！', '？', '．', '.', '!', '?', '\n', '；', ';', '，', ',', '、', '：', ':',
+    ];
+    const FIRST_BUDGET: usize = 24;
+    const REST_BUDGET: usize = 100;
+
+    // Cut into clauses (keeping their trailing delimiter).
+    let mut clauses: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for ch in text.chars() {
+        cur.push(ch);
+        if BOUNDARIES.contains(&ch) {
+            if !cur.trim().is_empty() {
+                clauses.push(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    if !cur.trim().is_empty() {
+        clauses.push(cur);
+    }
+
+    // Greedy pack under per-chunk budgets; force-cut single overlong clauses.
+    let mut chunks: Vec<String> = Vec::new();
+    let mut acc = String::new();
+    for clause in clauses {
+        let budget = if chunks.is_empty() { FIRST_BUDGET } else { REST_BUDGET };
+        if !acc.is_empty() && acc.chars().count() + clause.chars().count() > budget {
+            chunks.push(std::mem::take(&mut acc).trim().to_string());
+        }
+        acc.push_str(&clause);
+        let budget = if chunks.is_empty() { FIRST_BUDGET } else { REST_BUDGET };
+        while acc.chars().count() > budget {
+            let cut: String = acc.chars().take(budget).collect();
+            let rest: String = acc.chars().skip(budget).collect();
+            chunks.push(cut.trim().to_string());
+            acc = rest;
+        }
+    }
+    if !acc.trim().is_empty() {
+        chunks.push(acc.trim().to_string());
+    }
+    chunks.retain(|c| !c.is_empty());
+    chunks
+}
+
 /// Concatenate several 16-bit PCM WAV files into one.
 ///
 /// All inputs must share the format of the first (validated); output reuses
@@ -300,6 +353,28 @@ mod tests {
         let a = tiny_wav(16000, &[7]);
         assert_eq!(concat_wavs(&[a.clone()]).unwrap(), a);
         assert!(concat_wavs(&[]).is_err());
+    }
+
+    #[test]
+    fn speech_split_small_first_chunk_then_clauses() {
+        let text = "你好呀，今天天气真不错。我们出去散散步怎么样？顺便可以买一杯咖啡。";
+        let chunks = split_for_speech(text);
+        assert!(chunks.len() >= 2);
+        assert!(chunks[0].chars().count() <= 24, "first chunk small: {:?}", chunks[0]);
+        assert_eq!(chunks.join(""), text);
+    }
+
+    #[test]
+    fn speech_split_short_reply_single_chunk() {
+        assert_eq!(split_for_speech("好的。"), vec!["好的。"]);
+    }
+
+    #[test]
+    fn speech_split_force_cuts_no_boundary_text() {
+        let long = "x".repeat(300);
+        let chunks = split_for_speech(&long);
+        assert!(chunks.len() >= 3);
+        assert_eq!(chunks.join(""), long);
     }
 
     #[test]

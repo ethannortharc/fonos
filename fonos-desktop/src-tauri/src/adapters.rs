@@ -47,37 +47,61 @@ impl TextSink for InjectionTextSink {
 use fonos_core::sts::{AudioOut, TurnEvent, TurnSink};
 use std::sync::Mutex;
 
-/// Renders STS conversation turns on the float pill: busy while the reply is
-/// being produced/spoken, Done with the reply text at the end, classified
-/// errors on failure.
-pub struct PillTurnSink {
+/// Bridges STS turn events to renderers: always mirrors them onto the main
+/// window as `sts:event` (the Conversation page subscribes), and — for
+/// hotkey-initiated turns — also drives the float pill lifecycle.
+pub struct TurnEventBridge {
     app: tauri::AppHandle,
+    pill: bool,
     reply: Mutex<String>,
 }
 
-impl PillTurnSink {
-    /// Wrap an app handle.
-    pub fn new(app: tauri::AppHandle) -> Self {
-        Self { app, reply: Mutex::new(String::new()) }
+impl TurnEventBridge {
+    /// `pill: true` for hotkey turns (pill shows progress); `false` for turns
+    /// started from the in-app Conversation page.
+    pub fn new(app: tauri::AppHandle, pill: bool) -> Self {
+        Self { app, pill, reply: Mutex::new(String::new()) }
+    }
+
+    fn page(&self, kind: &str, text: &str) {
+        let _ = self
+            .app
+            .emit("sts:event", serde_json::json!({ "kind": kind, "text": text }));
     }
 }
 
-impl TurnSink for PillTurnSink {
+impl TurnSink for TurnEventBridge {
     fn emit(&self, event: TurnEvent) {
         match event {
-            TurnEvent::Transcript(_) | TurnEvent::SpeakingStarted => {
-                let _ = self.app.emit("float:processing", ());
+            TurnEvent::Transcript(t) => {
+                self.page("transcript", &t);
+                if self.pill {
+                    let _ = self.app.emit("float:processing", ());
+                }
             }
             TurnEvent::Reply(text) => {
+                self.page("reply", &text);
                 *self.reply.lock().unwrap() = text;
             }
-            TurnEvent::SpeakingDone => {}
+            TurnEvent::SpeakingStarted => {
+                self.page("speaking_started", "");
+                if self.pill {
+                    let _ = self.app.emit("float:processing", ());
+                }
+            }
+            TurnEvent::SpeakingDone => self.page("speaking_done", ""),
             TurnEvent::TurnDone => {
-                let reply = self.reply.lock().unwrap().clone();
-                let _ = self.app.emit("float:stop", &reply);
+                self.page("turn_done", "");
+                if self.pill {
+                    let reply = self.reply.lock().unwrap().clone();
+                    let _ = self.app.emit("float:stop", &reply);
+                }
             }
             TurnEvent::Failed(surfaced) => {
-                crate::error_surface::emit_surfaced(&self.app, &surfaced);
+                self.page("error", &surfaced.message);
+                if self.pill {
+                    crate::error_surface::emit_surfaced(&self.app, &surfaced);
+                }
             }
         }
     }

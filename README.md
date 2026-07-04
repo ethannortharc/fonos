@@ -11,6 +11,10 @@ clipboard, notebook, meeting transcript, listen queue, or AI agent.
 
 ![Fonos hotkey-first voice workflow](assets/hero/fonos-hotkey-hero.png)
 
+The main interaction is the shortcut surface, not the settings window: a
+dictation pill, mode roller, note panel, agent panel, meeting capture, and clean
+text landing back in the current app.
+
 Fonos is **open source, local-first, and provider-agnostic**. Bring your own
 OpenAI, OpenRouter, Anthropic, Google, OMLX, Ollama, LM Studio, vLLM, or
 OpenAI-compatible endpoint. Keys, transcripts, notebooks, meeting notes,
@@ -33,25 +37,66 @@ you want history, setup, stats, or deeper editing.
 
 ## Demo
 
+Recorded from the real v0.3 demo app and cropped for README readability: hold
+to dictate, release, run STT + Polish, then review the saved result in History.
+A launch-ready MP4 is also available at
+[`assets/demo/fonos-demo.mp4`](assets/demo/fonos-demo.mp4).
+
 ![Fonos demo](assets/demo/fonos-demo.gif)
 
 ## Screenshots
 
-| Dictation pipeline | Unified History |
-|---|---|
-| ![Dictation pipeline](assets/screenshots/v03-dictation-result.png) | ![Unified History](assets/screenshots/v03-history.png) |
+Screenshots are shown full-width so hotkeys, model names, pipeline state, and
+result text stay readable on GitHub.
 
-| Spoken conversation | Usage and latency stats |
-|---|---|
-| ![Spoken conversation](assets/screenshots/v03-talk.png) | ![Usage and latency stats](assets/screenshots/v03-stats.png) |
+### Dictation pipeline
 
-| Scenario setup | Setup Doctor |
-|---|---|
-| ![Scenario setup](assets/screenshots/v03-scenarios.png) | ![Setup Doctor](assets/screenshots/v03-settings-general.png) |
+Hold the shortcut, speak, release. Fonos shows recorded audio, STT, the selected
+mode, model metadata, latency, and the final text.
 
-| Vocabulary books |
-|---|
-| ![Vocabulary books](assets/screenshots/v03-vocab.png) |
+![Dictation pipeline](assets/screenshots/v03-dictation-result.png)
+
+### Unified History
+
+Recent, Search, Notes, Meetings, Listen, and Agent activity share one local
+timeline with type filters.
+
+![Unified History](assets/screenshots/v03-history.png)
+
+### Shortcut-first setup
+
+Scenarios save and restore models, dictation modes, speech voices, vocabulary
+mounts, and hotkeys as one working setup.
+
+![Scenario setup](assets/screenshots/v03-scenarios.png)
+
+### Setup Doctor
+
+Endpoint probes, permissions, config lint, hotkey conflicts, and TTS speed checks
+are gathered in one place.
+
+![Setup Doctor](assets/screenshots/v03-settings-general.png)
+
+### Vocabulary books
+
+Terms, STT biasing, LLM glossary alignment, and deterministic correction rules
+can be mounted globally or on specific modes.
+
+![Vocabulary books](assets/screenshots/v03-vocab.png)
+
+### Spoken conversation
+
+`Option+S` turns the same pipeline into a hold-to-talk agent with short-term
+memory, persona overrides, and speech output.
+
+![Spoken conversation](assets/screenshots/v03-talk.png)
+
+### Usage and latency stats
+
+Fonos tracks real dictation latency, P50/P95, words, sessions, tokens, model
+breakdowns, and estimated time saved.
+
+![Usage and latency stats](assets/screenshots/v03-stats.png)
 
 ## Feature Map
 

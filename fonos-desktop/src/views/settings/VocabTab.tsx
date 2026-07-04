@@ -1,7 +1,8 @@
 // Vocabulary settings — user-defined vocab books (terms + correction rules).
 // Books are referenced by id from global_vocab_books and per-mode vocab_books.
+// Terms are edited as chips (type + Enter to add); rules as find→replace rows.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AppConfig, VocabBook, VocabRule } from "../../types";
 
 const EMPTY_RULE: VocabRule = { from: "", to: "", kind: "literal", case_insensitive: true };
@@ -16,6 +17,155 @@ function newBook(): VocabBook {
   };
 }
 
+const input =
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
+
+/** Chip-style term editor: terms render as removable pills inside an
+ *  input-looking container; typing + Enter (or comma / blur) adds, Backspace
+ *  on an empty draft removes the last pill. Pasted comma/newline lists split
+ *  into individual terms. */
+function TermChips({ terms, onChange }: { terms: string[]; onChange: (t: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = (raw: string) => {
+    const parts = raw
+      .split(/[\n,，、;；]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return;
+    const merged = [...terms];
+    for (const p of parts) if (!merged.includes(p)) merged.push(p);
+    onChange(merged);
+    setDraft("");
+  };
+
+  const removeAt = (i: number) => onChange(terms.filter((_, idx) => idx !== i));
+
+  return (
+    <div
+      onClick={() => inputRef.current?.focus()}
+      className="min-h-[64px] flex flex-wrap items-start content-start gap-1.5 p-2 rounded-lg cursor-text bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] focus-within:border-[rgba(245,158,11,0.3)] transition-colors"
+    >
+      {terms.map((term, i) => (
+        <span
+          key={`${term}-${i}`}
+          className="group inline-flex items-center gap-1 pl-2 pr-1 py-[3px] rounded-md bg-[rgba(251,191,36,0.07)] border border-[rgba(251,191,36,0.12)] text-[10.5px] text-[#fde68a] leading-none select-none"
+        >
+          {term}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              removeAt(i);
+            }}
+            tabIndex={-1}
+            className="w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] text-[rgba(253,230,138,0.35)] hover:text-[#fbbf24] hover:bg-[rgba(251,191,36,0.15)] transition-colors"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "," || e.key === "，" || e.key === "、") {
+            e.preventDefault();
+            commit(draft);
+          } else if (e.key === "Backspace" && draft === "" && terms.length > 0) {
+            removeAt(terms.length - 1);
+          }
+        }}
+        onBlur={() => commit(draft)}
+        placeholder={terms.length === 0 ? "Type a term, press Enter — e.g. Kubernetes, OMLX…" : ""}
+        spellCheck={false}
+        className="flex-1 min-w-[110px] bg-transparent text-[11px] text-[#fafaf9] placeholder-[rgba(255,255,255,0.18)] outline-none py-[3px]"
+      />
+    </div>
+  );
+}
+
+/** One find→replace rule row with kind / case toggles; delete reveals on hover. */
+function RuleRow({
+  rule,
+  bookId,
+  index,
+  onPatch,
+  onDelete,
+}: {
+  rule: VocabRule;
+  bookId: string;
+  index: number;
+  onPatch: (patch: Partial<VocabRule>) => void;
+  onDelete: () => void;
+}) {
+  const isRegex = rule.kind === "regex";
+  return (
+    <div className="group flex items-center gap-1.5 px-1.5 py-1 -mx-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition-colors">
+      <input
+        key={`from-${bookId}-${index}`}
+        type="text"
+        defaultValue={rule.from}
+        onBlur={(e) => {
+          if (e.target.value !== rule.from) onPatch({ from: e.target.value });
+        }}
+        placeholder={isRegex ? "pattern" : "heard as…"}
+        spellCheck={false}
+        className={`${input} flex-1 min-w-0 ${isRegex ? "font-mono" : ""}`}
+      />
+      <span className="w-5 h-5 rounded-full bg-[rgba(251,191,36,0.08)] text-[#fbbf24] text-[10px] flex items-center justify-center shrink-0">
+        →
+      </span>
+      <input
+        key={`to-${bookId}-${index}`}
+        type="text"
+        defaultValue={rule.to}
+        onBlur={(e) => {
+          if (e.target.value !== rule.to) onPatch({ to: e.target.value });
+        }}
+        placeholder="should be…"
+        spellCheck={false}
+        className={`${input} flex-1 min-w-0`}
+      />
+      <div className="flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)] shrink-0">
+        <button
+          onClick={() => onPatch({ kind: isRegex ? "literal" : "regex" })}
+          title={isRegex ? "Regex pattern" : "Literal text (click for regex)"}
+          className={[
+            "px-2 py-1.5 text-[9px] font-mono transition-colors",
+            isRegex
+              ? "bg-[rgba(192,132,252,0.15)] text-[#c084fc]"
+              : "bg-transparent text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)]",
+          ].join(" ")}
+        >
+          .*
+        </button>
+        <button
+          onClick={() => onPatch({ case_insensitive: !rule.case_insensitive })}
+          title={rule.case_insensitive ? "Case-insensitive (click to match case)" : "Case-sensitive"}
+          className={[
+            "px-2 py-1.5 text-[9px] font-mono border-l border-[rgba(255,255,255,0.06)] transition-colors",
+            rule.case_insensitive
+              ? "bg-transparent text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)]"
+              : "bg-[rgba(251,191,36,0.12)] text-[#fbbf24]",
+          ].join(" ")}
+        >
+          Aa
+        </button>
+      </div>
+      <button
+        onClick={onDelete}
+        title="Delete rule"
+        className="w-5 h-5 rounded flex items-center justify-center text-[12px] leading-none text-[rgba(255,255,255,0.25)] opacity-0 group-hover:opacity-100 hover:text-[#ef4444] transition-all shrink-0"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export default function VocabTab({
   config,
   onSave,
@@ -26,9 +176,6 @@ export default function VocabTab({
   const books = config.vocab_books ?? [];
   const globalIds = config.global_vocab_books ?? [];
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  // Terms are edited as raw textarea text (one per line) and parsed on blur,
-  // so typing never fights a re-serialize round-trip.
-  const [termsDraft, setTermsDraft] = useState<{ id: string; text: string } | null>(null);
 
   const saveBooks = (next: VocabBook[]) => onSave({ vocab_books: next });
 
@@ -54,28 +201,6 @@ export default function VocabTab({
     setExpandedId(book.id);
   };
 
-  const termsText = (book: VocabBook) =>
-    termsDraft && termsDraft.id === book.id ? termsDraft.text : book.terms.join("\n");
-
-  const commitTerms = (book: VocabBook) => {
-    if (!termsDraft || termsDraft.id !== book.id) return;
-    const terms = termsDraft.text
-      .split("\n")
-      .map((t) => t.trim())
-      .filter((t) => t !== "");
-    updateBook(book.id, { terms });
-    setTermsDraft(null);
-  };
-
-  const updateRule = (book: VocabBook, i: number, patch: Partial<VocabRule>) => {
-    updateBook(book.id, {
-      rules: book.rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
-    });
-  };
-
-  const input =
-    "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
-
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -95,34 +220,51 @@ export default function VocabTab({
           return (
             <div
               key={book.id}
-              className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)]"
+              className={[
+                "rounded-xl border transition-colors",
+                expanded
+                  ? "border-[rgba(251,191,36,0.15)] bg-[rgba(255,255,255,0.025)]"
+                  : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(255,255,255,0.1)]",
+              ].join(" ")}
             >
               {/* Book header row */}
               <div
-                className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
+                className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer select-none"
                 onClick={() => setExpandedId(expanded ? null : book.id)}
               >
-                <span className="text-[11px] font-medium text-[#fafaf9] flex-1 truncate">
+                <span
+                  className={[
+                    "w-1.5 h-1.5 rounded-full shrink-0",
+                    book.enabled ? "bg-[#4ade80]" : "bg-[rgba(255,255,255,0.15)]",
+                  ].join(" ")}
+                />
+                <span className="text-[11.5px] font-medium text-[#fafaf9] truncate">
                   {book.name || "(unnamed)"}
                 </span>
-                <span className="text-[9px] text-[rgba(255,255,255,0.25)]">
-                  {book.terms.length} terms · {book.rules.length} rules
-                </span>
                 {isGlobal && (
-                  <span className="px-1.5 py-0.5 rounded text-[8px] font-semibold uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
+                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24] shrink-0">
                     Global
                   </span>
                 )}
-                {!book.enabled && (
-                  <span className="px-1.5 py-0.5 rounded text-[8px] uppercase bg-[rgba(255,255,255,0.05)] text-[rgba(255,255,255,0.3)]">
-                    Off
-                  </span>
-                )}
-                <span className="text-[rgba(255,255,255,0.25)] text-[10px]">{expanded ? "▾" : "▸"}</span>
+                <span className="flex-1" />
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] shrink-0">
+                  {book.terms.length} terms
+                </span>
+                <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] shrink-0">
+                  {book.rules.length} rules
+                </span>
+                <span
+                  className={[
+                    "text-[rgba(255,255,255,0.25)] text-[10px] transition-transform",
+                    expanded ? "rotate-90" : "",
+                  ].join(" ")}
+                >
+                  ▸
+                </span>
               </div>
 
               {expanded && (
-                <div className="px-3 pb-3 flex flex-col gap-3 border-t border-[rgba(255,255,255,0.04)] pt-3">
+                <div className="px-3 pb-3 flex flex-col gap-3.5 border-t border-[rgba(255,255,255,0.04)] pt-3">
                   {/* Name + toggles */}
                   <div className="flex items-center gap-2">
                     <input
@@ -167,99 +309,53 @@ export default function VocabTab({
                   </div>
 
                   {/* Terms */}
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
                       Terms
                       <span className="ml-1 text-[rgba(255,255,255,0.15)]">
-                        (one per line — correct spellings, e.g. Kubernetes)
+                        — correct spellings the recognizer should prefer
                       </span>
                     </label>
-                    <textarea
-                      value={termsText(book)}
-                      onChange={(e) => setTermsDraft({ id: book.id, text: e.target.value })}
-                      onBlur={() => commitTerms(book)}
-                      rows={4}
-                      spellCheck={false}
-                      className={`${input} resize-y font-mono leading-relaxed`}
+                    <TermChips
+                      terms={book.terms}
+                      onChange={(terms) => updateBook(book.id, { terms })}
                     />
                   </div>
 
                   {/* Rules */}
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] text-[rgba(255,255,255,0.35)]">
                       Correction rules
                       <span className="ml-1 text-[rgba(255,255,255,0.15)]">
-                        (find → replace, e.g. "my sequel" → "MySQL")
+                        — deterministic fixes, e.g. 衣袖 → issue
                       </span>
                     </label>
-                    {book.rules.map((rule, i) => (
-                      <div key={i} className="flex items-center gap-1.5">
-                        <input
-                          key={`from-${book.id}-${i}`}
-                          type="text"
-                          defaultValue={rule.from}
-                          onBlur={(e) => {
-                            if (e.target.value !== rule.from) updateRule(book, i, { from: e.target.value });
-                          }}
-                          placeholder="find"
-                          spellCheck={false}
-                          className={`${input} flex-1 min-w-0`}
-                        />
-                        <span className="text-[rgba(255,255,255,0.25)] text-[10px]">→</span>
-                        <input
-                          key={`to-${book.id}-${i}`}
-                          type="text"
-                          defaultValue={rule.to}
-                          onBlur={(e) => {
-                            if (e.target.value !== rule.to) updateRule(book, i, { to: e.target.value });
-                          }}
-                          placeholder="replace"
-                          spellCheck={false}
-                          className={`${input} flex-1 min-w-0`}
-                        />
-                        <button
-                          onClick={() =>
-                            updateRule(book, i, { kind: rule.kind === "regex" ? "literal" : "regex" })
-                          }
-                          title={rule.kind === "regex" ? "Regex pattern" : "Literal text"}
-                          className={[
-                            "px-2 py-1.5 rounded-lg text-[9px] font-mono transition-all flex-shrink-0",
-                            rule.kind === "regex"
-                              ? "bg-[rgba(192,132,252,0.12)] border border-[rgba(192,132,252,0.25)] text-[#c084fc]"
-                              : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)]",
-                          ].join(" ")}
-                        >
-                          .*
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateRule(book, i, { case_insensitive: !rule.case_insensitive })
-                          }
-                          title={rule.case_insensitive ? "Case-insensitive" : "Case-sensitive"}
-                          className={[
-                            "px-2 py-1.5 rounded-lg text-[9px] font-mono transition-all flex-shrink-0",
-                            rule.case_insensitive
-                              ? "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)]"
-                              : "bg-[rgba(251,191,36,0.1)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24]",
-                          ].join(" ")}
-                        >
-                          Aa
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateBook(book.id, { rules: book.rules.filter((_, idx) => idx !== i) })
-                          }
-                          className="px-1.5 py-1.5 rounded-lg text-[13px] leading-none text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] transition-colors flex-shrink-0"
-                        >
-                          ×
-                        </button>
+                    {book.rules.length === 0 && (
+                      <div className="text-[9.5px] text-[rgba(255,255,255,0.18)] px-0.5 pb-0.5">
+                        When the recognizer keeps mishearing a word, pin the fix here.
                       </div>
+                    )}
+                    {book.rules.map((rule, i) => (
+                      <RuleRow
+                        key={i}
+                        rule={rule}
+                        bookId={book.id}
+                        index={i}
+                        onPatch={(patch) =>
+                          updateBook(book.id, {
+                            rules: book.rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
+                          })
+                        }
+                        onDelete={() =>
+                          updateBook(book.id, { rules: book.rules.filter((_, idx) => idx !== i) })
+                        }
+                      />
                     ))}
                     <button
                       onClick={() => updateBook(book.id, { rules: [...book.rules, { ...EMPTY_RULE }] })}
-                      className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start"
+                      className="w-full py-1.5 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-[10px] text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] hover:border-[rgba(251,191,36,0.3)] transition-colors"
                     >
-                      Add rule
+                      + Add rule
                     </button>
                   </div>
                 </div>
@@ -269,9 +365,13 @@ export default function VocabTab({
         })}
 
         {books.length === 0 && (
-          <div className="text-[11px] text-[rgba(255,255,255,0.25)] py-4 text-center">
-            No vocabulary books yet. Add one for your domain terms — names, jargon,
-            product words — and dictation will start getting them right.
+          <div className="flex flex-col items-center gap-2 py-8 text-center rounded-xl border border-dashed border-[rgba(255,255,255,0.08)]">
+            <span className="text-[18px]">📖</span>
+            <div className="text-[11px] text-[rgba(255,255,255,0.4)]">No vocabulary books yet</div>
+            <div className="text-[10px] text-[rgba(255,255,255,0.22)] max-w-[300px]">
+              Add one for your domain terms — names, jargon, product words — and dictation
+              will start getting them right.
+            </div>
           </div>
         )}
 

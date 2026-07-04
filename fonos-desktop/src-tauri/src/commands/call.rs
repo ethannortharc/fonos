@@ -94,6 +94,143 @@ pub async fn call_stop(state: tauri::State<'_, AppState>) -> Result<(), String> 
     Ok(())
 }
 
+/// The audio source the call loop drains chunks from.
+///
+/// With barge-in enabled we prefer *system echo cancellation* so the mic can
+/// stay hot while the reply plays without the assistant's own voice bleeding in
+/// and self-triggering the barge detector:
+/// - macOS: the `fonos-voice-capture` helper (AVAudioEngine VPIO — AEC + noise
+///   suppression + AGC). Self-owned; never touches the shared cpal capture.
+/// - Linux: `module-echo-cancel` routed via [`crate::audio::linux_aec`], with a
+///   plain cpal capture reading the (now-default) ec source.
+/// - Fallback: the shared cpal capture, armed per phase via `start_recording`,
+///   exactly as before — used with barge-in off, on other platforms, or when
+///   AEC setup fails. The [`fonos_core::vad::BargeDetector`] envelope gating
+///   stays on top of *all three* paths (belt and braces).
+///
+/// AEC variants keep the mic hot for the whole call; the fallback opens/closes
+/// the mic per phase. `AEC ⟹ barge-in enabled`.
+enum CallAudio {
+    /// macOS voice-processing capture (system AEC via the Swift helper).
+    #[cfg(target_os = "macos")]
+    MacVoice(crate::audio::voice_capture::VoiceProcessedCapture),
+    /// Linux: cpal capture on the ec source; the guard restores routing + unloads
+    /// the module on drop.
+    #[cfg(target_os = "linux")]
+    LinuxEc {
+        capture: AudioCapture,
+        _guard: crate::audio::linux_aec::EchoCancelGuard,
+    },
+    /// Plain cpal via the shared `AppState` capture (current behavior).
+    Fallback,
+}
+
+impl CallAudio {
+    /// True when a system-AEC source is active (mic stays hot; no per-phase
+    /// `start_recording`/`stop_capture`).
+    fn is_aec(&self) -> bool {
+        !matches!(self, CallAudio::Fallback)
+    }
+
+    /// Drain the oldest `ms` of audio from whichever source is active. For the
+    /// fallback, drains the shared cpal capture; for AEC, the self-owned source.
+    fn take_chunk(
+        &self,
+        ms: u32,
+        shared: &Arc<Mutex<Option<AudioCapture>>>,
+    ) -> Option<Vec<i16>> {
+        match self {
+            #[cfg(target_os = "macos")]
+            CallAudio::MacVoice(v) => v.take_chunk(ms),
+            #[cfg(target_os = "linux")]
+            CallAudio::LinuxEc { capture, .. } => capture.take_chunk(ms),
+            CallAudio::Fallback => shared
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().and_then(|c| c.take_chunk(ms))),
+        }
+    }
+
+    /// Discard everything currently buffered — used at AEC phase boundaries so a
+    /// fresh listen/monitor starts clean (the mic never stopped).
+    fn drain_stale(&self, shared: &Arc<Mutex<Option<AudioCapture>>>) {
+        while self.take_chunk(VAD_CHUNK_MS, shared).is_some() {}
+    }
+}
+
+/// Pick the call's audio source. With barge-in enabled, try platform system echo
+/// cancellation; on failure — or with barge-in off / other platforms — use the
+/// plain cpal path. Emits a one-line note on which path engaged.
+#[allow(unused_variables)]
+fn setup_call_audio(
+    barge_enabled: bool,
+    device_name: &str,
+    playback: &Arc<Mutex<Option<AudioPlayback>>>,
+) -> CallAudio {
+    if !barge_enabled {
+        return CallAudio::Fallback;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut v = crate::audio::voice_capture::VoiceProcessedCapture::new(device_name);
+        return match v.start() {
+            Ok(()) => {
+                eprintln!("fonos: call AEC engaged — macOS voice-processing capture (VPIO)");
+                CallAudio::MacVoice(v)
+            }
+            Err(e) => {
+                eprintln!(
+                    "fonos: call AEC unavailable ({e}); falling back to cpal + envelope gating"
+                );
+                CallAudio::Fallback
+            }
+        };
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        match crate::audio::linux_aec::setup() {
+            Ok(guard) => {
+                // The cached playback instance (if any) is bound to the *old*
+                // default sink; drop it so the next turn reopens on the ec sink.
+                if let Ok(mut g) = playback.lock() {
+                    *g = None;
+                }
+                // Capture from the ec source: prefer a strict match on its pulse
+                // name, else the default input (now the ec source after
+                // set-default-source).
+                let opened = AudioCapture::with_device(crate::audio::linux_aec::SOURCE_NAME)
+                    .or_else(|_| AudioCapture::new());
+                let mut capture = match opened {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("fonos: call AEC — mic open failed ({e}); falling back");
+                        return CallAudio::Fallback; // guard drops → routing restored
+                    }
+                };
+                if let Err(e) = capture.start() {
+                    eprintln!("fonos: call AEC — mic start failed ({e}); falling back");
+                    return CallAudio::Fallback; // guard drops → routing restored
+                }
+                eprintln!("fonos: call AEC engaged — Linux module-echo-cancel");
+                return CallAudio::LinuxEc { capture, _guard: guard };
+            }
+            Err(e) => {
+                eprintln!(
+                    "fonos: call AEC unavailable ({e}); falling back to cpal + envelope gating"
+                );
+                return CallAudio::Fallback;
+            }
+        }
+    }
+
+    #[allow(unreachable_code)]
+    {
+        CallAudio::Fallback
+    }
+}
+
 /// Why a call ended, carried in the terminal `call_ended` event.
 enum Outcome {
     /// The user hung up (or capture failed).
@@ -107,12 +244,19 @@ enum Outcome {
 /// The call loop: runs until the active flag clears or the VAD times out.
 async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     // Snapshot the tuning + shared handles once.
-    let (sensitivity, silence_ms, barge_enabled) = app
+    let (sensitivity, silence_ms, barge_enabled, device_name) = app
         .state::<AppState>()
         .config
         .lock()
-        .map(|c| (c.call_vad_sensitivity, c.call_vad_silence_ms, c.call_barge_in))
-        .unwrap_or((0.5, 800, true));
+        .map(|c| {
+            (
+                c.call_vad_sensitivity,
+                c.call_vad_silence_ms,
+                c.call_barge_in,
+                c.audio_input_device.clone(),
+            )
+        })
+        .unwrap_or((0.5, 800, true, "auto".to_string()));
     let vad_cfg = VadConfig {
         sensitivity,
         silence_hang_ms: silence_ms.clamp(500, 2000),
@@ -120,6 +264,13 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     };
     let capture = app.state::<AppState>().audio_capture.clone();
     let playback = app.state::<AppState>().audio_playback.clone();
+
+    // Choose the audio source for the whole call. With barge-in on, this engages
+    // system echo cancellation (macOS VPIO / Linux module-echo-cancel) and keeps
+    // the mic hot for the entire session; on failure or with barge-in off it is
+    // the plain cpal path armed per phase. The BargeDetector envelope gating runs
+    // on top of all three (belt and braces).
+    let audio = setup_call_audio(barge_enabled, &device_name, &playback);
     // No pill for call-mode turns — everything renders in the Conversation page.
     let bridge = crate::adapters::TurnEventBridge::new(app.clone(), false);
 
@@ -138,7 +289,12 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 
         // ── LISTEN: arm the mic and watch the VAD ──
         emit_call(&app, "call_listening", "");
-        {
+        if audio.is_aec() {
+            // AEC source stays hot for the whole call; just drop anything it
+            // buffered since the last phase so the utterance starts clean.
+            audio.drain_stale(&capture);
+        } else {
+            // Fallback: arm the shared cpal mic exactly as before.
             let st = app.state::<AppState>();
             if let Err(e) = super::dictation::start_recording(app.clone(), st, Some(true)).await {
                 emit_call(&app, "error", &e);
@@ -165,10 +321,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // Drain one chunk WITHOUT losing it: we accumulate every chunk into
             // `buf` and feed a copy to the VAD, so the same samples that decide
             // "utterance over" are the ones we transcribe.
-            let chunk = capture
-                .lock()
-                .ok()
-                .and_then(|g| g.as_ref().and_then(|c| c.take_chunk(VAD_CHUNK_MS)));
+            let chunk = audio.take_chunk(VAD_CHUNK_MS, &capture);
             match chunk {
                 Some(samples) => {
                     let ev = vad.push(&samples);
@@ -183,8 +336,12 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             }
         };
 
-        // Mic OFF before the reply plays (v1 echo avoidance).
-        stop_capture(&capture);
+        // Mic OFF before the reply plays (v1 echo avoidance) — fallback path
+        // only. With AEC the mic stays hot; echo cancellation removes the bleed
+        // and the barge monitor drains from the same live source.
+        if !audio.is_aec() {
+            stop_capture(&capture);
+        }
 
         match outcome {
             Outcome::Cancelled => {
@@ -225,15 +382,18 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
             let turn_fut = execute_turn(&app, transcript, None, &bridge);
-            let barge_fut = barge_monitor(&app, &capture, &playback, &active);
+            let barge_fut = barge_monitor(&app, &audio, &capture, &playback, &active);
             tokio::pin!(turn_fut);
             tokio::pin!(barge_fut);
             tokio::select! {
                 _ = &mut turn_fut => {
                     // The reply finished on its own — tear down the monitor
                     // capture and discard whatever it buffered (any speech there
-                    // that didn't trip the barge was sub-threshold bleed).
-                    stop_capture(&capture);
+                    // that didn't trip the barge was sub-threshold bleed). AEC
+                    // keeps the mic hot; the next listen drains its stale tail.
+                    if !audio.is_aec() {
+                        stop_capture(&capture);
+                    }
                 }
                 barged = &mut barge_fut => {
                     match barged {
@@ -254,7 +414,9 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
                         }
                         None => {
                             // Cancelled / capture failed during the reply.
-                            stop_capture(&capture);
+                            if !audio.is_aec() {
+                                stop_capture(&capture);
+                            }
                         }
                     }
                 }
@@ -273,12 +435,30 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     }
 
     // ── CLEANUP ──
+    // Fallback path: stop the shared cpal capture (no-op in AEC mode, where it
+    // was never armed). Then stop playback and tear down the AEC source.
     stop_capture(&capture);
     if let Ok(g) = playback.lock() {
         if let Some(p) = g.as_ref() {
             p.stop();
         }
     }
+    // Dropping `audio` runs the AEC teardown via RAII: macOS kills the helper;
+    // Linux restores the prior default sink/source and unloads module-echo-cancel.
+    // This is the single teardown point every loop-exit path funnels through
+    // (hangup / timeout / error / `call_stop`, which flips `active` so the loop
+    // unwinds here).
+    let was_aec = audio.is_aec();
+    drop(audio);
+    // Linux: the cached playback instance was bound to the ec sink; drop it so
+    // the next (non-call) TTS reopens on the now-restored default output.
+    #[cfg(target_os = "linux")]
+    if was_aec {
+        if let Ok(mut g) = playback.lock() {
+            *g = None;
+        }
+    }
+    let _ = was_aec; // only read on Linux
     active.store(false, Ordering::SeqCst);
     emit_call(&app, "call_ended", ended);
 }
@@ -301,12 +481,15 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// quiet) before it starts listening for the user talking over it.
 async fn barge_monitor(
     app: &tauri::AppHandle,
+    audio: &CallAudio,
     capture: &Arc<Mutex<Option<AudioCapture>>>,
     playback: &Arc<Mutex<Option<AudioPlayback>>>,
     active: &Arc<AtomicBool>,
 ) -> Option<Vec<i16>> {
-    // Arm the mic (skip the float pill — call mode never shows it).
-    {
+    // Arm the mic (skip the float pill — call mode never shows it). With AEC the
+    // mic is already hot for the whole call, so we skip arming and just drain
+    // from the same live source.
+    if !audio.is_aec() {
         let st = app.state::<AppState>();
         if super::dictation::start_recording(app.clone(), st, Some(true))
             .await
@@ -318,17 +501,14 @@ async fn barge_monitor(
 
     // Phase 1 — wait for playback to begin, discarding anything captured so the
     // VAD warmup starts aligned with the bleed rather than the prior quiet.
+    // (With AEC the "bleed" is near-silence post-cancellation, so the detector
+    // then flags essentially only the user talking — belt and braces.)
     loop {
         if !active.load(Ordering::SeqCst) {
             return None;
         }
         // Drain the ring buffer so no stale pre-playback audio survives.
-        while capture
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().and_then(|c| c.take_chunk(VAD_CHUNK_MS)))
-            .is_some()
-        {}
+        audio.drain_stale(capture);
         let playing = playback
             .lock()
             .ok()
@@ -350,10 +530,7 @@ async fn barge_monitor(
         if !active.load(Ordering::SeqCst) {
             return None;
         }
-        let chunk = capture
-            .lock()
-            .ok()
-            .and_then(|g| g.as_ref().and_then(|c| c.take_chunk(VAD_CHUNK_MS)));
+        let chunk = audio.take_chunk(VAD_CHUNK_MS, capture);
         match chunk {
             Some(samples) => {
                 // Mic energy for this chunk, and the live playback reference it

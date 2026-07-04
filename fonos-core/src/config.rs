@@ -220,7 +220,7 @@ impl Default for AppConfig {
             listen_voice_profile: String::new(),
             listen_voice: "default".to_string(),
             hotkey_sts: "option+s".to_string(),
-            sts_persona: "You are a friendly voice assistant. Your replies are spoken aloud, so answer in 1-3 short conversational sentences in the user's language. No markdown, no lists.".to_string(),
+            sts_persona: "You are a friendly voice assistant. Your replies are spoken aloud, so answer in 1-3 short conversational sentences in the user's language. Plain text only: no emoji, no markdown, no lists, no decorative symbols.".to_string(),
             sts_llm_profile: String::new(),
             sts_voice_profile: String::new(),
             sts_voice: "default".to_string(),

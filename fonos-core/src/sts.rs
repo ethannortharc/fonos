@@ -161,6 +161,21 @@ pub async fn run_turn(
     }
     sink.emit(TurnEvent::Reply(reply.clone()));
 
+    // Speak a sanitized copy: emoji/markdown are stripped so the TTS never
+    // reads symbols aloud; the Reply event above keeps the original text.
+    let speech_text = crate::listen::sanitize_for_speech(&reply);
+    if speech_text.is_empty() {
+        // Nothing speakable (reply was all symbols) — still a completed turn.
+        session.history.push((transcript, reply.clone()));
+        if session.max_turns > 0 {
+            while session.history.len() > session.max_turns {
+                session.history.remove(0);
+            }
+        }
+        sink.emit(TurnEvent::TurnDone);
+        return Ok(reply);
+    }
+
     // Clause-paced speak. Measured on OMLX Qwen3-TTS: generation is ~2.3x
     // slower than real-time, so feeding raw stream chunks straight to the
     // speaker underruns constantly (word-by-word stutter). Instead each
@@ -170,7 +185,7 @@ pub async fn run_turn(
     // engine the queue never drains — seamless by construction.
     sink.emit(TurnEvent::SpeakingStarted);
     let mut began = false;
-    for chunk in crate::listen::split_for_speech(&reply) {
+    for chunk in crate::listen::split_for_speech(&speech_text) {
         let wav = match tts.synthesize(&chunk).await {
             Ok(w) => w,
             Err(e) => {

@@ -69,9 +69,13 @@ pub async fn create_listen_item(
         _ => fallback_title(&processed),
     };
 
-    // 3. Synthesize, sentence-chunked.
+    // 3. Synthesize, sentence-chunked (sanitized copy: emoji/markup stripped).
+    let speech_text = sanitize_for_speech(&processed);
+    if speech_text.is_empty() {
+        return Err("Nothing speakable after removing symbols".to_string());
+    }
     let mut wavs = Vec::new();
-    for chunk in split_for_tts(&processed, TTS_CHUNK_CHARS) {
+    for chunk in split_for_tts(&speech_text, TTS_CHUNK_CHARS) {
         wavs.push(tts.synthesize(&chunk).await.map_err(|e| format!("TTS failed: {e}"))?);
     }
     let audio_wav = concat_wavs(&wavs)?;
@@ -121,7 +125,7 @@ pub fn split_for_tts(text: &str, max_chars: usize) -> Vec<String> {
     let mut current = String::new();
     let mut sentence = String::new();
 
-    let mut flush_sentence = |current: &mut String, sentence: &mut String, chunks: &mut Vec<String>| {
+    let flush_sentence = |current: &mut String, sentence: &mut String, chunks: &mut Vec<String>| {
         if current.chars().count() + sentence.chars().count() > max_chars && !current.trim().is_empty() {
             chunks.push(std::mem::take(current).trim().to_string());
         }
@@ -148,6 +152,46 @@ pub fn split_for_tts(text: &str, max_chars: usize) -> Vec<String> {
     }
     chunks.retain(|c| !c.is_empty());
     chunks
+}
+
+/// Strip characters that TTS engines misread: emoji and pictographs,
+/// markdown markers, decorative bullets/arrows. Regular punctuation (CJK and
+/// Latin) is kept. Display text stays untouched — this runs only on the copy
+/// sent to synthesis.
+pub fn sanitize_for_speech(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let code = ch as u32;
+        let is_emoji = matches!(code,
+            0x1F000..=0x1FAFF   // emoji, symbols & pictographs, supplemental
+            | 0x2600..=0x27BF   // misc symbols + dingbats
+            | 0x2B00..=0x2BFF   // arrows/stars used as emoji
+            | 0x2190..=0x21FF   // arrows
+            | 0xFE00..=0xFE0F   // variation selectors
+            | 0x200D            // zero-width joiner
+            | 0x20E3            // combining keycap
+        );
+        let is_markup = matches!(ch, '*' | '#' | '`' | '~' | '|' | '•' | '◦' | '▪' | '·');
+        if is_emoji || is_markup {
+            continue;
+        }
+        out.push(ch);
+    }
+    // Collapse runs of spaces left behind by removals (newlines preserved).
+    let mut collapsed = String::with_capacity(out.len());
+    let mut prev_space = false;
+    for ch in out.chars() {
+        if ch == ' ' {
+            if prev_space {
+                continue;
+            }
+            prev_space = true;
+        } else {
+            prev_space = false;
+        }
+        collapsed.push(ch);
+    }
+    collapsed.trim().to_string()
 }
 
 /// Split a reply into speech clauses for paced synthesis: boundaries at
@@ -391,6 +435,19 @@ mod tests {
         assert!(chunks.len() >= 2);
         assert!(chunks.iter().all(|c| c.chars().count() <= 160));
         assert_eq!(chunks.join(""), long);
+    }
+
+    #[test]
+    fn sanitize_strips_emoji_and_markup_keeps_text() {
+        let t = "好的！😊 今天的**重点**有三个：`code` 和 → 箭头 ⭐。Sure thing! 👍";
+        let clean = sanitize_for_speech(t);
+        assert_eq!(clean, "好的！ 今天的重点有三个：code 和 箭头 。Sure thing!");
+    }
+
+    #[test]
+    fn sanitize_keeps_normal_punctuation() {
+        let t = "价格是 3.5 元，占比 50%；明天 10:30 见。";
+        assert_eq!(sanitize_for_speech(t), t);
     }
 
     #[test]

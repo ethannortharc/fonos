@@ -70,6 +70,7 @@ const config = {
   sts_voice_profile: "",
   sts_voice: "default",
   sts_max_turns: 8,
+  call_barge_in: true,
   stt_language: "auto",
   model_profiles: modelProfiles,
   stt_profile: "openai-gpt-4o-mini-transcribe",

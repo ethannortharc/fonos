@@ -355,6 +355,19 @@ export default function SpeechTab({
             onChange={(v) => onSave({ call_vad_silence_ms: v })}
           />
         </Row>
+        <Row label={t("speech.barge")} hint={t("speech.barge.hint")}>
+          <label className="flex items-center gap-2 cursor-pointer pt-0.5">
+            <input
+              type="checkbox"
+              checked={config.call_barge_in ?? true}
+              onChange={(e) => onSave({ call_barge_in: e.target.checked })}
+              className="accent-[#fbbf24]"
+            />
+            <span className="text-[10.5px] text-[rgba(255,255,255,0.5)]">
+              {t("speech.barge.toggle")}
+            </span>
+          </label>
+        </Row>
       </div>
     </div>
   );

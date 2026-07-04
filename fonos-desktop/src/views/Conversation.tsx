@@ -23,6 +23,8 @@ type TurnState = "idle" | "listening" | "thinking" | "speaking";
 interface Message {
   role: "user" | "assistant" | "error";
   text: string;
+  /** Assistant reply that the user barged in on — renders an "· interrupted" tag. */
+  interrupted?: boolean;
 }
 
 const STATE_META: Record<TurnState, { label: TKey; color: string }> = {
@@ -109,6 +111,22 @@ export default function Conversation() {
             setMessages((m) => [...m, { role: "assistant", text }]);
           } else if (kind === "speaking_started") {
             setTurnState("speaking");
+          } else if (kind === "barge") {
+            // The user talked over the reply: jump straight back to listening
+            // and tag the truncated assistant bubble as interrupted.
+            setTurnState("listening");
+            setMessages((m) => {
+              const last = m.length - 1;
+              for (let i = last; i >= 0; i--) {
+                if (m[i].role === "assistant") {
+                  if (m[i].interrupted) return m;
+                  const next = [...m];
+                  next[i] = { ...next[i], interrupted: true };
+                  return next;
+                }
+              }
+              return m;
+            });
           } else if (kind === "speaking_done" || kind === "turn_done") {
             setTurnState("idle");
           } else if (kind === "call_started") {
@@ -381,6 +399,9 @@ export default function Conversation() {
               }`}
             >
               {m.text}
+              {m.role === "assistant" && m.interrupted && (
+                <span className="text-[rgba(255,255,255,0.3)] italic">{t("conv.interrupted")}</span>
+              )}
             </div>
           </div>
         ))}

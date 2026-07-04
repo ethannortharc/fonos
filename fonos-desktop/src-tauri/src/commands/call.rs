@@ -10,13 +10,16 @@
 //! running the same [`execute_turn`] pipeline as hold-to-talk.
 //!
 //! Barge-in (issue #24 v2, gated on `call_barge_in`): while the reply plays,
-//! the mic re-opens and a [`barge_monitor`] listens — via a warmup-calibrated
-//! barge VAD profile — for the user talking over it. Without an AEC the speaker
-//! bleeds into the mic, so the monitor spends its first ~300 ms learning that
-//! bleed as its noise floor, then only a sustained, clearly-louder voice counts
-//! as an interruption. On a barge it stops playback, cancels the in-flight turn,
-//! and carries the interrupting words straight into the next listen. With
-//! barge-in off, the mic stays closed during playback (the original behavior).
+//! the mic re-opens and a [`barge_monitor`] listens for the user talking over
+//! it. Without an AEC the speaker bleeds into the mic, so — rather than trust a
+//! static noise floor, which dynamic TTS inevitably overshoots and mistakes for
+//! the user — the detector gates the mic against the *live* playback loudness we
+//! own ([`AudioPlayback::reference_rms`]): it spends its first ~300 ms learning
+//! the speaker→mic coupling, then flags only mic energy that sustains clearly
+//! above the bleed expected for whatever is playing at that instant. On a barge
+//! it stops playback, cancels the in-flight turn, and carries the interrupting
+//! words straight into the next listen. With barge-in off, the mic stays closed
+//! during playback (the original behavior).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -24,7 +27,7 @@ use std::time::Duration;
 
 use tauri::{Emitter, Manager};
 
-use fonos_core::vad::{VadConfig, VadEvent, VadSession};
+use fonos_core::vad::{rms, BargeDetector, VadConfig, VadEvent, VadSession};
 
 use crate::audio::capture::AudioCapture;
 use crate::audio::playback::AudioPlayback;
@@ -39,12 +42,11 @@ const CHUNK_SAMPLES: usize = (VAD_CHUNK_MS as usize) * 16;
 /// How long to nap when the ring buffer doesn't yet hold a full chunk.
 const POLL_MS: u64 = 30;
 
-/// Barge-in VAD tuning. Warmup lets the session learn the speaker's echo/bleed
-/// as its floor; the long `min_speech_ms` and boosted threshold then demand a
-/// sustained, clearly-louder voice before an interruption is confirmed.
+/// Barge detector tuning. Warmup lets the detector learn the live playback→mic
+/// coupling; a barge is then confirmed only when the mic sustains energy that
+/// clearly exceeds the expected bleed for the reference playing right now.
 const BARGE_WARMUP_MS: u32 = 300;
-const BARGE_MIN_SPEECH_MS: u32 = 450;
-const BARGE_THRESHOLD_BOOST: f32 = 1.6;
+const BARGE_SUSTAINED_MS: u32 = 450;
 /// Pre-roll carried into the next listen so the interrupting words aren't lost
 /// (16 000 samples ≈ 1 s at 16 kHz).
 const BARGE_PREROLL_SAMPLES: usize = 16_000;
@@ -114,17 +116,6 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     let vad_cfg = VadConfig {
         sensitivity,
         silence_hang_ms: silence_ms.clamp(500, 2000),
-        ..Default::default()
-    };
-    // Self-calibrating barge detector (no AEC): warmup learns the playback
-    // bleed, then only sustained speech clearly above it counts. Silence/timeout
-    // knobs are irrelevant — the monitor only reacts to `SpeechStart`.
-    let barge_vad_cfg = VadConfig {
-        sensitivity,
-        warmup_ms: BARGE_WARMUP_MS,
-        min_speech_ms: BARGE_MIN_SPEECH_MS,
-        threshold_boost: BARGE_THRESHOLD_BOOST,
-        timeout_ms: u32::MAX,
         ..Default::default()
     };
     let capture = app.state::<AppState>().audio_capture.clone();
@@ -234,7 +225,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
             let turn_fut = execute_turn(&app, transcript, None, &bridge);
-            let barge_fut = barge_monitor(&app, &capture, &playback, barge_vad_cfg.clone(), &active);
+            let barge_fut = barge_monitor(&app, &capture, &playback, &active);
             tokio::pin!(turn_fut);
             tokio::pin!(barge_fut);
             tokio::select! {
@@ -295,18 +286,23 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// Watch the mic for a genuine interruption while the reply plays.
 ///
 /// Returns `Some(carry)` — a pre-roll + trigger buffer to seed the next listen
-/// — when sustained speech clears the learned bleed after warmup, or `None` if
-/// the call was cancelled (or capture couldn't start) before any barge.
+/// — when the mic sustains energy clearly above the live playback bleed, or
+/// `None` if the call was cancelled (or capture couldn't start) before any
+/// barge.
 ///
-/// The warmup is aligned with playback: the monitor first drains and discards
-/// everything the mic hears until the reply is actually audible, so the VAD's
-/// warmup window learns the speaker bleed (not the pre-playback quiet) as its
-/// floor. Only then does it start listening for the user talking over it.
+/// Detection is reference-gated: because we own the TTS PCM, each mic chunk is
+/// compared against [`AudioPlayback::reference_rms`] — the loudness the speaker
+/// is emitting *right now*. The assistant's own voice bleeds into the mic in
+/// proportion to that reference, so it never trips the detector however loud it
+/// swells; only mic energy with no matching reference rise (the user talking
+/// over it) counts. Warmup is aligned with playback: the monitor first drains
+/// and discards everything the mic hears until the reply is actually audible,
+/// so [`BargeDetector`] learns the speaker→mic coupling (not the pre-playback
+/// quiet) before it starts listening for the user talking over it.
 async fn barge_monitor(
     app: &tauri::AppHandle,
     capture: &Arc<Mutex<Option<AudioCapture>>>,
     playback: &Arc<Mutex<Option<AudioPlayback>>>,
-    cfg: VadConfig,
     active: &Arc<AtomicBool>,
 ) -> Option<Vec<i16>> {
     // Arm the mic (skip the float pill — call mode never shows it).
@@ -344,10 +340,11 @@ async fn barge_monitor(
         tokio::time::sleep(Duration::from_millis(POLL_MS)).await;
     }
 
-    // Phase 2 — warmup + detect. Buffer everything; the VAD learns the bleed as
-    // its floor during warmup, then only a sustained, clearly-louder voice trips
-    // `SpeechStart`.
-    let mut vad = VadSession::new(cfg);
+    // Phase 2 — warmup + detect. Buffer everything; the detector learns the
+    // playback→mic coupling during warmup, then confirms a barge only when the
+    // mic sustains energy clearly above the bleed expected for the reference
+    // playing at that instant.
+    let mut detector = BargeDetector::new(BARGE_WARMUP_MS, BARGE_SUSTAINED_MS);
     let mut buf: Vec<i16> = Vec::new();
     loop {
         if !active.load(Ordering::SeqCst) {
@@ -359,9 +356,17 @@ async fn barge_monitor(
             .and_then(|g| g.as_ref().and_then(|c| c.take_chunk(VAD_CHUNK_MS)));
         match chunk {
             Some(samples) => {
-                let ev = vad.push(&samples);
+                // Mic energy for this chunk, and the live playback reference it
+                // is gated against (0.0 when the queue has drained).
+                let mic_rms = rms(&samples);
+                let ref_rms = playback
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().map(|p| p.reference_rms()))
+                    .unwrap_or(0.0);
+                let chunk_ms = (samples.len() as u32) / 16; // 16 samples/ms @ 16 kHz
                 buf.extend_from_slice(&samples);
-                if ev == VadEvent::SpeechStart {
+                if detector.push(mic_rms, ref_rms, chunk_ms) {
                     // Keep a short pre-roll (the words that led up to the
                     // trigger) plus everything after it.
                     let start = buf.len().saturating_sub(BARGE_PREROLL_SAMPLES);

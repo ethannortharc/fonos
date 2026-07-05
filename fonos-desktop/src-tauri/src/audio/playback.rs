@@ -211,6 +211,17 @@ impl AudioPlayback {
         // 0 if it happens to hold no anchored blocks.
         env.reference_rms()
     }
+
+    /// The most recent `duration_ms` of reference PCM (16 kHz mono) aligned with
+    /// the current playback position — the window the call-mode echo verifier
+    /// cross-correlates against the mic snippet. `Vec::new()` when the queue has
+    /// drained or the window predates the ring (the caller defers to ASR).
+    pub fn recent_reference(&self, duration_ms: u64) -> Vec<i16> {
+        if self.inner.lock().unwrap().sink.empty() {
+            return Vec::new();
+        }
+        self.ref_env.lock().unwrap().recent_reference(duration_ms)
+    }
 }
 
 #[cfg(test)]

@@ -187,6 +187,20 @@ impl PlaybackLink {
             .unwrap_or(0.0)
     }
 
+    /// The most recent `duration_ms` of TTS reference PCM (16 kHz mono) aligned
+    /// with the current playback position — the full-duplex counterpart of
+    /// [`crate::audio::playback::AudioPlayback::recent_reference`], for the
+    /// call-mode echo cross-correlation. Empty while nothing is scheduled.
+    fn recent_reference(&self, duration_ms: u64) -> Vec<i16> {
+        if !self.state.lock().map(|st| st.pending).unwrap_or(false) {
+            return Vec::new();
+        }
+        self.ref_env
+            .lock()
+            .map(|env| env.recent_reference(duration_ms))
+            .unwrap_or_default()
+    }
+
     /// Block until everything played (a `DRAIN` arrived after the most recent
     /// `play_pcm`), or `timeout` elapsed. `true` = drained.
     fn wait_drained(&self, timeout: Duration) -> bool {
@@ -418,6 +432,13 @@ impl VoiceProcessedCapture {
     /// dynamic bar re-engages. `0.0` while nothing is scheduled.
     pub fn reference_rms(&self) -> f32 {
         self.link.reference_rms()
+    }
+
+    /// The most recent `duration_ms` of TTS reference PCM (16 kHz mono) aligned
+    /// with the current playback position — the call-mode echo verifier's
+    /// reference on this full-duplex path. Empty while nothing is scheduled.
+    pub fn recent_reference(&self, duration_ms: u64) -> Vec<i16> {
+        self.link.recent_reference(duration_ms)
     }
 
     /// Block until the helper's engine is confirmed running (`READY` on

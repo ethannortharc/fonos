@@ -15,14 +15,20 @@
 //! static noise floor, which dynamic TTS inevitably overshoots and mistakes for
 //! the user — the detector gates the mic against the *live* playback loudness we
 //! own ([`AudioPlayback::reference_rms`]): it spends its first ~300 ms learning
-//! the speaker→mic coupling, then flags only mic energy that sustains clearly
-//! above the bleed expected for whatever is playing at that instant. That fire
-//! is a *soft* trigger: rather than cut immediately (AEC residual echo can trip
-//! it ~2–3× per 20 turns), the monitor opens a short verify window and confirms
-//! only if the energy stays clearly above a raised bar while playback keeps
-//! going. On a *confirmed* barge it stops playback, cancels the in-flight turn,
-//! and carries the interrupting words straight into the next listen. With
-//! barge-in off, the mic stays closed during playback (the original behavior).
+//! the speaker→mic coupling, then flags only mic energy that sustains above the
+//! bleed expected for whatever is playing at that instant.
+//!
+//! That energy fire is only a permissive *pre-filter*. Because pure energy can't
+//! tell a real interruption from residual echo (over-correcting one way blocks
+//! real barges; the other way self-cuts the reply), a soft trigger opens a
+//! CONTENT verdict instead of cutting: collect the mic snippet and decide by
+//! what it actually *is*. First a model-free DSP echo test cross-correlates the
+//! snippet against the reference PCM we own (echo tracks the reference; a real
+//! voice doesn't); its gray zone falls through to an ASR test that transcribes
+//! the snippet and compares it against the reply text we're speaking (see
+//! [`verify_barge`]). Only on a *confirmed* barge does it stop playback, cancel
+//! the in-flight turn, and carry the interrupting words into the next listen.
+//! With barge-in off, the mic stays closed during playback (original behavior).
 
 use std::collections::VecDeque;
 use std::io::Write;
@@ -52,7 +58,11 @@ const POLL_MS: u64 = 30;
 /// coupling; a barge is then confirmed only when the mic sustains energy that
 /// clearly exceeds the expected bleed for the reference playing right now.
 const BARGE_WARMUP_MS: u32 = 300;
-const BARGE_SUSTAINED_MS: u32 = 450;
+/// Consecutive excess time (ms) that soft-triggers verification. Kept eager
+/// (down from 450) because the trigger is now only a permissive PRE-FILTER — a
+/// layered content verdict (DSP echo cross-correlation, then ASR) decides
+/// whether to actually cut, so a few extra soft triggers are cheap.
+const BARGE_SUSTAINED_MS: u32 = 300;
 /// Speech-threshold absolute-minimum override (RMS) for the listen VAD on a
 /// processed-audio path (system AEC). Post-VPIO/ec silence is near-zero and
 /// speech is AGC-levelled far below raw cpal, so the raw-cpal 48–120 clamp —
@@ -70,22 +80,39 @@ const BARGE_ABS_MIN_FALLBACK: f32 = 80.0;
 /// Pre-roll carried into the next listen so the interrupting words aren't lost
 /// (16 000 samples ≈ 1 s at 16 kHz).
 const BARGE_PREROLL_SAMPLES: usize = 16_000;
-/// Soft-barge verify window: once [`BargeDetector`] fires, keep listening this
-/// long for the interruption to prove itself against a *raised* bar before
-/// committing to the hard cut. Playback continues untouched throughout —
-/// overlap (user and assistant briefly talking at once) is natural, and a real
-/// user through AEC runs well above the residual that tripped the soft trigger,
-/// so marginal residual bursts can't clear the raised bar. This is what turns
-/// the ~2–3 false cuts per 20 turns (AEC residual echo) into no-ops.
-const BARGE_VERIFY_WINDOW_MS: u32 = 700;
-/// Cumulative time within the verify window that mic energy must exceed the
-/// raised bar to CONFIRM a barge; below it the trigger is REFUTED as residual.
-const BARGE_VERIFY_VOICED_MS: u32 = 300;
-/// Multiplier on the detector's absolute floor forming the verify bar (the
-/// `abs_mult` in [`BargeDetector::threshold_for`]). The confirm bar therefore
-/// sits clearly above the trigger threshold, while the reference-coupling term
-/// (already tracking live playback loudness) is left as-is.
-const BARGE_VERIFY_BAR_MULT: f32 = 1.5;
+/// Gray-zone collect window (ms): when the fast DSP echo test is inconclusive,
+/// keep draining the (still-live) mic this long before the ASR content test, so
+/// the transcribed snippet covers a real chunk of the suspected interruption.
+/// Combined with the ~1 s pre-roll already in the buffer, the ASR sees ~2.2 s.
+/// The DSP-decisive paths never wait for this. Playback continues throughout.
+const BARGE_VERIFY_WINDOW_MS: u32 = 1_200;
+
+// ── Layered barge verdict: model-free DSP echo test, then ASR content test. ──
+/// Envelope hop (ms) for the mic/reference loudness series the DSP echo test
+/// cross-correlates. 10 ms resolves syllable-scale loudness cheaply.
+const ECHO_HOP_MS: u32 = 10;
+/// Max mic delay (hops) the cross-correlation searches — ~600 ms, covering the
+/// acoustic + playback-pipeline delay plus playback-position anchor error.
+const ECHO_MAX_LAG_HOPS: usize = 60;
+/// Minimum envelope length (hops) for the DSP test to run; below it (very short
+/// snippet, or an empty reference ring) we defer straight to the ASR test.
+const ECHO_MIN_HOPS: usize = 20;
+/// Cross-correlation below this ⇒ the mic does NOT track the reference ⇒ there is
+/// non-echo sound ⇒ CONFIRM the barge with no ASR (near-instant). Tuned from
+/// CallLog data.
+const ECHO_CORR_CONFIRM: f32 = 0.35;
+/// With echo present (corr ≥ [`ECHO_CORR_CONFIRM`]), a residual — the fraction of
+/// mic energy the scaled echo can't explain — below this ⇒ essentially pure echo
+/// ⇒ REFUTE with no ASR. Between the two thresholds is the gray zone (echo plus
+/// unexplained overlap energy) that falls through to the ASR content test.
+const ECHO_RESID_REFUTE: f32 = 0.35;
+/// ASR fallback: [`fonos_core::echo::echo_similarity`] above this (the snippet is
+/// largely contained in the reply text) ⇒ echo ⇒ REFUTE; at/below ⇒ different
+/// words ⇒ CONFIRM. Empty transcript is treated as echo (refute).
+const BARGE_ECHO_SIM_REFUTE: f32 = 0.55;
+/// Fail-safe: if the verify STT errors or runs longer than this (ms), refute —
+/// keep the reply playing rather than cut on an unverified trigger.
+const BARGE_STT_TIMEOUT_MS: u64 = 2_500;
 /// Extra margin on top of the listen VAD's speech-threshold factor when seeding
 /// the barge floor from the quiet-phase ambient noise: a barge must be *clearly*
 /// louder than what merely counted as speech while nothing played.
@@ -326,6 +353,27 @@ impl CallAudio {
             .unwrap_or(0.0)
     }
 
+    /// The most recent `duration_ms` of reference PCM (16 kHz mono) aligned with
+    /// the current playback position — the reference the barge echo verifier
+    /// cross-correlates a mic snippet against. Sourced from whichever path owns
+    /// playback (helper link on macOS voice mode, rodio envelope elsewhere).
+    /// Empty when nothing is playing / the ring can't cover the window.
+    fn recent_reference(
+        &self,
+        playback: &Arc<Mutex<Option<AudioPlayback>>>,
+        duration_ms: u64,
+    ) -> Vec<i16> {
+        #[cfg(target_os = "macos")]
+        if let CallAudio::MacVoice(v) = self {
+            return v.recent_reference(duration_ms);
+        }
+        playback
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|p| p.recent_reference(duration_ms)))
+            .unwrap_or_default()
+    }
+
     /// Cut the reply off NOW — barge interrupt / hangup. macOS voice mode
     /// flushes the helper's playback queue (the zero-length control frame);
     /// other paths stop the rodio sink as before.
@@ -533,6 +581,10 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     let ambient_k = speech_threshold_factor(sensitivity) * BARGE_AMBIENT_MARGIN;
     // No pill for call-mode turns — everything renders in the Conversation page.
     let bridge = crate::adapters::TurnEventBridge::new(app.clone(), false);
+    // Shared handle to the reply text of the turn in flight (updated by the
+    // bridge on TurnEvent::Reply). The barge monitor reads it to compare a
+    // suspected-barge snippet against exactly what the assistant is saying.
+    let reply_slot = bridge.reply_handle();
 
     // Reason reported when the loop exits.
     let mut ended = "hangup";
@@ -678,8 +730,10 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
             let turn_fut = run_call_turn(&app, &audio, transcript, &bridge);
-            let barge_fut =
-                barge_monitor(&app, &audio, &capture, &playback, &active, &log, ambient_floor, ambient_k);
+            let barge_fut = barge_monitor(
+                &app, &audio, &capture, &playback, &active, &log, ambient_floor, ambient_k,
+                &reply_slot,
+            );
             tokio::pin!(turn_fut);
             tokio::pin!(barge_fut);
             tokio::select! {
@@ -785,16 +839,14 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
 /// — when a barge is *confirmed*, or `None` if the call was cancelled (or
 /// capture couldn't start) before any confirmed barge.
 ///
-/// Detection is two-stage. [`BargeDetector`] first fires a SOFT trigger when
-/// the mic sustains energy above the bleed; because AEC residual echo can
-/// briefly do the same (~2–3 false cuts per 20 turns), the monitor then opens a
-/// ~[`BARGE_VERIFY_WINDOW_MS`] verify window instead of cutting immediately.
-/// Playback keeps going throughout — overlap is natural — and the trigger is
-/// CONFIRMED only if mic energy stays above a *raised* bar
-/// ([`BargeDetector::threshold_for`], `abs_mult` = [`BARGE_VERIFY_BAR_MULT`])
-/// for [`BARGE_VERIFY_VOICED_MS`] cumulative; a real user through AEC runs well
-/// above the residual, so marginal bursts are REFUTED (run reset, reply
-/// uninterrupted, monitoring continues).
+/// Detection is two-layer. [`BargeDetector`] first fires a SOFT energy trigger
+/// when the mic sustains energy above the bleed — a permissive pre-filter. The
+/// monitor then collects a ~2.2 s snippet (pre-roll + [`BARGE_VERIFY_WINDOW_MS`]
+/// drained live) and settles it by CONTENT via [`verify_barge`] — a model-free
+/// DSP echo cross-correlation, then an ASR comparison against the reply text
+/// (`reply_slot`) — instead of cutting on energy alone. Playback keeps going
+/// throughout (overlap is natural). Only a CONFIRM cuts; a REFUTE resets the run
+/// and keeps the reply playing.
 ///
 /// Detection is reference-gated: because we own the TTS PCM, each mic chunk is
 /// compared against the loudness the speaker is emitting *right now* — the rodio
@@ -817,6 +869,7 @@ async fn barge_monitor(
     log: &CallLog,
     ambient_floor: f32,
     ambient_k: f32,
+    reply_slot: &Arc<Mutex<String>>,
 ) -> Option<Vec<i16>> {
     // Arm the mic (skip the float pill — call mode never shows it). With AEC the
     // mic is already hot for the whole call, so we skip arming and just drain
@@ -938,15 +991,10 @@ async fn barge_monitor(
                 }
 
                 if barged {
-                    // ── SOFT barge: don't cut yet. The detector fired, but AEC
-                    // residual echo can sustain past the trigger ~2–3× per 20
-                    // turns and self-cut the reply. Mark the point and open a
-                    // verify window: playback keeps going (overlap is natural),
-                    // and only mic energy that stays *clearly* above the trigger
-                    // bar for BARGE_VERIFY_VOICED_MS confirms a real user. ──
+                    // ── SOFT barge: the energy pre-filter fired. Don't cut on
+                    // energy — settle it by CONTENT, cheapest stage first. ──
                     log.line(&format!(
-                        "barge: soft — verifying (playback continues); trigger run={}ms \
-                         abs_floor={:.0}; last {} chunks (mic,ref,thr):",
+                        "barge: soft — trigger run={}ms abs_floor={:.0}; last {} chunks (mic,ref,thr):",
                         detector.run_ms(),
                         detector.abs_floor(),
                         recent.len()
@@ -954,76 +1002,174 @@ async fn barge_monitor(
                     for (m, r, t) in &recent {
                         log.line(&format!("    mic={m:.0} ref={r:.0} thr={t:.0}"));
                     }
+                    let trigger_len = buf.len();
 
-                    let verify_start_len = buf.len();
-                    let mut verify_ms: u32 = 0;
-                    let mut voiced_ms: u32 = 0;
-                    let mut vmic: Vec<f32> = Vec::new();
-                    let mut last_bar = 0.0f32;
-                    // Verify window: keep draining the (still-live) mic into the
-                    // carry buffer, counting time above the raised bar. Ends
-                    // early the moment enough voiced time accrues.
-                    while verify_ms < BARGE_VERIFY_WINDOW_MS && voiced_ms < BARGE_VERIFY_VOICED_MS {
-                        if !active.load(Ordering::SeqCst) {
-                            return None;
+                    // ── Stage 1: model-free DSP echo test on the ~1 s pre-roll
+                    // ALREADY captured — no draining, so a clear real barge cuts
+                    // in well under a second. Playback keeps going throughout. ──
+                    let preroll_start = trigger_len.saturating_sub(BARGE_PREROLL_SAMPLES);
+                    let preroll: Vec<i16> = buf[preroll_start..].to_vec();
+                    match dsp_verdict(audio, playback, log, &preroll) {
+                        Some(BargeVerdict::Confirm) => {
+                            // Real interruption. Hand back the pre-roll to seed the
+                            // next listen (the mic stays hot, so the rest of the
+                            // utterance is captured live); the caller does the hard
+                            // cut (flush/stop playback, cancel the turn, seed).
+                            return Some(preroll);
                         }
-                        match audio.take_chunk(VAD_CHUNK_MS, capture) {
-                            Some(samples) => {
-                                let mic_rms = rms(&samples);
-                                // Live playback loudness for the coupling bar —
-                                // real on the macOS helper path now (its own
-                                // envelope), so the raised verify bar scales with
-                                // the reply during verification too, not just the
-                                // absolute floor.
-                                let ref_rms = audio.reference_rms(playback);
-                                let bar = detector.threshold_for(ref_rms, BARGE_VERIFY_BAR_MULT);
-                                last_bar = bar;
-                                let chunk_ms = (samples.len() as u32) / 16;
-                                buf.extend_from_slice(&samples);
-                                vmic.push(mic_rms);
-                                verify_ms += chunk_ms;
-                                if mic_rms > bar {
-                                    voiced_ms += chunk_ms;
+                        Some(BargeVerdict::Refute) => {
+                            // Echo: leave the reply playing, require a fresh full
+                            // sustained run before the next soft attempt. No
+                            // draining happened, so nothing to truncate.
+                            detector.reset_run();
+                        }
+                        None => {
+                            // ── Gray zone / no reference: collect ~1.2 s more and
+                            // settle by transcribing the snippet and comparing it
+                            // against the reply text we're speaking. ──
+                            let mut collected_ms: u32 = 0;
+                            while collected_ms < BARGE_VERIFY_WINDOW_MS {
+                                if !active.load(Ordering::SeqCst) {
+                                    return None;
+                                }
+                                match audio.take_chunk(VAD_CHUNK_MS, capture) {
+                                    Some(samples) => {
+                                        collected_ms += (samples.len() as u32) / 16;
+                                        buf.extend_from_slice(&samples);
+                                    }
+                                    None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,
                                 }
                             }
-                            None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,
+                            let snip_start = trigger_len.saturating_sub(BARGE_PREROLL_SAMPLES);
+                            let snippet: Vec<i16> = buf[snip_start..].to_vec();
+                            match asr_verdict(app, log, reply_slot, &snippet).await {
+                                BargeVerdict::Confirm => return Some(snippet),
+                                BargeVerdict::Refute => {
+                                    buf.truncate(trigger_len);
+                                    detector.reset_run();
+                                }
+                            }
                         }
                     }
-
-                    if voiced_ms >= BARGE_VERIFY_VOICED_MS {
-                        // ── CONFIRMED: a real interruption. Hand back the carry
-                        // (pre-roll + soft-window audio); the caller does exactly
-                        // today's hard cut — flush/stop playback, cancel the
-                        // turn, emit {kind:"barge"}, seed the next listen. ──
-                        log.line(&format!(
-                            "barge: confirmed ({voiced_ms} ms voiced above raised bar={last_bar:.0}; \
-                             verify mic[min/avg/max]={:.0}/{:.0}/{:.0})",
-                            min(&vmic),
-                            avg(&vmic),
-                            max(&vmic)
-                        ));
-                        let start = buf.len().saturating_sub(BARGE_PREROLL_SAMPLES);
-                        return Some(buf[start..].to_vec());
-                    }
-
-                    // ── REFUTED: nothing audible happened — the sustained energy
-                    // was echo residual, not the user. Leave the reply playing,
-                    // drop the soft-window audio from the carry, and require a
-                    // fresh full sustained run before the next soft attempt. ──
-                    log.line(&format!(
-                        "barge: refuted — residual, playback uninterrupted \
-                         ({voiced_ms} ms < {BARGE_VERIFY_VOICED_MS} above bar={last_bar:.0}; \
-                         verify mic[min/avg/max]={:.0}/{:.0}/{:.0})",
-                        min(&vmic),
-                        avg(&vmic),
-                        max(&vmic)
-                    ));
-                    buf.truncate(verify_start_len);
-                    detector.reset_run();
-                    // Fall through: keep monitoring from the next chunk.
                 }
             }
             None => tokio::time::sleep(Duration::from_millis(POLL_MS)).await,
+        }
+    }
+}
+
+/// The outcome of the layered barge verifier.
+enum BargeVerdict {
+    /// A real interruption — cut the reply and carry the snippet forward.
+    Confirm,
+    /// Echo, or unverifiable — keep the reply playing.
+    Refute,
+}
+
+/// Stage 1 of the barge verdict: the model-free DSP echo test (~instant). We own
+/// the reference PCM, so we cross-correlate the mic snippet's loudness envelope
+/// against the reference's ([`fonos_core::echo`]).
+///
+/// - Low correlation ⇒ the mic is NOT tracking the reply ⇒ some other sound ⇒
+///   `Some(Confirm)`.
+/// - High correlation with a low *residual* (little energy the scaled echo can't
+///   explain) ⇒ the mic is essentially just the reply echoing back ⇒
+///   `Some(Refute)`.
+/// - In between (echo present but with unexplained overlap energy), or no usable
+///   reference ⇒ `None`: inconclusive, defer to the ASR content test.
+fn dsp_verdict(
+    audio: &CallAudio,
+    playback: &Arc<Mutex<Option<AudioPlayback>>>,
+    log: &CallLog,
+    snippet: &[i16],
+) -> Option<BargeVerdict> {
+    let mic_env = fonos_core::echo::envelope(snippet, ECHO_HOP_MS);
+    let snippet_ms = (snippet.len() / 16) as u64;
+    // Reference aligned to the same wall-clock span as the snippet (both end
+    // "now"); the acoustic + pipeline delay shows up as the recovered lag.
+    let ref_pcm = audio.recent_reference(playback, snippet_ms);
+    let ref_env = fonos_core::echo::envelope(&ref_pcm, ECHO_HOP_MS);
+
+    if mic_env.len() < ECHO_MIN_HOPS || ref_env.len() < ECHO_MIN_HOPS {
+        log.line(&format!(
+            "barge: no usable reference ({} ref hops, {} mic hops) → ASR content check",
+            ref_env.len(),
+            mic_env.len()
+        ));
+        return None;
+    }
+    let (corr, lag) = fonos_core::echo::xcorr_peak(&mic_env, &ref_env, ECHO_MAX_LAG_HOPS);
+    let resid = fonos_core::echo::residual_ratio(&mic_env, &ref_env, lag);
+    let lag_ms = lag as u32 * ECHO_HOP_MS;
+    if corr < ECHO_CORR_CONFIRM {
+        log.line(&format!(
+            "barge: CONFIRM by DSP — corr={corr:.2} < {ECHO_CORR_CONFIRM} \
+             (lag={lag_ms}ms resid={resid:.2}); mic doesn't track the reply → real barge"
+        ));
+        return Some(BargeVerdict::Confirm);
+    }
+    if resid < ECHO_RESID_REFUTE {
+        log.line(&format!(
+            "barge: REFUTE by DSP — echo (corr={corr:.2} lag={lag_ms}ms \
+             resid={resid:.2} < {ECHO_RESID_REFUTE}); mic is scaled reply echo"
+        ));
+        return Some(BargeVerdict::Refute);
+    }
+    log.line(&format!(
+        "barge: DSP gray zone (corr={corr:.2} lag={lag_ms}ms resid={resid:.2}) → ASR content check"
+    ));
+    None
+}
+
+/// Stage 2 of the barge verdict: the ASR content test, for the DSP gray zone (or
+/// when no reference is available). Transcribe the snippet locally and compare it
+/// to the reply being spoken ([`fonos_core::echo::echo_similarity`]):
+/// largely-contained ⇒ echo ⇒ REFUTE; different words ⇒ CONFIRM. An empty
+/// transcript, an STT error, or an STT timeout all fail safe to REFUTE (keep the
+/// reply playing).
+async fn asr_verdict(
+    app: &tauri::AppHandle,
+    log: &CallLog,
+    reply_slot: &Arc<Mutex<String>>,
+    snippet: &[i16],
+) -> BargeVerdict {
+    let reply_now = reply_slot.lock().map(|g| g.clone()).unwrap_or_default();
+    let started = Instant::now();
+    let stt = {
+        let st = app.state::<AppState>();
+        tokio::time::timeout(
+            Duration::from_millis(BARGE_STT_TIMEOUT_MS),
+            super::dictation::transcribe_stt_only(app, st.inner(), snippet.to_vec()),
+        )
+        .await
+    };
+    let stt_ms = started.elapsed().as_millis();
+    match stt {
+        Ok(Ok(t)) => {
+            let transcript = t.trim().to_string();
+            let sim = fonos_core::echo::echo_similarity(&transcript, &reply_now);
+            if transcript.is_empty() || sim > BARGE_ECHO_SIM_REFUTE {
+                log.line(&format!(
+                    "barge: REFUTE by ASR — echo (sim={sim:.2} > {BARGE_ECHO_SIM_REFUTE}, {stt_ms}ms); \
+                     transcript={transcript:?} reply≈{:?}",
+                    reply_now.chars().take(48).collect::<String>()
+                ));
+                BargeVerdict::Refute
+            } else {
+                log.line(&format!(
+                    "barge: CONFIRM by ASR — content (sim={sim:.2} ≤ {BARGE_ECHO_SIM_REFUTE}, {stt_ms}ms); \
+                     transcript={transcript:?}"
+                ));
+                BargeVerdict::Confirm
+            }
+        }
+        Ok(Err(e)) => {
+            log.line(&format!("barge: REFUTE — ASR error after {stt_ms}ms ({e})"));
+            BargeVerdict::Refute
+        }
+        Err(_) => {
+            log.line(&format!("barge: REFUTE — ASR timeout (> {BARGE_STT_TIMEOUT_MS}ms)"));
+            BargeVerdict::Refute
         }
     }
 }

@@ -278,8 +278,19 @@ pub fn rms(samples: &[i16]) -> f32 {
 /// Multiplier on the learned coupling term: the mic must exceed the expected
 /// bleed (`coupling * ref_rms`) by this factor to count as excess energy.
 const BARGE_MARGIN: f32 = 2.0;
-/// EMA weight when a non-excess chunk nudges an underestimated coupling upward.
+/// EMA weight when a *pure-bleed* non-excess chunk nudges an underestimated
+/// coupling upward.
 const BARGE_COUPLING_ALPHA: f32 = 0.05;
+/// A non-excess chunk only teaches coupling when the mic sits within this
+/// multiple of the coupling-predicted bleed — close enough to *look like* the
+/// assistant's own bleed rather than the (louder) energy of quiet user speech
+/// that merely stayed under the detection bar. Learning from the latter is what
+/// ratcheted the bar up over a call and started blocking real interruptions.
+const BARGE_PURE_BLEED_MULT: f32 = 1.2;
+/// Hard cap on post-warmup self-correction: coupling may not climb past the
+/// warmup-learned baseline times this, so a long tail of marginally-high bleed
+/// can't drift the bar arbitrarily far up over a call.
+const BARGE_COUPLING_CAP: f32 = 2.5;
 /// Multiplier applied to the peak warmup bleed to derive the absolute floor.
 const BARGE_PEAK_BLEED_MULT: f32 = 1.3;
 
@@ -306,6 +317,10 @@ pub struct BargeDetector {
     /// Learned speaker→mic coupling ratio `max(mic_rms / ref_rms)` — the peak
     /// transfer observed during warmup, then EMA-corrected upward afterward.
     coupling: f32,
+    /// The coupling as it stood at the end of warmup — the baseline for the
+    /// post-warmup self-correction cap (`× BARGE_COUPLING_CAP`). `0.0` until
+    /// warmup ends (or when warmup saw no live reference).
+    warmup_coupling: f32,
     /// Peak mic bleed observed during warmup, in RMS units.
     peak_bleed: f32,
     /// The listen phase's learned ambient noise floor (RMS units) — the user's
@@ -351,6 +366,7 @@ impl BargeDetector {
             warmup_remaining_ms: warmup_ms,
             sustained_ms,
             coupling: 0.0,
+            warmup_coupling: 0.0,
             peak_bleed: 0.0,
             ambient_floor,
             ambient_k,
@@ -441,6 +457,11 @@ impl BargeDetector {
                 self.peak_bleed = mic_rms;
             }
             self.warmup_remaining_ms = self.warmup_remaining_ms.saturating_sub(chunk_ms);
+            if self.warmup_remaining_ms == 0 {
+                // Freeze the warmup-learned coupling as the self-correction cap
+                // baseline (see the non-excess branch below).
+                self.warmup_coupling = self.coupling;
+            }
             return false;
         }
 
@@ -458,14 +479,27 @@ impl BargeDetector {
         } else {
             // Any non-excess chunk breaks the run …
             self.run_ms = 0;
-            // … and, if the reference is live, lets an *underestimated*
-            // coupling creep up toward the observed ratio (never down), so a
-            // slightly low warmup estimate self-corrects instead of leaking a
-            // steady stream of false-positive excess chunks.
+            // … and, if the reference is live AND this chunk looks like *pure
+            // bleed* (mic within BARGE_PURE_BLEED_MULT of the coupling-predicted
+            // level), lets an underestimated coupling creep up toward the
+            // observed ratio — never down, and never past warmup × cap. Chunks
+            // between the predicted bleed and the detection bar are ambiguous
+            // (possibly a real barge too quiet to sustain), so learning from
+            // them is skipped: that ambiguous zone is exactly what used to
+            // ratchet the bar up over a call and block genuine interruptions.
             if ref_rms > 0.0 {
                 let observed = mic_rms / ref_rms;
-                if observed > self.coupling {
+                let pure_bleed = mic_rms < self.coupling * ref_rms * BARGE_PURE_BLEED_MULT;
+                let below_cap =
+                    self.warmup_coupling <= 0.0 || self.coupling < self.warmup_coupling * BARGE_COUPLING_CAP;
+                if pure_bleed && observed > self.coupling && below_cap {
                     self.coupling += BARGE_COUPLING_ALPHA * (observed - self.coupling);
+                    if self.warmup_coupling > 0.0 {
+                        let cap = self.warmup_coupling * BARGE_COUPLING_CAP;
+                        if self.coupling > cap {
+                            self.coupling = cap;
+                        }
+                    }
                 }
             }
         }
@@ -709,24 +743,44 @@ mod tests {
         assert!(feed_barge(&mut d, 200.0, 0.0, 6), "200 > 80 floor barges");
     }
 
-    /// Continuous re-learning: a coupling underestimated at warmup creeps up on
-    /// non-excess chunks toward the observed ratio (never down), so it
-    /// self-corrects instead of leaking false positives — and never triggers.
+    /// Continuous re-learning, bounded to *pure bleed*: a coupling
+    /// underestimated at warmup creeps up on non-excess chunks that sit close to
+    /// the predicted bleed (never down, never past warmup × cap), so a slightly
+    /// low estimate self-corrects instead of leaking false positives — and never
+    /// triggers.
     #[test]
     fn barge_coupling_ema_self_corrects_upward() {
         let mut d = BargeDetector::new(100, 450, 0.0, 0.0, 80.0);
         d.push(200.0, 2_000.0, 100); // warmup underestimates: coupling = 0.10
         assert!((d.coupling - 0.10).abs() < 1e-6);
-        // Steady bleed at ratio 0.175 (mic 350). abs_floor = max(260, 80) = 260;
-        // threshold = max(260, coupling·2000·2) starts at 400 > 350, so every
-        // chunk is non-excess and nudges coupling up toward 0.175.
-        assert!(!feed_barge(&mut d, 350.0, 2_000.0, 60), "underestimate must not barge");
+        // Steady bleed at ratio 0.11 (mic 220): within the 1.2× pure-bleed band
+        // of the predicted bleed (0.10·2000·1.2 = 240) and under the detection
+        // bar (0.10·2000·2 = 400), so every chunk is non-excess *pure bleed* and
+        // nudges coupling up toward 0.11.
+        assert!(!feed_barge(&mut d, 220.0, 2_000.0, 60), "underestimate must not barge");
         assert!(d.coupling > 0.10, "coupling rose toward the observed ratio");
-        assert!(d.coupling < 0.175, "but only converges toward it, never overshoots");
+        assert!(d.coupling < 0.11, "but only converges toward it, never overshoots");
         // A low observed ratio must NOT drag coupling back down.
         let before = d.coupling;
         d.push(20.0, 2_000.0, 100); // observed 0.01 ≪ coupling
         assert!((d.coupling - before).abs() < 1e-6, "coupling only ratchets upward");
+    }
+
+    /// The coupling-ratchet fix: a non-excess chunk whose mic energy sits *above*
+    /// the coupling-predicted bleed — quiet user speech that stayed under the
+    /// detection bar, not pure echo bleed — no longer teaches coupling, so the
+    /// bar can't ratchet up over a call and start blocking real barges.
+    #[test]
+    fn barge_user_speech_level_non_excess_does_not_inflate_coupling() {
+        let mut d = BargeDetector::new(100, 450, 0.0, 0.0, 80.0);
+        d.push(300.0, 2_000.0, 100); // warmup: coupling = 0.15, peak_bleed 300
+        // mic 450 at ref 2000 (ratio 0.225): under the detection bar
+        // (0.15·2000·2 = 600) so no barge, but *above* the pure-bleed band
+        // (0.15·2000·1.2 = 360) — ambiguous user-speech-level energy, not pure
+        // bleed. Under the old rule this inflated coupling every chunk; now it
+        // must leave coupling untouched.
+        assert!(!feed_barge(&mut d, 450.0, 2_000.0, 60), "user-speech-level energy must not barge");
+        assert!((d.coupling - 0.15).abs() < 1e-6, "coupling stayed at the warmup value");
     }
 
     /// The self-trigger fix: with working AEC the warmup sees near-silence, so

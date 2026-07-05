@@ -377,12 +377,10 @@ pub(crate) async fn transcribe_samples(
     mode_override: Option<String>,
 ) -> Result<SttResult, String> {
     let stop_time = std::time::Instant::now();
-    let recording_duration = all_samples.len() as f64 / 16000.0;
 
     // Immediately signal the float pill to switch from recording → processing.
     // Conversation-page turns never touch the pill (they render in-app).
     if mode_override.as_deref() != Some("sts-page") {
-        use tauri::Emitter;
         let _ = app.emit("float:processing", ());
     }
 
@@ -390,6 +388,175 @@ pub(crate) async fn transcribe_samples(
         return Ok(empty_stt_result());
     }
 
+    // Pure preprocess + STT (+ vocab) via the shared core; this function layers
+    // the float-pill, injection, stats, and storage side effects on top.
+    let SttCore {
+        transcript,
+        stt_engine,
+        audio_path: audio_path_str,
+        stats_model,
+        dictation_mode,
+        mode_has_llm,
+        recording_duration,
+        preprocess_metrics,
+    } = transcribe_core(app, state, all_samples, mode_override, true).await?;
+
+    let latency_ms = stop_time.elapsed().as_millis() as u64;
+
+    // Raw dictations complete inside this function (transcribe + inject), so
+    // their end-to-end latency is recorded here; LLM modes are recorded by the
+    // hotkey pipeline after processing + injection.
+    let mut raw_e2e_done = false;
+
+    // 4. Notify float window (stops the recording animation) — skip for agent mode
+    eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
+    if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
+        // `mode_has_llm` (from the core): when set, the STT transcript is NOT the
+        // final output — the LLM caller (the hotkey pipelines in main.rs, or the
+        // Dictation view) emits the real float:stop/float:error after LLM +
+        // injection completes.
+
+        // 5. Inject raw text only in raw mode (not agent, not LLM modes).
+        // Injection runs BEFORE the success emit: on failure the pill must
+        // show only the error — a float:stop first would schedule the pill's
+        // revert-to-idle timer, which would cut the error display short.
+        let mut delivered = true;
+        if dictation_mode == "raw" && !transcript.is_empty() {
+            eprintln!("fonos: INJECTING raw text at cursor ({} chars)", transcript.len());
+            let inj_cfg = state.config.lock().map(|c| c.clone()).unwrap_or_default();
+            if let Err(e) = inject_text(&transcript, &inj_cfg) {
+                delivered = false;
+                let msg = format!("Injection failed: {e}");
+                crate::error_surface::emit_float_error(app, &msg);
+            }
+            raw_e2e_done = delivered;
+        }
+        if delivered {
+            if mode_has_llm && !transcript.is_empty() {
+                // Pipeline isn't done: the transcript still goes to the LLM.
+                // Keep the pill in "Processing" and let the LLM caller emit the
+                // final float:stop — emitting float:stop here would flash a
+                // premature green "Done" before the LLM step even runs.
+                let _ = app.emit("float:processing", ());
+            } else {
+                let _ = app.emit("float:stop", &transcript);
+            }
+        }
+    } else {
+        eprintln!("fonos: {dictation_mode} mode — skipping float:stop and inject");
+    }
+
+    // Record STT event to stats DB (legacy). `stats_model` comes from the core.
+    if !transcript.is_empty() {
+        if let Ok(db) = state.db.lock() {
+            let _ = fonos_core::stats::record_event(
+                &db, "stt", &transcript, "", recording_duration,
+                latency_ms as i64, &dictation_mode, &stats_model, "", &audio_path_str,
+                0, 0, "",
+            );
+
+            // End-to-end latency (key release → injected) for raw dictations.
+            if raw_e2e_done {
+                let _ = fonos_core::stats::record_dictation_latency(
+                    &db, stop_time.elapsed().as_millis() as i64, &dictation_mode, &stats_model,
+                );
+            }
+
+            // Write to v2 unified entries table — all activity is recorded.
+            // Recent view shows everything; Notes view filters to note-only.
+            let source = match dictation_mode.as_str() {
+                "agent" | "sts-page" => fonos_core::storage::SourceType::Agent,
+                "note" => fonos_core::storage::SourceType::Note,
+                _ => fonos_core::storage::SourceType::Dictation,
+            };
+            let entry = fonos_core::storage::Entry {
+                id: None,
+                created_at: crate::commands::storage::now_iso8601(),
+                source_type: source,
+                role: fonos_core::storage::EntryRole::User,
+                mode: dictation_mode.clone(),
+                raw_text: transcript.clone(),
+                processed_text: None,
+                container_id: if dictation_mode == "note" {
+                    // Use the notebook selected in the note panel (stored in AppState).
+                    // If no target set (race condition on first open), fall back to Quick Note.
+                    let target = state.note_target.lock().ok().and_then(|g| *g);
+                    if target.is_some() {
+                        target
+                    } else {
+                        // Find Quick Note container as fallback
+                        db.query_row(
+                            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
+                            [], |r| r.get::<_, i64>(0)
+                        ).ok()
+                    }
+                } else {
+                    None
+                },
+                audio_ref: if dictation_mode == "note" { None } else { Some(audio_path_str.clone()) },
+                metadata: serde_json::json!({
+                    "duration_secs": recording_duration,
+                    "latency_ms": latency_ms,
+                }),
+            };
+            if let Err(e) = fonos_core::storage::insert_entry(&db, &entry) {
+                eprintln!("fonos: entry write error: {e}");
+            }
+        }
+    }
+
+    Ok(SttResult {
+        text: transcript,
+        audio_path: audio_path_str,
+        latency_ms,
+        duration_secs: recording_duration,
+        stt_engine,
+        stt_model: stats_model,
+        noise_removed_pct: preprocess_metrics.0,
+        gain_db: preprocess_metrics.1,
+    })
+}
+
+/// The pure preprocess + STT product, before any float-pill / stats / storage /
+/// injection side effects — returned by [`transcribe_core`] and layered on by
+/// its callers.
+struct SttCore {
+    transcript: String,
+    /// Apple Speech engine tag ("on-device"/"server"), empty for HTTP providers.
+    stt_engine: String,
+    /// Path to the saved WAV (kept for history / stats `audio_ref`).
+    audio_path: String,
+    /// Model label for stats (`"Apple Speech (…)"` or the HTTP model name).
+    stats_model: String,
+    /// Effective dictation mode after resolving `mode_override`.
+    dictation_mode: String,
+    /// Whether the resolved mode runs a downstream LLM step.
+    mode_has_llm: bool,
+    recording_duration: f64,
+    /// `(noise_removed_pct, gain_db)` from preprocessing.
+    preprocess_metrics: (f64, f64),
+}
+
+/// Preprocess (high-pass + normalize) and transcribe a set of already-captured
+/// 16 kHz mono i16 samples via the resolved STT profile (Apple / Whisper-HTTP /
+/// chat), optionally applying the deterministic vocab post-correction. This is
+/// the pure STT step shared by [`transcribe_samples`] (which then records stats,
+/// storage, and drives the float pill / injection) and the call-mode barge
+/// content verifier ([`transcribe_stt_only`], which wants only the transcript).
+///
+/// No stats, storage, or float-pill side effects of its own; an STT *error* is
+/// still surfaced to the float pill for interactive modes (not "agent"/"sts-page"),
+/// exactly as before. `mode_override` selects the STT profile just as in
+/// [`transcribe_samples`]; `apply_vocab` runs the vocab rules (the verifier skips
+/// them for speed).
+async fn transcribe_core(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    all_samples: Vec<i16>,
+    mode_override: Option<String>,
+    apply_vocab: bool,
+) -> Result<SttCore, String> {
+    let recording_duration = all_samples.len() as f64 / 16000.0;
 
     // 1b. Audio preprocessing: high-pass filter + RMS normalization
     let (all_samples, preprocess_metrics) = preprocess_audio(all_samples);
@@ -408,7 +575,6 @@ pub(crate) async fn transcribe_samples(
     // 3. Transcribe via HTTP (single call, no contention from streaming partials)
     let file_bytes = std::fs::read(&audio_path)
         .map_err(|e| format!("failed to read WAV: {e}"))?;
-
 
     // Load config + mode to determine which STT profile to use
     // mode_override (from Dictation view) takes precedence over config.dictation_mode (float pill)
@@ -515,135 +681,49 @@ pub(crate) async fn transcribe_samples(
 
     // ② Deterministic post-correction from the effective vocab books — runs
     // for every mode (raw, LLM, note, agent) before any downstream use.
-    let transcript = if vocab_refs.is_empty() {
+    let transcript = if !apply_vocab || vocab_refs.is_empty() {
         transcript
     } else {
         fonos_core::vocab::apply_rules(&transcript, &vocab_refs)
     };
 
-    let latency_ms = stop_time.elapsed().as_millis() as u64;
+    let mode_has_llm = current_mode
+        .map(|m| m.system.is_some() || m.user_template.is_some())
+        .unwrap_or(false);
 
-    // Raw dictations complete inside this function (transcribe + inject), so
-    // their end-to-end latency is recorded here; LLM modes are recorded by the
-    // hotkey pipeline after processing + injection.
-    let mut raw_e2e_done = false;
-
-    // 4. Notify float window (stops the recording animation) — skip for agent mode
-    eprintln!("fonos: stop_recording dictation_mode='{}' transcript_len={}", dictation_mode, transcript.len());
-    if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
-        // Does this mode run a downstream LLM step? Same predicate main.rs uses
-        // for `has_llm`. When it does, the STT transcript is NOT the final
-        // output — the LLM caller (the hotkey pipelines in main.rs, or the
-        // Dictation view) emits the real float:stop/float:error after LLM +
-        // injection completes.
-        let mode_has_llm = current_mode
-            .map(|m| m.system.is_some() || m.user_template.is_some())
-            .unwrap_or(false);
-
-        // 5. Inject raw text only in raw mode (not agent, not LLM modes).
-        // Injection runs BEFORE the success emit: on failure the pill must
-        // show only the error — a float:stop first would schedule the pill's
-        // revert-to-idle timer, which would cut the error display short.
-        let mut delivered = true;
-        if dictation_mode == "raw" && !transcript.is_empty() {
-            eprintln!("fonos: INJECTING raw text at cursor ({} chars)", transcript.len());
-            let inj_cfg = state.config.lock().map(|c| c.clone()).unwrap_or_default();
-            if let Err(e) = inject_text(&transcript, &inj_cfg) {
-                delivered = false;
-                let msg = format!("Injection failed: {e}");
-                crate::error_surface::emit_float_error(app, &msg);
-            }
-            raw_e2e_done = delivered;
-        }
-        if delivered {
-            if mode_has_llm && !transcript.is_empty() {
-                // Pipeline isn't done: the transcript still goes to the LLM.
-                // Keep the pill in "Processing" and let the LLM caller emit the
-                // final float:stop — emitting float:stop here would flash a
-                // premature green "Done" before the LLM step even runs.
-                let _ = app.emit("float:processing", ());
-            } else {
-                let _ = app.emit("float:stop", &transcript);
-            }
-        }
-    } else {
-        eprintln!("fonos: {dictation_mode} mode — skipping float:stop and inject");
-    }
-
-    // Record STT event to stats DB (legacy)
     let stats_model = if stt.provider == "apple" {
         format!("Apple Speech ({})", if stt_engine.is_empty() { "server" } else { &stt_engine })
     } else {
         model_name.clone()
     };
-    if !transcript.is_empty() {
-        if let Ok(db) = state.db.lock() {
-            let _ = fonos_core::stats::record_event(
-                &db, "stt", &transcript, "", recording_duration,
-                latency_ms as i64, &dictation_mode, &stats_model, "", &audio_path_str,
-                0, 0, "",
-            );
 
-            // End-to-end latency (key release → injected) for raw dictations.
-            if raw_e2e_done {
-                let _ = fonos_core::stats::record_dictation_latency(
-                    &db, stop_time.elapsed().as_millis() as i64, &dictation_mode, &stats_model,
-                );
-            }
-
-            // Write to v2 unified entries table — all activity is recorded.
-            // Recent view shows everything; Notes view filters to note-only.
-            let source = match dictation_mode.as_str() {
-                "agent" | "sts-page" => fonos_core::storage::SourceType::Agent,
-                "note" => fonos_core::storage::SourceType::Note,
-                _ => fonos_core::storage::SourceType::Dictation,
-            };
-            let entry = fonos_core::storage::Entry {
-                id: None,
-                created_at: crate::commands::storage::now_iso8601(),
-                source_type: source,
-                role: fonos_core::storage::EntryRole::User,
-                mode: dictation_mode.clone(),
-                raw_text: transcript.clone(),
-                processed_text: None,
-                container_id: if dictation_mode == "note" {
-                    // Use the notebook selected in the note panel (stored in AppState).
-                    // If no target set (race condition on first open), fall back to Quick Note.
-                    let target = state.note_target.lock().ok().and_then(|g| *g);
-                    if target.is_some() {
-                        target
-                    } else {
-                        // Find Quick Note container as fallback
-                        db.query_row(
-                            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
-                            [], |r| r.get::<_, i64>(0)
-                        ).ok()
-                    }
-                } else {
-                    None
-                },
-                audio_ref: if dictation_mode == "note" { None } else { Some(audio_path_str.clone()) },
-                metadata: serde_json::json!({
-                    "duration_secs": recording_duration,
-                    "latency_ms": latency_ms,
-                }),
-            };
-            if let Err(e) = fonos_core::storage::insert_entry(&db, &entry) {
-                eprintln!("fonos: entry write error: {e}");
-            }
-        }
-    }
-
-    Ok(SttResult {
-        text: transcript,
-        audio_path: audio_path_str,
-        latency_ms,
-        duration_secs: recording_duration,
+    Ok(SttCore {
+        transcript,
         stt_engine,
-        stt_model: stats_model,
-        noise_removed_pct: preprocess_metrics.0,
-        gain_db: preprocess_metrics.1,
+        audio_path: audio_path_str,
+        stats_model,
+        dictation_mode,
+        mode_has_llm,
+        recording_duration,
+        preprocess_metrics,
     })
+}
+
+/// STT-only transcription for the call-mode barge content verifier: preprocess +
+/// transcribe and return just the transcript. No vocab pass (speed), and no
+/// stats, storage, float-pill, or injection side effects. Uses the same STT
+/// profile the call's listen phase uses (mode "sts-page" → global default), so
+/// the snippet is transcribed exactly as a normal listen would transcribe it.
+pub(crate) async fn transcribe_stt_only(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    all_samples: Vec<i16>,
+) -> Result<String, String> {
+    if all_samples.is_empty() {
+        return Ok(String::new());
+    }
+    let core = transcribe_core(app, state, all_samples, Some("sts-page".to_string()), false).await?;
+    Ok(core.transcript)
 }
 
 /// Transcribe an audio file via POST /v1/audio/transcriptions.

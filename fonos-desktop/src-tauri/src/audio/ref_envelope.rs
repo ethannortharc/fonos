@@ -18,6 +18,11 @@ const REF_BLOCK_MS: u32 = 100;
 /// position — wide enough to stay conservative against position error (rodio
 /// sink drift; pipe + AVAudioEngine scheduling latency on the helper path).
 const REF_WINDOW_MS: u64 = 400;
+/// Capacity of the fine-grained raw-PCM ring (16 kHz mono i16), ~4 s = 128 KB —
+/// the source the call-mode echo verifier cross-correlates against the mic. The
+/// 100 ms block-RMS timeline above is too coarse for the 10 ms envelope that
+/// needs.
+const RAW_RING_CAPACITY: usize = 4 * 16_000;
 
 /// Per-100ms RMS timeline of the audio pushed into the current playback queue.
 ///
@@ -33,6 +38,16 @@ pub(crate) struct RefEnvelope {
     /// Wall-clock instant the current queue began playing (first append after
     /// the queue was empty). `None` when idle.
     queue_start: Option<Instant>,
+    /// Rolling raw 16 kHz mono i16 PCM of recent playback (capacity
+    /// [`RAW_RING_CAPACITY`]), newest at the back — the fine-grained source the
+    /// call-mode echo verifier correlates against the mic.
+    raw: VecDeque<i16>,
+    /// Total 16 kHz-mono samples ever pushed into `raw` (monotonic within a
+    /// timeline; reset by [`reset`](Self::reset)). Lets [`recent_reference`] map
+    /// a wall-clock playback position onto ring indices even after eviction.
+    ///
+    /// [`recent_reference`]: Self::recent_reference
+    raw_total: u64,
 }
 
 impl RefEnvelope {
@@ -41,6 +56,8 @@ impl RefEnvelope {
         self.blocks.clear();
         self.total_ms = 0;
         self.queue_start = None;
+        self.raw.clear();
+        self.raw_total = 0;
     }
 
     /// Start a fresh timeline anchored at *now* — call when appending onto an
@@ -68,6 +85,52 @@ impl RefEnvelope {
             self.blocks.push_back((rms, block_ms));
             self.total_ms += block_ms as u64;
         }
+        // Also keep the fine-grained raw ring at a fixed 16 kHz mono, downmixing
+        // and resampling as needed so callers get one consistent rate.
+        for s in to_mono_16k(samples, sample_rate, channels) {
+            if self.raw.len() >= RAW_RING_CAPACITY {
+                self.raw.pop_front();
+            }
+            self.raw.push_back(s);
+            self.raw_total += 1;
+        }
+    }
+
+    /// The most recent `duration_ms` of reference PCM (16 kHz mono), ending at
+    /// the current estimated playback position — the window aligned with a mic
+    /// snippet ending "now", for the call-mode echo cross-correlation.
+    ///
+    /// Position is the wall-clock elapsed since the queue started (clamped to the
+    /// total queued duration), the same clock [`reference_rms`](Self::reference_rms)
+    /// uses. Because both mic and reference end at that same wall-clock instant,
+    /// the acoustic + pipeline delay falls out as a small positive lag the
+    /// caller's cross-correlation recovers. Returns `Vec::new()` when idle, or
+    /// when the requested window predates what the ring still holds (the caller
+    /// then defers to the ASR check).
+    pub(crate) fn recent_reference(&self, duration_ms: u64) -> Vec<i16> {
+        if self.raw.is_empty() {
+            return Vec::new();
+        }
+        let Some(start) = self.queue_start else {
+            return Vec::new();
+        };
+        let pos_ms = (start.elapsed().as_millis() as u64).min(self.total_ms);
+        let ring_len = self.raw.len() as i64;
+        // Timeline sample index of the oldest sample still in the ring.
+        let oldest = self.raw_total as i64 - ring_len;
+        let pos_samp = (pos_ms * 16) as i64; // 16 samples/ms @ 16 kHz
+        let dur_samp = (duration_ms * 16) as i64;
+        let end = (pos_samp - oldest).clamp(0, ring_len);
+        let begin = (pos_samp - dur_samp - oldest).clamp(0, ring_len);
+        if end <= begin {
+            return Vec::new();
+        }
+        self.raw
+            .iter()
+            .skip(begin as usize)
+            .take((end - begin) as usize)
+            .copied()
+            .collect()
     }
 
     /// Max block RMS within ±[`REF_WINDOW_MS`] of `pos_ms` along the timeline.
@@ -108,6 +171,28 @@ impl RefEnvelope {
     }
 }
 
+/// Downmix interleaved multi-channel audio to mono and resample to 16 kHz — the
+/// fixed rate of the raw reference ring, so [`RefEnvelope::recent_reference`]
+/// always returns 16 kHz mono regardless of the TTS server's native format.
+fn to_mono_16k(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<i16> {
+    if samples.is_empty() || sample_rate == 0 || channels == 0 {
+        return Vec::new();
+    }
+    let mono: Vec<i16> = if channels > 1 {
+        samples
+            .chunks(channels as usize)
+            .map(|f| (f.iter().map(|&s| s as i32).sum::<i32>() / f.len() as i32) as i16)
+            .collect()
+    } else {
+        samples.to_vec()
+    };
+    if sample_rate == 16_000 {
+        mono
+    } else {
+        fonos_core::audio::resample_i16(&mono, sample_rate, 16_000)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +229,25 @@ mod tests {
         env.push_samples(&sig, 16_000, 1);
         let r = env.reference_rms();
         assert!((3500.0..4100.0).contains(&r), "window peak ~4000, got {r}");
+    }
+
+    /// `recent_reference` returns the raw window ending at the current playback
+    /// position, spanning back the requested duration.
+    #[test]
+    fn recent_reference_extracts_window_at_playback_position() {
+        let mut env = RefEnvelope::default();
+        env.begin();
+        // 2 s of 16 kHz mono audio.
+        env.push_samples(&tone(2_000, 16_000, 500), 16_000, 1);
+        // Idle (no timeline) → empty regardless of duration asked.
+        assert!(RefEnvelope::default().recent_reference(200).is_empty(), "idle → empty");
+        // Let the playback clock advance, then read a 200 ms window.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let w = env.recent_reference(200);
+        assert!(!w.is_empty(), "mid-playback window should be populated");
+        // ~200 ms at 16 kHz ≈ 3200 samples; bound generously against jitter.
+        assert!(w.len() <= 200 * 16 + 64, "bounded to requested span, got {}", w.len());
+        assert!(w.len() >= 100 * 16, "roughly the requested span, got {}", w.len());
     }
 
     /// `reset` returns the envelope to idle/zero; `begin` re-anchors it.

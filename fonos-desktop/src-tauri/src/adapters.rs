@@ -45,7 +45,7 @@ impl TextSink for InjectionTextSink {
 }
 
 use fonos_core::sts::{AudioOut, TurnEvent, TurnSink};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Bridges STS turn events to renderers: always mirrors them onto the main
 /// window as `sts:event` (the Conversation page subscribes), and — for
@@ -53,14 +53,24 @@ use std::sync::Mutex;
 pub struct TurnEventBridge {
     app: tauri::AppHandle,
     pill: bool,
-    reply: Mutex<String>,
+    /// The reply text of the turn in flight, updated on [`TurnEvent::Reply`].
+    /// Shared so the call loop's barge monitor can read what is being spoken
+    /// right now (the content the echo verifier compares a snippet against).
+    reply: Arc<Mutex<String>>,
 }
 
 impl TurnEventBridge {
     /// `pill: true` for hotkey turns (pill shows progress); `false` for turns
     /// started from the in-app Conversation page.
     pub fn new(app: tauri::AppHandle, pill: bool) -> Self {
-        Self { app, pill, reply: Mutex::new(String::new()) }
+        Self { app, pill, reply: Arc::new(Mutex::new(String::new())) }
+    }
+
+    /// A shared handle to the live reply text (updated on each
+    /// [`TurnEvent::Reply`]). Call mode reads this in its barge monitor to
+    /// compare a suspected-barge snippet against what the assistant is saying.
+    pub fn reply_handle(&self) -> Arc<Mutex<String>> {
+        Arc::clone(&self.reply)
     }
 
     fn page(&self, kind: &str, text: &str) {

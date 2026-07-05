@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink};
 
+use crate::audio::ref_envelope::RefEnvelope;
+
 /// Represents the current state of audio playback.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaybackState {
@@ -46,6 +48,11 @@ impl std::error::Error for PlaybackError {}
 pub struct AudioPlayback {
     state: Arc<Mutex<PlaybackState>>,
     inner: Arc<Mutex<PlaybackInner>>,
+    /// Live loudness timeline of the audio we have pushed, used by the call
+    /// loop's barge detector as its playback reference (see [`reference_rms`]).
+    ///
+    /// [`reference_rms`]: AudioPlayback::reference_rms
+    ref_env: Arc<Mutex<RefEnvelope>>,
 }
 
 /// Holds the rodio resources that must stay alive while audio is playing.
@@ -79,6 +86,7 @@ impl AudioPlayback {
                 _stream_handle: stream_handle,
                 sink,
             })),
+            ref_env: Arc::new(Mutex::new(RefEnvelope::default())),
         })
     }
 
@@ -95,6 +103,11 @@ impl AudioPlayback {
         inner.sink.stop();
         inner.sink.append(source);
         inner.sink.play();
+        drop(inner);
+        // `play_wav` is the non-streaming path (not the barge-monitored call
+        // loop); we don't track its envelope, but clear any stale timeline so a
+        // reference query can't read leftover blocks from a prior stream.
+        self.ref_env.lock().unwrap().reset();
 
         let mut state = self.state.lock().unwrap();
         *state = PlaybackState::Playing;
@@ -128,6 +141,8 @@ impl AudioPlayback {
     pub fn stop(&self) {
         let inner = self.inner.lock().unwrap();
         inner.sink.stop();
+        drop(inner);
+        self.ref_env.lock().unwrap().reset();
 
         let mut state = self.state.lock().unwrap();
         *state = PlaybackState::Stopped;
@@ -146,10 +161,22 @@ impl AudioPlayback {
             .chunks_exact(2)
             .map(|b| i16::from_le_bytes([b[0], b[1]]))
             .collect();
-        let source = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
+        // Record the loudness of this chunk on the reference timeline before the
+        // samples are moved into the sink buffer.
         let inner = self.inner.lock().unwrap();
+        let was_empty = inner.sink.empty();
+        {
+            let mut env = self.ref_env.lock().unwrap();
+            // A fresh append onto an empty queue starts a new playback timeline.
+            if was_empty {
+                env.begin();
+            }
+            env.push_samples(&samples, sample_rate, channels);
+        }
+        let source = rodio::buffer::SamplesBuffer::new(channels, sample_rate, samples);
         inner.sink.append(source);
         inner.sink.play();
+        drop(inner);
         let mut state = self.state.lock().unwrap();
         *state = PlaybackState::Playing;
         Ok(())
@@ -158,6 +185,42 @@ impl AudioPlayback {
     /// Whether the playback queue has drained.
     pub fn queue_empty(&self) -> bool {
         self.inner.lock().unwrap().sink.empty()
+    }
+
+    /// Current playback loudness (i16 RMS units), for the call loop's barge
+    /// detector to gate the mic against.
+    ///
+    /// Because we push every PCM chunk ourselves, we know the output's loudness
+    /// on a timeline. We estimate the current playback position as the
+    /// wall-clock time elapsed since the queue started (clamped to the total
+    /// queued duration) and return the MAX block RMS within a ±400 ms window
+    /// around it — conservative against position drift, so a momentary
+    /// estimation error can never make the reference read *quieter* than the
+    /// audio actually reaching the speaker. Returns `0.0` when the queue is
+    /// empty or idle (the detector then falls back to its absolute floor).
+    pub fn reference_rms(&self) -> f32 {
+        // Check emptiness without holding the sink lock across the env lock.
+        let empty = self.inner.lock().unwrap().sink.empty();
+        let mut env = self.ref_env.lock().unwrap();
+        if empty {
+            // Queue drained: drop the stale timeline and report silence.
+            env.reset();
+            return 0.0;
+        }
+        // The queue is still playing; the envelope's own position query returns
+        // 0 if it happens to hold no anchored blocks.
+        env.reference_rms()
+    }
+
+    /// The most recent `duration_ms` of reference PCM (16 kHz mono) aligned with
+    /// the current playback position — the window the call-mode echo verifier
+    /// cross-correlates against the mic snippet. `Vec::new()` when the queue has
+    /// drained or the window predates the ring (the caller defers to ASR).
+    pub fn recent_reference(&self, duration_ms: u64) -> Vec<i16> {
+        if self.inner.lock().unwrap().sink.empty() {
+            return Vec::new();
+        }
+        self.ref_env.lock().unwrap().recent_reference(duration_ms)
     }
 }
 

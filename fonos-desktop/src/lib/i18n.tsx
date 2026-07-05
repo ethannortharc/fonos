@@ -134,6 +134,10 @@ const en = {
   "conv.call.hint": "Click to start a call · hold to talk once",
   "conv.call.hangup": "Hang up",
   "conv.call.timeout": "Call ended — no speech for a while",
+  "conv.call.aec": "AEC",
+  "conv.call.noaec": "no AEC",
+  "conv.call.aec.title": "Echo cancellation is active — the mic stays open while the assistant speaks",
+  "conv.call.noaec.title": "No echo cancellation — barge-in falls back to envelope gating and may be less reliable",
 
   // history
   "history.search": "Search everything…",
@@ -888,6 +892,10 @@ const zh: Partial<Record<Key, string>> = {
   "conv.call.hint": "点按开始通话 · 按住可说一句",
   "conv.call.hangup": "挂断",
   "conv.call.timeout": "通话已结束 — 一段时间没有说话",
+  "conv.call.aec": "回声消除",
+  "conv.call.noaec": "无回声消除",
+  "conv.call.aec.title": "回声消除已启用 — 助手说话时麦克风保持开启",
+  "conv.call.noaec.title": "无回声消除 — 打断功能改用包络门控,可能不太可靠",
 
   "history.search": "搜索全部内容…",
   "history.filter.all": "全部",

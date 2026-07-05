@@ -2,6 +2,7 @@
 # Compile the Apple helper tools.
 # Outputs: ../resources/fonos-stt-apple
 #          ../resources/fonos-audio-capture
+#          ../resources/fonos-voice-capture
 set -e
 cd "$(dirname "$0")"
 
@@ -15,3 +16,8 @@ swiftc -O -o ../resources/fonos-audio-capture system_audio_capture.swift \
     -framework ScreenCaptureKit -framework AVFoundation \
     -framework CoreMedia -framework Foundation
 echo "Built: $(ls -lh ../resources/fonos-audio-capture | awk '{print $5}')"
+
+echo "Building fonos-voice-capture..."
+swiftc -O -o ../resources/fonos-voice-capture voice_capture.swift \
+    -framework AVFoundation -framework Foundation
+echo "Built: $(ls -lh ../resources/fonos-voice-capture | awk '{print $5}')"

@@ -140,7 +140,12 @@ pub async fn run_text_action(handle: tauri::AppHandle, binding: TextActionBindin
         let state: tauri::State<'_, AppState> = handle.state();
         let db = match state.db.lock() {
             Ok(d) => d,
-            Err(e) => { eprintln!("fonos: text action — db lock: {e}"); return; }
+            Err(e) => {
+                // deliver_error already logs the raw cause (popup: eprintln,
+                // other targets: emit_float_error) — don't double-log here.
+                deliver_error(&handle, &target, &format!("history db unavailable: {e}"));
+                return;
+            }
         };
         let container_id = if target == OutputTarget::AppendToContainer {
             ensure_text_actions_notebook(&db).ok()
@@ -164,10 +169,25 @@ pub async fn run_text_action(handle: tauri::AppHandle, binding: TextActionBindin
                 "model": svc.model,
             }),
         };
-        fonos_core::storage::insert_entry(&db, &entry).unwrap_or_else(|e| {
-            eprintln!("fonos: text action — insert entry: {e}");
-            0
-        })
+        match fonos_core::storage::insert_entry(&db, &entry) {
+            Ok(id) => id,
+            Err(e) => {
+                // For AppendToContainer the DB insert *is* the delivery — a
+                // silent eprintln would lose the result with no feedback.
+                // Other targets already delivered (or are about to, below),
+                // so keep the quiet fallback; the Save button guards
+                // entry_id <= 0.
+                if target == OutputTarget::AppendToContainer {
+                    crate::error_surface::emit_float_error(
+                        &handle,
+                        &format!("could not save to notebook: {e}"),
+                    );
+                } else {
+                    eprintln!("fonos: text action — insert entry: {e}");
+                }
+                0
+            }
+        }
     };
 
     // 6. Deliver.

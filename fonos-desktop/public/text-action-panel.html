@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+/* clip-path masks webview background bleed at the rounded corners (see agent-panel.html) */
+html{background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none;
+  -webkit-clip-path:inset(0 round 16px);clip-path:inset(0 round 16px)}
+body{background:transparent;overflow:hidden}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-8px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+::-webkit-scrollbar{width:0}
+
+#drop{width:100%;height:100vh;background:rgba(28,27,24,0.92);
+  -webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);
+  border-radius:16px;border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  display:flex;flex-direction:column;overflow:hidden;
+  animation:dropIn .18s cubic-bezier(.23,1,.32,1);
+  font-family:-apple-system,system-ui,sans-serif}
+
+#hdr{display:flex;padding:8px 12px 6px;border-bottom:1px solid rgba(255,255,255,.04);
+  align-items:center;justify-content:space-between;flex-shrink:0}
+#hM{font-size:11px;color:rgba(255,255,255,.4);font-weight:500;display:flex;align-items:center;gap:5px}
+#hX{font-size:10px;color:rgba(255,255,255,.15);background:0;border:0;cursor:pointer;padding:2px 4px;font-family:inherit}
+#hX:hover{color:rgba(255,255,255,.4)}
+
+#sel{padding:6px 12px 0;font-size:9px;color:rgba(255,255,255,.22);line-height:1.4;flex-shrink:0;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+#bd{flex:1;overflow-y:auto;padding:8px 12px;min-height:0}
+#tk{display:none;gap:5px;padding:6px 0}
+#tk.on{display:inline-flex}
+.td{width:4px;height:4px;border-radius:50%;background:#fbbf24;animation:pulse 1.2s ease-in-out infinite}
+#rs{display:none;font-size:11.5px;line-height:1.55;color:#fafaf9;white-space:pre-wrap;
+  -webkit-user-select:text;user-select:text}
+#rs.on{display:block}
+#er{display:none;font-size:10px;color:rgba(239,68,68,.8);white-space:pre-wrap}
+#er.on{display:block}
+#hint{display:none;font-size:10px;color:rgba(255,255,255,.3);text-align:center;padding:8px 0}
+#hint.on{display:block}
+
+#ft{display:none;gap:6px;padding:8px 12px;border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+#ft.on{display:flex}
+#ft button{font-size:9px;padding:4px 12px;border-radius:8px;border:1px solid;cursor:pointer;
+  font-family:inherit;transition:all .1s}
+.bA{color:#fbbf24;background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.12)}
+.bA:hover{background:rgba(245,158,11,.15)}
+.bN{color:rgba(255,255,255,.3);background:rgba(255,255,255,.02);border-color:rgba(255,255,255,.05)}
+.bN:hover{color:rgba(255,255,255,.55)}
+#ft button:disabled{opacity:.25;cursor:default}
+</style>
+</head>
+<body>
+<div id="drop">
+  <div id="hdr">
+    <span id="hM"><span id="hI"></span><span id="hN"></span></span>
+    <button id="hX" onclick="hide()">&#10005;</button>
+  </div>
+  <div id="sel"></div>
+  <div id="bd">
+    <div id="tk"><div class="td"></div><div class="td" style="animation-delay:.15s"></div><div class="td" style="animation-delay:.3s"></div></div>
+    <div id="rs"></div>
+    <div id="er"></div>
+    <div id="hint"></div>
+  </div>
+  <div id="ft">
+    <button class="bA" id="bCopy" onclick="doCopy()">Copy</button>
+    <button class="bA" id="bIns" onclick="doInsert()">Insert</button>
+    <button class="bN" id="bSave" onclick="doSave()">Save to notebook</button>
+  </div>
+</div>
+<script>
+var R={text:'',entryId:0,app:'',editable:false},hideTimer=null;
+var tk=document.getElementById('tk'),rs=document.getElementById('rs'),
+    er=document.getElementById('er'),hint=document.getElementById('hint'),
+    ft=document.getElementById('ft'),sel=document.getElementById('sel'),
+    hI=document.getElementById('hI'),hN=document.getElementById('hN'),
+    bCopy=document.getElementById('bCopy'),bIns=document.getElementById('bIns'),
+    bSave=document.getElementById('bSave');
+
+function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
+function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
+
+function reset(){
+  if(hideTimer){clearTimeout(hideTimer);hideTimer=null}
+  tk.classList.remove('on');rs.classList.remove('on');er.classList.remove('on');
+  hint.classList.remove('on');ft.classList.remove('on');
+  rs.textContent='';er.textContent='';hint.textContent='';sel.textContent='';sel.style.display='';
+  bCopy.textContent='Copy';bSave.textContent='Save to notebook';bSave.disabled=false;
+}
+function hide(){iv('hide_text_action_panel')}
+
+/* ── Entry points called from Rust via panel.eval() ─────────────────────── */
+function recvStart(icon,name,selText){
+  reset();
+  hI.textContent=icon;hN.textContent=name;sel.textContent=selText;
+  tk.classList.add('on');
+}
+function recvResult(text,entryId,app,editable){
+  R={text:text,entryId:entryId,app:app,editable:!!editable};
+  tk.classList.remove('on');
+  rs.textContent=text;rs.classList.add('on');
+  ft.classList.add('on');
+  bIns.disabled=!R.editable;
+}
+function recvError(msg){
+  tk.classList.remove('on');
+  er.textContent=msg;er.classList.add('on');
+}
+function recvHint(msg){
+  reset();sel.style.display='none';
+  hint.textContent=msg;hint.classList.add('on');
+  hideTimer=setTimeout(hide,1500);
+}
+
+/* ── Footer buttons ──────────────────────────────────────────────────────── */
+function doCopy(){iv('text_action_copy',{text:R.text}).then(function(){bCopy.textContent='Copied ✓'})}
+function doInsert(){iv('text_action_insert',{text:R.text,target_app:R.app})}
+function doSave(){iv('text_action_save_notebook',{entry_id:R.entryId}).then(function(){bSave.textContent='Saved ✓';bSave.disabled=true})}
+
+/* ── Dismissal: Esc or click-outside (window blur) ───────────────────────── */
+window.addEventListener('keydown',function(e){if(e.key==='Escape')hide()});
+window.addEventListener('blur',function(){hide()});
+</script>
+</body>
+</html>

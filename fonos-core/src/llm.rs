@@ -124,6 +124,31 @@ pub async fn process_text(
     }
 }
 
+/// Build chat messages for applying `mode` to `text`.
+///
+/// Substitutes `{text}` and `{target_lang}` in the mode's user template
+/// (empty `translate_target` falls back to "English") and prepends the
+/// mode's system prompt when present.
+pub fn build_mode_messages(
+    mode: &crate::modes::Mode,
+    text: &str,
+    translate_target: &str,
+) -> Vec<serde_json::Value> {
+    let user_template = mode.user_template.as_deref().unwrap_or("{text}");
+    let mut user_text = user_template.replace("{text}", text);
+    if user_text.contains("{target_lang}") {
+        let target = if translate_target.is_empty() { "English" } else { translate_target };
+        user_text = user_text.replace("{target_lang}", target);
+    }
+
+    let mut messages = Vec::new();
+    if let Some(ref sys) = mode.system {
+        messages.push(serde_json::json!({"role": "system", "content": sys}));
+    }
+    messages.push(serde_json::json!({"role": "user", "content": user_text}));
+    messages
+}
+
 // ─── API callers ─────────────────────────────────────────────────────────────
 
 /// Call an OpenAI-compatible chat completions endpoint.
@@ -397,5 +422,33 @@ mod tests {
         };
         assert_eq!(s.provider, "openai");
         assert_eq!(s.model, "gpt-4o");
+    }
+
+    #[test]
+    fn build_mode_messages_substitutes_text_and_target_lang() {
+        let mode = crate::modes::Mode {
+            system: Some("sys".into()),
+            user_template: Some("Translate to {target_lang}: {text}".into()),
+            ..Default::default()
+        };
+        let msgs = build_mode_messages(&mode, "hello", "Chinese");
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[1]["content"], "Translate to Chinese: hello");
+    }
+
+    #[test]
+    fn build_mode_messages_defaults_target_lang_and_template() {
+        let mode = crate::modes::Mode {
+            user_template: Some("To {target_lang}: {text}".into()),
+            ..Default::default()
+        };
+        let msgs = build_mode_messages(&mode, "hi", "");
+        assert_eq!(msgs.len(), 1); // no system prompt
+        assert_eq!(msgs[0]["content"], "To English: hi");
+
+        let bare = crate::modes::Mode::default(); // no user_template → raw {text}
+        let msgs2 = build_mode_messages(&bare, "raw text", "");
+        assert_eq!(msgs2[0]["content"], "raw text");
     }
 }

@@ -25,6 +25,8 @@ pub enum SourceType {
     Meeting,
     /// Listen-queue item: captured text summarized and synthesized to audio.
     Listen,
+    /// Text-action result: selection grabbed via hotkey, processed by a mode's LLM step.
+    Transform,
 }
 
 impl SourceType {
@@ -35,6 +37,7 @@ impl SourceType {
             SourceType::Note => "note",
             SourceType::Meeting => "meeting",
             SourceType::Listen => "listen",
+            SourceType::Transform => "transform",
         }
     }
 
@@ -44,6 +47,7 @@ impl SourceType {
             "note" => SourceType::Note,
             "meeting" => SourceType::Meeting,
             "listen" => SourceType::Listen,
+            "transform" => SourceType::Transform,
             _ => SourceType::Dictation,
         }
     }
@@ -998,5 +1002,11 @@ mod tests {
             get_entry(&conn, id).unwrap().processed_text.as_deref(),
             Some("corrected only")
         );
+    }
+
+    #[test]
+    fn source_type_transform_roundtrip() {
+        assert_eq!(SourceType::Transform.as_str(), "transform");
+        assert!(matches!(SourceType::from_str("transform"), SourceType::Transform));
     }
 }

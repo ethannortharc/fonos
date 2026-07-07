@@ -18,6 +18,9 @@ pub enum OutputTarget {
     ActiveTextField,
     /// Append result as a new Entry in a Container (notebook/conversation).
     AppendToContainer,
+    /// Show result in a floating popup panel near the mouse cursor.
+    /// Core only declares the intent — rendering is a desktop adapter concern.
+    FloatingPopup,
     /// Discard output — entry is saved to DB but not sent anywhere.
     None,
 }
@@ -291,4 +294,17 @@ fn custom_modes_path() -> PathBuf {
         .expect("could not resolve data directory")
         .join("com.fonos.app")
         .join("modes.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_target_floating_popup_serde_roundtrip() {
+        let json = serde_json::to_string(&OutputTarget::FloatingPopup).unwrap();
+        assert_eq!(json, "\"floating_popup\"");
+        let back: OutputTarget = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, OutputTarget::FloatingPopup);
+    }
 }

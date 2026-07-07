@@ -5,10 +5,22 @@
 //! history (SourceType::Transform); the popup's Save button links the entry
 //! to the "Text Actions" notebook.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use fonos_core::config::TextActionBinding;
 use fonos_core::modes::OutputTarget;
 
 use super::AppState;
+
+/// True while a text action is running. Re-entrant hotkey presses are dropped
+/// so overlapping runs can't interleave grab_selection's clipboard
+/// save/clear/restore sequence or the panel state machine.
+static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+struct InFlightGuard;
+impl Drop for InFlightGuard {
+    fn drop(&mut self) { IN_FLIGHT.store(false, Ordering::SeqCst); }
+}
 
 /// Run JS in the text-action panel webview (mirrors `agent_js` in main.rs).
 /// Strings passed to recvXxx() are pre-escaped by callers via serde_json.
@@ -63,6 +75,12 @@ fn deliver_error(handle: &tauri::AppHandle, target: &OutputTarget, raw: &str) {
 pub async fn run_text_action(handle: tauri::AppHandle, binding: TextActionBinding) {
     use tauri::Manager;
 
+    if IN_FLIGHT.swap(true, Ordering::SeqCst) {
+        eprintln!("fonos: text action already running — ignoring re-entrant trigger");
+        return;
+    }
+    let _guard = InFlightGuard;
+
     // 1. Grab the selection while the source app still has focus.
     let sel = match super::selection::grab_selection().await {
         Ok(s) if !s.text.is_empty() => s,
@@ -78,11 +96,15 @@ pub async fn run_text_action(handle: tauri::AppHandle, binding: TextActionBindin
     let all_modes = fonos_core::modes::all_modes();
     let Some(mode_def) = all_modes.get(&binding.mode_id).cloned() else {
         eprintln!("fonos: text action — mode '{}' not found", binding.mode_id);
+        show_panel_at_cursor(&handle).await;
+        let m_j = serde_json::to_string(&format!("Mode '{}' not found", binding.mode_id)).unwrap_or_default();
+        panel_js(&handle, &format!("recvHint({m_j})"));
         return;
     };
 
     // ActiveTextField can't paste into a read-only selection (PDF, web page
-    // body) — fall back to the popup so the result isn't lost.
+    // body) — fall back to the popup so the result isn't lost. (inactive
+    // until grab_selection reports real editability — spec §12.5)
     let target = match binding.output_target {
         OutputTarget::ActiveTextField if !sel.editable => OutputTarget::FloatingPopup,
         ref t => t.clone(),

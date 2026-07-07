@@ -81,7 +81,7 @@ var tk=document.getElementById('tk'),rs=document.getElementById('rs'),
     bSave=document.getElementById('bSave');
 
 function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
-function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
+function iv(c,a){var t=$t();return t?t.invoke(c,a||{}):Promise.reject(new Error('no tauri'))}
 
 function reset(){
   if(hideTimer){clearTimeout(hideTimer);hideTimer=null}
@@ -90,7 +90,7 @@ function reset(){
   rs.textContent='';er.textContent='';hint.textContent='';sel.textContent='';sel.style.display='';
   bCopy.textContent='Copy';bSave.textContent='Save to notebook';bSave.disabled=false;
 }
-function hide(){iv('hide_text_action_panel')}
+function hide(){iv('hide_text_action_panel').catch(function(e){console.error(e)})}
 
 /* ── Entry points called from Rust via panel.eval() ─────────────────────── */
 function recvStart(icon,name,selText){
@@ -99,6 +99,8 @@ function recvStart(icon,name,selText){
   tk.classList.add('on');
 }
 function recvResult(text,entryId,app,editable){
+  if(hideTimer){clearTimeout(hideTimer);hideTimer=null}
+  hint.classList.remove('on');
   R={text:text,entryId:entryId,app:app,editable:!!editable};
   tk.classList.remove('on');
   rs.textContent=text;rs.classList.add('on');
@@ -106,6 +108,8 @@ function recvResult(text,entryId,app,editable){
   bIns.disabled=!R.editable;
 }
 function recvError(msg){
+  if(hideTimer){clearTimeout(hideTimer);hideTimer=null}
+  hint.classList.remove('on');
   tk.classList.remove('on');
   er.textContent=msg;er.classList.add('on');
 }
@@ -116,9 +120,9 @@ function recvHint(msg){
 }
 
 /* ── Footer buttons ──────────────────────────────────────────────────────── */
-function doCopy(){iv('text_action_copy',{text:R.text}).then(function(){bCopy.textContent='Copied ✓'})}
-function doInsert(){iv('text_action_insert',{text:R.text,target_app:R.app})}
-function doSave(){iv('text_action_save_notebook',{entry_id:R.entryId}).then(function(){bSave.textContent='Saved ✓';bSave.disabled=true})}
+function doCopy(){iv('text_action_copy',{text:R.text}).then(function(){bCopy.textContent='Copied ✓'}).catch(function(e){console.error(e);bCopy.textContent='Copy failed'})}
+function doInsert(){iv('text_action_insert',{text:R.text,target_app:R.app}).catch(function(e){console.error(e)})}
+function doSave(){iv('text_action_save_notebook',{entry_id:R.entryId}).then(function(){bSave.textContent='Saved ✓';bSave.disabled=true}).catch(function(e){console.error(e);bSave.textContent='Save failed'})}
 
 /* ── Dismissal: Esc or click-outside (window blur) ───────────────────────── */
 window.addEventListener('keydown',function(e){if(e.key==='Escape')hide()});

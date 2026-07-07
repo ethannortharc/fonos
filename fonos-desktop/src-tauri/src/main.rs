@@ -185,7 +185,9 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     try_add(&config.hotkey_agent_panel, "agent-panel");
     try_add(&config.hotkey_note, "note");
     try_add(&config.hotkey_meeting, "meeting");
-    try_add(&config.hotkey_transform, "transform");
+    for (i, b) in config.text_actions.iter().enumerate() {
+        try_add(&b.hotkey, &format!("text-action-{i}"));
+    }
     try_add(&config.hotkey_listen, "listen");
     try_add(&config.hotkey_sts, "sts");
     if config.notebook_hotkey_1 > 0 { try_add(&config.hotkey_note_1, "note-1"); }
@@ -195,7 +197,15 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
 }
 
 fn main() {
-    let config = AppConfig::load();
+    let mut config = AppConfig::load();
+    // One-time migration: legacy quick-transform hotkey → text_actions binding.
+    if fonos_core::config::migrate_transform_to_text_actions(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated quick-transform hotkey to text_actions"),
+            Err(e) => eprintln!("fonos: config migration save failed: {e}"),
+        }
+    }
+    let config = config;
 
     // Initialize SQLite database for stats & history
     let db_path = fonos_core::stats::db_path();
@@ -472,101 +482,21 @@ fn main() {
             #[cfg(target_os = "macos")]
             {
             let state = app.state::<AppState>();
-            let (dictation_combo, dictation_toggle_combo,
-                 agent_combo, agent_panel_combo, note_combo, meeting_combo,
-                 transform_combo,
-                    listen_combo,
-                    sts_combo,
-                 note1_combo, note2_combo, note3_combo,
-                 note1_nb, note2_nb, note3_nb) = {
-                let config = state.config.lock().unwrap();
-                (
-                    config.hotkey_dictation.clone(),
-                    config.hotkey_dictation_toggle.clone(),
-                    config.hotkey_agent.clone(),
-                    config.hotkey_agent_panel.clone(),
-                    config.hotkey_note.clone(),
-                    config.hotkey_meeting.clone(),
-                    config.hotkey_transform.clone(),
-                    config.hotkey_listen.clone(),
-                    config.hotkey_sts.clone(),
-                    config.hotkey_note_1.clone(),
-                    config.hotkey_note_2.clone(),
-                    config.hotkey_note_3.clone(),
-                    config.notebook_hotkey_1,
-                    config.notebook_hotkey_2,
-                    config.notebook_hotkey_3,
-                )
-            };
+            // Snapshot the config so registration goes through the same
+            // build_hotkey_configs() path the hotkey:reload listener uses.
+            let cfg = state.config.lock().unwrap().clone();
+            let (note1_nb, note2_nb, note3_nb) =
+                (cfg.notebook_hotkey_1, cfg.notebook_hotkey_2, cfg.notebook_hotkey_3);
 
             let mut hm = hotkey::HotkeyManager::new();
             let mut any_hotkey = false;
-
-            match hotkey::HotkeyManager::parse_hotkey(&dictation_combo, "dictation") {
-                Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                Err(e) => eprintln!("fonos: could not parse dictation hotkey '{}': {}", dictation_combo, e),
+            for hk in build_hotkey_configs(&cfg) {
+                hm.register(hk);
+                any_hotkey = true;
             }
-            if !dictation_toggle_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&dictation_toggle_combo, "dictation-toggle") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse dictation-toggle hotkey '{}': {}", dictation_toggle_combo, e),
-                }
-            }
-            match hotkey::HotkeyManager::parse_hotkey(&agent_combo, "agent") {
-                Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                Err(e) => eprintln!("fonos: could not parse agent hotkey '{}': {}", agent_combo, e),
-            }
-            match hotkey::HotkeyManager::parse_hotkey(&agent_panel_combo, "agent-panel") {
-                Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                Err(e) => eprintln!("fonos: could not parse agent-panel hotkey '{}': {}", agent_panel_combo, e),
-            }
-            match hotkey::HotkeyManager::parse_hotkey(&note_combo, "note") {
-                Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                Err(e) => eprintln!("fonos: could not parse note hotkey '{}': {}", note_combo, e),
-            }
-            match hotkey::HotkeyManager::parse_hotkey(&meeting_combo, "meeting") {
-                Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                Err(e) => eprintln!("fonos: could not parse meeting hotkey '{}': {}", meeting_combo, e),
-            }
-            if !transform_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&transform_combo, "transform") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse transform hotkey '{}': {}", transform_combo, e),
-                }
-            }
-            if !listen_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&listen_combo, "listen") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse listen hotkey '{}': {}", listen_combo, e),
-                }
-            }
-            if !sts_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&sts_combo, "sts") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse sts hotkey '{}': {}", sts_combo, e),
-                }
-            }
-            // Notebook-specific note shortcuts (only if a notebook is bound)
+            // Notebook-specific note shortcuts (only registered if a notebook is bound)
             eprintln!("fonos: note shortcuts: 1='{}' nb={}, 2='{}' nb={}, 3='{}' nb={}",
-                note1_combo, note1_nb, note2_combo, note2_nb, note3_combo, note3_nb);
-            if note1_nb > 0 && !note1_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&note1_combo, "note-1") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse note-1 hotkey '{}': {}", note1_combo, e),
-                }
-            }
-            if note2_nb > 0 && !note2_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&note2_combo, "note-2") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse note-2 hotkey '{}': {}", note2_combo, e),
-                }
-            }
-            if note3_nb > 0 && !note3_combo.is_empty() {
-                match hotkey::HotkeyManager::parse_hotkey(&note3_combo, "note-3") {
-                    Ok(hk) => { hm.register(hk); any_hotkey = true; }
-                    Err(e) => eprintln!("fonos: could not parse note-3 hotkey '{}': {}", note3_combo, e),
-                }
-            }
+                cfg.hotkey_note_1, note1_nb, cfg.hotkey_note_2, note2_nb, cfg.hotkey_note_3, note3_nb);
 
             if any_hotkey {
                 let app_handle = app.handle().clone();
@@ -1241,81 +1171,19 @@ fn main() {
                                 if !is_down { return; }
                                 let _ = commands::listen::run_listen_capture(handle.clone()).await;
                             }
-                            "transform" => {
-                                // Quick transform: grab selection → mode's LLM step → paste back.
-                                // Reuses dictation mode definitions — only applies step 2 (LLM).
+                            l if l.starts_with("text-action-") => {
+                                // Generic text action: selection → mode LLM step → configured target.
                                 if !is_down { return; }
-
-                                // 1. Grab selection while the original app has focus
-                                let sel = match commands::selection::grab_selection().await {
-                                    Ok(s) if !s.text.is_empty() => s,
-                                    _ => {
-                                        eprintln!("fonos: transform — no text selected");
-                                        return;
-                                    }
-                                };
-
-                                eprintln!("fonos: transform — {} chars from {}", sel.text.len(), sel.app_name);
-
-                                // 2. Look up the configured mode and build LLM prompt
-                                let (mode_id, translate_target) = {
+                                let binding = {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let cfg = state.config.lock().unwrap();
-                                    let mid = if cfg.transform_mode.is_empty() { "polish".to_string() } else { cfg.transform_mode.clone() };
-                                    (mid, cfg.translate_target.clone())
+                                    l.strip_prefix("text-action-")
+                                        .and_then(|s| s.parse::<usize>().ok())
+                                        .and_then(|i| cfg.text_actions.get(i).cloned())
                                 };
-
-                                let all_modes = fonos_core::modes::all_modes();
-                                let mode_def = match all_modes.get(&mode_id) {
-                                    Some(m) => m.clone(),
-                                    None => {
-                                        eprintln!("fonos: transform — mode '{}' not found", mode_id);
-                                        return;
-                                    }
-                                };
-
-                                // Build messages using the mode's system prompt + user_template
-                                let user_template = mode_def.user_template.as_deref().unwrap_or("{text}");
-                                let mut user_text = user_template.replace("{text}", &sel.text);
-                                if user_text.contains("{target_lang}") {
-                                    let target = if translate_target.is_empty() { "English" } else { &translate_target };
-                                    user_text = user_text.replace("{target_lang}", target);
-                                }
-
-                                let mut messages = Vec::new();
-                                if let Some(ref sys) = mode_def.system {
-                                    messages.push(serde_json::json!({"role": "system", "content": sys}));
-                                }
-                                messages.push(serde_json::json!({"role": "user", "content": user_text}));
-
-                                // 3. Resolve LLM service — mode override → global default
-                                let svc = {
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if !mode_def.model.is_empty() {
-                                        commands::get_service_config_for_profile(&state, &mode_def.model)
-                                    } else {
-                                        commands::get_service_config(&state, "llm")
-                                    }
-                                };
-
-                                eprintln!("fonos: transform mode={} provider={} model={}", mode_id, svc.provider, svc.model);
-
-                                let result = match svc.provider.as_str() {
-                                    "anthropic" => fonos_core::llm::call_anthropic(&svc.api_key, &svc.model, &messages, mode_def.temperature, mode_def.max_tokens).await,
-                                    "google" => fonos_core::llm::call_google(&svc.api_key, &svc.model, &messages, mode_def.temperature, mode_def.max_tokens).await,
-                                    _ => fonos_core::llm::call_openai_compatible(&svc.api_key, &svc.model, &svc.base_url, &messages, mode_def.temperature, mode_def.max_tokens, &svc.provider).await,
-                                };
-
-                                match result {
-                                    Ok(resp) if !resp.text.is_empty() => {
-                                        eprintln!("fonos: transform — result {} chars, replacing", resp.text.len());
-                                        let _ = commands::selection::replace_selection(
-                                            resp.text,
-                                            Some(sel.app_name),
-                                        ).await;
-                                    }
-                                    Ok(_) => eprintln!("fonos: transform — LLM returned empty"),
-                                    Err(e) => eprintln!("fonos: transform — LLM error: {e}"),
+                                match binding {
+                                    Some(b) => commands::text_action::run_text_action(handle.clone(), b).await,
+                                    None => eprintln!("fonos: text action '{l}' has no binding"),
                                 }
                             }
 

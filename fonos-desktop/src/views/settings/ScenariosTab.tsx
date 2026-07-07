@@ -132,7 +132,9 @@ function hotkeyItems(h: HotkeysSection): { label: string; combo: string }[] {
     [`${t("hotkeys.shortcut")} 2`, h.hotkey_note_2],
     [`${t("hotkeys.shortcut")} 3`, h.hotkey_note_3],
     [t("hotkeys.meeting"), h.hotkey_meeting],
-    [t("hotkeys.transform"), h.hotkey_transform],
+    // "hotkeys.transform" i18n key was removed with the Quick Transform UI (superseded by
+    // text actions); this label is legacy scenario read-compat only, so it's hardcoded.
+    ["Transform", h.hotkey_transform],
     [t("scen.sum.listen"), h.hotkey_listen],
     [t("scen.sum.convo"), h.hotkey_sts],
   ];

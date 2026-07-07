@@ -216,9 +216,13 @@ const en = {
   "hotkeys.shortcut": "Shortcut",
   "hotkeys.section.meeting": "Meeting",
   "hotkeys.meeting": "Meeting",
-  "hotkeys.section.transform": "Quick Transform",
-  "hotkeys.transform": "Transform",
-  "hotkeys.transformhint": "Select text → press hotkey → mode's LLM step processes it → result replaces selection",
+  "hotkeys.section.textactions": "Text Actions",
+  "hotkeys.textactions.add": "Add action",
+  "hotkeys.textactionshint": "Select text in any app → press the hotkey → the mode's LLM step runs → result goes to the chosen target. Popup results can always be copied, inserted, or saved to a notebook.",
+  "hotkeys.target.popup": "Popup",
+  "hotkeys.target.replace": "Replace selection",
+  "hotkeys.target.clipboard": "Clipboard",
+  "hotkeys.target.notebook": "Notebook",
 
   // stats page
   "stats.title": "Stats",
@@ -971,9 +975,13 @@ const zh: Partial<Record<Key, string>> = {
   "hotkeys.shortcut": "快捷键",
   "hotkeys.section.meeting": "会议",
   "hotkeys.meeting": "会议",
-  "hotkeys.section.transform": "快捷转换",
-  "hotkeys.transform": "转换",
-  "hotkeys.transformhint": "选中文字 → 按快捷键 → 模式的 LLM 步骤处理 → 结果替换所选内容",
+  "hotkeys.section.textactions": "文本动作",
+  "hotkeys.textactions.add": "添加动作",
+  "hotkeys.textactionshint": "在任意应用选中文字 → 按快捷键 → 模式的 LLM 处理 → 结果送到所选目标。悬浮框结果始终可复制、插入或存入笔记本。",
+  "hotkeys.target.popup": "悬浮框",
+  "hotkeys.target.replace": "替换选区",
+  "hotkeys.target.clipboard": "剪贴板",
+  "hotkeys.target.notebook": "笔记本",
 
   // stats page
   "stats.title": "统计",

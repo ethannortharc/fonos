@@ -45,9 +45,15 @@ pub fn save_config(
         .map_err(|e| format!("failed to save config: {e}"))?;
 
 
-    // Check if any hotkey-related fields changed.
+    // Check if any hotkey-related fields changed. `text_actions` itself
+    // carries per-binding hotkeys and must trigger a re-register too, or
+    // settings edits (new bindings, deletions, reordering) never take
+    // effect until restart — deleted rows would misroute against stale
+    // `text-action-{i}` labels resolved from the new array in the meantime.
     let hotkey_changed = updates.as_object().map_or(false, |u| {
-        u.keys().any(|k| k.starts_with("hotkey_"))
+        u.keys().any(|k| {
+            k.starts_with("hotkey_") || k == "text_actions" || k.starts_with("notebook_hotkey_")
+        })
     });
 
     // Update in-memory state.

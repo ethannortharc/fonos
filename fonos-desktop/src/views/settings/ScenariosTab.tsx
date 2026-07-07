@@ -132,7 +132,9 @@ function hotkeyItems(h: HotkeysSection): { label: string; combo: string }[] {
     [`${t("hotkeys.shortcut")} 2`, h.hotkey_note_2],
     [`${t("hotkeys.shortcut")} 3`, h.hotkey_note_3],
     [t("hotkeys.meeting"), h.hotkey_meeting],
-    [t("hotkeys.transform"), h.hotkey_transform],
+    // "hotkeys.transform" i18n key was removed with the Quick Transform UI (superseded by
+    // text actions); this label is legacy scenario read-compat only, so it's hardcoded.
+    ["Transform", h.hotkey_transform],
     [t("scen.sum.listen"), h.hotkey_listen],
     [t("scen.sum.convo"), h.hotkey_sts],
   ];
@@ -226,7 +228,11 @@ function VocabSummary({ books }: { books: VocabBook[] }) {
 
 function HotkeysSummary({ hotkeys }: { hotkeys: HotkeysSection }) {
   const items = hotkeyItems(hotkeys);
-  if (items.length === 0) {
+  // `undefined`/`null` = scenario predates text actions (no row at all);
+  // present (even `[]`) = show the count, same as every other section.
+  const textActionsCount = hotkeys.text_actions?.length;
+  const hasTextActions = textActionsCount !== undefined;
+  if (items.length === 0 && !hasTextActions) {
     return (
       <SummaryCard>
         <SummaryRow label={t("scen.section.hotkeys")} value={t("scen.sum.hotkeysnone")} />
@@ -235,6 +241,11 @@ function HotkeysSummary({ hotkeys }: { hotkeys: HotkeysSection }) {
   }
   return (
     <div className="rounded-lg border border-[rgba(255,255,255,0.06)] px-3 py-2 flex flex-wrap gap-x-2.5 gap-y-1">
+      {hasTextActions && (
+        <span className="text-[10px] text-[rgba(255,255,255,0.4)] whitespace-nowrap">
+          {t("hotkeys.section.textactions")} <span className="font-mono text-[#fafaf9]">({textActionsCount})</span>
+        </span>
+      )}
       {items.map((it) => (
         <span key={it.label} className="text-[10px] text-[rgba(255,255,255,0.4)] whitespace-nowrap">
           {it.label} <span className="font-mono text-[#fafaf9]">{formatCombo(it.combo)}</span>
@@ -279,6 +290,7 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
     hotkey_transform: config.hotkey_transform ?? "",
     hotkey_listen: config.hotkey_listen ?? "",
     hotkey_sts: config.hotkey_sts ?? "",
+    text_actions: config.text_actions ?? [],
   };
 
   return (

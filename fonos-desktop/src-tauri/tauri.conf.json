@@ -78,6 +78,20 @@
         "resizable": false,
         "skipTaskbar": true,
         "center": false
+      },
+      {
+        "label": "text-action-panel",
+        "title": "",
+        "url": "text-action-panel.html",
+        "width": 380,
+        "height": 280,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
       }
     ],
     "trayIcon": {

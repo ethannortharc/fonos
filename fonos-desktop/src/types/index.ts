@@ -3,6 +3,13 @@
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+/** One text-action row: hotkey → mode → output target (mirrors Rust TextActionBinding). */
+export interface TextActionBinding {
+  hotkey: string;
+  mode_id: string;
+  output_target: "floating_popup" | "active_text_field" | "clipboard" | "append_to_container" | "none";
+}
+
 /** Application configuration, persisted to disk as JSON. */
 export interface AppConfig {
   hotkey_dictation: string;
@@ -70,6 +77,8 @@ export interface AppConfig {
   // Quick transform
   hotkey_transform?: string;
   transform_mode?: string;
+  // Text actions
+  text_actions?: TextActionBinding[];
   // Text injection
   injection_strategy?: string;
   injection_app_overrides?: InjectionAppOverride[];
@@ -212,6 +221,9 @@ export interface HotkeysSection {
   hotkey_transform: string;
   hotkey_listen: string;
   hotkey_sts: string;
+  /** `undefined`/`null` = scenario predates text actions (apply leaves current
+   *  bindings untouched); present (even `[]`) = apply verbatim. */
+  text_actions?: TextActionBinding[] | null;
 }
 
 /** A saved, switchable configuration bundle — mirrors

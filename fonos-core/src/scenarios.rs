@@ -431,6 +431,10 @@ pub struct HotkeysSection {
     pub hotkey_listen: String,
     /// Hold-to-talk conversation combo.
     pub hotkey_sts: String,
+    /// Text-action bindings snapshot. `None` = scenario predates text actions
+    /// (apply leaves the live config's bindings untouched); `Some` = apply verbatim.
+    #[serde(default)]
+    pub text_actions: Option<Vec<crate::config::TextActionBinding>>,
 }
 
 /// A self-contained, shareable snapshot of a working configuration. Evolved from
@@ -631,6 +635,7 @@ pub fn snapshot_current(
         hotkey_transform: config.hotkey_transform.clone(),
         hotkey_listen: config.hotkey_listen.clone(),
         hotkey_sts: config.hotkey_sts.clone(),
+        text_actions: Some(config.text_actions.clone()),
     });
     SavedScenario {
         id: generate_scenario_id(name),
@@ -653,7 +658,12 @@ pub fn snapshot_current(
 /// * **speech** — set the Listen + STS conversation fields.
 /// * **vocab** — overwrite the vocabulary books + global book ids.
 /// * **hotkeys** — overwrite every global + notebook hotkey binding (the shell
-///   re-registers them after this returns).
+///   re-registers them after this returns). Text-action bindings are restored
+///   verbatim when the snapshot carries them (`Some`); when it predates text
+///   actions (`None`), the live bindings are left untouched. Either way the
+///   legacy `hotkey_transform` combo is reconciled afterward — migrated into a
+///   binding if the binding list is empty, else cleared — so it can never
+///   survive as a dead key that nothing registers.
 /// * **dictation** — set the dictation-mode / translate-target config fields
 ///   here; the custom-modes map is **returned** for the shell to persist into
 ///   `modes.json` (core cannot touch that file).
@@ -727,6 +737,19 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
         config.hotkey_transform = h.hotkey_transform.clone();
         config.hotkey_listen = h.hotkey_listen.clone();
         config.hotkey_sts = h.hotkey_sts.clone();
+
+        if let Some(ref ta) = h.text_actions {
+            config.text_actions = ta.clone();
+        }
+        // Reconcile the legacy field so applying a scenario can never leave a
+        // dead "transform" combo: convert it (pre-migration scenario onto an
+        // empty binding list) or clear it (bindings already present).
+        if !crate::config::migrate_transform_to_text_actions(config)
+            && !config.hotkey_transform.is_empty()
+            && !config.text_actions.is_empty()
+        {
+            config.hotkey_transform.clear();
+        }
     }
 
     if let Some(d) = &scenario.dictation {
@@ -1154,5 +1177,88 @@ mod tests {
         let m = parsed.models.unwrap();
         assert_eq!(m.profiles.len(), 1);
         assert_eq!(m.assignments.stt_profile, "stt1");
+    }
+
+    // ── text-action bindings (dead-key regression) ──────────────────────────
+
+    #[test]
+    fn old_scenario_apply_preserves_current_text_actions_and_converts_legacy() {
+        let mut cfg = AppConfig::default();
+        cfg.text_actions = vec![crate::config::TextActionBinding {
+            hotkey: "cmd+shift+y".into(),
+            mode_id: "translate".into(),
+            output_target: crate::modes::OutputTarget::FloatingPopup,
+        }];
+
+        // An old saved scenario's hotkeys section, serialized before text_actions
+        // existed: no "text_actions" key at all, but a live legacy combo.
+        let json = r#"{"hotkey_transform": "cmd+shift+t"}"#;
+        let h: HotkeysSection = serde_json::from_str(json).unwrap();
+        assert!(h.text_actions.is_none(), "missing key must deserialize to None, not Some([])");
+
+        let scenario = SavedScenario { hotkeys: Some(h), ..Default::default() };
+        apply_saved(&mut cfg, &scenario);
+
+        // The user's current bindings survive untouched...
+        assert_eq!(cfg.text_actions.len(), 1);
+        assert_eq!(cfg.text_actions[0].hotkey, "cmd+shift+y");
+        assert_eq!(cfg.text_actions[0].mode_id, "translate");
+        // ...and the legacy combo is cleared rather than resurrected as a dead key.
+        assert!(cfg.hotkey_transform.is_empty());
+    }
+
+    #[test]
+    fn old_scenario_apply_onto_empty_bindings_migrates_legacy() {
+        let mut cfg = AppConfig::default();
+        cfg.text_actions = Vec::new();
+        cfg.transform_mode = String::new(); // force the "polish" fallback path
+
+        let json = r#"{"hotkey_transform": "cmd+shift+t"}"#;
+        let h: HotkeysSection = serde_json::from_str(json).unwrap();
+        let scenario = SavedScenario { hotkeys: Some(h), ..Default::default() };
+
+        apply_saved(&mut cfg, &scenario);
+
+        assert_eq!(cfg.text_actions.len(), 1);
+        let b = &cfg.text_actions[0];
+        assert_eq!(b.hotkey, "cmd+shift+t");
+        assert_eq!(b.mode_id, "polish");
+        assert_eq!(b.output_target, crate::modes::OutputTarget::ActiveTextField);
+        assert!(cfg.hotkey_transform.is_empty());
+    }
+
+    #[test]
+    fn snapshot_roundtrip_restores_text_actions() {
+        let mut source = cfg_with_profiles();
+        source.text_actions = vec![
+            crate::config::TextActionBinding {
+                hotkey: "cmd+shift+y".into(),
+                mode_id: "translate".into(),
+                output_target: crate::modes::OutputTarget::FloatingPopup,
+            },
+            crate::config::TextActionBinding {
+                hotkey: "cmd+shift+u".into(),
+                mode_id: "polish".into(),
+                output_target: crate::modes::OutputTarget::ActiveTextField,
+            },
+        ];
+
+        let snap = snapshot_current(&source, "TA", json!(null), false, false, false, false, true);
+        // Round-trip through JSON, exactly as saved-scenario storage does.
+        let text = serde_json::to_string(&snap).unwrap();
+        let deserialized: SavedScenario = serde_json::from_str(&text).unwrap();
+
+        let mut target = AppConfig::default();
+        target.text_actions = vec![crate::config::TextActionBinding {
+            hotkey: "existing".into(),
+            mode_id: "old".into(),
+            output_target: crate::modes::OutputTarget::Clipboard,
+        }];
+        target.hotkey_transform = "cmd+shift+t".into();
+
+        apply_saved(&mut target, &deserialized);
+
+        assert_eq!(target.text_actions, source.text_actions);
+        assert!(target.hotkey_transform.is_empty());
     }
 }

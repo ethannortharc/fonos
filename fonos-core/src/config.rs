@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::{Error, Result};
+use crate::modes::OutputTarget;
 
 /// Per-app override for the text injection strategy.
 ///
@@ -21,6 +22,22 @@ pub struct InjectionAppOverride {
     /// `"paste"` (clipboard + Cmd+V) or `"type"` (simulated keystrokes).
     pub strategy: String,
 }
+
+/// A global-hotkey text action: grab the current selection, apply a mode's
+/// LLM step, deliver the result to `output_target`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TextActionBinding {
+    /// Hotkey combo, e.g. "cmd+shift+t". Empty disables the binding.
+    pub hotkey: String,
+    /// Mode id resolved via `modes::all_modes()` (e.g. "translate", "summarize").
+    pub mode_id: String,
+    /// Where the result is delivered. Bindings own the target so shared mode
+    /// definitions (also used by dictation) keep their own behavior untouched.
+    #[serde(default = "default_text_action_target")]
+    pub output_target: OutputTarget,
+}
+
+fn default_text_action_target() -> OutputTarget { OutputTarget::FloatingPopup }
 
 /// Application configuration persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +138,10 @@ pub struct AppConfig {
     /// Which dictation mode to use for quick-transform (e.g. "polish", "formal", "translate").
     /// Uses the mode's system prompt + user_template as the LLM processing step.
     pub transform_mode: String,
+    /// Text-action bindings: hotkey → mode → output target. Replaces the
+    /// legacy single `hotkey_transform`/`transform_mode` pair.
+    #[serde(default)]
+    pub text_actions: Vec<TextActionBinding>,
 
     // ── Text injection settings ──────────────────────────────────────────
 
@@ -250,6 +271,7 @@ impl Default for AppConfig {
             call_vad_silence_ms: 800,
             call_barge_in: true,
             transform_mode: "polish".to_string(),
+            text_actions: Vec::new(),
             // Linux historically used xdotool type-first; macOS uses paste.
             injection_strategy: if cfg!(target_os = "linux") { "type" } else { "paste" }
                 .to_string(),
@@ -302,5 +324,61 @@ impl AppConfig {
         std::fs::rename(&tmp_path, &path).map_err(|e| Error::Config(e.to_string()))?;
 
         Ok(())
+    }
+}
+
+/// One-time migration: convert the legacy quick-transform pair
+/// (`hotkey_transform` + `transform_mode`) into a text-action binding.
+///
+/// Returns `true` if the config was modified — the caller should persist it.
+pub fn migrate_transform_to_text_actions(config: &mut AppConfig) -> bool {
+    if !config.text_actions.is_empty() || config.hotkey_transform.is_empty() {
+        return false;
+    }
+    let mode_id = if config.transform_mode.is_empty() {
+        "polish".to_string()
+    } else {
+        config.transform_mode.clone()
+    };
+    config.text_actions.push(TextActionBinding {
+        hotkey: std::mem::take(&mut config.hotkey_transform),
+        mode_id,
+        output_target: OutputTarget::ActiveTextField,
+    });
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrate_transform_creates_binding_and_clears_legacy_hotkey() {
+        let mut cfg = AppConfig::default(); // default hotkey_transform = "cmd+shift+t"
+        assert!(migrate_transform_to_text_actions(&mut cfg));
+        assert_eq!(cfg.text_actions.len(), 1);
+        let b = &cfg.text_actions[0];
+        assert_eq!(b.hotkey, "cmd+shift+t");
+        assert_eq!(b.mode_id, "polish");
+        assert_eq!(b.output_target, crate::modes::OutputTarget::ActiveTextField);
+        assert!(cfg.hotkey_transform.is_empty());
+        // Idempotent: second call is a no-op.
+        assert!(!migrate_transform_to_text_actions(&mut cfg));
+    }
+
+    #[test]
+    fn migrate_transform_noop_when_disabled_or_already_migrated() {
+        let mut disabled = AppConfig { hotkey_transform: String::new(), ..Default::default() };
+        assert!(!migrate_transform_to_text_actions(&mut disabled));
+        assert!(disabled.text_actions.is_empty());
+
+        let mut existing = AppConfig::default();
+        existing.text_actions.push(TextActionBinding {
+            hotkey: "cmd+shift+y".into(),
+            mode_id: "translate".into(),
+            output_target: crate::modes::OutputTarget::FloatingPopup,
+        });
+        assert!(!migrate_transform_to_text_actions(&mut existing));
+        assert_eq!(existing.text_actions.len(), 1);
     }
 }

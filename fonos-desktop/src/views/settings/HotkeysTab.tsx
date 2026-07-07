@@ -7,7 +7,7 @@ import { listModes } from "../../lib/api";
 import type { ModeEntry } from "../../types";
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
-import type { AppConfig } from "../../types";
+import type { AppConfig, TextActionBinding } from "../../types";
 
 // ─── Hotkey capture input ────────────────────────────────────────────────────
 
@@ -142,6 +142,15 @@ export default function HotkeysTab({ config, onSave }: {
     listModes().then(setModes).catch(() => {});
   }, []);
 
+  // ── Text actions ────────────────────────────────────────────────────────
+  const textActions = config.text_actions ?? [];
+  const updateAction = (i: number, patch: Partial<TextActionBinding>) =>
+    onSave({ text_actions: textActions.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
+  const removeAction = (i: number) =>
+    onSave({ text_actions: textActions.filter((_, j) => j !== i) });
+  const addAction = () =>
+    onSave({ text_actions: [...textActions, { hotkey: "", mode_id: "translate", output_target: "floating_popup" as const }] });
+
   return (
     <div className="flex flex-col gap-4">
 
@@ -204,27 +213,46 @@ export default function HotkeysTab({ config, onSave }: {
           <Section label={t("hotkeys.section.meeting")}>
             <HotkeyRow label={t("hotkeys.meeting")} hint={t("hotkeys.toggle")} value={config.hotkey_meeting} onChange={(v) => onSave({ hotkey_meeting: v })} />
           </Section>
-
-          <Section label={t("hotkeys.section.transform")}>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-[rgba(255,255,255,0.4)] min-w-[120px]">{t("hotkeys.transform")}</span>
-              <HotkeyInput value={config.hotkey_transform ?? ""} onChange={(v) => onSave({ hotkey_transform: v })} />
-              <select
-                value={config.transform_mode ?? "polish"}
-                onChange={(e) => onSave({ transform_mode: e.target.value })}
-                className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none flex-1 min-w-[100px]"
-              >
-                {modes.filter((m) => m.system || m.user_template).map((m) => (
-                  <option key={m.id} value={m.id}>{m.icon} {m.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="text-[9px] text-[rgba(255,255,255,0.15)] mt-1 pl-[132px]">
-              {t("hotkeys.transformhint")}
-            </div>
-          </Section>
         </>
       )}
+
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+      <Section label={t("hotkeys.section.textactions")}>
+        {textActions.map((b, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <HotkeyInput value={b.hotkey} onChange={(v) => updateAction(i, { hotkey: v })} />
+            <select
+              value={b.mode_id}
+              onChange={(e) => updateAction(i, { mode_id: e.target.value })}
+              className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none flex-1 min-w-[90px]"
+            >
+              {modes.filter((m) => m.system || m.user_template).map((m) => (
+                <option key={m.id} value={m.id}>{m.icon} {m.name}</option>
+              ))}
+            </select>
+            <select
+              value={b.output_target}
+              onChange={(e) => updateAction(i, { output_target: e.target.value as TextActionBinding["output_target"] })}
+              className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none min-w-[90px]"
+            >
+              <option value="floating_popup">{t("hotkeys.target.popup")}</option>
+              <option value="active_text_field">{t("hotkeys.target.replace")}</option>
+              <option value="clipboard">{t("hotkeys.target.clipboard")}</option>
+              <option value="append_to_container">{t("hotkeys.target.notebook")}</option>
+            </select>
+            <button
+              onClick={() => removeAction(i)}
+              className="text-[rgba(255,255,255,0.2)] hover:text-[rgba(239,68,68,0.8)] text-[11px] px-1"
+              title="Remove"
+            >✕</button>
+          </div>
+        ))}
+        <button
+          onClick={addAction}
+          className="self-start text-[10px] text-[rgba(245,158,11,0.7)] hover:text-[#fbbf24] px-1 py-0.5"
+        >+ {t("hotkeys.textactions.add")}</button>
+        <div className="text-[9px] text-[rgba(255,255,255,0.15)]">{t("hotkeys.textactionshint")}</div>
+      </Section>
     </div>
   );
 }

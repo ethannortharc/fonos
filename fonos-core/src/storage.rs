@@ -25,6 +25,8 @@ pub enum SourceType {
     Meeting,
     /// Listen-queue item: captured text summarized and synthesized to audio.
     Listen,
+    /// Text-action result: selection grabbed via hotkey, processed by a mode's LLM step.
+    Transform,
 }
 
 impl SourceType {
@@ -35,6 +37,7 @@ impl SourceType {
             SourceType::Note => "note",
             SourceType::Meeting => "meeting",
             SourceType::Listen => "listen",
+            SourceType::Transform => "transform",
         }
     }
 
@@ -44,6 +47,7 @@ impl SourceType {
             "note" => SourceType::Note,
             "meeting" => SourceType::Meeting,
             "listen" => SourceType::Listen,
+            "transform" => SourceType::Transform,
             _ => SourceType::Dictation,
         }
     }
@@ -356,6 +360,19 @@ pub fn update_entry_processed_text(conn: &Connection, id: i64, text: &str) -> Re
         params![id, text],
     )
     .map_err(|e| Error::Database(format!("update_entry_processed_text: {e}")))?;
+    Ok(())
+}
+
+/// Attach an entry to a container, or detach it with `None`.
+///
+/// Used by the text-action "save to notebook" flow: the entry is already in
+/// history; saving links it to the notebook without copying data.
+pub fn update_entry_container(conn: &Connection, id: i64, container_id: Option<i64>) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET container_id = ?2 WHERE id = ?1",
+        params![id, container_id],
+    )
+    .map_err(|e| Error::Database(format!("update_entry_container: {e}")))?;
     Ok(())
 }
 
@@ -998,5 +1015,43 @@ mod tests {
             get_entry(&conn, id).unwrap().processed_text.as_deref(),
             Some("corrected only")
         );
+    }
+
+    #[test]
+    fn source_type_transform_roundtrip() {
+        assert_eq!(SourceType::Transform.as_str(), "transform");
+        assert!(matches!(SourceType::from_str("transform"), SourceType::Transform));
+    }
+
+    #[test]
+    fn update_entry_container_links_entry_and_keeps_it_in_history() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_storage_db(&conn);
+        let nb = insert_container(&conn, &Container {
+            id: None,
+            container_type: ContainerType::Notebook,
+            title: "Text Actions".into(),
+            parent_id: None,
+            created_at: "2026-07-06T00:00:00Z".into(),
+            updated_at: "2026-07-06T00:00:00Z".into(),
+            metadata: serde_json::json!({}),
+        }).unwrap();
+        let id = insert_entry(&conn, &Entry {
+            id: None,
+            created_at: "2026-07-06T00:00:00Z".into(),
+            source_type: SourceType::Transform,
+            role: EntryRole::User,
+            mode: "translate".into(),
+            raw_text: "hello".into(),
+            processed_text: Some("你好".into()),
+            container_id: None,
+            audio_ref: None,
+            metadata: serde_json::json!({}),
+        }).unwrap();
+
+        update_entry_container(&conn, id, Some(nb)).unwrap();
+        assert_eq!(get_entry(&conn, id).unwrap().container_id, Some(nb));
+        // Linking must NOT remove the entry from the flat history listing.
+        assert_eq!(get_entries(&conn, &EntryFilter::default()).unwrap().len(), 1);
     }
 }

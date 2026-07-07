@@ -221,6 +221,9 @@ export interface HotkeysSection {
   hotkey_transform: string;
   hotkey_listen: string;
   hotkey_sts: string;
+  /** `undefined`/`null` = scenario predates text actions (apply leaves current
+   *  bindings untouched); present (even `[]`) = apply verbatim. */
+  text_actions?: TextActionBinding[] | null;
 }
 
 /** A saved, switchable configuration bundle — mirrors

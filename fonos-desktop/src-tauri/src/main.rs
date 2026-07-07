@@ -15,45 +15,13 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 
-/// The mouse cursor's current location (logical coords) and the monitor
-/// containing it. Falls back to the first monitor when the cursor is
-/// off every known display; `None` when no monitors are reported.
-#[cfg(target_os = "macos")]
-fn monitor_under_cursor(
-    panel: &tauri::WebviewWindow,
-) -> Option<(tauri::Monitor, core_graphics::geometry::CGPoint)> {
-    let monitors = match panel.available_monitors() {
-        Ok(m) if !m.is_empty() => m,
-        _ => return None,
-    };
-
-    let cursor = {
-        let source = core_graphics::event_source::CGEventSource::new(
-            core_graphics::event_source::CGEventSourceStateID::CombinedSessionState
-        ).expect("CGEventSource");
-        let event = core_graphics::event::CGEvent::new(source).expect("CGEvent");
-        event.location()
-    };
-
-    let target = monitors.iter().find(|m| {
-        let scale = m.scale_factor();
-        let lx = m.position().x as f64 / scale;
-        let ly = m.position().y as f64 / scale;
-        let lw = m.size().width as f64 / scale;
-        let lh = m.size().height as f64 / scale;
-        cursor.x >= lx && cursor.x < lx + lw && cursor.y >= ly && cursor.y < ly + lh
-    }).unwrap_or(&monitors[0]).clone();
-
-    Some((target, cursor))
-}
-
 /// Position the agent-panel window centered horizontally near the cursor,
 /// slightly above the vertical center of the screen.
 #[cfg(target_os = "macos")]
 fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("agent-panel") else { return };
-    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
+    let Some((target, _cursor)) = commands::monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
     let panel_w = 340.0; // logical pixels — matches tauri.conf.json width
@@ -78,7 +46,7 @@ fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
 fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("note-panel") else { return };
-    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
+    let Some((target, _cursor)) = commands::monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
     let panel_w = 320.0_f64;
@@ -102,7 +70,7 @@ fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
 fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("meeting-panel") else { return };
-    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
+    let Some((target, _cursor)) = commands::monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
     let panel_w = 520.0_f64;
@@ -115,38 +83,6 @@ fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
     // Right edge of panel flush with right edge of screen, near the top
     let x = mon_x + mon_w - panel_w;
     let y = mon_y + top_margin;
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
-/// Position the text-action panel near the mouse cursor: below-right by
-/// default, flipped left/up when it would cross the monitor edge.
-#[cfg(target_os = "macos")]
-pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("text-action-panel") else { return };
-    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let (panel_w, panel_h) = (380.0_f64, 280.0_f64); // logical px — matches tauri.conf.json
-    let offset = 12.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
-
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
 
     let _ = panel.set_position(tauri::PhysicalPosition::new(
         (x * scale) as i32,
@@ -425,6 +361,10 @@ fn main() {
             commands::resize_agent_panel,
             commands::hide_agent_panel,
             commands::hide_note_panel,
+            commands::text_action::hide_text_action_panel,
+            commands::text_action::text_action_copy,
+            commands::text_action::text_action_insert,
+            commands::text_action::text_action_save_notebook,
             commands::set_note_notebook,
             // LLM commands
             commands::llm::process_with_llm,

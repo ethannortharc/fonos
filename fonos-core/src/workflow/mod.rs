@@ -7,9 +7,9 @@
 //! `fonos-desktop`.
 //!
 //! Submodules land incrementally across the Workflow P1 task series:
-//! `registry` (component traits + factories), `engine` (linear runner),
-//! `builtin` (built-in widget/workflow definitions), and `migrate`
-//! (one-time migration of legacy config into workflow defs) are not yet
-//! present — this task only introduces the data model.
+//! `engine` (linear runner), `builtin` (built-in widget/workflow
+//! definitions), and `migrate` (one-time migration of legacy config into
+//! workflow defs) are not yet present.
 
 pub mod model;
+pub mod registry;

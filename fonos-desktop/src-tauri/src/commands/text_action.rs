@@ -30,7 +30,11 @@ impl Drop for InFlightGuard {
 /// sink for untrusted/external input — same pattern as `agent_js` in
 /// main.rs. Every value interpolated into `js` here is escaped via
 /// `serde_json::to_string` by the caller before reaching this function.
-fn panel_js(h: &tauri::AppHandle, js: &str) {
+///
+/// `pub(crate)` so the workflow `panel` output
+/// ([`super::workflow_widgets`]) can reuse the exact recv protocol rather than
+/// copying it.
+pub(crate) fn panel_js(h: &tauri::AppHandle, js: &str) {
     use tauri::Manager;
     if let Some(panel) = h.get_webview_window("text-action-panel") {
         if let Err(e) = panel.eval(js) {
@@ -40,7 +44,10 @@ fn panel_js(h: &tauri::AppHandle, js: &str) {
 }
 
 /// Show the panel near the cursor and focus it (focus enables Esc/blur dismissal).
-async fn show_panel_at_cursor(handle: &tauri::AppHandle) {
+///
+/// `pub(crate)` so the workflow `panel` output ([`super::workflow_widgets`])
+/// can position and reveal the shared panel identically.
+pub(crate) async fn show_panel_at_cursor(handle: &tauri::AppHandle) {
     use tauri::Manager;
     // NOTE: `move_text_action_panel_to_cursor` lives in `commands/mod.rs`,
     // not `crate::` (main.rs) as the task brief assumed — see the doc

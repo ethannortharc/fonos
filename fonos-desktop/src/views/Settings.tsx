@@ -1,5 +1,7 @@
 // Settings view — shell that manages state and renders tab components.
-// Tabbed layout: Models | Modes | Hotkeys | Language
+// Tabbed layout: Workflows | General | Models | Speech | Vocab | Agent |
+// Meeting | Hotkeys | Widgets | Scenarios (see TABS in settings/constants.ts,
+// the canonical source of truth for the tab set).
 
 import { useState, useEffect, useCallback } from "react";
 import {

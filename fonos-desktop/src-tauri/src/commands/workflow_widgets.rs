@@ -612,8 +612,9 @@ impl Output for PanelOutput {
 /// `notebook`, `speak`, `panel`).
 ///
 /// Each factory closure captures `app.clone()` and re-clones per instantiation
-/// so a widget can be built many times. Task 16's `uppercase` demo processor
-/// registers itself in its own task and is intentionally not added here.
+/// so a widget can be built many times. The `uppercase` processor (Task 16's
+/// extensibility acceptance fixture, see `widget_uppercase.rs`) is registered
+/// alongside the built-ins below to prove new components need no engine changes.
 pub fn build_registry(app: tauri::AppHandle) -> Registry {
     let mut reg = Registry::default();
 

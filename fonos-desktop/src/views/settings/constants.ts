@@ -61,44 +61,6 @@ export const CAP_BADGE: Record<string, string> = {
   llm: "bg-[rgba(134,239,172,0.08)] text-[rgba(134,239,172,0.6)]",
 };
 
-export interface ModeForm {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  system: string;
-  user_template: string;
-  temperature: number;
-  model: string;
-  stt_model: string;
-  stt_prompt: string;
-  stt_temperature: number;
-  max_tokens: number;
-  output_language: string;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-  vocab_books: string[];
-}
-
-export const EMPTY_MODE: ModeForm = {
-  id: "",
-  name: "",
-  description: "",
-  icon: "\u2728",
-  system: "",
-  user_template: "{text}",
-  temperature: 0.3,
-  model: "",
-  stt_model: "",
-  stt_prompt: "",
-  stt_temperature: 0,
-  max_tokens: 4096,
-  output_language: "auto",
-  auto_paste: true,
-  auto_press_enter: false,
-  vocab_books: [],
-};
-
 export interface ModelForm {
   id: string;
   name: string;

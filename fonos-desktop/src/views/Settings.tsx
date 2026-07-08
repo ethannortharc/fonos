@@ -18,6 +18,7 @@ import ModelsTab from "./settings/ModelsTab";
 import ScenariosTab from "./settings/ScenariosTab";
 import ModesTab from "./settings/ModesTab";
 import HotkeysTab from "./settings/HotkeysTab";
+import WidgetsTab from "./settings/WidgetsTab";
 import SpeechTab from "./settings/SpeechTab";
 import VocabTab from "./settings/VocabTab";
 import AgentTab from "./settings/AgentTab";
@@ -237,6 +238,11 @@ export default function Settings() {
         {/* ────────────── Hotkeys tab ────────────── */}
         {settingsTab === "hotkeys" && (
           <HotkeysTab config={config} onSave={handleSave} />
+        )}
+
+        {/* ────────────── Widgets tab (Workflow P1) ────────────── */}
+        {settingsTab === "widgets" && (
+          <WidgetsTab config={config} />
         )}
 
         {saving && (

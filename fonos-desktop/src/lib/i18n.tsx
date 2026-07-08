@@ -863,6 +863,13 @@ const en = {
   "widgets.builtin-cant-delete": "Built-in widgets can't be deleted",
   "widgets.referenced-by-one": "Referenced by 1 workflow",
   "widgets.referenced-by-n": "Referenced by {n} workflows",
+  "widgets.editor.identity": "Identity",
+  "widgets.editor.config": "Configuration",
+  "widgets.no-config": "This widget has no configuration.",
+  "widgets.copy-template": "Copy from template…",
+  "widgets.notebook.quick": "Quick Note (default)",
+  "widgets.strategy.paste": "Paste",
+  "widgets.strategy.type": "Type character-by-character",
 };
 
 export type TKey = keyof typeof en;
@@ -1671,6 +1678,13 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.builtin-cant-delete": "内置部件不可删除",
   "widgets.referenced-by-one": "被 1 个工作流引用",
   "widgets.referenced-by-n": "被 {n} 个工作流引用",
+  "widgets.editor.identity": "标识",
+  "widgets.editor.config": "配置",
+  "widgets.no-config": "此部件无需配置。",
+  "widgets.copy-template": "从模板复制…",
+  "widgets.notebook.quick": "快速笔记（默认）",
+  "widgets.strategy.paste": "粘贴",
+  "widgets.strategy.type": "逐字键入",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

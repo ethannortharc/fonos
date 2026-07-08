@@ -17,6 +17,7 @@ pub mod storage;
 pub mod text_action;
 pub mod tts;
 pub mod voices;
+pub mod widget_uppercase;
 pub mod workflow_cfg;
 pub mod workflow_exec;
 pub mod workflow_widgets;

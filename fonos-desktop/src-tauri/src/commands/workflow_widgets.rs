@@ -669,6 +669,10 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
             }),
         );
     }
+    reg.register_processor(
+        "uppercase",
+        Box::new(|_props| Ok(Arc::new(super::widget_uppercase::UppercaseProcessor) as Arc<dyn Processor>)),
+    );
 
     // ── Outputs ──────────────────────────────────────────────────────────────
     {

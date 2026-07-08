@@ -271,6 +271,7 @@ function PropsForm({
       );
 
     // selection / replace / clipboard — no configurable props.
+    case "uppercase":
     default:
       return (
         <div className="text-[11px] text-[rgba(255,255,255,0.25)] italic py-1">

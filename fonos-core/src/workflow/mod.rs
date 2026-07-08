@@ -7,9 +7,10 @@
 //! `fonos-desktop`.
 //!
 //! Submodules land incrementally across the Workflow P1 task series:
-//! `engine` (linear runner), `builtin` (built-in widget/workflow
-//! definitions), and `migrate` (one-time migration of legacy config into
-//! workflow defs) are not yet present.
+//! `engine` (linear runner) is present; `builtin` (built-in widget/workflow
+//! definitions) and `migrate` (one-time migration of legacy config into
+//! workflow defs) arrive in later tasks.
 
+pub mod engine;
 pub mod model;
 pub mod registry;

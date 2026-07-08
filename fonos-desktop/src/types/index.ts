@@ -92,6 +92,9 @@ export interface AppConfig {
   widgets?: WidgetDef[];
   workflows?: WorkflowDef[];
   workflow_migration_done?: boolean;
+  /** Id of the voice workflow the main dictation hotkey triggers; empty falls
+   *  back to the built-in "wf.dictation". Set by the Dictation drum / float pill. */
+  active_voice_workflow?: string;
 }
 
 /** A per-app override for the text injection strategy. */

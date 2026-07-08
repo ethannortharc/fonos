@@ -75,6 +75,31 @@ pub fn effective_workflows(config: &AppConfig) -> Vec<WorkflowDef> {
     overlay_by_id(built_in_workflows(), &config.workflows, |w| w.id.as_str())
 }
 
+/// Resolve a `workflow-{id}` hotkey label to the workflow id that should
+/// actually run.
+///
+/// The primary dictation label (`workflow-wf.dictation`) is a **redirect**: it
+/// runs whatever [`AppConfig::active_voice_workflow`] names, so the main
+/// dictation hotkey always fires the user's currently selected voice workflow
+/// (the Dictation drum / float pill sets that selection). The redirect falls
+/// back to the built-in `"wf.dictation"` whenever `active_voice_workflow` is
+/// empty or points at a workflow that no longer exists in
+/// [`effective_workflows`] (e.g. a custom one the user has since deleted) — it
+/// never returns a dangling id. Every other `workflow-{id}` label resolves to
+/// its own `{id}`, unchanged.
+pub fn resolve_trigger_target(label: &str, config: &AppConfig) -> String {
+    let id = label.strip_prefix("workflow-").unwrap_or(label);
+    if id != "wf.dictation" {
+        return id.to_string();
+    }
+    let active = &config.active_voice_workflow;
+    if !active.is_empty() && effective_workflows(config).iter().any(|w| w.id == *active) {
+        active.clone()
+    } else {
+        "wf.dictation".to_string()
+    }
+}
+
 /// The **names** of every workflow in `workflows` that references `widget_id`
 /// in its source, processors, or outputs. The settings layer uses this to
 /// refuse deleting a widget a workflow still depends on, listing the referrers
@@ -616,6 +641,58 @@ mod tests {
         assert!(engine::validate(&reg, &wf_ok_text, &widgets).is_ok());
         let wf_ok_audio = workflow("src.audio", &["p.stt"], &["out.sink"]);
         assert!(engine::validate(&reg, &wf_ok_audio, &widgets).is_ok());
+    }
+
+    #[test]
+    fn resolve_trigger_target_redirects_dictation_and_passes_through_others() {
+        use crate::config::AppConfig;
+
+        // (1) A non-dictation workflow label resolves to its own id, untouched —
+        //     other voice workflows keep triggering themselves.
+        let cfg = AppConfig::default();
+        assert_eq!(engine::resolve_trigger_target("workflow-wf.listen", &cfg), "wf.listen");
+
+        // (2) The dictation label with an empty active_voice_workflow falls back
+        //     to the built-in "wf.dictation".
+        let cfg = AppConfig { active_voice_workflow: String::new(), ..Default::default() };
+        assert_eq!(
+            engine::resolve_trigger_target("workflow-wf.dictation", &cfg),
+            "wf.dictation"
+        );
+
+        // (3) The dictation label with active_voice_workflow pointing at an
+        //     existing custom workflow redirects to that workflow.
+        let custom = WorkflowDef {
+            id: "wf.custom-abc".into(),
+            name: "My Voice Flow".into(),
+            icon: String::new(),
+            hotkey: String::new(),
+            source: "src.mic-hold".into(),
+            processors: vec!["stt.default".into()],
+            outputs: vec!["out.insert".into()],
+            builtin: false,
+        };
+        let cfg = AppConfig {
+            workflows: vec![custom],
+            active_voice_workflow: "wf.custom-abc".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            engine::resolve_trigger_target("workflow-wf.dictation", &cfg),
+            "wf.custom-abc"
+        );
+
+        // (4) Self-review guard: active_voice_workflow names a since-deleted id
+        //     (not a builtin, absent from config.workflows) → falls back to the
+        //     built-in, never a dangling id.
+        let cfg = AppConfig {
+            active_voice_workflow: "wf.custom-deleted".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            engine::resolve_trigger_target("workflow-wf.dictation", &cfg),
+            "wf.dictation"
+        );
     }
 
     #[test]

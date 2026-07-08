@@ -230,6 +230,12 @@ pub struct AppConfig {
     /// defs has run, so it never runs again.
     #[serde(default)]
     pub workflow_migration_done: bool,
+    /// Id of the voice (microphone-source) workflow that the primary dictation
+    /// hotkey (`workflow-wf.dictation`) triggers. Empty falls back to the
+    /// built-in `"wf.dictation"`. Written by the Dictation drum / float pill
+    /// picker; read by [`crate::workflow::engine::resolve_trigger_target`].
+    #[serde(default)]
+    pub active_voice_workflow: String,
 }
 
 impl Default for AppConfig {
@@ -301,6 +307,7 @@ impl Default for AppConfig {
             widgets: Vec::new(),
             workflows: Vec::new(),
             workflow_migration_done: false,
+            active_voice_workflow: String::new(),
         }
     }
 }

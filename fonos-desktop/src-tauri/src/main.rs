@@ -813,15 +813,21 @@ fn main() {
                                 }
                             }
                             l if l.starts_with("workflow-") => {
-                                let wf_id = l.strip_prefix("workflow-").unwrap().to_string();
-
-                                // Resolve the source widget's capture semantics
-                                // under the config lock, then drop it before any
-                                // await: `is_mic` gates the two-phase mic dance,
-                                // and `capture` ("hold"|"toggle") is the mic
-                                // widget's prop. A missing workflow/source is
-                                // logged and the trigger dropped.
-                                let source_kind = {
+                                // Resolve the trigger target and the source
+                                // widget's capture semantics under the config
+                                // lock, then drop it before any await. The
+                                // primary dictation label
+                                // (`workflow-wf.dictation`) redirects to
+                                // `active_voice_workflow` via
+                                // `resolve_trigger_target`, so the main dictation
+                                // hotkey fires the user's selected voice
+                                // workflow; every other `workflow-{id}` label
+                                // triggers its own id. `is_mic` gates the
+                                // two-phase mic dance, and `capture`
+                                // ("hold"|"toggle") is the mic widget's prop. A
+                                // missing/dangling workflow is logged and the
+                                // trigger dropped.
+                                let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let config = match state.config.lock() {
                                         Ok(c) => c,
@@ -830,6 +836,8 @@ fn main() {
                                             return;
                                         }
                                     };
+                                    let wf_id =
+                                        fonos_core::workflow::engine::resolve_trigger_target(l, &config);
                                     let widgets =
                                         fonos_core::workflow::engine::effective_widgets(&config);
                                     fonos_core::workflow::engine::effective_workflows(&config)
@@ -846,12 +854,12 @@ fn main() {
                                                 })
                                                 .unwrap_or("hold")
                                                 .to_string();
-                                            (is_mic, capture)
+                                            (wf.id, is_mic, capture)
                                         })
                                 };
-                                let Some((is_mic, capture)) = source_kind else {
+                                let Some((wf_id, is_mic, capture)) = resolved else {
                                     eprintln!(
-                                        "fonos: workflow '{wf_id}' has no definition — ignoring hotkey"
+                                        "fonos: workflow trigger '{l}' resolved to no definition — ignoring hotkey"
                                     );
                                     return;
                                 };

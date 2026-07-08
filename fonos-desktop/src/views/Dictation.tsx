@@ -8,12 +8,14 @@ import {
   stopRecording,
   processWithLlm,
   listModes,
+  listWorkflows,
+  saveConfig,
   getConfig,
 } from "../lib/api";
 import { listContainers } from "../lib/storage-api";
 import { t, useT } from "../lib/i18n";
 import type { Container } from "../lib/storage-api";
-import type { ModeEntry, ModelProfile } from "../types";
+import type { ModeEntry, ModelProfile, WorkflowRow } from "../types";
 
 // ─── Jumping color blocks (Canvas) — only when recording ─────────────────────
 
@@ -104,7 +106,7 @@ function JumpingBlocks({ active }: { active: boolean }) {
 function ModeDrum({
   modes, current, onChange,
 }: {
-  modes: ModeEntry[]; current: string; onChange: (id: string) => void;
+  modes: WorkflowRow[]; current: string; onChange: (id: string) => void;
 }) {
   const idx = Math.max(0, modes.findIndex((m) => m.id === current));
   const dragRef = useRef({ active: false, startX: 0, moved: 0 });
@@ -186,7 +188,7 @@ function ModeDrum({
               ].join(" ")}
               style={{ opacity, transform: `scale(${scale})` }}
             >
-              <span style={{ color: textColor }}><ModeIcon icon={m.icon} size={isCenter ? 14 : Math.max(10, 13 - dist * 1)} /></span>
+              <span style={{ color: textColor }}><ModeIcon icon={m.icon ?? ""} size={isCenter ? 14 : Math.max(10, 13 - dist * 1)} /></span>
               <span style={{
                 color: textColor,
                 fontSize: isCenter ? 12 : Math.max(9, 11 - dist * 0.7),
@@ -252,6 +254,12 @@ export default function Dictation() {
   useT();
   const [modes, setModes] = useState<ModeEntry[]>([]);
   const [dictationMode, setDictationMode] = useState<string>("raw");
+  // Voice-workflow picker (drum): microphone-source workflows + the one the
+  // main dictation hotkey triggers (config.active_voice_workflow). Distinct
+  // from the legacy dictationMode above, which still drives this view's own
+  // mic-button recording flow.
+  const [voiceWorkflows, setVoiceWorkflows] = useState<WorkflowRow[]>([]);
+  const [activeWorkflow, setActiveWorkflow] = useState<string>("wf.dictation");
   const [notebooks, setNotebooks] = useState<Container[]>([]);
   // null = Quick Note (no specific notebook), number = notebook id
   const [selectedNotebookId, setSelectedNotebookId] = useState<number | null>(null);
@@ -272,9 +280,13 @@ export default function Dictation() {
 
   useEffect(() => {
     listModes().then(setModes).catch(() => {});
+    listWorkflows()
+      .then((rows) => setVoiceWorkflows(rows.filter((w) => w.source_type_tag === "microphone")))
+      .catch(() => {});
     hasMicrophone().then(setHasMic).catch(() => setHasMic(false));
     getConfig().then((cfg) => {
       if (cfg.dictation_mode) setDictationMode(cfg.dictation_mode);
+      setActiveWorkflow(cfg.active_voice_workflow || "wf.dictation");
       setProfiles(cfg.model_profiles);
       const sttP = cfg.model_profiles.find((p) => p.id === cfg.stt_profile);
       const llmP = cfg.model_profiles.find((p) => p.id === cfg.llm_profile);
@@ -492,10 +504,10 @@ export default function Dictation() {
 
         {/* Layer 3: Horizontal drum-roller mode selector */}
         <div className="absolute bottom-0 left-0 right-0 z-[5]">
-          <ModeDrum modes={modes} current={dictationMode} onChange={(id) => {
-            setDictationMode(id);
-            // Switching away from "note" via drum clears notebook selection
-            if (id !== "note") setSelectedNotebookId(null);
+          <ModeDrum modes={voiceWorkflows} current={activeWorkflow} onChange={(id) => {
+            // Pick which voice workflow the main dictation hotkey triggers.
+            setActiveWorkflow(id);
+            saveConfig(JSON.stringify({ active_voice_workflow: id })).catch(() => {});
           }} />
         </div>
       </div>

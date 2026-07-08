@@ -537,12 +537,12 @@ struct SttCore {
     preprocess_metrics: (f64, f64),
 }
 
-/// Preprocess (high-pass + normalize) and transcribe a set of already-captured
-/// 16 kHz mono i16 samples via the resolved STT profile (Apple / Whisper-HTTP /
-/// chat), optionally applying the deterministic vocab post-correction. This is
-/// the pure STT step shared by [`transcribe_samples`] (which then records stats,
-/// storage, and drives the float pill / injection) and the call-mode barge
-/// content verifier ([`transcribe_stt_only`], which wants only the transcript).
+/// Resolve the STT profile from the (overridable) dictation mode, run the shared
+/// [`stt_transcribe`] core (preprocess + Apple/Whisper-HTTP/chat), and apply the
+/// deterministic vocab post-correction. This is the mode-based STT step shared by
+/// [`transcribe_samples`] (which then records stats, storage, and drives the
+/// float pill / injection) and the call-mode barge content verifier
+/// ([`transcribe_stt_only`], which wants only the transcript).
 ///
 /// No stats, storage, or float-pill side effects of its own; an STT *error* is
 /// still surfaced to the float pill for interactive modes (not "agent"/"sts-page"),
@@ -557,24 +557,6 @@ async fn transcribe_core(
     apply_vocab: bool,
 ) -> Result<SttCore, String> {
     let recording_duration = all_samples.len() as f64 / 16000.0;
-
-    // 1b. Audio preprocessing: high-pass filter + RMS normalization
-    let (all_samples, preprocess_metrics) = preprocess_audio(all_samples);
-
-    // 2. Save WAV for history + transcription
-    let audio_dir = std::env::temp_dir().join("fonos_audio");
-    let _ = std::fs::create_dir_all(&audio_dir);
-    let audio_path = audio_dir.join(format!("stt_{}.wav", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
-
-    let pcm_bytes: Vec<u8> = all_samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-    fonos_core::audio::write_wav(&audio_path, &pcm_bytes, 16000)
-        .map_err(|e| e.to_string())?;
-    let audio_path_str = audio_path.to_string_lossy().to_string();
-
-    // 3. Transcribe via HTTP (single call, no contention from streaming partials)
-    let file_bytes = std::fs::read(&audio_path)
-        .map_err(|e| format!("failed to read WAV: {e}"))?;
 
     // Load config + mode to determine which STT profile to use
     // mode_override (from Dictation view) takes precedence over config.dictation_mode (float pill)
@@ -621,9 +603,133 @@ async fn transcribe_core(
     };
     eprintln!("fonos: STT provider={} endpoint={} model={}", stt.provider, stt.base_url, stt.model);
 
-    // Convert language name to ISO 639-1 / BCP-47 code
+    // Mode STT params handed to the shared core: the mode's own whisper prompt
+    // and sampling temperature (vocab biasing is merged in by the core itself).
+    let stt_prompt = current_mode.map(|m| m.stt_prompt.clone()).unwrap_or_default();
+    let stt_temperature = current_mode.map(|m| m.stt_temperature).unwrap_or(0.0);
+
+    // ── Shared "samples → transcript" STT core (Apple / Whisper-HTTP / chat) ──
+    // Returns the raw transcript plus the byproducts this function surfaces
+    // (Apple engine tag, saved WAV path, preprocess metrics). An STT failure is
+    // returned as Err(raw); surface it on the float pill for interactive modes
+    // here, exactly as the inline dispatch did before.
+    let SttTranscription {
+        transcript,
+        stt_engine,
+        audio_path: audio_path_str,
+        preprocess_metrics,
+    } = match stt_transcribe(
+        all_samples,
+        stt.clone(),
+        stt_language,
+        stt_prompt,
+        vocab_terms,
+        stt_temperature,
+    )
+    .await
+    {
+        Ok(out) => out,
+        Err(e) => {
+            let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
+            if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
+                crate::error_surface::emit_float_error(app, &msg);
+            } else {
+                eprintln!("fonos: {msg}");
+            }
+            return Err(msg);
+        }
+    };
+
+    // ② Deterministic post-correction from the effective vocab books — runs
+    // for every mode (raw, LLM, note, agent) before any downstream use.
+    let transcript = if !apply_vocab || vocab_refs.is_empty() {
+        transcript
+    } else {
+        fonos_core::vocab::apply_rules(&transcript, &vocab_refs)
+    };
+
+    let mode_has_llm = current_mode
+        .map(|m| m.system.is_some() || m.user_template.is_some())
+        .unwrap_or(false);
+
+    let stats_model = if stt.provider == "apple" {
+        format!("Apple Speech ({})", if stt_engine.is_empty() { "server" } else { &stt_engine })
+    } else if stt.model.is_empty() {
+        "fast".to_string()
+    } else {
+        stt.model.clone()
+    };
+
+    Ok(SttCore {
+        transcript,
+        stt_engine,
+        audio_path: audio_path_str,
+        stats_model,
+        dictation_mode,
+        mode_has_llm,
+        recording_duration,
+        preprocess_metrics,
+    })
+}
+
+/// The raw product of the shared "samples → transcript" STT core
+/// ([`stt_transcribe`]): the transcript *before* vocab post-correction, plus the
+/// byproducts callers surface (Apple engine tag, saved WAV path, preprocess
+/// metrics).
+pub(crate) struct SttTranscription {
+    /// Raw transcript from the STT backend — no vocab [`fonos_core::vocab::apply_rules`] yet.
+    pub transcript: String,
+    /// Apple Speech engine tag (`"on-device"`/`"server"`); empty for HTTP/chat.
+    pub stt_engine: String,
+    /// Path to the saved WAV (kept for history / stats `audio_ref`).
+    pub audio_path: String,
+    /// `(noise_removed_pct, gain_db)` from preprocessing.
+    pub preprocess_metrics: (f64, f64),
+}
+
+/// Preprocess (high-pass + normalize), persist a 16 kHz mono WAV, and transcribe
+/// already-captured `samples` via the *already-resolved* STT profile `svc`
+/// (Apple on-device / Whisper-HTTP / chat-completions), biasing recognition with
+/// `vocab_terms` and the whisper `prompt` at `temperature`. `language` is a
+/// display name (`"English"`, `"chinese"`, …) or `"auto"`/`""`; it is mapped to
+/// an ISO 639-1 / BCP-47 code here.
+///
+/// This is the mode-free STT core shared by the dictation flow
+/// ([`transcribe_core`]) and the workflow `SttProcessor`. It applies **no** vocab
+/// post-correction (`apply_rules` is the caller's job, so each caller picks its
+/// own book set) and has **no** stats / storage / float-pill / injection side
+/// effects: an STT failure is returned as `Err(raw)` for the caller to surface.
+/// Apple failures yield an empty transcript (never `Err`), matching the prior
+/// inline dispatch.
+pub(crate) async fn stt_transcribe(
+    samples: Vec<i16>,
+    svc: fonos_core::llm::ServiceConfig,
+    language: String,
+    prompt: String,
+    vocab_terms: Vec<String>,
+    temperature: f64,
+) -> Result<SttTranscription, String> {
+    // 1. Audio preprocessing: high-pass filter + RMS normalization.
+    let (samples, preprocess_metrics) = preprocess_audio(samples);
+
+    // 2. Save WAV for history + transcription.
+    let audio_dir = std::env::temp_dir().join("fonos_audio");
+    let _ = std::fs::create_dir_all(&audio_dir);
+    let audio_path = audio_dir.join(format!("stt_{}.wav", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+
+    let pcm_bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+    fonos_core::audio::write_wav(&audio_path, &pcm_bytes, 16000)
+        .map_err(|e| e.to_string())?;
+    let audio_path_str = audio_path.to_string_lossy().to_string();
+
+    // 3. Read the WAV bytes back for the HTTP / chat upload path.
+    let file_bytes = std::fs::read(&audio_path)
+        .map_err(|e| format!("failed to read WAV: {e}"))?;
+
+    // Convert language name to ISO 639-1 / BCP-47 code.
     let lang_code = {
-        let lang = stt_language.trim();
+        let lang = language.trim();
         if lang.is_empty() || lang == "auto" { String::new() } else {
             match lang.to_lowercase().as_str() {
                 "chinese"    => "zh",
@@ -650,61 +756,36 @@ async fn transcribe_core(
         }
     };
 
-    let model_name = if stt.model.is_empty() { "fast".to_string() } else { stt.model.clone() };
+    let model_name = if svc.model.is_empty() { "fast".to_string() } else { svc.model.clone() };
 
     // ── Branch: Apple on-device / Whisper API / Chat Completions STT ────────
-    let (transcript, stt_engine) = if stt.provider == "apple" {
-        transcribe_apple(&audio_path_str, &lang_code, &vocab_terms).await
+    if svc.provider == "apple" {
+        let (transcript, stt_engine) =
+            transcribe_apple(&audio_path_str, &lang_code, &vocab_terms).await;
+        return Ok(SttTranscription { transcript, stt_engine, audio_path: audio_path_str, preprocess_metrics });
+    }
+
+    let result = if svc.stt_api == "chat" {
+        eprintln!("fonos: STT via chat completions (base64 audio)");
+        transcribe_chat(&svc, &file_bytes, &lang_code, &vocab_terms).await
     } else {
-        let result = if stt.stt_api == "chat" {
-            eprintln!("fonos: STT via chat completions (base64 audio)");
-            transcribe_chat(&stt, &file_bytes, &lang_code, &vocab_terms).await
-        } else {
-            transcribe_http(&stt, &file_bytes, &model_name, &lang_code, current_mode, &vocab_terms).await
+        // `transcribe_http` reads only `stt_prompt` + `stt_temperature` from the
+        // mode it is handed; feed it a throwaway `Mode` carrying just those so
+        // this core stays mode-free while reusing the HTTP client unchanged.
+        let stt_mode = fonos_core::modes::Mode {
+            stt_prompt: prompt,
+            stt_temperature: temperature,
+            ..Default::default()
         };
-        match result {
-            Ok(t) => (t, String::new()),
-            Err(e) => {
-                // Surface the failure instead of returning an empty transcript
-                // silently. The float pill shows the error and leaves processing
-                // state; the caller (hotkey / Dictation view) also gets the Err.
-                let msg = format!("STT failed via {} at {}: {}", stt.provider, stt.base_url, e);
-                if !matches!(dictation_mode.as_str(), "agent" | "sts-page") {
-                    crate::error_surface::emit_float_error(app, &msg);
-                } else {
-                    eprintln!("fonos: {msg}");
-                }
-                return Err(msg);
-            }
-        }
+        transcribe_http(&svc, &file_bytes, &model_name, &lang_code, Some(&stt_mode), &vocab_terms).await
     };
 
-    // ② Deterministic post-correction from the effective vocab books — runs
-    // for every mode (raw, LLM, note, agent) before any downstream use.
-    let transcript = if !apply_vocab || vocab_refs.is_empty() {
-        transcript
-    } else {
-        fonos_core::vocab::apply_rules(&transcript, &vocab_refs)
-    };
-
-    let mode_has_llm = current_mode
-        .map(|m| m.system.is_some() || m.user_template.is_some())
-        .unwrap_or(false);
-
-    let stats_model = if stt.provider == "apple" {
-        format!("Apple Speech ({})", if stt_engine.is_empty() { "server" } else { &stt_engine })
-    } else {
-        model_name.clone()
-    };
-
-    Ok(SttCore {
+    // Non-Apple STT failures propagate as Err(raw); the caller surfaces them.
+    let transcript = result?;
+    Ok(SttTranscription {
         transcript,
-        stt_engine,
+        stt_engine: String::new(),
         audio_path: audio_path_str,
-        stats_model,
-        dictation_mode,
-        mode_has_llm,
-        recording_duration,
         preprocess_metrics,
     })
 }

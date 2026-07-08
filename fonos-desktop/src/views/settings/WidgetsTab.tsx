@@ -431,7 +431,7 @@ export default function WidgetsTab({ config }: { config: AppConfig }) {
                     ))}
                   </select>
                 </Field>
-                <Field label="ID">
+                <Field label={t("widgets.field.id")}>
                   <input
                     type="text"
                     value={editing.id}

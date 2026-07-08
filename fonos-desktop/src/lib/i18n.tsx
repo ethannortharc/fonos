@@ -771,6 +771,7 @@ const en = {
   "widgets.field.name": "Name",
   "widgets.field.icon": "Icon",
   "widgets.field.type": "Type",
+  "widgets.field.id": "ID",
   "widgets.ph.name": "Widget name",
   // Per-type_tag props fields (rendered conditionally by the editor)
   "widgets.field.system": "System prompt",
@@ -1520,6 +1521,7 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.field.name": "名称",
   "widgets.field.icon": "图标",
   "widgets.field.type": "类型",
+  "widgets.field.id": "标识",
   "widgets.ph.name": "部件名称",
   "widgets.field.system": "系统提示词",
   "widgets.field.user_template": "用户模板",

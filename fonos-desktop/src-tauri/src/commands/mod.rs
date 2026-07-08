@@ -70,7 +70,12 @@ pub fn hide_agent_panel(app: tauri::AppHandle, state: tauri::State<'_, AppState>
     Ok(())
 }
 
-/// Set the default note target to Quick Note. Called from hotkey handler before panel opens.
+/// Set the default note target to Quick Note.
+///
+/// Retained for the P2 note-panel rebuild: the P1 `wf.note` workflow saves to
+/// Quick Note directly (via the `notebook` output's own lookup), so nothing
+/// calls this after the legacy note dispatch arm was removed in Task 10.
+#[allow(dead_code)]
 pub fn set_default_note_target(handle: &tauri::AppHandle) {
     use tauri::Manager;
     let state: &AppState = handle.state::<AppState>().inner();

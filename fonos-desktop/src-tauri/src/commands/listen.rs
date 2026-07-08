@@ -6,21 +6,10 @@
 use super::AppState;
 use fonos_core::pipeline::{EventSink, PipelineEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::Manager;
 
 /// One capture at a time; hotkey autorepeat fires the handler repeatedly, so
 /// re-entry is dropped instead of creating duplicate items.
 static CAPTURE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
-
-/// Hotkey entry point: grab the current selection and run the workflow.
-pub async fn run_listen_capture(app: tauri::AppHandle) -> Result<i64, String> {
-    let text = super::selection::grab_selection()
-        .await
-        .map(|s| s.text)
-        .unwrap_or_default();
-    let state: tauri::State<'_, AppState> = app.state();
-    create_inner(&app, &state, text).await
-}
 
 /// Command entry point (e.g. from the UI): run the workflow on given text.
 #[tauri::command]

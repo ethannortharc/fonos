@@ -70,7 +70,20 @@ pub async fn create_listen_item(
     };
 
     // 3. Synthesize, sentence-chunked (sanitized copy: emoji/markup stripped).
-    let speech_text = sanitize_for_speech(&processed);
+    let audio_wav = synthesize_long_text(&processed, tts).await?;
+
+    Ok(ListenItem { title, processed, audio_wav })
+}
+
+/// Sanitize, sentence-chunk, synthesize, and concatenate `text` into one WAV.
+///
+/// Shared by [`create_listen_item`] and the desktop `speak` workflow output so
+/// both feed the TTS backend identically: emoji/markup is stripped, the text is
+/// split at sentence boundaries so the backend never sees an over-long input,
+/// each chunk is synthesized, and the WAVs are concatenated. Errors when the
+/// sanitized text is empty (nothing speakable) or synthesis fails.
+pub async fn synthesize_long_text(text: &str, tts: &dyn TtsEngine) -> Result<Vec<u8>, String> {
+    let speech_text = sanitize_for_speech(text);
     if speech_text.is_empty() {
         return Err("Nothing speakable after removing symbols".to_string());
     }
@@ -78,9 +91,7 @@ pub async fn create_listen_item(
     for chunk in split_for_tts(&speech_text, TTS_CHUNK_CHARS) {
         wavs.push(tts.synthesize(&chunk).await.map_err(|e| format!("TTS failed: {e}"))?);
     }
-    let audio_wav = concat_wavs(&wavs)?;
-
-    Ok(ListenItem { title, processed, audio_wav })
+    concat_wavs(&wavs)
 }
 
 /// The fixed prompt used for title generation.
@@ -456,6 +467,43 @@ mod tests {
         assert!(t.chars().count() <= 41);
         assert!(t.ends_with('…'));
         assert_eq!(fallback_title("short note"), "short note");
+    }
+
+    /// A fake TTS that returns a one-sample WAV per call, so the concat is
+    /// observable without a live backend.
+    struct CountingTts {
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    #[async_trait::async_trait]
+    impl TtsEngine for CountingTts {
+        async fn synthesize(&self, text: &str) -> Result<Vec<u8>, String> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(tiny_wav(16000, &[text.chars().count() as i16]))
+        }
+    }
+
+    #[tokio::test]
+    async fn synthesize_long_text_chunks_synthesizes_and_concats() {
+        // Two sentences, each well under the chunk budget but split on the
+        // boundary once the text as a whole is long enough — force multiple
+        // chunks by exceeding TTS_CHUNK_CHARS.
+        let sentence = "这是一个用于测试的句子。"; // 12 chars incl. terminator
+        let text = sentence.repeat(60); // 720 chars > 480 budget ⇒ >1 chunk
+        let tts = CountingTts { calls: std::sync::atomic::AtomicUsize::new(0) };
+        let wav = synthesize_long_text(&text, &tts).await.unwrap();
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert!(
+            tts.calls.load(std::sync::atomic::Ordering::SeqCst) >= 2,
+            "over-budget text must be synthesized in multiple chunks"
+        );
+    }
+
+    #[tokio::test]
+    async fn synthesize_long_text_errors_when_nothing_speakable() {
+        let tts = CountingTts { calls: std::sync::atomic::AtomicUsize::new(0) };
+        // Emoji/markup only ⇒ sanitizes to empty ⇒ Err before any synthesis.
+        assert!(synthesize_long_text("😀⭐️ **``**", &tts).await.is_err());
+        assert_eq!(tts.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     /// Live e2e against a local OMLX (LLM + TTS). Requires the server running.

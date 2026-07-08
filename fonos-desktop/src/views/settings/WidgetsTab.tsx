@@ -14,7 +14,7 @@ import { listWidgets, saveWidget, deleteWidget } from "../../lib/api";
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 
-// ─── Shared class recipes (match ModesTab / NotesTab / HotkeysTab) ────────────
+// ─── Shared class recipes (match the other settings tabs) ─────────────────────
 
 const inputClass =
   "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
@@ -85,7 +85,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Model dropdown filtered by capability — replicates ModesTab's ModelSelector.
+/** Model dropdown filtered by capability.
  *  Empty value = fall back to the matching global profile (stt/llm/tts). */
 function ModelSelector({
   capKey, value, profiles, onChange,

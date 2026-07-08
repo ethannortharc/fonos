@@ -4,7 +4,7 @@ import { useState, KeyboardEvent } from "react";
 import type { AppConfig, ModelProfile } from "../../types";
 import { t, useT } from "../../lib/i18n";
 
-// ─── Section label style (matches ModesTab) ───────────────────────────────────
+// ─── Section label style (shared settings-tab look) ──────────────────────────
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (

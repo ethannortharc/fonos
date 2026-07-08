@@ -432,7 +432,7 @@ pub struct NotebookOutput {
     /// Handle used to reach the history DB.
     pub app: tauri::AppHandle,
     /// Target container id; `0` means "resolve the Quick Note notebook at run
-    /// time" (same lookup as `set_default_note_target`).
+    /// time" (Quick Note lookup, same SQL the note flow used).
     pub container_id: i64,
 }
 
@@ -450,7 +450,8 @@ impl Output for NotebookOutput {
         let state = self.app.state::<AppState>();
         let db = state.db.lock().map_err(|e| e.to_string())?;
         // container_id 0 ⇒ Quick Note by title (None if it doesn't exist yet,
-        // which stores the entry uncontained, matching set_default_note_target).
+        // which stores the entry uncontained — same Quick Note lookup the note
+        // flow used).
         let container_id = if self.container_id == 0 {
             db.query_row(
                 "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",

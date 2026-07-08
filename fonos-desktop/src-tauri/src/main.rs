@@ -871,7 +871,24 @@ fn main() {
                                             )
                                             .await;
                                         }
-                                        ("hold", false, true) => {
+                                        // Finish is unconditional on key-up — NOT
+                                        // gated on is_recording() — because a fast
+                                        // tap can release the key before
+                                        // start_recording flips IS_RECORDING (set
+                                        // only after mic warm-up completes). If
+                                        // finish were gated here, that key-up would
+                                        // no-op and MicSource::acquire would be
+                                        // left awaiting CAPTURE_DONE forever (no
+                                        // timeout), hanging the mic live until the
+                                        // next gesture. This is safe because
+                                        // MicSource::acquire registers its
+                                        // CAPTURE_DONE waiter before calling
+                                        // start_recording, so an "early" finish
+                                        // still latches via notify_waiters(); and
+                                        // when nothing is capturing, finishing is a
+                                        // harmless no-op (notify_waiters with no
+                                        // registered waiter is simply dropped).
+                                        ("hold", false, _) => {
                                             commands::workflow_widgets::finish_active_capture();
                                         }
                                         // toggle: 1st press starts, 2nd press finishes.

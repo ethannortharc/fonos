@@ -70,27 +70,6 @@ pub fn hide_agent_panel(app: tauri::AppHandle, state: tauri::State<'_, AppState>
     Ok(())
 }
 
-/// Set the default note target to Quick Note.
-///
-/// Retained for the P2 note-panel rebuild: the P1 `wf.note` workflow saves to
-/// Quick Note directly (via the `notebook` output's own lookup), so nothing
-/// calls this after the legacy note dispatch arm was removed in Task 10.
-#[allow(dead_code)]
-pub fn set_default_note_target(handle: &tauri::AppHandle) {
-    use tauri::Manager;
-    let state: &AppState = handle.state::<AppState>().inner();
-    let qn_id = state.db.lock().ok().and_then(|db| {
-        db.query_row(
-            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
-            [], |r| r.get::<_, i64>(0)
-        ).ok()
-    });
-    if let Ok(mut t) = state.note_target.lock() {
-        *t = qn_id;
-        eprintln!("fonos: default note target set to {:?}", qn_id);
-    }
-}
-
 /// Set the target notebook for note mode. Called by note panel when user selects a notebook.
 /// Pass container_id = 0 or negative to clear (Quick Note).
 #[tauri::command(rename_all = "snake_case")]

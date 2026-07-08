@@ -21,8 +21,10 @@
 
 use std::sync::Arc;
 
+use crate::config::AppConfig;
 use crate::error_class::classify_error;
 use crate::pipeline::PipelineEvent;
+use crate::workflow::builtin::{built_in_widgets, built_in_workflows};
 use crate::workflow::model::{Data, DataKind, WidgetDef, WorkflowDef};
 use crate::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
 
@@ -38,6 +40,39 @@ pub struct RunOutcome {
     /// The history entry id returned by the recorder, or `None` when the run
     /// had no recorder configured.
     pub entry_id: Option<i64>,
+}
+
+/// Overlay `custom` onto `base`: a custom entry whose id equals a base entry's
+/// replaces that base entry **wholesale** (in place, preserving position); a
+/// custom entry with a new id is appended. The overlay is not a field-level
+/// merge — the custom definition wins entirely.
+fn overlay_by_id<T, F>(base: Vec<T>, custom: &[T], id_of: F) -> Vec<T>
+where
+    T: Clone,
+    F: Fn(&T) -> &str,
+{
+    let mut result = base;
+    for entry in custom {
+        match result.iter_mut().find(|e| id_of(e) == id_of(entry)) {
+            Some(slot) => *slot = entry.clone(),
+            None => result.push(entry.clone()),
+        }
+    }
+    result
+}
+
+/// The effective widget set: the built-ins, with each config entry in
+/// [`AppConfig::widgets`] either replacing the built-in of the same id
+/// wholesale or, if its id is new, appended.
+pub fn effective_widgets(config: &AppConfig) -> Vec<WidgetDef> {
+    overlay_by_id(built_in_widgets(), &config.widgets, |w| w.id.as_str())
+}
+
+/// The effective workflow set: the built-ins overlaid by
+/// [`AppConfig::workflows`], with the same replace-by-id / append semantics as
+/// [`effective_widgets`].
+pub fn effective_workflows(config: &AppConfig) -> Vec<WorkflowDef> {
+    overlay_by_id(built_in_workflows(), &config.workflows, |w| w.id.as_str())
 }
 
 /// The live components a workflow resolves to: its source, its processors (in

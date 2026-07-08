@@ -88,27 +88,33 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
     {
         dictation_processors.push(format!("llm.{}", config.dictation_mode));
     }
+    let dictation_hotkey = overlay_hotkey(config, "wf.dictation", &config.hotkey_dictation);
     upsert_workflow(
         config,
         WorkflowDef {
             id: "wf.dictation".to_string(),
             name: "听写".to_string(),
             icon: "🎤".to_string(),
-            hotkey: config.hotkey_dictation.clone(),
+            hotkey: dictation_hotkey,
             source: "src.mic-hold".to_string(),
             processors: dictation_processors.clone(),
             outputs: vec!["out.insert".to_string()],
             builtin: true,
         },
     );
-    if !config.hotkey_dictation_toggle.is_empty() {
+    let dictation_toggle_hotkey = overlay_hotkey(
+        config,
+        "wf.dictation-toggle",
+        &config.hotkey_dictation_toggle,
+    );
+    if !dictation_toggle_hotkey.is_empty() {
         upsert_workflow(
             config,
             WorkflowDef {
                 id: "wf.dictation-toggle".to_string(),
                 name: "听写·切换".to_string(),
                 icon: "🎤".to_string(),
-                hotkey: config.hotkey_dictation_toggle.clone(),
+                hotkey: dictation_toggle_hotkey,
                 source: "src.mic-toggle".to_string(),
                 processors: dictation_processors,
                 outputs: vec!["out.insert".to_string()],
@@ -118,13 +124,14 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
     }
 
     // ── Rule 3: note (faithful — STT only, no LLM step) ──
+    let note_hotkey = overlay_hotkey(config, "wf.note", &config.hotkey_note);
     upsert_workflow(
         config,
         WorkflowDef {
             id: "wf.note".to_string(),
             name: "记笔记".to_string(),
             icon: "📓".to_string(),
-            hotkey: config.hotkey_note.clone(),
+            hotkey: note_hotkey,
             source: "src.mic-hold".to_string(),
             processors: vec!["stt.default".to_string()],
             outputs: vec!["out.quicknote".to_string()],
@@ -140,6 +147,8 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
         if container_id <= 0 {
             continue;
         }
+        let wf_id = format!("wf.note-{n}");
+        let hotkey = overlay_hotkey(config, &wf_id, &hotkey);
         let widget_id = format!("out.notebook-{container_id}");
         upsert_widget(
             config,
@@ -156,7 +165,7 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
         upsert_workflow(
             config,
             WorkflowDef {
-                id: format!("wf.note-{n}"),
+                id: wf_id,
                 name: format!("记笔记 {n}"),
                 icon: "📓".to_string(),
                 hotkey,
@@ -169,13 +178,14 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
     }
 
     // ── Rule 4: listen (selection → llm.{listen_mode} → speak) ──
+    let listen_hotkey = overlay_hotkey(config, "wf.listen", &config.hotkey_listen);
     upsert_workflow(
         config,
         WorkflowDef {
             id: "wf.listen".to_string(),
             name: "朗读".to_string(),
             icon: "🎧".to_string(),
-            hotkey: config.hotkey_listen.clone(),
+            hotkey: listen_hotkey,
             source: "src.selection".to_string(),
             processors: vec![format!("llm.{}", config.listen_mode)],
             outputs: vec!["out.speak".to_string()],
@@ -270,6 +280,28 @@ fn output_id_for_target(target: &OutputTarget) -> &'static str {
         OutputTarget::AppendToContainer => "out.quicknote",
         OutputTarget::None => "out.clipboard",
     }
+}
+
+/// The hotkey for a workflow overlay being (re)built from a legacy field.
+///
+/// On a fresh migration, `legacy` is the source of truth. But rule 6 clears
+/// the legacy fields once migrated, so if `migrate_to_workflows` were ever
+/// invoked again after its `workflow_migration_done` guard was bypassed (a
+/// future scenario-apply, partial re-migration, or reset), `legacy` would
+/// read back as `""`. Writing that straight through would silently overwrite
+/// a real hotkey with an empty one; instead, when `legacy` is empty, reuse
+/// whatever hotkey the existing `wf_id` overlay already carries (or `""` if
+/// there is no existing overlay, matching first-run behavior).
+fn overlay_hotkey(config: &AppConfig, wf_id: &str, legacy: &str) -> String {
+    if !legacy.is_empty() {
+        return legacy.to_string();
+    }
+    config
+        .workflows
+        .iter()
+        .find(|w| w.id == wf_id)
+        .map(|w| w.hotkey.clone())
+        .unwrap_or_default()
 }
 
 /// Insert `widget` into `config.widgets`, replacing any existing entry with the
@@ -393,6 +425,47 @@ mod tests {
         assert_eq!(cfg.widgets, widgets_after_first, "widgets unchanged");
         assert_eq!(cfg.dictation_mode, dictation_mode_after_first);
         assert!(cfg.workflow_migration_done);
+    }
+
+    // Guards the `overlay_hotkey` hardening: if `workflow_migration_done` is
+    // ever reset without restoring the (now-cleared) legacy hotkey fields — a
+    // future scenario-apply, partial re-migration, or reset bypassing the
+    // guard — re-running the migration must NOT clobber the already-migrated
+    // workflow hotkeys with the empty legacy values.
+    #[test]
+    fn migrate_rerun_after_flag_reset_preserves_hotkeys() {
+        let mut cfg = AppConfig::default();
+        let custom = BTreeMap::new();
+
+        assert!(migrate_to_workflows(&mut cfg, &custom), "first migration changes config");
+        let dictation_hotkey =
+            cfg.workflows.iter().find(|w| w.id == "wf.dictation").unwrap().hotkey.clone();
+        let note_hotkey = cfg.workflows.iter().find(|w| w.id == "wf.note").unwrap().hotkey.clone();
+        let listen_hotkey =
+            cfg.workflows.iter().find(|w| w.id == "wf.listen").unwrap().hotkey.clone();
+        assert_eq!(dictation_hotkey, "cmd+shift+space");
+        assert_eq!(note_hotkey, "option+n");
+        assert_eq!(listen_hotkey, "option+l");
+        let workflow_count_after_first = cfg.workflows.len();
+
+        // Simulate a guard bypass: the flag is reset but the legacy fields are
+        // NOT restored (rule 6 already cleared them on the first pass).
+        cfg.workflow_migration_done = false;
+        assert!(migrate_to_workflows(&mut cfg, &custom), "rerun still reports a change");
+
+        // Hotkeys must be unchanged, not emptied.
+        let d = cfg.workflows.iter().find(|w| w.id == "wf.dictation").expect("wf.dictation");
+        let n = cfg.workflows.iter().find(|w| w.id == "wf.note").expect("wf.note");
+        let l = cfg.workflows.iter().find(|w| w.id == "wf.listen").expect("wf.listen");
+        assert_eq!(d.hotkey, dictation_hotkey, "dictation hotkey preserved across rerun");
+        assert_eq!(n.hotkey, note_hotkey, "note hotkey preserved across rerun");
+        assert_eq!(l.hotkey, listen_hotkey, "listen hotkey preserved across rerun");
+
+        // No duplicate workflow ids: the rerun must overlay in place, not append.
+        assert_eq!(cfg.workflows.len(), workflow_count_after_first, "no new workflows added");
+        let ids: Vec<&str> = cfg.workflows.iter().map(|w| w.id.as_str()).collect();
+        let unique: std::collections::HashSet<&str> = ids.iter().copied().collect();
+        assert_eq!(ids.len(), unique.len(), "no duplicate workflow ids after rerun");
     }
 
     #[test]

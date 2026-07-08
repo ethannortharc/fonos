@@ -17,6 +17,7 @@ pub mod storage;
 pub mod text_action;
 pub mod tts;
 pub mod voices;
+pub mod workflow_widgets;
 
 // Re-export storage commands at the commands level so integration tests can
 // import them as `fonos_app::commands::list_entries` etc.

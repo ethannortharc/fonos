@@ -338,29 +338,44 @@ fn empty_stt_result() -> SttResult {
 /// Stop recording, save WAV, transcribe via HTTP API, inject text at cursor.
 #[tauri::command]
 pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppState>, mode_override: Option<String>) -> Result<SttResult, String> {
-    // 1. Stop mic and drain all samples. The IS_RECORDING flag is flipped under
-    //    the same lock start_recording uses, so a concurrent start/stop pair
-    //    can't interleave (see the invariant note in start_recording).
-    let all_samples: Vec<i16> = {
-        let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
-        if !IS_RECORDING.swap(false, Ordering::SeqCst) {
-            // Not recording — nothing to stop.
-            return Ok(empty_stt_result());
-        }
-        match guard.as_mut() {
-            Some(capture) => {
-                capture.stop();
-                let mut samples = Vec::new();
-                while let Some(chunk) = capture.take_chunk(200) {
-                    samples.extend_from_slice(&chunk);
-                }
-                samples
-            }
-            None => Vec::new(),
-        }
+    // Stop mic + drain all samples under the shared capture lock. `None` means
+    // we weren't recording, so there's nothing to transcribe — return the no-op
+    // result exactly as before (no float:processing emit).
+    let all_samples = match stop_and_drain(state.inner())? {
+        Some(samples) => samples,
+        None => return Ok(empty_stt_result()),
     };
 
     transcribe_samples(&app, state.inner(), all_samples, mode_override).await
+}
+
+/// Stop the live capture and drain every buffered sample, flipping the
+/// `IS_RECORDING` flag under the same `state.audio_capture` lock
+/// [`start_recording`] uses — so a concurrent start/stop pair can't interleave
+/// (see the invariant note in [`start_recording`]). Returns `None` when nothing
+/// was recording (the flag was already clear); `Some(samples)` otherwise
+/// (`samples` is empty when the capture slot held no live stream).
+///
+/// The raw counterpart to [`stop_recording`]: the same lock + swap + drain
+/// discipline, without the transcription / injection / stats side effects — so
+/// the workflow `MicSource` can reuse it rather than copy the lock logic.
+pub(crate) fn stop_and_drain(state: &AppState) -> Result<Option<Vec<i16>>, String> {
+    let mut guard = state.audio_capture.lock().map_err(|e| e.to_string())?;
+    if !IS_RECORDING.swap(false, Ordering::SeqCst) {
+        // Not recording — nothing to stop.
+        return Ok(None);
+    }
+    Ok(Some(match guard.as_mut() {
+        Some(capture) => {
+            capture.stop();
+            let mut samples = Vec::new();
+            while let Some(chunk) = capture.take_chunk(200) {
+                samples.extend_from_slice(&chunk);
+            }
+            samples
+        }
+        None => Vec::new(),
+    }))
 }
 
 /// Preprocess, save, transcribe (Apple / Whisper-HTTP / chat) and record a set

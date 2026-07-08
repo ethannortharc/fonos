@@ -75,6 +75,22 @@ pub fn effective_workflows(config: &AppConfig) -> Vec<WorkflowDef> {
     overlay_by_id(built_in_workflows(), &config.workflows, |w| w.id.as_str())
 }
 
+/// The **names** of every workflow in `workflows` that references `widget_id`
+/// in its source, processors, or outputs. The settings layer uses this to
+/// refuse deleting a widget a workflow still depends on, listing the referrers
+/// by name. Returns an empty vec when nothing references the id.
+pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef]) -> Vec<String> {
+    workflows
+        .iter()
+        .filter(|wf| {
+            wf.source == widget_id
+                || wf.processors.iter().any(|p| p == widget_id)
+                || wf.outputs.iter().any(|o| o == widget_id)
+        })
+        .map(|wf| wf.name.clone())
+        .collect()
+}
+
 /// The live components a workflow resolves to: its source, its processors (in
 /// order), and its outputs (in order).
 type Instantiated = (Arc<dyn Source>, Vec<Arc<dyn Processor>>, Vec<Arc<dyn Output>>);
@@ -600,6 +616,34 @@ mod tests {
         assert!(engine::validate(&reg, &wf_ok_text, &widgets).is_ok());
         let wf_ok_audio = workflow("src.audio", &["p.stt"], &["out.sink"]);
         assert!(engine::validate(&reg, &wf_ok_audio, &widgets).is_ok());
+    }
+
+    #[test]
+    fn widget_referenced_by_finds_source_processor_and_output_refs() {
+        let mk = |name: &str, source: &str, processors: &[&str], outputs: &[&str]| -> WorkflowDef {
+            WorkflowDef {
+                id: format!("wf.{name}"),
+                name: name.to_string(),
+                icon: String::new(),
+                hotkey: String::new(),
+                source: source.to_string(),
+                processors: processors.iter().map(|s| s.to_string()).collect(),
+                outputs: outputs.iter().map(|s| s.to_string()).collect(),
+                builtin: false,
+            }
+        };
+        let workflows = vec![
+            mk("as_source", "w.target", &["p.x"], &["out.x"]),
+            mk("as_processor", "src.x", &["w.target"], &["out.x"]),
+            mk("as_output", "src.x", &["p.x"], &["w.target"]),
+            mk("unrelated", "src.x", &["p.x"], &["out.x"]),
+        ];
+        // Referenced in the source, a processor, or an output → the workflow's
+        // name is returned; the workflow that never mentions it is excluded.
+        let refs = engine::widget_referenced_by("w.target", &workflows);
+        assert_eq!(refs, vec!["as_source", "as_processor", "as_output"]);
+        // A widget nothing references yields an empty list.
+        assert!(engine::widget_referenced_by("w.nobody", &workflows).is_empty());
     }
 
     #[tokio::test]

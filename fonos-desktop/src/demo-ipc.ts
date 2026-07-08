@@ -303,6 +303,59 @@ const modes = [
   },
 ];
 
+// Workflow P1 (Task 12): small static widget/workflow catalog so the Widgets
+// and Workflows settings tabs have something to render in the browser demo.
+// list_workflows() flattens WorkflowDef + a resolved source_type_tag — kept
+// as literal fields here rather than re-derived from `widgets` below.
+const widgets = [
+  {
+    id: "src.mic-hold", role: "source", type_tag: "microphone",
+    name: "Microphone · Hold", icon: "🎙", props: { capture: "hold" }, builtin: true,
+  },
+  {
+    id: "src.selection", role: "source", type_tag: "selection",
+    name: "Selection", icon: "🖱", props: {}, builtin: true,
+  },
+  {
+    id: "stt.default", role: "processor", type_tag: "stt",
+    name: "Default Transcribe", icon: "✍️",
+    props: { model_profile: "", stt_prompt: "", vocab_books: [], temperature: 0 },
+    builtin: true,
+  },
+  {
+    id: "llm.polish", role: "processor", type_tag: "llm",
+    name: "Polish", icon: "✨",
+    props: {
+      system: "Rewrite the transcript into clear, natural writing.",
+      user_template: "{text}", model_profile: "", temperature: 0.1,
+      max_tokens: 4096, output_language: "auto", vocab_books: [],
+    },
+    builtin: true,
+  },
+  {
+    id: "out.insert", role: "output", type_tag: "insert",
+    name: "Insert", icon: "⌨️", props: { strategy: "paste", press_enter: false }, builtin: true,
+  },
+];
+
+const workflows = [
+  {
+    id: "wf.dictation", name: "Dictation", icon: "🎤", hotkey: "cmd+shift+space",
+    source: "src.mic-hold", processors: ["stt.default"], outputs: ["out.insert"],
+    builtin: true, source_type_tag: "microphone",
+  },
+  {
+    id: "wf.translate-pop", name: "Translate popup", icon: "🌐", hotkey: "",
+    source: "src.selection", processors: ["llm.polish"], outputs: ["out.insert"],
+    builtin: true, source_type_tag: "selection",
+  },
+  {
+    id: "wf.custom-demo", name: "My translate & insert", icon: "🌟", hotkey: "",
+    source: "src.selection", processors: ["llm.polish"], outputs: ["out.insert"],
+    builtin: false, source_type_tag: "selection",
+  },
+];
+
 const containers = [
   {
     id: 1,
@@ -535,6 +588,10 @@ export function installDemoIpc() {
         return null;
       case "list_modes":
         return modes;
+      case "list_widgets":
+        return widgets;
+      case "list_workflows":
+        return workflows;
       case "list_containers":
         return containers;
       case "list_entries": {

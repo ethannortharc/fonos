@@ -88,6 +88,10 @@ export interface AppConfig {
   global_vocab_books?: string[];
   // Saved scenarios (issue #29)
   saved_scenarios?: SavedScenario[];
+  // Workflow engine (Workflow P1) — components + pipelines that supersede modes
+  widgets?: WidgetDef[];
+  workflows?: WorkflowDef[];
+  workflow_migration_done?: boolean;
 }
 
 /** A per-app override for the text injection strategy. */
@@ -289,6 +293,65 @@ export interface Mode {
 export interface ModeEntry extends Mode {
   id: string;
   builtin: boolean;
+}
+
+// ─── Workflow (Workflow P1) ─────────────────────────────────────────────────
+// Component model that supersedes Modes: a workflow wires one source widget
+// through zero or more processor widgets to one or more output widgets.
+
+/** The role a widget plays in a pipeline — mirrors
+ *  fonos_core::workflow::model::WidgetRole. */
+export type WidgetRole = "source" | "processor" | "output";
+
+/** A configured widget instance — mirrors
+ *  fonos_core::workflow::model::WidgetDef. `props` is interpreted per
+ *  `type_tag` by the registry (e.g. an `llm` widget's props carry
+ *  system/user_template/temperature/max_tokens/output_language/vocab_books;
+ *  a `microphone` source's props carry `capture`: "hold" | "toggle"). */
+export interface WidgetDef {
+  /** Globally unique id; builtins use a role prefix, e.g. "src.selection",
+   *  "stt.default", "llm.polish", "out.insert". */
+  id: string;
+  role: WidgetRole;
+  /** Which registered component implementation to instantiate, e.g.
+   *  "selection" | "microphone" | "stt" | "llm" | "insert" | "replace" |
+   *  "clipboard" | "notebook" | "speak" | "panel" | "uppercase". */
+  type_tag: string;
+  name: string;
+  icon?: string;
+  props?: Record<string, unknown>;
+  /** Whether this widget ships with the app (builtins cannot be deleted). */
+  builtin?: boolean;
+}
+
+/** A configured workflow: a source, an ordered processor chain, and one or
+ *  more outputs, referenced by widget id — mirrors
+ *  fonos_core::workflow::model::WorkflowDef. */
+export interface WorkflowDef {
+  /** Globally unique id; builtins use fixed ids (e.g. "wf.dictation"),
+   *  custom workflows use "wf.custom-{uuid}". */
+  id: string;
+  name: string;
+  icon?: string;
+  /** Hotkey tag that triggers this workflow; empty/absent = no trigger. */
+  hotkey?: string;
+  /** Id of the WidgetDef used as this workflow's source. */
+  source: string;
+  /** Ids of the WidgetDefs used as this workflow's processors, in order. */
+  processors?: string[];
+  /** Ids of the WidgetDefs used as this workflow's outputs, in delivery
+   *  order. Must be non-empty; enforced by the engine. */
+  outputs: string[];
+  /** Whether this workflow ships with the app (builtins cannot be deleted). */
+  builtin?: boolean;
+}
+
+/** A workflow row as returned by list_workflows: the WorkflowDef flattened,
+ *  plus the `type_tag` of its source widget (`""` if the source id no longer
+ *  resolves) — mirrors commands::workflow_cfg::WorkflowRow. Lets the
+ *  Dictation drum filter microphone workflows without re-resolving widgets. */
+export interface WorkflowRow extends WorkflowDef {
+  source_type_tag: string;
 }
 
 // ─── Model Caps ───────────────────────────────────────────────────────────────

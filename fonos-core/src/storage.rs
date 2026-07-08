@@ -27,6 +27,8 @@ pub enum SourceType {
     Listen,
     /// Text-action result: selection grabbed via hotkey, processed by a mode's LLM step.
     Transform,
+    /// Workflow run: a Source→Processor→Output pipeline executed by the engine.
+    Workflow,
 }
 
 impl SourceType {
@@ -38,6 +40,7 @@ impl SourceType {
             SourceType::Meeting => "meeting",
             SourceType::Listen => "listen",
             SourceType::Transform => "transform",
+            SourceType::Workflow => "workflow",
         }
     }
 
@@ -48,6 +51,7 @@ impl SourceType {
             "meeting" => SourceType::Meeting,
             "listen" => SourceType::Listen,
             "transform" => SourceType::Transform,
+            "workflow" => SourceType::Workflow,
             _ => SourceType::Dictation,
         }
     }
@@ -1035,6 +1039,12 @@ mod tests {
     fn source_type_transform_roundtrip() {
         assert_eq!(SourceType::Transform.as_str(), "transform");
         assert!(matches!(SourceType::from_str("transform"), SourceType::Transform));
+    }
+
+    #[test]
+    fn source_type_workflow_roundtrip() {
+        assert_eq!(SourceType::Workflow.as_str(), "workflow");
+        assert!(matches!(SourceType::from_str("workflow"), SourceType::Workflow));
     }
 
     #[test]

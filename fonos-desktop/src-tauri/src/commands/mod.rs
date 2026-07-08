@@ -17,6 +17,7 @@ pub mod storage;
 pub mod text_action;
 pub mod tts;
 pub mod voices;
+pub mod workflow_cfg;
 pub mod workflow_exec;
 pub mod workflow_widgets;
 
@@ -272,4 +273,9 @@ pub struct AppState {
     /// Whether a hands-free "call mode" loop is running (issue #24). The loop
     /// task polls this flag for cooperative cancellation; `call_stop` clears it.
     pub call_active: Arc<std::sync::atomic::AtomicBool>,
+    /// The workflow component registry, built once in `main`'s `.setup()` (it
+    /// needs an `AppHandle`, only available there) and shared by every workflow
+    /// run and the settings CRUD commands. Built exactly once — `run_workflow`
+    /// and `workflow_cfg` both borrow this instance rather than rebuilding.
+    pub registry: Arc<fonos_core::workflow::registry::Registry>,
 }

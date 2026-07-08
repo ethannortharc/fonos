@@ -306,18 +306,11 @@ fn main() {
 
     let meeting_state = commands::meeting::MeetingState::new();
 
-    let app_state = AppState {
-        audio_capture: Arc::new(Mutex::new(None)),
-        audio_playback: Arc::new(Mutex::new(None)),
-        config: Arc::new(Mutex::new(config)),
-        db: Arc::new(Mutex::new(db_conn)),
-        agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
-        meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
-        note_target: Arc::new(Mutex::new(None)),
-        agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
-        sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
-        call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    };
+    // `AppState` construction is deferred into `.setup()` below: its `registry`
+    // field is built by `build_registry(handle)`, and the `AppHandle` is only
+    // available inside setup. The owned pieces built above (config, db_conn,
+    // agent_state, meeting_state) are moved into the setup closure, which
+    // assembles AppState and `manage`s it before anything else in setup reads it.
 
     // `mut` is only exercised on Linux (the global-shortcut plugin block below);
     // on macOS the binding is never reassigned.
@@ -331,7 +324,6 @@ fn main() {
     }
 
     builder
-        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             // Config commands
             commands::config::get_config,
@@ -439,8 +431,36 @@ fn main() {
             commands::meeting::hide_meeting_panel,
             commands::meeting::export_meeting_md,
             commands::meeting::export_meeting_json,
+            // Workflow / widget CRUD commands (settings pages)
+            commands::workflow_cfg::list_widgets,
+            commands::workflow_cfg::list_workflows,
+            commands::workflow_cfg::save_widget,
+            commands::workflow_cfg::save_workflow,
+            commands::workflow_cfg::delete_widget,
+            commands::workflow_cfg::delete_workflow,
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            // Assemble and manage the shared AppState first — the rest of setup
+            // (and every command) reaches it via `app.state::<AppState>()`. The
+            // workflow registry is built exactly once here, from this handle, and
+            // shared by `run_workflow` and the settings CRUD commands (rather than
+            // rebuilt per run). Managing here (vs. on the builder) is equivalent:
+            // no command runs before setup completes.
+            let app_state = AppState {
+                audio_capture: Arc::new(Mutex::new(None)),
+                audio_playback: Arc::new(Mutex::new(None)),
+                config: Arc::new(Mutex::new(config)),
+                db: Arc::new(Mutex::new(db_conn)),
+                agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
+                meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
+                note_target: Arc::new(Mutex::new(None)),
+                agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
+                sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
+                call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                registry: Arc::new(commands::workflow_widgets::build_registry(app.handle().clone())),
+            };
+            app.manage(app_state);
+
             // 0. Make agent-panel window fully transparent:
             //    - Clear webview background so only #drop div is visible
             //    - Disable window shadow so macOS doesn't draw a rectangular outline

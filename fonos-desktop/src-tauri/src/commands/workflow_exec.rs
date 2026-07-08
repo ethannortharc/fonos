@@ -58,8 +58,11 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
     // 2. Resolve everything the run needs from the live config, then drop the
     //    lock. `find` moves the matching def out of the effective set (owned),
     //    so nothing borrows the guard past this block.
-    let (wf_opt, widgets, translate_target) = {
+    let (wf_opt, widgets, translate_target, registry) = {
         let state: tauri::State<'_, AppState> = handle.state();
+        // Clone the shared registry Arc out so it outlives the State borrow and
+        // can be used across the `engine::run` await below.
+        let registry = state.registry.clone();
         let config = match state.config.lock() {
             Ok(c) => c,
             Err(e) => {
@@ -72,7 +75,7 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
         let wf_opt = engine::effective_workflows(&config)
             .into_iter()
             .find(|w| w.id == workflow_id);
-        (wf_opt, widgets, translate_target)
+        (wf_opt, widgets, translate_target, registry)
     };
 
     let Some(wf) = wf_opt else {
@@ -95,10 +98,9 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
         })),
     };
 
-    // 4. Build the registry and run. Building per call is fine for T9; T11 will
-    //    hoist it to `AppState` — do not pre-optimize here.
-    let reg = super::workflow_widgets::build_registry(handle.clone());
-    if let Err(e) = engine::run(&reg, &wf, &widgets, &ctx).await {
+    // 4. Run against the shared registry, built once in `main`'s `.setup()`
+    //    (Task 11) and cloned out of `AppState` above — no longer rebuilt per run.
+    if let Err(e) = engine::run(&registry, &wf, &widgets, &ctx).await {
         // The engine already emitted the terminal Failed / NoSpeech event for
         // this error; only log the raw cause.
         eprintln!("fonos: run_workflow '{}' failed: {e}", wf.id);

@@ -3,10 +3,15 @@
 //!
 //! [`migrate_to_workflows`] rewrites the legacy hotkey + mode fields of an
 //! [`AppConfig`] into overlay [`WorkflowDef`]s / [`WidgetDef`]s in
-//! `config.workflows` / `config.widgets`, then clears the legacy hotkey fields
-//! so the old code paths (and Task 10's hotkey registration) cannot
-//! double-register. It is idempotent: guarded by `config.workflow_migration_done`
-//! and a no-op (returning `false`) once that flag is set.
+//! `config.workflows` / `config.widgets`, then clears the legacy *note* and
+//! *listen* hotkey fields (only macOS ever read them, and Task 10 deleted those
+//! dispatch arms). The *dictation* hotkey fields are deliberately KEPT: Linux's
+//! global-shortcut registration still reads `config.hotkey_dictation` /
+//! `hotkey_dictation_toggle` directly (not `effective_workflows`), so clearing
+//! them would leave Linux with no dictation shortcut post-migration; macOS
+//! ignores them (`build_hotkey_configs` iterates `effective_workflows`). It is
+//! idempotent: guarded by `config.workflow_migration_done` and a no-op
+//! (returning `false`) once that flag is set.
 
 use std::collections::BTreeMap;
 
@@ -31,7 +36,8 @@ const BUILTIN_LLM_WIDGET_IDS: [&str; 5] = ["polish", "formal", "translate", "sum
 /// fields of `config` into overlay [`WorkflowDef`]s / [`WidgetDef`]s (pushed
 /// into `config.workflows` / `config.widgets`, replacing any built-in of the
 /// same id wholesale via [`crate::workflow::engine::effective_workflows`]), then
-/// clears the legacy hotkey fields so nothing double-registers. `custom_modes`
+/// clears the legacy note/listen hotkey fields (the dictation fields are KEPT —
+/// Linux still reads them directly; see the module doc). `custom_modes`
 /// is the user's `modes.json` map (desktop passes
 /// [`crate::modes::load_custom_modes`]; tests pass a hand-built map).
 ///
@@ -45,48 +51,28 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
 
     // ── Rule 1: custom modes with LLM content → `llm.{id}` processor widgets ──
     // The built-in four are skipped (already built-in widgets). STT/model
-    // fields are dropped; `vocab_books` is carried over.
+    // fields are dropped; `vocab_books` is carried over. A content-bearing
+    // custom mode referenced ONLY by a listen/text-action is still covered here
+    // (this loop iterates every custom mode), and, defensively, by
+    // [`ensure_llm_widget`] at the point of reference.
     for (mode_id, mode) in custom_modes {
         if BUILTIN_LLM_MODE_IDS.contains(&mode_id.as_str()) {
             continue;
         }
-        if mode.system.is_none() && mode.user_template.is_none() {
+        if !mode_has_llm_content(mode) {
             continue;
         }
-        let props = LlmProps {
-            system: mode.system.clone(),
-            user_template: mode.user_template.clone(),
-            // Legacy `Mode.model` is a model identifier, not a profile id; there
-            // is no faithful mapping, so fall back to the global LLM profile.
-            model_profile: String::new(),
-            temperature: mode.temperature,
-            max_tokens: mode.max_tokens,
-            output_language: mode.output_language.clone(),
-            vocab_books: mode.vocab_books.clone(),
-        };
-        let props = serde_json::to_value(&props).unwrap_or_else(|_| serde_json::json!({}));
-        upsert_widget(
-            config,
-            WidgetDef {
-                id: format!("llm.{mode_id}"),
-                role: WidgetRole::Processor,
-                type_tag: "llm".to_string(),
-                name: mode.name.clone(),
-                icon: mode.icon.clone(),
-                props,
-                builtin: false,
-            },
-        );
+        upsert_widget(config, llm_widget_from_mode(mode_id, mode));
     }
 
     // ── Rule 2: dictation ──
     // processors = [stt.default] (+ llm.{dictation_mode} when not "raw" and that
     // mode resolves to a real llm widget).
     let mut dictation_processors = vec!["stt.default".to_string()];
-    if config.dictation_mode != "raw"
-        && mode_resolves_to_llm_widget(&config.dictation_mode, custom_modes)
-    {
-        dictation_processors.push(format!("llm.{}", config.dictation_mode));
+    let dictation_mode = config.dictation_mode.clone();
+    if dictation_mode != "raw" && mode_resolves_to_llm_widget(&dictation_mode, custom_modes) {
+        ensure_llm_widget(config, &dictation_mode, custom_modes);
+        dictation_processors.push(format!("llm.{dictation_mode}"));
     }
     let dictation_hotkey = overlay_hotkey(config, "wf.dictation", &config.hotkey_dictation);
     upsert_workflow(
@@ -179,6 +165,21 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
 
     // ── Rule 4: listen (selection → llm.{listen_mode} → speak) ──
     let listen_hotkey = overlay_hotkey(config, "wf.listen", &config.hotkey_listen);
+    let listen_mode = config.listen_mode.clone();
+    let listen_processors = if listen_mode != "raw"
+        && mode_resolves_to_llm_widget(&listen_mode, custom_modes)
+    {
+        // Content-bearing mode (built-in like `note`, or custom): back the
+        // reference with a real widget so it never dangles.
+        ensure_llm_widget(config, &listen_mode, custom_modes);
+        vec![format!("llm.{listen_mode}")]
+    } else {
+        // Content-less mode (e.g. `raw`): drop the LLM step rather than dangle a
+        // reference to a widget that is never built. Listen then speaks the raw
+        // selection — degraded but functional (selection is Text, out.speak
+        // accepts Text, so the chain still validates).
+        Vec::new()
+    };
     upsert_workflow(
         config,
         WorkflowDef {
@@ -187,7 +188,7 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
             icon: "🎧".to_string(),
             hotkey: listen_hotkey,
             source: "src.selection".to_string(),
-            processors: vec![format!("llm.{}", config.listen_mode)],
+            processors: listen_processors,
             outputs: vec!["out.speak".to_string()],
             builtin: true,
         },
@@ -215,6 +216,16 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
     let text_actions = std::mem::take(&mut config.text_actions);
     for (i, binding) in text_actions.iter().enumerate() {
         let name = format!("文本动作 {}", resolve_mode_name(&binding.mode_id, custom_modes));
+        let processors = if mode_resolves_to_llm_widget(&binding.mode_id, custom_modes) {
+            // Content-bearing mode: back the reference with a real widget.
+            ensure_llm_widget(config, &binding.mode_id, custom_modes);
+            vec![format!("llm.{}", binding.mode_id)]
+        } else {
+            // Content-less mode (e.g. `raw`): drop the LLM step; the text-action
+            // echoes the raw selection to its output rather than dangling
+            // `llm.raw`. (selection is Text; every output accepts Text.)
+            Vec::new()
+        };
         upsert_workflow(
             config,
             WorkflowDef {
@@ -223,17 +234,28 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
                 icon: "✨".to_string(),
                 hotkey: binding.hotkey.clone(),
                 source: "src.selection".to_string(),
-                processors: vec![format!("llm.{}", binding.mode_id)],
+                processors,
                 outputs: vec![output_id_for_target(&binding.output_target).to_string()],
                 builtin: false,
             },
         );
     }
 
-    // ── Rule 6: clear legacy hotkey fields (values now live in workflows) ──
-    // `dictation_mode` is intentionally preserved (Task 13 keeps the field).
-    config.hotkey_dictation.clear();
-    config.hotkey_dictation_toggle.clear();
+    // ── Rule 6: clear legacy NOTE / LISTEN hotkey fields (values now live in
+    // workflows). Only macOS ever read these, and Task 10 deleted those dispatch
+    // arms, so clearing is pure hygiene on macOS and a no-op on Linux (Linux
+    // never registered note/listen shortcuts).
+    //
+    // The DICTATION hotkey fields are intentionally NOT cleared: Linux's
+    // global-shortcut registration (main.rs) reads `config.hotkey_dictation` /
+    // `hotkey_dictation_toggle` DIRECTLY, not `effective_workflows`, so clearing
+    // them would leave Linux with no dictation shortcut post-migration — a
+    // regression of a previously-working flow. macOS is unaffected:
+    // `build_hotkey_configs` iterates `effective_workflows` and never reads these
+    // fields (so they are inert there). Their value is also mirrored into
+    // wf.dictation / wf.dictation-toggle for the macOS path.
+    //
+    // `dictation_mode` is likewise preserved (Task 13 keeps the field).
     config.hotkey_note.clear();
     config.hotkey_note_1.clear();
     config.hotkey_note_2.clear();
@@ -244,18 +266,103 @@ pub fn migrate_to_workflows(config: &mut AppConfig, custom_modes: &BTreeMap<Stri
     true
 }
 
-/// Does `mode_id` resolve to a real `llm.{mode_id}` processor widget — either a
-/// built-in one, or one that rule 1 generates from a content-bearing custom
-/// mode? Used to decide whether to append an LLM step to the dictation
-/// pipeline, so a mode with no widget (e.g. built-in `note`, which has no
-/// `llm.note` widget) never produces a dangling reference.
+/// Does `mode_id` resolve to a real `llm.{mode_id}` processor widget after
+/// migration? True for a built-in `llm.*` widget ([`BUILTIN_LLM_WIDGET_IDS`]), a
+/// content-bearing custom mode (rule 1 / [`ensure_llm_widget`] generates it), or
+/// a content-bearing built-in mode such as `note` ([`ensure_llm_widget`]
+/// generates it — `note` ships no `llm.note` widget). Used to decide whether a
+/// dictation / listen / text-action pipeline gets an LLM step, so a mode with no
+/// widget (e.g. built-in `raw`) never produces a dangling reference.
+///
+/// A custom mode shadows a built-in of the same id (matching `all_modes()`): if
+/// a custom mode exists for `mode_id`, only its content decides — the built-in
+/// of the same name is not consulted. This keeps the resolver consistent with
+/// [`ensure_llm_widget`], so every reference this permits gets a backing widget.
 fn mode_resolves_to_llm_widget(mode_id: &str, custom_modes: &BTreeMap<String, Mode>) -> bool {
     if BUILTIN_LLM_WIDGET_IDS.contains(&mode_id) {
         return true;
     }
-    custom_modes
+    if let Some(mode) = custom_modes.get(mode_id) {
+        return mode_has_llm_content(mode);
+    }
+    crate::modes::built_in_modes()
         .get(mode_id)
-        .is_some_and(|m| m.system.is_some() || m.user_template.is_some())
+        .is_some_and(mode_has_llm_content)
+}
+
+/// Whether `mode` carries LLM content — a `system` prompt or a `user_template`
+/// — and so warrants an `llm.*` processor widget. Modes without either (e.g.
+/// built-in `raw`, or `meeting`) resolve to no widget.
+fn mode_has_llm_content(mode: &Mode) -> bool {
+    mode.system.is_some() || mode.user_template.is_some()
+}
+
+/// Build an `llm.{mode_id}` processor [`WidgetDef`] from `mode`'s LLM fields.
+/// Shared by rule 1 (custom modes) and [`ensure_llm_widget`] (built-in
+/// content-bearing modes referenced only by a listen/text-action). STT/model
+/// fields are dropped; `vocab_books` is carried over.
+fn llm_widget_from_mode(mode_id: &str, mode: &Mode) -> WidgetDef {
+    let props = LlmProps {
+        system: mode.system.clone(),
+        user_template: mode.user_template.clone(),
+        // Legacy `Mode.model` is a model identifier, not a profile id; there is
+        // no faithful mapping, so fall back to the global LLM profile.
+        model_profile: String::new(),
+        temperature: mode.temperature,
+        max_tokens: mode.max_tokens,
+        output_language: mode.output_language.clone(),
+        vocab_books: mode.vocab_books.clone(),
+    };
+    let props = serde_json::to_value(&props).unwrap_or_else(|_| serde_json::json!({}));
+    WidgetDef {
+        id: format!("llm.{mode_id}"),
+        role: WidgetRole::Processor,
+        type_tag: "llm".to_string(),
+        name: mode.name.clone(),
+        icon: mode.icon.clone(),
+        props,
+        builtin: false,
+    }
+}
+
+/// Guarantee that a `llm.{mode_id}` widget exists to back a reference emitted by
+/// rules 2/4/5, so migration never produces a dangling processor id. A no-op
+/// unless a widget must be generated. Precondition: only called when
+/// [`mode_resolves_to_llm_widget`] returned `true` for `mode_id`, so the
+/// content-less cases below are defensive and simply generate nothing.
+///
+/// - `mode_id` is a built-in `llm.*` widget id ([`BUILTIN_LLM_WIDGET_IDS`]):
+///   nothing — the widget already ships.
+/// - a `llm.{mode_id}` widget was already generated this run (rule 1, or an
+///   earlier rules-2/4/5 reference to the same mode): nothing — dedup.
+/// - `mode_id` is a **custom** mode with content: generate its widget (covers a
+///   custom mode referenced ONLY by a listen/text-action; rule 1 also generates
+///   it, in which case the dedup branch above already fired).
+/// - `mode_id` is a **built-in** mode with content (e.g. `note`): generate its
+///   widget from [`crate::modes::built_in_modes`] — the case rule 1 never covers
+///   (it iterates only custom modes), and the one that used to dangle
+///   (`llm.note`).
+///
+/// A custom mode shadows a built-in of the same id (matching `all_modes()`), so
+/// a content-less custom mode is NOT backed by a built-in of the same name.
+fn ensure_llm_widget(config: &mut AppConfig, mode_id: &str, custom_modes: &BTreeMap<String, Mode>) {
+    if BUILTIN_LLM_WIDGET_IDS.contains(&mode_id) {
+        return;
+    }
+    if config.widgets.iter().any(|w| w.id == format!("llm.{mode_id}")) {
+        return;
+    }
+    if let Some(mode) = custom_modes.get(mode_id) {
+        if mode_has_llm_content(mode) {
+            upsert_widget(config, llm_widget_from_mode(mode_id, mode));
+        }
+        return;
+    }
+    if let Some(mode) = crate::modes::built_in_modes().get(mode_id) {
+        if mode_has_llm_content(mode) {
+            upsert_widget(config, llm_widget_from_mode(mode_id, mode));
+        }
+    }
 }
 
 /// The display name for `mode_id`: the custom mode's name if present, else the
@@ -396,9 +503,15 @@ mod tests {
         assert!(!cfg.workflows.iter().any(|w| w.id.starts_with("wf.ta-")));
         assert!(cfg.text_actions.is_empty());
 
-        // Rule 6: legacy hotkey fields are cleared; dictation_mode is preserved.
-        assert!(cfg.hotkey_dictation.is_empty());
-        assert!(cfg.hotkey_dictation_toggle.is_empty());
+        // Rule 6: legacy NOTE/LISTEN hotkey fields are cleared. The DICTATION
+        // fields are KEPT — Linux's global-shortcut registration reads them
+        // directly, so clearing would break Linux dictation; their value also
+        // lives in the generated wf.dictation hotkey. dictation_mode preserved.
+        assert_eq!(cfg.hotkey_dictation, "cmd+shift+space", "dictation hotkey KEPT for Linux");
+        assert!(
+            cfg.hotkey_dictation_toggle.is_empty(),
+            "toggle hotkey empty by default (not cleared — it was already empty)"
+        );
         assert!(cfg.hotkey_note.is_empty());
         assert!(cfg.hotkey_note_1.is_empty());
         assert!(cfg.hotkey_note_2.is_empty());
@@ -428,10 +541,13 @@ mod tests {
     }
 
     // Guards the `overlay_hotkey` hardening: if `workflow_migration_done` is
-    // ever reset without restoring the (now-cleared) legacy hotkey fields — a
-    // future scenario-apply, partial re-migration, or reset bypassing the
-    // guard — re-running the migration must NOT clobber the already-migrated
-    // workflow hotkeys with the empty legacy values.
+    // ever reset without restoring the legacy hotkey fields — a future
+    // scenario-apply, partial re-migration, or reset bypassing the guard —
+    // re-running the migration must NOT clobber the already-migrated workflow
+    // hotkeys. Two mechanisms keep them stable: the DICTATION hotkey is now KEPT
+    // in its legacy field, so the rerun re-derives the same value from it
+    // directly; the (still-cleared) NOTE/LISTEN legacy fields read back as `""`,
+    // so `overlay_hotkey` reuses the existing overlay's hotkey instead.
     #[test]
     fn migrate_rerun_after_flag_reset_preserves_hotkeys() {
         let mut cfg = AppConfig::default();
@@ -475,6 +591,42 @@ mod tests {
         assert!(!migrate_to_workflows(&mut cfg, &BTreeMap::new()));
         assert_eq!(cfg.hotkey_dictation, "cmd+shift+space");
         assert!(cfg.workflows.is_empty());
+    }
+
+    // ── Fix: Linux dictation hotkey survives migration ──────────────────────
+    // Linux registers global shortcuts by reading config.hotkey_dictation /
+    // hotkey_dictation_toggle DIRECTLY (main.rs), not effective_workflows, so
+    // migration must NOT clear them — otherwise post-migration Linux registers no
+    // dictation shortcut (a regression). macOS ignores these fields entirely
+    // (build_hotkey_configs iterates effective_workflows).
+    #[test]
+    fn migration_keeps_dictation_hotkey_fields_for_linux() {
+        let mut cfg = AppConfig {
+            hotkey_dictation_toggle: "cmd+shift+d".into(),
+            ..Default::default()
+        };
+        // Default hotkey_dictation is "cmd+shift+space".
+        assert!(migrate_to_workflows(&mut cfg, &BTreeMap::new()));
+
+        assert_eq!(
+            cfg.hotkey_dictation, "cmd+shift+space",
+            "hold-to-talk dictation hotkey survives (Linux reads it directly)"
+        );
+        assert_eq!(
+            cfg.hotkey_dictation_toggle, "cmd+shift+d",
+            "toggle dictation hotkey survives (Linux reads it directly)"
+        );
+
+        // Same values are mirrored into the workflows the macOS path reads.
+        let d = cfg.workflows.iter().find(|w| w.id == "wf.dictation").unwrap();
+        assert_eq!(d.hotkey, "cmd+shift+space");
+        let t = cfg.workflows.iter().find(|w| w.id == "wf.dictation-toggle").unwrap();
+        assert_eq!(t.hotkey, "cmd+shift+d");
+
+        // The note/listen legacy fields ARE still cleared (only macOS ever read
+        // them, and Task 10 deleted those readers; Linux never registered them).
+        assert!(cfg.hotkey_note.is_empty(), "note hotkey still cleared");
+        assert!(cfg.hotkey_listen.is_empty(), "listen hotkey still cleared");
     }
 
     // ── Rule 1: custom modes → llm widgets ──────────────────────────────────
@@ -665,6 +817,37 @@ mod tests {
         assert_eq!(l.outputs, vec!["out.speak".to_string()]);
     }
 
+    // ── Fix: built-in content-bearing mode referenced by listen/text-action ──
+    // A built-in mode with LLM content that ships NO `llm.*` widget (e.g.
+    // `note`, unlike polish/formal/translate/summarize/listen) must have its
+    // `llm.{id}` widget GENERATED from the built-in mode, or the reference
+    // dangles and the workflow silently fails to instantiate.
+
+    #[test]
+    fn listen_mode_note_generates_llm_note_widget_from_builtin() {
+        let mut cfg = AppConfig { listen_mode: "note".into(), ..Default::default() };
+        assert!(migrate_to_workflows(&mut cfg, &BTreeMap::new()));
+
+        let w = cfg.widgets.iter().find(|w| w.id == "llm.note").expect("llm.note generated");
+        assert_eq!(w.role, WidgetRole::Processor);
+        assert_eq!(w.type_tag, "llm");
+        assert!(!w.builtin);
+
+        // Prompt/temperature are sourced faithfully from the built-in note mode.
+        let props: LlmProps = serde_json::from_value(w.props.clone()).expect("props parse");
+        let builtin_note = &crate::modes::built_in_modes()["note"];
+        assert_eq!(
+            props.system, builtin_note.system,
+            "generated llm.note system matches built_in_modes()[\"note\"].system"
+        );
+        assert_eq!(props.user_template, builtin_note.user_template);
+        assert_eq!(props.temperature, builtin_note.temperature);
+
+        // wf.listen references the generated widget (not dangling).
+        let l = cfg.workflows.iter().find(|w| w.id == "wf.listen").unwrap();
+        assert_eq!(l.processors, vec!["llm.note".to_string()]);
+    }
+
     // ── Rule 5: text actions → workflows, five target mapping, cleared ──────
 
     #[test]
@@ -735,7 +918,10 @@ mod tests {
     fn migrated_config_has_no_dangling_widget_references() {
         use crate::workflow::engine::{effective_widgets, effective_workflows};
 
-        // A config exercising every rule at once.
+        // A config exercising every rule at once, including the built-in
+        // content-bearing `note` mode (which ships NO llm.note widget) as both
+        // the listen mode and a text-action target, plus a content-less `raw`
+        // text-action whose LLM step must be DROPPED (not dangled).
         let mut custom = BTreeMap::new();
         custom.insert("mine".to_string(), llm_mode("Mine"));
         let mut cfg = AppConfig {
@@ -743,7 +929,7 @@ mod tests {
             hotkey_dictation_toggle: "cmd+shift+d".into(),
             notebook_hotkey_1: 5,
             notebook_hotkey_2: 7,
-            listen_mode: "listen".into(),
+            listen_mode: "note".into(), // built-in content-bearing mode, no shipped widget
             listen_voice_profile: "p".into(),
             listen_voice: "v".into(),
             ..Default::default()
@@ -751,12 +937,41 @@ mod tests {
         cfg.text_actions = vec![
             TextActionBinding { hotkey: "cmd+1".into(), mode_id: "translate".into(), output_target: OutputTarget::FloatingPopup },
             TextActionBinding { hotkey: "cmd+2".into(), mode_id: "mine".into(), output_target: OutputTarget::AppendToContainer },
+            TextActionBinding { hotkey: "cmd+3".into(), mode_id: "note".into(), output_target: OutputTarget::ActiveTextField },
+            TextActionBinding { hotkey: "cmd+4".into(), mode_id: "raw".into(), output_target: OutputTarget::Clipboard },
         ];
 
         assert!(migrate_to_workflows(&mut cfg, &custom));
 
-        // Every effective workflow's source/processors/outputs must resolve to
-        // a widget in the effective widget set (built-ins overlaid by config).
+        // The built-in `note` mode has LLM content but no shipped llm.note
+        // widget — migration must GENERATE it (carrying note's prompt), or both
+        // wf.listen and the note text-action would dangle.
+        let note_widget =
+            cfg.widgets.iter().find(|w| w.id == "llm.note").expect("llm.note widget generated");
+        let note_props: LlmProps =
+            serde_json::from_value(note_widget.props.clone()).expect("llm.note props parse");
+        assert_eq!(
+            note_props.system,
+            crate::modes::built_in_modes()["note"].system,
+            "generated llm.note carries the built-in note mode's system prompt"
+        );
+
+        // wf.listen and the note text-action reference the generated llm.note.
+        let listen = cfg.workflows.iter().find(|w| w.id == "wf.listen").unwrap();
+        assert_eq!(listen.processors, vec!["llm.note".to_string()]);
+        let note_ta =
+            cfg.workflows.iter().find(|w| w.hotkey == "cmd+3").expect("note text-action");
+        assert_eq!(note_ta.processors, vec!["llm.note".to_string()]);
+
+        // The `raw` text-action DROPS its LLM step (no dangling llm.raw); it
+        // echoes the raw selection to its output.
+        let raw_ta = cfg.workflows.iter().find(|w| w.hotkey == "cmd+4").expect("raw text-action");
+        assert!(raw_ta.processors.is_empty(), "raw text-action has no llm.raw processor");
+        assert_eq!(raw_ta.outputs, vec!["out.clipboard".to_string()]);
+
+        // Coherence: every effective workflow's source/processors/outputs must
+        // resolve to a widget in the effective widget set (built-ins overlaid by
+        // config). This is the check that would fail on a dangling llm.note.
         let widget_ids: std::collections::HashSet<String> =
             effective_widgets(&cfg).into_iter().map(|w| w.id).collect();
         for wf in effective_workflows(&cfg) {

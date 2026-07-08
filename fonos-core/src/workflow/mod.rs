@@ -13,5 +13,6 @@
 
 pub mod builtin;
 pub mod engine;
+pub mod llm_step;
 pub mod model;
 pub mod registry;

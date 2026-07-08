@@ -1,0 +1,184 @@
+//! The `llm` processor component: [`LlmProps`] (a widget's persisted
+//! configuration) and [`run_llm_step`], the pure step function that turns
+//! `props` + input text into processed text.
+//!
+//! This module has no dependency on [`crate::workflow::registry`] — it is a
+//! plain async function operating on already-resolved inputs
+//! ([`crate::llm::ServiceConfig`], a pre-built glossary string), so it can be
+//! unit tested without a `Registry`/`RunCtx`. A later task's desktop-side
+//! factory is responsible for parsing a widget's `props` JSON into
+//! [`LlmProps`], resolving `model_profile` to a `ServiceConfig`, computing
+//! the glossary block from `vocab_books`, and wrapping this function as a
+//! [`crate::workflow::registry::Processor`] impl.
+
+use serde::{Deserialize, Serialize};
+
+/// Configuration for an `llm` processor widget.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LlmProps {
+    /// Optional system prompt.
+    #[serde(default)]
+    pub system: Option<String>,
+    /// Optional user message template; `{text}` is substituted by
+    /// [`crate::llm::process_text`].
+    #[serde(default)]
+    pub user_template: Option<String>,
+    /// Model profile id to resolve into a [`crate::llm::ServiceConfig`].
+    /// Empty string means "use the global LLM profile" — resolved by the
+    /// desktop factory, not this module.
+    #[serde(default)]
+    pub model_profile: String,
+    /// LLM sampling temperature (0.0 = deterministic).
+    #[serde(default = "default_temp")]
+    pub temperature: f64,
+    /// Maximum tokens to request from the LLM.
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    /// Desired output language; `"auto"` means preserve the input language.
+    #[serde(default = "default_lang")]
+    pub output_language: String,
+    /// Vocab book ids mounted by this widget, in addition to the global
+    /// books. Consumed by the desktop factory when computing the glossary
+    /// block passed to [`run_llm_step`]; not read directly here.
+    #[serde(default)]
+    pub vocab_books: Vec<String>,
+}
+
+fn default_temp() -> f64 {
+    0.1
+}
+fn default_max_tokens() -> u32 {
+    4096
+}
+fn default_lang() -> String {
+    "auto".to_string()
+}
+
+/// Build the temporary [`crate::modes::Mode`] that [`run_llm_step`] hands to
+/// [`crate::llm::process_text`]: maps `props`' fields onto the matching
+/// `Mode` fields, and appends `glossary` to the system prompt using the same
+/// concatenation convention as the legacy dictation path
+/// (`commands/llm.rs::process_with_llm`): `glossary` is expected to already
+/// carry its own leading blank line (see
+/// [`crate::vocab::build_glossary_block`]), so when `props.system` is `None`
+/// the leading whitespace is trimmed instead of leaving a dangling blank
+/// line at the start of the prompt.
+fn props_to_mode(props: &LlmProps, glossary: Option<&str>) -> crate::modes::Mode {
+    let system = match (props.system.as_deref(), glossary) {
+        (Some(sys), Some(block)) => Some(format!("{sys}{block}")),
+        (None, Some(block)) => Some(block.trim_start().to_string()),
+        (Some(sys), None) => Some(sys.to_string()),
+        (None, None) => None,
+    };
+    crate::modes::Mode {
+        system,
+        user_template: props.user_template.clone(),
+        temperature: props.temperature,
+        max_tokens: props.max_tokens,
+        output_language: props.output_language.clone(),
+        vocab_books: props.vocab_books.clone(),
+        ..Default::default()
+    }
+}
+
+/// Run one LLM processor step: build the [`crate::modes::Mode`] `props`
+/// describes (with `glossary` appended to the system prompt, if given), send
+/// `text` through [`crate::llm::process_text`], and return the trimmed
+/// response text.
+///
+/// Prompt assembly is delegated to [`props_to_mode`] (unit tested directly);
+/// this function's own untested surface is the network call itself. Returns
+/// `Err` if the LLM call fails or returns an empty response.
+pub async fn run_llm_step(
+    props: &LlmProps,
+    text: &str,
+    service: &crate::llm::ServiceConfig,
+    translate_target: &str,
+    glossary: Option<&str>,
+) -> Result<String, String> {
+    let mode = props_to_mode(props, glossary);
+    let resp = crate::llm::process_text(text, &mode, service, None, translate_target)
+        .await
+        .map_err(|e| e.to_string())?;
+    if resp.text.is_empty() {
+        return Err("llm step: empty response".to_string());
+    }
+    Ok(resp.text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn llm_props_serde_defaults_from_empty_object() {
+        let props: LlmProps = serde_json::from_str("{}").unwrap();
+        assert_eq!(props.system, None);
+        assert_eq!(props.user_template, None);
+        assert_eq!(props.model_profile, "");
+        assert_eq!(props.temperature, 0.1);
+        assert_eq!(props.max_tokens, 4096);
+        assert_eq!(props.output_language, "auto");
+        assert!(props.vocab_books.is_empty());
+    }
+
+    fn base_props() -> LlmProps {
+        LlmProps {
+            system: Some("You are a polish assistant.".into()),
+            user_template: Some("<<<\n{text}\n>>>".into()),
+            model_profile: String::new(),
+            temperature: 0.4,
+            max_tokens: 1234,
+            output_language: "English".into(),
+            vocab_books: vec!["book1".into()],
+        }
+    }
+
+    #[test]
+    fn props_to_mode_maps_user_template_and_sampling_fields() {
+        let props = base_props();
+        let mode = props_to_mode(&props, None);
+        assert_eq!(mode.user_template.as_deref(), Some("<<<\n{text}\n>>>"));
+        assert_eq!(mode.temperature, 0.4);
+        assert_eq!(mode.max_tokens, 1234);
+        assert_eq!(mode.output_language, "English");
+    }
+
+    #[test]
+    fn props_to_mode_without_glossary_passes_system_through() {
+        let props = base_props();
+        let mode = props_to_mode(&props, None);
+        assert_eq!(mode.system.as_deref(), Some("You are a polish assistant."));
+    }
+
+    #[test]
+    fn props_to_mode_appends_glossary_to_existing_system() {
+        let props = base_props();
+        let block = "\n\nDomain vocabulary: Kubernetes, gRPC.";
+        let mode = props_to_mode(&props, Some(block));
+        assert_eq!(
+            mode.system.as_deref(),
+            Some("You are a polish assistant.\n\nDomain vocabulary: Kubernetes, gRPC.")
+        );
+    }
+
+    #[test]
+    fn props_to_mode_glossary_with_no_system_trims_leading_blank_line() {
+        let mut props = base_props();
+        props.system = None;
+        let block = "\n\nDomain vocabulary: Kubernetes, gRPC.";
+        let mode = props_to_mode(&props, Some(block));
+        assert_eq!(
+            mode.system.as_deref(),
+            Some("Domain vocabulary: Kubernetes, gRPC.")
+        );
+    }
+
+    #[test]
+    fn props_to_mode_no_system_no_glossary_is_none() {
+        let mut props = base_props();
+        props.system = None;
+        let mode = props_to_mode(&props, None);
+        assert_eq!(mode.system, None);
+    }
+}

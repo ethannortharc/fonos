@@ -200,6 +200,10 @@ pub async fn run(
     //    is terminal, consistent with the other post-acquire steps.
     let mut entry_id = None;
     if let Some(recorder) = &ctx.recorder {
+        // Contract: a RunRecorder that returns Err fails the run (single
+        // terminal Failed). Recorders whose write is non-essential (e.g.
+        // history logging) should absorb their own errors and return Ok —
+        // see DbRecorder.
         match recorder.record(wf, &raw_text, &final_text) {
             Ok(id) => {
                 entry_id = Some(id);
@@ -270,6 +274,19 @@ mod tests {
         }
     }
 
+    /// A source whose `acquire` always fails, to exercise the acquire-failure
+    /// path (a single `Failed`, with no `Processing` beforehand).
+    struct FailingSource;
+    #[async_trait::async_trait]
+    impl Source for FailingSource {
+        fn output_kind(&self) -> DataKind {
+            DataKind::Text
+        }
+        async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+            Err("acquire boom".to_string())
+        }
+    }
+
     /// Uppercases its text input.
     struct Upper;
     #[async_trait::async_trait]
@@ -335,6 +352,19 @@ mod tests {
         }
     }
 
+    /// An output whose `deliver` always fails, to exercise the
+    /// output-failure path — delivery must stop at the first failing output.
+    struct FailingSink;
+    #[async_trait::async_trait]
+    impl Output for FailingSink {
+        fn accepts(&self) -> DataKind {
+            DataKind::Text
+        }
+        async fn deliver(&self, _result: &Data, _ctx: &RunCtx) -> Result<(), String> {
+            Err("boom".to_string())
+        }
+    }
+
     /// A recorder that captures the `(raw, final)` pair it was handed and
     /// returns a fixed entry id.
     struct Rec(Mutex<Vec<(String, String)>>);
@@ -383,10 +413,18 @@ mod tests {
             }),
         );
         reg.register_source("audio", Box::new(|_| Ok(Arc::new(FixedAudio) as Arc<dyn Source>)));
+        reg.register_source(
+            "failing_source",
+            Box::new(|_| Ok(Arc::new(FailingSource) as Arc<dyn Source>)),
+        );
         reg.register_processor("upper", Box::new(|_| Ok(Arc::new(Upper) as Arc<dyn Processor>)));
         reg.register_processor("stt", Box::new(|_| Ok(Arc::new(Stt) as Arc<dyn Processor>)));
         reg.register_processor("fail", Box::new(|_| Ok(Arc::new(Failing) as Arc<dyn Processor>)));
         reg.register_output("sink", Box::new(move |_| Ok(sink.clone() as Arc<dyn Output>)));
+        reg.register_output(
+            "failing_sink",
+            Box::new(|_| Ok(Arc::new(FailingSink) as Arc<dyn Output>)),
+        );
         reg
     }
 
@@ -527,5 +565,85 @@ mod tests {
         assert!(engine::validate(&reg, &wf_ok_text, &widgets).is_ok());
         let wf_ok_audio = workflow("src.audio", &["p.stt"], &["out.sink"]);
         assert!(engine::validate(&reg, &wf_ok_audio, &widgets).is_ok());
+    }
+
+    #[tokio::test]
+    async fn run_pre_acquire_failure_emits_zero_events() {
+        let (reg, widgets, _wf, sink) = setup("hello");
+        // "p.nope" isn't in `widgets` — instantiate fails resolving the
+        // processor id before `source.acquire` ever runs (same broken chain
+        // as `validate_rejects_broken_chains` case (c), exercised via `run`
+        // to pin that it also emits no events).
+        let wf = workflow("src.t", &["p.nope"], &["out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            translate_target: String::new(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+        };
+        let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
+        assert!(err.contains("p.nope"), "error should name the missing id, got: {err}");
+        assert!(
+            cap.0.lock().unwrap().is_empty(),
+            "pre-acquire structural failure must emit no events"
+        );
+        assert!(sink.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_output_failure_emits_single_failed_and_skips_remaining() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.t", WidgetRole::Source, "fixed", serde_json::json!({ "text": "hello" })),
+            widget("p.upper", WidgetRole::Processor, "upper", serde_json::Value::Null),
+            widget("out.fail", WidgetRole::Output, "failing_sink", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        // The failing output is listed first — delivery must stop there and
+        // never reach the recording sink declared after it.
+        let wf = workflow("src.t", &["p.upper"], &["out.fail", "out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            translate_target: String::new(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+        };
+        let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
+        assert_eq!(err, "boom");
+        let ev = cap.0.lock().unwrap();
+        assert_eq!(ev.len(), 2);
+        assert!(matches!(ev[0], PipelineEvent::Processing));
+        assert!(matches!(ev[1], PipelineEvent::Failed(_)));
+        assert!(
+            sink.0.lock().unwrap().is_empty(),
+            "delivery must stop at the first failing output"
+        );
+    }
+
+    #[tokio::test]
+    async fn source_acquire_failure_emits_single_failed() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.fail", WidgetRole::Source, "failing_source", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.fail", &[], &["out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            translate_target: String::new(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+        };
+        let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
+        assert_eq!(err, "acquire boom");
+        let ev = cap.0.lock().unwrap();
+        assert_eq!(ev.len(), 1);
+        assert!(matches!(ev[0], PipelineEvent::Failed(_)));
+        assert!(sink.0.lock().unwrap().is_empty());
     }
 }

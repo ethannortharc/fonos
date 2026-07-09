@@ -374,6 +374,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
 
   const switchView = (v: "flows" | "blocks") => {
     setActiveNodeId(null); setPicker(null); setError("");
+    if (v === "flows") load();  // pull in widget CRUD done in Building blocks
     setView(v);
   };
 

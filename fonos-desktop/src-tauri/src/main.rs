@@ -391,6 +391,9 @@ fn main() {
             commands::text_action::text_action_copy,
             commands::text_action::text_action_insert,
             commands::text_action::text_action_save_notebook,
+            commands::dialog::dialog_send,
+            commands::dialog::hide_dialog_panel,
+            commands::dialog::dialog_save_notebook,
             commands::set_note_notebook,
             // LLM commands
             commands::llm::process_with_llm,

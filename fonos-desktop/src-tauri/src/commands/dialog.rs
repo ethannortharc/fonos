@@ -24,6 +24,12 @@ use fonos_core::workflow::registry::{Output, RunCtx};
 
 use super::AppState;
 
+/// Follow-up sampling temperature. `DialogEngine::Llm` carries no
+/// temperature/max_tokens, so a conversational default is used for every
+/// follow-up turn (chosen value — flagged for review).
+const DIALOG_TEMPERATURE: f64 = 0.7;
+/// Follow-up reply cap (chosen value — flagged for review).
+const DIALOG_MAX_TOKENS: u32 = 2048;
 /// How many user/assistant exchange pairs a Dialog session retains before the
 /// rolling context trims the oldest (see [`DialogSession::new`]).
 const DIALOG_MAX_TURNS: usize = 12;
@@ -31,11 +37,6 @@ const DIALOG_MAX_TURNS: usize = 12;
 /// The live desktop state behind an open Dialog panel. Wraps the core
 /// [`DialogSession`] with the bits follow-up turns need but the core session
 /// does not hold: which model profile the LLM service is re-resolved from.
-///
-/// `session` / `model_profile` are consumed by `dialog_send` (added in the
-/// follow-up commit); `markdown` mirrors the panel's render flag. The
-/// struct-level allow is narrowed to just `markdown` once `dialog_send` lands.
-#[allow(dead_code)]
 pub struct ActiveDialog {
     /// Core rolling-history session (container id + system prompt + context).
     pub session: DialogSession,
@@ -45,6 +46,7 @@ pub struct ActiveDialog {
     /// Whether replies render as Markdown. The panel itself holds the live
     /// render flag (set once at `recvInit`), so follow-up turns don't re-send
     /// it; retained here for parity with the props and future engines.
+    #[allow(dead_code)]
     pub markdown: bool,
 }
 
@@ -229,4 +231,121 @@ impl Output for DialogOutput {
         );
         Ok(())
     }
+}
+
+// ─── Tauri commands (called from dialog-panel.html) ──────────────────────────
+
+/// Hide the dialog panel (Esc / close button). Unlike the text-action panel
+/// there is no blur-hide — a Dialog stays open while the user switches apps.
+#[tauri::command(rename_all = "snake_case")]
+pub fn hide_dialog_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("dialog-panel") {
+        let _ = w.hide();
+    }
+    Ok(())
+}
+
+/// Run one follow-up turn: persist the user message, ask the engine for a
+/// reply (a thinking indicator shows meanwhile), persist the reply, and push it
+/// to the panel. All turns land in the session's `Conversation` container so the
+/// exchange is one coherent thread in history.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn dialog_send(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    // Hold the tokio dialog lock across the whole turn (incl. next_turn().await)
+    // — that is why `dialog_session` is a tokio::sync::Mutex.
+    let slot = app.state::<AppState>().dialog_session.clone();
+    let mut guard = slot.lock().await;
+    let active = guard.as_mut().ok_or("no active dialog session")?;
+    let container_id = active.session.container_id;
+    let model_profile = active.model_profile.clone();
+
+    // Persist the user turn (scoped std db lock, dropped before any await).
+    {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let user_entry = Entry {
+            id: None,
+            created_at: super::storage::now_iso8601(),
+            source_type: SourceType::Workflow,
+            role: EntryRole::User,
+            mode: "dialog".to_string(),
+            raw_text: text.clone(),
+            processed_text: None,
+            container_id: Some(container_id),
+            audio_ref: None,
+            metadata: serde_json::json!({}),
+        };
+        fonos_core::storage::insert_entry(&db, &user_entry).map_err(|e| e.to_string())?;
+    }
+
+    dialog_js(&app, "recvThinking()");
+
+    // Resolve the LLM service (config lock taken + dropped inside these helpers;
+    // no std lock is held across the next_turn await below).
+    let service = {
+        let state = app.state::<AppState>();
+        if model_profile.is_empty() {
+            super::get_service_config(&state, "llm")
+        } else {
+            super::get_service_config_for_profile(&state, &model_profile)
+        }
+    };
+
+    // Run the follow-up turn; the tokio guard is held across this await.
+    let reply = match active
+        .session
+        .next_turn(&text, &service, DIALOG_TEMPERATURE, DIALOG_MAX_TOKENS)
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let e_j = serde_json::to_string(&e).unwrap_or_default();
+            dialog_js(&app, &format!("recvError({e_j})"));
+            return Err(e);
+        }
+    };
+
+    // Persist the assistant turn (scoped std db lock again).
+    {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().map_err(|e| e.to_string())?;
+        let assistant_entry = Entry {
+            id: None,
+            created_at: super::storage::now_iso8601(),
+            source_type: SourceType::Workflow,
+            role: EntryRole::Assistant,
+            mode: "dialog".to_string(),
+            raw_text: reply.clone(),
+            processed_text: None,
+            container_id: Some(container_id),
+            audio_ref: None,
+            metadata: serde_json::json!({}),
+        };
+        fonos_core::storage::insert_entry(&db, &assistant_entry).map_err(|e| e.to_string())?;
+    }
+
+    let reply_j = serde_json::to_string(&reply).unwrap_or_default();
+    dialog_js(&app, &format!("recvTurn(\"assistant\", {reply_j})"));
+    Ok(())
+}
+
+/// "Save to notebook" for a Dialog: its turns already live in a persisted
+/// `Conversation` container, so this validates the id exists and hands it back
+/// for the UI to link to / navigate to. Kept intentionally light per the brief.
+#[tauri::command(rename_all = "snake_case")]
+pub fn dialog_save_notebook(
+    state: tauri::State<'_, AppState>,
+    container_id: i64,
+) -> Result<i64, String> {
+    if container_id <= 0 {
+        return Err("dialog was not persisted (no container id)".to_string());
+    }
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    fonos_core::storage::get_container(&db, container_id).map_err(|e| e.to_string())?;
+    Ok(container_id)
 }

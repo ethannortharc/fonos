@@ -483,7 +483,7 @@ export default function WidgetForm({
     <div className="flex flex-col gap-3">
       <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-4 animate-[panel-in_0.18s_ease] motion-reduce:animate-none">
         <div className="text-[12px] font-medium text-[#fafaf9]">
-          {form.isNew ? t("widgets.editor.new") : t("widgets.editor.edit")}
+          {readOnly ? t("widgets.editor.view") : form.isNew ? t("widgets.editor.new") : t("widgets.editor.edit")}
         </div>
 
         {error && <div className="text-[11px] text-[#ef4444]">{error}</div>}

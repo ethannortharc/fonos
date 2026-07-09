@@ -271,10 +271,11 @@ export default function Dictation() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activityRef = useRef<HTMLDivElement>(null);
-  // Label + icon for the "result" activity entry the float:stop listener pushes.
-  // Held in a ref so the once-registered listeners always read the current drum
-  // selection without needing to re-subscribe. Kept in sync by the effect below.
-  const resultMetaRef = useRef<{ label: string; icon: string }>({ label: "", icon: "" });
+  // Live handle to the voice workflows, so the once-registered workflow:done
+  // listener can label a result by the workflow that actually produced it —
+  // resolved from the run's own id, not the drum's current selection — without
+  // re-subscribing. Kept in sync by the effect below.
+  const voiceWorkflowsRef = useRef<WorkflowRow[]>([]);
 
   useEffect(() => {
     if (activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight;
@@ -294,15 +295,11 @@ export default function Dictation() {
       .catch(() => {});
   }, []);
 
-  // Keep the result-entry label/icon in sync with the drum selection, so the
-  // float:stop listener (registered once) can label the delivered result.
+  // Mirror the voice workflows into a ref so the once-registered workflow:done
+  // listener resolves the run's workflow id against the current set.
   useEffect(() => {
-    const wf = voiceWorkflows.find((w) => w.id === activeWorkflow);
-    resultMetaRef.current = {
-      label: wf ? workflowLabel(wf) : t("dict.transcript"),
-      icon: wf?.icon ?? "",
-    };
-  }, [activeWorkflow, voiceWorkflows]);
+    voiceWorkflowsRef.current = voiceWorkflows;
+  }, [voiceWorkflows]);
 
   // When dictationMode changes away from "note", clear the notebook selection
   useEffect(() => {
@@ -322,26 +319,38 @@ export default function Dictation() {
     return () => { if (durationRef.current) clearInterval(durationRef.current); };
   }, [isRecording]);
 
-  // Subscribe to the engine's terminal `float:*` lifecycle so this view's feed
-  // reflects EVERY workflow run — the in-view mic button and hotkey-triggered
-  // runs alike (both go through the same engine path now). The engine emits, per
-  // run: float:start (mic capture began) → float:processing → float:stop (final
-  // delivered text; "" = no speech) or float:error (surfaced error JSON).
+  // Subscribe to the engine's terminal lifecycle so this view's feed reflects
+  // EVERY workflow run — the in-view mic button and hotkey-triggered runs alike
+  // (both go through the same engine path now). Per run the engine emits:
+  // float:start (mic capture began) → float:processing → float:stop (state
+  // reset; "" = no speech) and, for engine runs, workflow:done (the raw
+  // transcript + final result + workflow id that drives the feed entries) — or
+  // float:error (surfaced error JSON).
   useEffect(() => {
+    // Listeners register asynchronously (dynamic import). If the effect is torn
+    // down before registration finishes — as StrictMode's dev double-mount does
+    // — a plain cleanup array is still empty, so the stale listeners leak and
+    // every event fires twice (double feed entries). `disposed` closes that
+    // race: unlisten fns that resolve after teardown are dropped immediately.
+    let disposed = false;
     const cleanup: (() => void)[] = [];
+    const track = (unlisten: () => void) => {
+      if (disposed) unlisten();
+      else cleanup.push(unlisten);
+    };
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
 
         // Capture began (a mic source started recording).
-        cleanup.push(await listen<string>("float:start", () => {
+        track(await listen<string>("float:start", () => {
           setIsRecording(true);
           setProcessing(false);
         }));
 
         // Capture ended, processing (STT/LLM) started. Flip out of the recording
         // state and drop a placeholder the terminal float:stop replaces.
-        cleanup.push(await listen("float:processing", () => {
+        track(await listen("float:processing", () => {
           setIsRecording(false);
           setProcessing(true);
           setActivity((prev) => {
@@ -356,37 +365,82 @@ export default function Dictation() {
           });
         }));
 
-        // Terminal delivery. Non-empty payload → a result entry (the delivered
-        // text) replacing the processing placeholder; empty payload → a "no
-        // speech" note, matching the legacy shape (a transcript-type entry).
-        cleanup.push(await listen<string>("float:stop", (event) => {
+        // Terminal delivery: state reset only. The feed entries are owned by the
+        // workflow:done listener (which carries raw + final + the run's
+        // workflow), so a non-empty payload pushes nothing here — that avoids
+        // double entries. An empty payload is a no-speech run (which emits no
+        // workflow:done): drop the processing placeholder and leave a note.
+        track(await listen<string>("float:stop", (event) => {
           setIsRecording(false);
           setProcessing(false);
           const text = typeof event.payload === "string" ? event.payload : String(event.payload ?? "");
+          if (text) return;
           setActivity((prev) => {
             const filtered = prev.filter((e) => e.type !== "processing");
-            if (!text) {
-              return [...filtered, {
-                id: `${Date.now()}-ns-${Math.random()}`,
-                timestamp: new Date(),
-                type: "transcript" as const,
-                icon: <TranscriptIcon size={12} />,
-                label: t("dict.no-speech"),
-              }];
-            }
-            const { label, icon } = resultMetaRef.current;
             return [...filtered, {
-              id: `${Date.now()}-r-${Math.random()}`,
+              id: `${Date.now()}-ns-${Math.random()}`,
               timestamp: new Date(),
-              type: "result" as const,
-              icon: icon ? <ModeIcon icon={icon} size={12} /> : <SparklesIcon size={12} />,
-              label: label || t("dict.transcript"),
-              content: text,
+              type: "transcript" as const,
+              icon: <TranscriptIcon size={12} />,
+              label: t("dict.no-speech"),
             }];
           });
         }));
 
-        cleanup.push(await listen<string>("float:error", (event) => {
+        // Engine run completed: {raw, final, workflow_id}. Show the raw
+        // transcript AND the final result as two entries (the legacy feed's
+        // shape) when they differ; otherwise a single result entry. The result
+        // is labeled by the run's OWN workflow (resolved from workflow_id),
+        // falling back to the raw id — not the drum's current selection.
+        track(await listen<{ raw?: string; final?: string; workflow_id?: string }>(
+          "workflow:done",
+          (event) => {
+            const p = event.payload ?? {};
+            const raw = typeof p.raw === "string" ? p.raw : "";
+            const final = typeof p.final === "string" ? p.final : "";
+            const wfId = typeof p.workflow_id === "string" ? p.workflow_id : "";
+            const wf = voiceWorkflowsRef.current.find((w) => w.id === wfId);
+            const label = wf ? workflowLabel(wf) : (wfId || t("dict.transcript"));
+            const icon = wf?.icon ?? "";
+            const resultIcon = icon ? <ModeIcon icon={icon} size={12} /> : <SparklesIcon size={12} />;
+            setActivity((prev) => {
+              const filtered = prev.filter((e) => e.type !== "processing");
+              const now = Date.now();
+              if (raw && final && raw !== final) {
+                return [...filtered,
+                  {
+                    id: `${now}-t-${Math.random()}`,
+                    timestamp: new Date(),
+                    type: "transcript" as const,
+                    icon: <TranscriptIcon size={12} />,
+                    label: t("dict.transcript"),
+                    content: raw,
+                  },
+                  {
+                    id: `${now}-r-${Math.random()}`,
+                    timestamp: new Date(),
+                    type: "result" as const,
+                    icon: resultIcon,
+                    label,
+                    content: final,
+                  },
+                ];
+              }
+              const text = final || raw;
+              if (!text) return filtered;
+              return [...filtered, {
+                id: `${now}-r-${Math.random()}`,
+                timestamp: new Date(),
+                type: "result" as const,
+                icon: resultIcon,
+                label,
+                content: text,
+              }];
+            });
+          }
+        ));
+
+        track(await listen<string>("float:error", (event) => {
           const raw = typeof event.payload === "string" ? event.payload : String(event.payload ?? "");
           let message = raw;
           try {
@@ -426,7 +480,7 @@ export default function Dictation() {
         // Not running under Tauri.
       }
     })();
-    return () => { cleanup.forEach((fn) => fn()); };
+    return () => { disposed = true; cleanup.forEach((fn) => fn()); };
   }, []);
 
   // Select a notebook for note-mode dictation: switches mode to "note"

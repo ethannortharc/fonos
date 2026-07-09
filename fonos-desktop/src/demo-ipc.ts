@@ -797,14 +797,19 @@ export function installDemoIpc() {
       }
       case "finish_capture": {
         // Capture ended → processing → delivered result: the engine's terminal
-        // float:* sequence a real run emits after the mic phase finishes.
+        // sequence a real run emits after the mic phase finishes. float:stop
+        // resets state (carrying the final text), then workflow:done carries the
+        // raw transcript + final result + workflow id that drive the Dictation
+        // feed's two entries.
         import("@tauri-apps/api/event").then(async ({ emit }) => {
           await emit("float:processing");
           setTimeout(() => {
-            emit(
-              "float:stop",
-              "Fonos routes your speech to the right place — no window switching.",
-            );
+            emit("float:stop", "Hello, world!");
+            emit("workflow:done", {
+              raw: "hello world",
+              final: "Hello, world!",
+              workflow_id: "wf.dictation",
+            });
           }, 700);
         });
         return null;

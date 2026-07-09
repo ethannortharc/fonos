@@ -264,9 +264,9 @@ impl Processor for SttProcessor {
 /// the effective vocab glossary (global ∪ this widget's books), and call the
 /// shared pure runner [`run_llm_step`].
 ///
-/// Mirrors the LLM half of `commands/text_action.rs`, but takes the translation
-/// target from [`RunCtx::translate_target`] (set by the engine) rather than the
-/// live config.
+/// Mirrors the LLM half of `commands/text_action.rs`, but translation targets
+/// are baked into the prompt template (`llm.translate`'s `user_template`)
+/// rather than substituted from a runtime target language.
 pub struct LlmProcessor {
     /// Handle used to reach `AppState` for service + vocab resolution.
     pub app: tauri::AppHandle,
@@ -284,7 +284,7 @@ impl Processor for LlmProcessor {
         DataKind::Text
     }
 
-    async fn process(&self, input: Data, ctx: &RunCtx) -> Result<Data, String> {
+    async fn process(&self, input: Data, _ctx: &RunCtx) -> Result<Data, String> {
         let text = input.into_text()?;
 
         // Resolve the LLM service and precompute the glossary block up front,
@@ -308,16 +308,11 @@ impl Processor for LlmProcessor {
             (service, glossary)
         };
 
-        // `ctx.translate_target` is a plain field (no lock), so borrowing it
-        // across the await is fine.
-        let out = run_llm_step(
-            &self.props,
-            &text,
-            &service,
-            &ctx.translate_target,
-            glossary.as_deref(),
-        )
-        .await?;
+        // Translation targets are baked into the prompt (see `llm.translate`'s
+        // hardcoded template), so no runtime target language is threaded
+        // through here.
+        let out = run_llm_step(&self.props, &text, &service, "", glossary.as_deref())
+            .await?;
         Ok(Data::Text(out))
     }
 }

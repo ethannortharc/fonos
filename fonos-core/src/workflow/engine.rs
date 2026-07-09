@@ -523,7 +523,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -543,7 +542,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -568,7 +566,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -588,7 +585,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: Some(rec.clone()),
         };
@@ -734,7 +730,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -763,7 +758,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -791,7 +785,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };

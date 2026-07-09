@@ -3,9 +3,9 @@
 //!
 //! `run_workflow` resolves the target [`WorkflowDef`] and the effective widget
 //! set from the live `AppConfig`, assembles a [`RunCtx`] (float-pill event sink,
-//! translate target, empty meta, history recorder), and hands it to the
-//! platform-independent [`engine::run`]. The engine owns every terminal pill
-//! event; `run_workflow` only logs the raw cause of a returned error.
+//! empty meta, history recorder), and hands it to the platform-independent
+//! [`engine::run`]. The engine owns every terminal pill event; `run_workflow`
+//! only logs the raw cause of a returned error.
 //!
 //! Lock discipline mirrors `text_action.rs` / `adapters.rs`: the config lock is
 //! read into owned values and dropped **before** `engine::run` is awaited — no
@@ -42,10 +42,10 @@ impl Drop for InFlightGuard {
 
 /// Execute the workflow identified by `workflow_id` end to end.
 ///
-/// Guards against re-entrancy, resolves the workflow + effective widgets +
-/// translate target under the config lock (dropped before any await), assembles
-/// the [`RunCtx`], and runs the engine. Any engine `Err` has already surfaced
-/// its own terminal pill event (Task 3's contract), so it is only logged here.
+/// Guards against re-entrancy, resolves the workflow + effective widgets under
+/// the config lock (dropped before any await), assembles the [`RunCtx`], and
+/// runs the engine. Any engine `Err` has already surfaced its own terminal
+/// pill event (Task 3's contract), so it is only logged here.
 pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
     // 1. In-flight guard — copy of the `text_action.rs` pattern. A re-entrant
     //    trigger is logged and dropped.
@@ -58,7 +58,7 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
     // 2. Resolve everything the run needs from the live config, then drop the
     //    lock. `find` moves the matching def out of the effective set (owned),
     //    so nothing borrows the guard past this block.
-    let (wf_opt, widgets, translate_target, registry) = {
+    let (wf_opt, widgets, registry) = {
         let state: tauri::State<'_, AppState> = handle.state();
         // Clone the shared registry Arc out so it outlives the State borrow and
         // can be used across the `engine::run` await below.
@@ -71,11 +71,10 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
             }
         };
         let widgets = engine::effective_widgets(&config);
-        let translate_target = config.translate_target.clone();
         let wf_opt = engine::effective_workflows(&config)
             .into_iter()
             .find(|w| w.id == workflow_id);
-        (wf_opt, widgets, translate_target, registry)
+        (wf_opt, widgets, registry)
     };
 
     let Some(wf) = wf_opt else {
@@ -87,11 +86,10 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
         return;
     };
 
-    // 3. Assemble the per-run context: pill event sink, translate target, empty
-    //    meta, and the history recorder.
+    // 3. Assemble the per-run context: pill event sink, empty meta, and the
+    //    history recorder.
     let ctx = RunCtx {
         events: Arc::new(PillEventSink(handle.clone())),
-        translate_target,
         meta: Mutex::new(serde_json::Map::new()),
         recorder: Some(Arc::new(DbRecorder {
             handle: handle.clone(),

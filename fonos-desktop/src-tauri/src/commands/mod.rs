@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod call;
 pub mod config;
+pub mod dialog;
 pub mod dictation;
 pub mod doctor;
 pub mod listen;
@@ -229,6 +230,40 @@ pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
+/// Position the dialog panel near the mouse cursor, parameterized on the
+/// window's actual `(w, h)` (a Dialog's size comes from its `PanelSize` prop,
+/// not a fixed conf value). Same below-right-then-flip logic as
+/// [`move_text_action_panel_to_cursor`], for the `"dialog-panel"` label.
+#[cfg(target_os = "macos")]
+pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("dialog-panel") else { return };
+    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
+
+    let scale = target.scale_factor();
+    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the Dialog's PanelSize
+    let offset = 12.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+    let mon_h = target.size().height as f64 / scale;
+
+    // Below-right of the cursor; flip to the opposite side at monitor edges.
+    let mut x = cursor.x + offset;
+    let mut y = cursor.y + offset;
+    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
+    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
+    // Never leave the monitor; keep clear of the macOS menu bar.
+    x = x.max(mon_x);
+    y = y.max(mon_y + 28.0);
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
 // Service resolution moved to fonos-core (issue #21); the unified
 // ServiceConfig lives in fonos_core::llm. These wrappers only add the
 // AppState config-lock handling.
@@ -271,6 +306,13 @@ pub struct AppState {
     pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
     /// STS conversation memory (issue #24), reset when the app restarts.
     pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
+    /// Active Dialog follow-up session (session-type output). Set by
+    /// [`dialog::DialogOutput`] when a dialog workflow delivers its first turn,
+    /// and driven by [`dialog::dialog_send`] for follow-ups. Replaced when a new
+    /// dialog workflow delivers; the prior Conversation container stays in
+    /// history. A `tokio::sync::Mutex` because the guard is held across the
+    /// `next_turn().await` in `dialog_send`.
+    pub dialog_session: Arc<tokio::sync::Mutex<Option<dialog::ActiveDialog>>>,
     /// Whether a hands-free "call mode" loop is running (issue #24). The loop
     /// task polls this flag for cooperative cancellation; `call_stop` clears it.
     pub call_active: Arc<std::sync::atomic::AtomicBool>,

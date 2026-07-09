@@ -767,6 +767,21 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
             }),
         );
     }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "dialog",
+            Box::new(move |props| {
+                let props: fonos_core::workflow::dialog::DialogProps =
+                    serde_json::from_value(props.clone())
+                        .map_err(|e| format!("dialog props: {e}"))?;
+                Ok(Arc::new(super::dialog::DialogOutput {
+                    app: app.clone(),
+                    props,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
 
     reg
 }

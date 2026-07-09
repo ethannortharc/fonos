@@ -465,6 +465,7 @@ fn main() {
                 note_target: Arc::new(Mutex::new(None)),
                 agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
                 sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
+                dialog_session: Arc::new(tokio::sync::Mutex::new(None)),
                 call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 registry: Arc::new(commands::workflow_widgets::build_registry(app.handle().clone())),
             };

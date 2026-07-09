@@ -699,7 +699,7 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let strategy = props.get("strategy").and_then(|v| v.as_str())
-                    .unwrap_or("paste").to_string();
+                    .unwrap_or(if cfg!(target_os = "linux") { "type" } else { "paste" }).to_string();
                 Ok(Arc::new(InsertOutput { app: app.clone(), press_enter, strategy }) as Arc<dyn Output>)
             }),
         );

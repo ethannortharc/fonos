@@ -804,6 +804,29 @@ const en = {
   "widgets.notebook.quick": "Quick Note (default)",
   "widgets.strategy.paste": "Paste",
   "widgets.strategy.type": "Type character-by-character",
+
+  // ── Built-in widget/workflow display names (bilingual; Flows UI redesign) ──
+  "builtin.wf.dictation": "Dictation",
+  "builtin.wf.dictation-toggle": "Dictation (toggle)",
+  "builtin.wf.translate-pop": "Translate popup",
+  "builtin.wf.summarize-pop": "Summarize popup",
+  "builtin.wf.listen": "Listen",
+  "builtin.wf.note": "Note",
+  "builtin.src.selection": "Selection",
+  "builtin.src.mic-hold": "Mic · hold",
+  "builtin.src.mic-toggle": "Mic · toggle",
+  "builtin.stt.default": "Transcribe",
+  "builtin.llm.polish": "Polish",
+  "builtin.llm.formal": "Formal",
+  "builtin.llm.translate": "Translate",
+  "builtin.llm.summarize": "Summarize",
+  "builtin.llm.listen": "Listen briefing",
+  "builtin.out.insert": "Insert at cursor",
+  "builtin.out.replace": "Replace selection",
+  "builtin.out.clipboard": "Clipboard",
+  "builtin.out.panel": "Popup panel",
+  "builtin.out.speak": "Speak",
+  "builtin.out.quicknote": "Quick note",
 };
 
 export type TKey = keyof typeof en;
@@ -1553,6 +1576,29 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.notebook.quick": "快速笔记（默认）",
   "widgets.strategy.paste": "粘贴",
   "widgets.strategy.type": "逐字键入",
+
+  // ── 内置 widget/workflow 显示名（双语；Flows UI 重设计）──
+  "builtin.wf.dictation": "听写",
+  "builtin.wf.dictation-toggle": "听写·切换",
+  "builtin.wf.translate-pop": "翻译弹框",
+  "builtin.wf.summarize-pop": "总结弹框",
+  "builtin.wf.listen": "朗读",
+  "builtin.wf.note": "记笔记",
+  "builtin.src.selection": "选区",
+  "builtin.src.mic-hold": "麦克风·按住",
+  "builtin.src.mic-toggle": "麦克风·切换",
+  "builtin.stt.default": "默认转写",
+  "builtin.llm.polish": "润色",
+  "builtin.llm.formal": "正式化",
+  "builtin.llm.translate": "翻译",
+  "builtin.llm.summarize": "总结要点",
+  "builtin.llm.listen": "朗读摘要",
+  "builtin.out.insert": "插入光标",
+  "builtin.out.replace": "替换选区",
+  "builtin.out.clipboard": "剪贴板",
+  "builtin.out.panel": "悬浮板",
+  "builtin.out.speak": "朗读",
+  "builtin.out.quicknote": "快速笔记",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

@@ -34,6 +34,7 @@ import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "
 import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
+import { LANGUAGES } from "./constants";
 
 // ─── Shared class recipes (match WidgetsTab/WorkflowsTab) ─────────────────────
 
@@ -159,6 +160,64 @@ export function VocabChips({
   );
 }
 
+/** Panel/dialog window size: preset buttons (S/M/L) + width/height number
+ *  inputs, shared by the "panel" and "dialog" cases below. `size` is the
+ *  widget's `props.size` object (possibly partial/undefined — defaults to
+ *  420×320, matching PanelSize::default() on the backend). */
+function SizeControl({
+  size, onChange,
+}: {
+  size: { width?: number; height?: number };
+  onChange: (size: { width: number; height: number }) => void;
+}) {
+  const width = size.width ?? 420;
+  const height = size.height ?? 320;
+  const presets: { key: string; label: string; width: number; height: number }[] = [
+    { key: "s", label: t("widgets.size.s"), width: 320, height: 240 },
+    { key: "m", label: t("widgets.size.m"), width: 420, height: 320 },
+    { key: "l", label: t("widgets.size.l"), width: 560, height: 440 },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5">
+        {presets.map((preset) => {
+          const active = width === preset.width && height === preset.height;
+          return (
+            <button
+              key={preset.key}
+              onClick={() => onChange({ width: preset.width, height: preset.height })}
+              className={[
+                "px-2.5 py-1 rounded-full text-[10px] transition-all",
+                active
+                  ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
+              ].join(" ")}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label={t("widgets.field.width")}>
+          <input
+            type="number" min={1} value={width}
+            onChange={(e) => onChange({ width: parseInt(e.target.value) || width, height })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label={t("widgets.field.height")}>
+          <input
+            type="number" min={1} value={height}
+            onChange={(e) => onChange({ height: parseInt(e.target.value) || height, width })}
+            className={inputClass}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
@@ -214,6 +273,13 @@ function PropsForm({
         <div className="flex flex-col gap-2.5">
           <Field label={t("widgets.field.model")}>
             <ModelSelector capKey="stt" value={pStr(p, "model_profile")} profiles={config.model_profiles} onChange={(v) => set("model_profile", v)} />
+          </Field>
+          <Field label={t("widgets.field.language")}>
+            <select value={pStr(p, "language", "auto")} onChange={(e) => set("language", e.target.value)} className={selectClass}>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
+              ))}
+            </select>
           </Field>
           <Field label={t("widgets.field.stt_prompt")}>
             <input type="text" value={pStr(p, "stt_prompt")} onChange={(e) => set("stt_prompt", e.target.value)} className={inputClass} />
@@ -283,11 +349,40 @@ function PropsForm({
 
     case "panel":
       return (
-        <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
-          <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
-          {t("widgets.field.markdown")}
-        </label>
+        <div className="flex flex-col gap-2.5">
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            {t("widgets.field.markdown")}
+          </label>
+          <Field label={t("widgets.field.size")}>
+            <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
+          </Field>
+        </div>
       );
+
+    case "dialog": {
+      const engine = (p.engine as { kind?: string; model_profile?: string; system?: string | null }) ?? {};
+      const setEngine = (patch: Partial<{ model_profile: string; system: string }>) =>
+        set("engine", { kind: "llm", model_profile: engine.model_profile ?? "", system: engine.system ?? "", ...patch });
+      return (
+        <div className="flex flex-col gap-2.5">
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            {t("widgets.field.markdown")}
+          </label>
+          <Field label={t("widgets.field.size")}>
+            <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
+          </Field>
+          <div className={headingClass}>{t("widgets.field.engine")}</div>
+          <Field label={t("widgets.field.model")}>
+            <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+          </Field>
+          <Field label={t("widgets.field.dialog.system")}>
+            <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
+          </Field>
+        </div>
+      );
+    }
 
     // selection / replace / clipboard — no configurable props.
     case "uppercase":

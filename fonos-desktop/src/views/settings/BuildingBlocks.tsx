@@ -38,7 +38,7 @@ const headingClass =
 export const TYPE_TAGS: Record<WidgetRole, string[]> = {
   source: ["microphone", "selection"],
   processor: ["stt", "llm"],
-  output: ["insert", "replace", "clipboard", "notebook", "speak", "panel"],
+  output: ["insert", "replace", "clipboard", "notebook", "speak", "panel", "dialog"],
 };
 
 const ROLES: { role: WidgetRole; label: TKey }[] = [

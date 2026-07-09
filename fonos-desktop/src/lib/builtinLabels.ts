@@ -15,6 +15,7 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "wf.dictation-toggle": "builtin.wf.dictation-toggle",
   "wf.translate-pop": "builtin.wf.translate-pop",
   "wf.summarize-pop": "builtin.wf.summarize-pop",
+  "wf.explain": "builtin.wf.explain",
   "wf.listen": "builtin.wf.listen",
   "wf.note": "builtin.wf.note",
   // source widgets
@@ -28,11 +29,13 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "llm.translate": "builtin.llm.translate",
   "llm.summarize": "builtin.llm.summarize",
   "llm.listen": "builtin.llm.listen",
+  "llm.explain": "builtin.llm.explain",
   // output widgets
   "out.insert": "builtin.out.insert",
   "out.replace": "builtin.out.replace",
   "out.clipboard": "builtin.out.clipboard",
   "out.panel": "builtin.out.panel",
+  "out.dialog-explain": "builtin.out.dialog-explain",
   "out.speak": "builtin.out.speak",
   "out.quicknote": "builtin.out.quicknote",
 };

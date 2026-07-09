@@ -71,7 +71,7 @@ function WidgetCard({ w, onClick }: { w: WidgetDef; onClick: () => void }) {
       >
         <WidgetIcon typeTag={w.type_tag} size={13} />
       </span>
-      <span className="flex-1 min-w-0 text-[#fafaf9] text-[12px] font-medium truncate">{widgetLabel(w)}</span>
+      <span className="flex-1 min-w-0 text-[#fafaf9] text-[12px] font-medium truncate" title={widgetLabel(w)}>{widgetLabel(w)}</span>
       <span className="text-[9px] text-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded font-mono flex-shrink-0">{w.type_tag}</span>
       {w.builtin && (
         <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded flex-shrink-0">{t("common.builtin")}</span>

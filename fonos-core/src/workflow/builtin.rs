@@ -118,6 +118,7 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
                 "stt_prompt": "",
                 "vocab_books": [],
                 "temperature": 0.0,
+                "language": "auto",
             }),
         ),
         llm_widget(
@@ -281,6 +282,12 @@ mod tests {
             }
             assert!(wf.builtin && wf.hotkey.is_empty());
         }
+    }
+
+    #[test]
+    fn stt_default_has_language_prop() {
+        let w = built_in_widgets().into_iter().find(|w| w.id == "stt.default").unwrap();
+        assert_eq!(w.props.get("language").and_then(|v| v.as_str()), Some("auto"));
     }
 
     /// Byte-lock the 5 built-in LLM widgets' inlined prompts against the

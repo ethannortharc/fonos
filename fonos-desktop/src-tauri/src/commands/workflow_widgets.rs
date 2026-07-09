@@ -157,6 +157,13 @@ pub struct SttProps {
     /// STT sampling temperature (0.0 = most deterministic).
     #[serde(default)]
     pub temperature: f64,
+    /// STT language hint (BCP-47 tag or "auto"); replaces global config.stt_language.
+    #[serde(default = "default_stt_language")]
+    pub language: String,
+}
+
+fn default_stt_language() -> String {
+    "auto".to_string()
 }
 
 /// Processor that transcribes an audio buffer to text via the shared STT core.
@@ -207,21 +214,21 @@ impl Processor for SttProcessor {
             };
 
             // Effective vocab books = global ∪ this widget's, cloned out of the
-            // config lock so they outlive the transcription await.
-            let (language, books) = {
+            // config lock so they outlive the transcription await. Language is
+            // this widget's own prop now — no config lock needed for it.
+            let books: Vec<fonos_core::vocab::VocabBook> = {
                 let config = state.config.lock().map_err(|e| e.to_string())?;
-                let books: Vec<fonos_core::vocab::VocabBook> = fonos_core::vocab::effective_books(
+                fonos_core::vocab::effective_books(
                     &config.vocab_books,
                     &config.global_vocab_books,
                     &self.props.vocab_books,
                 )
                 .into_iter()
                 .cloned()
-                .collect();
-                (config.stt_language.clone(), books)
+                .collect()
             };
 
-            (svc, language, books)
+            (svc, self.props.language.clone(), books)
         };
 
         let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();

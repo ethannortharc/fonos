@@ -41,7 +41,7 @@ import type { WidgetFormValue } from "./WidgetForm";
 // ─── Shared class recipes (match WidgetForm/BuildingBlocks/WorkflowsTab) ───────
 
 const nameInputClass =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
 const slotSelectClass =
   "flex-1 min-w-[150px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
 const labelClass = "text-[10px] text-[rgba(255,255,255,0.35)]";
@@ -95,7 +95,7 @@ function SegButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={[
-        "flex items-center gap-1.5 text-[12px] font-medium px-4 py-[5px] rounded-md transition-colors",
+        "flex items-center gap-1.5 text-[10.5px] font-medium px-4 py-[5px] rounded-md transition-colors",
         active ? "bg-[rgba(255,255,255,0.06)] text-[#fafaf9]" : "text-[rgba(255,255,255,0.32)] hover:text-[rgba(255,255,255,0.55)]",
       ].join(" ")}
     >
@@ -500,11 +500,11 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
         <div className="flex items-center gap-[11px] px-[14px] py-3 cursor-pointer" onClick={() => toggleCard(wf.id)}>
           {flowIcon(wf)}
           <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold text-[#fafaf9] truncate">{workflowLabel(wf)}</div>
+            <div className="text-[12px] font-medium text-[#fafaf9] truncate">{workflowLabel(wf)}</div>
             <div className="text-[10.5px] text-[rgba(255,255,255,0.32)] truncate mt-px">{sub}</div>
           </div>
           {wf.builtin && (
-            <span className="text-[8.5px] uppercase tracking-wide text-[rgba(255,255,255,0.32)] border border-[rgba(255,255,255,0.06)] rounded-[5px] px-1.5 py-px flex-shrink-0">
+            <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded flex-shrink-0">
               {t("wf.section.preset")}
             </span>
           )}
@@ -614,7 +614,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
             {customs.map(renderCard)}
             <button
               onClick={openNewFlow}
-              className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(245,158,11,0.14)] text-[rgba(251,191,36,0.65)] text-[12px] hover:border-[rgba(245,158,11,0.3)] hover:text-[#fbbf24] transition-colors flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(245,158,11,0.14)] text-[rgba(251,191,36,0.65)] text-[11px] hover:border-[rgba(245,158,11,0.3)] hover:text-[#fbbf24] transition-colors flex items-center justify-center gap-1.5"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               {t("wf.new")}

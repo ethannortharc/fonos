@@ -28,7 +28,7 @@ function SegButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={[
-        "flex items-center gap-1.5 text-[12px] font-medium px-4 py-[5px] rounded-md transition-colors",
+        "flex items-center gap-1.5 text-[10.5px] font-medium px-4 py-[5px] rounded-md transition-colors",
         active ? "bg-[rgba(255,255,255,0.06)] text-[#fafaf9]" : "text-[rgba(255,255,255,0.32)] hover:text-[rgba(255,255,255,0.55)]",
       ].join(" ")}
     >

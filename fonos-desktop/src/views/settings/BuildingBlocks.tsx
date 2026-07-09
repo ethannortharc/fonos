@@ -26,7 +26,7 @@ import type { WidgetFormValue } from "./WidgetForm";
 // ─── Shared class recipes (match WidgetForm/WorkflowsTab) ─────────────────────
 
 const selectClass =
-  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
+  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
 const headingClass =
   "text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold";
 
@@ -207,7 +207,7 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
 
             <button
               onClick={() => openNew(role)}
-              className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
+              className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[11px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
             >
               {t("widgets.new")}
             </button>

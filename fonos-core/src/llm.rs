@@ -124,6 +124,46 @@ pub async fn process_text(
     }
 }
 
+/// Multi-turn chat completion: POST a prebuilt OpenAI-style messages array and
+/// return the assistant content. Sibling to [`process_text`] (single-shot);
+/// used by the Dialog session for follow-up turns.
+///
+/// Dispatches on `service.provider` exactly like `process_text` does, reusing
+/// the same per-provider callers ([`call_anthropic`], [`call_google`],
+/// [`call_openai_compatible`]) so the HTTP mechanics (endpoint resolution,
+/// auth header, request shape, response parsing) stay identical to the
+/// single-shot path. Errors are stringified for the simpler `Result<_, String>`
+/// signature callers of `chat` expect.
+pub async fn chat(
+    service: &ServiceConfig,
+    messages: Vec<serde_json::Value>,
+    temperature: f64,
+    max_tokens: u32,
+) -> std::result::Result<String, String> {
+    let result = match service.provider.as_str() {
+        "anthropic" => {
+            call_anthropic(&service.api_key, &service.model, &messages, temperature, max_tokens)
+                .await
+        }
+        "google" => {
+            call_google(&service.api_key, &service.model, &messages, temperature, max_tokens).await
+        }
+        _ => {
+            call_openai_compatible(
+                &service.api_key,
+                &service.model,
+                &service.base_url,
+                &messages,
+                temperature,
+                max_tokens,
+                &service.provider,
+            )
+            .await
+        }
+    };
+    result.map(|r| r.text).map_err(|e| e.to_string())
+}
+
 /// Build chat messages for applying `mode` to `text`.
 ///
 /// Substitutes `{text}` and `{target_lang}` in the mode's user template

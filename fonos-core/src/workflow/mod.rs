@@ -29,6 +29,7 @@
 //!    `fonos-desktop/src-tauri/tests/uppercase_acceptance.rs`.
 
 pub mod builtin;
+pub mod dialog;
 pub mod engine;
 pub mod llm_step;
 pub mod migrate;

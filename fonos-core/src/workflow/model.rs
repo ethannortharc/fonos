@@ -128,9 +128,41 @@ pub struct WorkflowDef {
     pub builtin: bool,
 }
 
+/// Fixed pixel dimensions for a floating panel window (e.g. a Dialog output).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PanelSize {
+    /// Panel width in logical pixels.
+    #[serde(default = "dw")]
+    pub width: u32,
+    /// Panel height in logical pixels.
+    #[serde(default = "dh")]
+    pub height: u32,
+}
+
+fn dw() -> u32 {
+    420
+}
+
+fn dh() -> u32 {
+    320
+}
+
+impl Default for PanelSize {
+    fn default() -> Self {
+        Self { width: 420, height: 320 }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panel_size_defaults_420x320() {
+        assert_eq!(PanelSize::default(), PanelSize { width: 420, height: 320 });
+        let from_empty: PanelSize = serde_json::from_str("{}").unwrap();
+        assert_eq!(from_empty, PanelSize::default());
+    }
 
     #[test]
     fn data_kind_and_conversions() {

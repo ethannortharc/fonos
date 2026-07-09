@@ -1,10 +1,14 @@
 import { t, type TKey } from "./i18n";
 
 // Built-in widget/workflow id → i18n key. Falls back to the backend name when
-// missing. Ids verified against fonos-core/src/workflow/builtin.rs
-// (built_in_widgets/built_in_workflows); wf.dictation-toggle is not defined
-// there but is a real id created by fonos-core/src/workflow/migrate.rs during
-// legacy config migration (see task-1-report.md for detail).
+// missing. This map is the authority on which ids get bilingual labels: it
+// holds only stable built-in / migration-namespaced ids (wf.*/llm.*/src.*/
+// out.*/stt.*). User-created ids always carry a -custom-{timestamp} suffix
+// and never collide with these, so widgetLabel/workflowLabel key off map
+// membership rather than the `builtin` flag — the flag is false for
+// migration-generated ids like wf.dictation-toggle (created by
+// fonos-core/src/workflow/migrate.rs, not builtin.rs), so gating on it would
+// miss them.
 export const BUILTIN_LABELS: Record<string, TKey> = {
   // workflows
   "wf.dictation": "builtin.wf.dictation",
@@ -34,10 +38,10 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
 };
 
 export function widgetLabel(w: { id: string; name: string; builtin?: boolean }): string {
-  const k = w.builtin ? BUILTIN_LABELS[w.id] : undefined;
+  const k = BUILTIN_LABELS[w.id];
   return k ? t(k) : w.name;
 }
 export function workflowLabel(w: { id: string; name: string; builtin?: boolean }): string {
-  const k = w.builtin ? BUILTIN_LABELS[w.id] : undefined;
+  const k = BUILTIN_LABELS[w.id];
   return k ? t(k) : w.name;
 }

@@ -105,6 +105,19 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
     }
 }
 
+/// Frontend entry point: fire-and-forget a workflow run (same path as hotkeys).
+///
+/// Spawns [`run_workflow`] onto the async runtime so the `invoke` returns
+/// immediately; run progress (and any terminal outcome) is reported entirely
+/// through the `float:*` events the engine emits, so the caller never awaits
+/// the run. The in-flight guard in [`run_workflow`] still drops a re-entrant
+/// trigger, matching the hotkey behavior.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn run_workflow_by_id(app: tauri::AppHandle, workflow_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn(run_workflow(app, workflow_id));
+    Ok(())
+}
+
 /// Persists each completed workflow run to the SQLite history as a
 /// [`fonos_core::storage::SourceType::Workflow`] entry, between processing and
 /// delivery (the engine calls this via [`RunRecorder`]).

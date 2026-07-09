@@ -46,6 +46,15 @@ pub fn finish_active_capture() {
     CAPTURE_DONE.notify_waiters();
 }
 
+/// Frontend entry point for finishing an in-flight [`MicSource`] capture — the
+/// in-view mic button's "stop" calls this, the same routine the hotkey key-up
+/// (hold) / second-press (toggle) uses. Thin command wrapper over
+/// [`finish_active_capture`]; when nothing is capturing it is a harmless no-op.
+#[tauri::command(rename_all = "snake_case")]
+pub fn finish_capture() {
+    finish_active_capture();
+}
+
 // ─── Selection source ────────────────────────────────────────────────────────
 
 /// Source that grabs the current selection from the frontmost app as text, and

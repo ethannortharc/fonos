@@ -450,6 +450,9 @@ fn main() {
             commands::workflow_cfg::save_workflow,
             commands::workflow_cfg::delete_widget,
             commands::workflow_cfg::delete_workflow,
+            // Workflow execution (frontend entry points to the engine)
+            commands::workflow_exec::run_workflow_by_id,
+            commands::workflow_widgets::finish_capture,
         ])
         .setup(move |app| {
             // Assemble and manage the shared AppState first — the rest of setup

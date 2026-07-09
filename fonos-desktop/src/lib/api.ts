@@ -499,6 +499,19 @@ export async function deleteWorkflow(id: string): Promise<void> {
   return invoke<void>("delete_workflow", { id });
 }
 
+/** Fire-and-forget a workflow run through the engine — the same path hotkeys
+ *  use. Resolves immediately; run progress arrives via the `float:*` events. */
+export async function runWorkflowById(workflowId: string): Promise<void> {
+  return invoke<void>("run_workflow_by_id", { workflow_id: workflowId });
+}
+
+/** Finish the in-flight microphone capture (the mic button's "stop"), the same
+ *  routine the hotkey key-up / second press triggers. No-op if nothing is
+ *  capturing. */
+export async function finishCapture(): Promise<void> {
+  return invoke<void>("finish_capture");
+}
+
 // ── Dialog session-type output (Workflow P2) ──────────────────────────────
 
 /** Send a follow-up turn to the active Dialog session and render the reply in

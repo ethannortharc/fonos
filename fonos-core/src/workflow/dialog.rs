@@ -31,6 +31,15 @@ pub enum DialogEngine {
     },
 }
 
+/// Default engine when props omit `engine` entirely: an empty
+/// `model_profile` means "use the global default LLM profile", with no
+/// system prompt.
+impl Default for DialogEngine {
+    fn default() -> Self {
+        DialogEngine::Llm { model_profile: String::new(), system: None }
+    }
+}
+
 /// Configuration for a Dialog-type output panel: rendering, window shape,
 /// and which engine drives live follow-up turns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +55,7 @@ pub struct DialogProps {
     #[serde(default)]
     pub voice_input: bool,
     /// Which backend answers follow-up turns.
+    #[serde(default)]
     pub engine: DialogEngine,
 }
 
@@ -178,6 +188,19 @@ mod tests {
         assert_eq!(msgs.len(), 24);
         assert_eq!(msgs.first().unwrap().content, "u8");
         assert_eq!(msgs.last().unwrap().content, "a19");
+    }
+
+    #[test]
+    fn dialog_props_engine_defaults_to_llm_from_empty_json() {
+        let props: DialogProps = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(
+            props.engine,
+            DialogEngine::Llm { model_profile: "".into(), system: None }
+        );
+        assert!(!props.markdown);
+        assert!(!props.voice_input);
+        assert_eq!(props.size.width, 420);
+        assert_eq!(props.size.height, 320);
     }
 
     #[test]

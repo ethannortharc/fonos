@@ -220,8 +220,8 @@ impl Output for DialogOutput {
         // interpolated arg is pre-escaped via serde_json::to_string.
         show_dialog_at_cursor(&self.app, self.props.size.width, self.props.size.height).await;
         let title_j = serde_json::to_string(&title).unwrap_or_else(|_| "\"Dialog\"".to_string());
-        let user_j = serde_json::to_string(&raw_text).unwrap_or_default();
-        let asst_j = serde_json::to_string(&final_text).unwrap_or_default();
+        let user_j = serde_json::to_string(&raw_text).unwrap_or_else(|_| "\"\"".to_string());
+        let asst_j = serde_json::to_string(&final_text).unwrap_or_else(|_| "\"\"".to_string());
         dialog_js(
             &self.app,
             &format!(
@@ -304,7 +304,7 @@ pub async fn dialog_send(app: tauri::AppHandle, text: String) -> Result<(), Stri
     {
         Ok(r) => r,
         Err(e) => {
-            let e_j = serde_json::to_string(&e).unwrap_or_default();
+            let e_j = serde_json::to_string(&e).unwrap_or_else(|_| "\"\"".to_string());
             dialog_js(&app, &format!("recvError({e_j})"));
             return Err(e);
         }
@@ -329,7 +329,7 @@ pub async fn dialog_send(app: tauri::AppHandle, text: String) -> Result<(), Stri
         fonos_core::storage::insert_entry(&db, &assistant_entry).map_err(|e| e.to_string())?;
     }
 
-    let reply_j = serde_json::to_string(&reply).unwrap_or_default();
+    let reply_j = serde_json::to_string(&reply).unwrap_or_else(|_| "\"\"".to_string());
     dialog_js(&app, &format!("recvTurn(\"assistant\", {reply_j})"));
     Ok(())
 }

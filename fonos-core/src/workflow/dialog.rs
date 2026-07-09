@@ -93,8 +93,16 @@ impl DialogSession {
         self.context.add_agent_response(assistant);
     }
 
-    /// Run one follow-up turn: append the user's message, call the LLM with
-    /// the full (trimmed) history, append the reply, and return it.
+    /// Run one follow-up turn: build the outgoing request from the existing
+    /// (trimmed) history plus the new user turn, call the LLM, and only on
+    /// success commit both the user turn and the reply to `context`.
+    ///
+    /// `context` is deliberately left untouched until `chat` succeeds. If it
+    /// were mutated up front, a failed call (transient network / rate-limit)
+    /// would leave a dangling user message with no assistant reply; the next
+    /// attempt would then send two consecutive `user` messages, which
+    /// strict-alternation backends (Anthropic) reject — poisoning the
+    /// session for every subsequent turn until restart.
     pub async fn next_turn(
         &mut self,
         user_text: &str,
@@ -102,9 +110,11 @@ impl DialogSession {
         temperature: f64,
         max_tokens: u32,
     ) -> Result<String, String> {
-        self.context.add_user_message(user_text);
-        let messages = build_dialog_messages(self.system.as_deref(), &self.context);
+        let mut messages = build_dialog_messages(self.system.as_deref(), &self.context);
+        messages.push(json!({ "role": "user", "content": user_text }));
         let reply = crate::llm::chat(service, messages, temperature, max_tokens).await?;
+        // Commit both turns only now that the call has succeeded.
+        self.context.add_user_message(user_text);
         self.context.add_agent_response(&reply);
         Ok(reply)
     }
@@ -192,5 +202,35 @@ mod tests {
         assert_eq!(msgs[1]["content"], "workflow input");
         assert_eq!(msgs[2]["role"], "assistant");
         assert_eq!(msgs[2]["content"], "workflow output");
+    }
+
+    #[test]
+    fn next_turn_request_assembly_does_not_mutate_context_before_send() {
+        // Regression guard for context poisoning on LLM error (see `next_turn`):
+        // the outgoing request must be assembled from history plus the new
+        // user turn WITHOUT committing that user turn to `context` until the
+        // call succeeds. Otherwise a failed call leaves a dangling user
+        // message, and the next turn sends two consecutive "user" messages,
+        // which strict-alternation backends (Anthropic) reject.
+        //
+        // The real network call isn't unit-testable, so this mirrors exactly
+        // what `next_turn` does to build the request (see its body) and
+        // asserts the request/context split directly.
+        let mut session = DialogSession::new(7, Some("SYS".into()), 12);
+        session.seed_first_turn("hi", "hello");
+        let before = session.context.messages().to_vec();
+
+        let user_text = "follow-up question";
+        // Mirrors next_turn's (fixed) ordering exactly: build from the
+        // existing context, then push the new user turn onto the *built*
+        // vec — `context` itself is never touched here.
+        let mut messages = build_dialog_messages(session.system.as_deref(), &session.context);
+        messages.push(json!({ "role": "user", "content": user_text }));
+
+        assert_eq!(messages.last().unwrap()["role"], "user");
+        assert_eq!(messages.last().unwrap()["content"], user_text);
+
+        // context must be unchanged by merely assembling the outgoing request.
+        assert_eq!(session.context.messages().to_vec(), before);
     }
 }

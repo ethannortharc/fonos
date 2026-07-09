@@ -17,7 +17,26 @@ pub enum PipelineEvent {
     Processing,
     /// The pipeline finished and the final text was delivered (or handed to
     /// the clipboard for modes that don't auto-paste).
-    Delivered(String),
+    ///
+    /// * `raw` — the first text to appear in the pipeline (the STT transcript
+    ///   for a mic run, the selection for a text run) — the same value the
+    ///   recorder received. Empty (`""`) for emitters that only ever see the
+    ///   final text.
+    /// * `final_text` — the text delivered to every output and shown on the
+    ///   pill.
+    /// * `workflow` — the workflow id for engine runs, so a surface can label
+    ///   the result by the run's workflow; `None` for emitters outside the
+    ///   engine (the STS turn bridge, the listen command, the shared post-LLM
+    ///   flow), which carry no workflow identity.
+    Delivered {
+        /// First text in the pipeline (raw transcript / selection); `""` when
+        /// no distinct raw text is at hand.
+        raw: String,
+        /// Final text delivered to every output and shown on the pill.
+        final_text: String,
+        /// Workflow id for engine runs; `None` for non-workflow emitters.
+        workflow: Option<String>,
+    },
     /// The recording produced no usable speech.
     NoSpeech,
     /// The pipeline failed; the error is already classified for display.
@@ -109,7 +128,11 @@ pub async fn deliver_llm_result(
         }
     }
 
-    events.emit(PipelineEvent::Delivered(out.processed));
+    events.emit(PipelineEvent::Delivered {
+        raw: String::new(),
+        final_text: out.processed,
+        workflow: None,
+    });
     DeliveryOutcome::Delivered
 }
 
@@ -167,7 +190,14 @@ mod tests {
         assert_eq!(r, DeliveryOutcome::Delivered);
         assert_eq!(*text.injected.lock().unwrap(), vec!["hello"]);
         assert_eq!(*text.entered.lock().unwrap(), 0);
-        assert_eq!(*sink.events.lock().unwrap(), vec![PipelineEvent::Delivered("hello".into())]);
+        assert_eq!(
+            *sink.events.lock().unwrap(),
+            vec![PipelineEvent::Delivered {
+                raw: String::new(),
+                final_text: "hello".into(),
+                workflow: None
+            }]
+        );
     }
 
     #[tokio::test]
@@ -193,7 +223,14 @@ mod tests {
         let r = deliver_llm_result(Ok(out("", true, false)), &sink, &text).await;
         assert_eq!(r, DeliveryOutcome::Delivered);
         assert!(text.injected.lock().unwrap().is_empty());
-        assert_eq!(*sink.events.lock().unwrap(), vec![PipelineEvent::Delivered(String::new())]);
+        assert_eq!(
+            *sink.events.lock().unwrap(),
+            vec![PipelineEvent::Delivered {
+                raw: String::new(),
+                final_text: String::new(),
+                workflow: None
+            }]
+        );
     }
 
     #[tokio::test]

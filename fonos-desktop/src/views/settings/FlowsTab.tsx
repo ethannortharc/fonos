@@ -23,7 +23,7 @@
 // The backend is the final validator throughout; frontend only pre-hints the
 // microphone-needs-stt rule.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, WidgetDef, WidgetRole, WorkflowDef, WorkflowRow } from "../../types";
 import { listWorkflows, listWidgets, saveWorkflow, deleteWorkflow, saveWidget } from "../../lib/api";
@@ -187,6 +187,9 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [error, setError] = useState<string>("");
+  // Root of the currently-expanded flow card — used by the outside-click
+  // listener below to tell inside-the-editor clicks from page-background ones.
+  const expandedCardRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     try {
@@ -372,10 +375,38 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     }
   };
 
+  /** Collapse the open flow — the exact state changes the chevron performs
+   *  when it collapses (clears expanded id + active node + picker + error).
+   *  Per-edit auto-save already persisted everything, so this discards nothing
+   *  beyond a half-filled new-widget-in-slot form, same as the chevron. */
+  const collapse = () => {
+    setError(""); setActiveNodeId(null); setPicker(null);
+    setExpandedId(null);
+  };
+
   const toggleCard = (id: string) => {
     setError(""); setActiveNodeId(null); setPicker(null);
     setExpandedId((prev) => (prev === id ? null : id));
   };
+
+  // Clicking anywhere outside the expanded card collapses it — same effect as
+  // the chevron. `mousedown` (not click) so this fires before another card's
+  // expand click handler: clicking a different flow's header collapses this
+  // one AND expands that one in the same gesture. Clicks inside the card
+  // subtree (including the in-place node editor, which renders inline — no
+  // portal) are ignored via contains(). Listener only exists while expanded.
+  useEffect(() => {
+    if (!expandedId) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = expandedCardRef.current;
+      if (el && !el.contains(e.target as Node)) collapse();
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    // collapse only calls stable state setters; re-keying on expandedId alone
+    // avoids re-registering the listener on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedId]);
 
   const switchView = (v: "flows" | "blocks") => {
     setActiveNodeId(null); setPicker(null); setError("");
@@ -495,6 +526,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     return (
       <div
         key={wf.id}
+        ref={expanded ? expandedCardRef : undefined}
         className={[
           "rounded-[12px] transition-colors",
           expanded

@@ -198,16 +198,18 @@ pub(crate) fn monitor_under_cursor(
     Some((target, cursor))
 }
 
-/// Position the text-action panel near the mouse cursor: below-right by
-/// default, flipped left/up when it would cross the monitor edge.
+/// Position the text-action panel near the mouse cursor, parameterized on the
+/// window's actual `(w, h)` (a panel's size comes from its `PanelSize` prop, not
+/// a fixed conf value). Below-right by default, flipped left/up when it would
+/// cross the monitor edge.
 #[cfg(target_os = "macos")]
-pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle) {
+pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("text-action-panel") else { return };
     let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
-    let (panel_w, panel_h) = (380.0_f64, 280.0_f64); // logical px — matches tauri.conf.json
+    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the panel's PanelSize
     let offset = 12.0_f64;
 
     let mon_x = target.position().x as f64 / scale;

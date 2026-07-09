@@ -216,7 +216,7 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "panel",
             "悬浮板·默认",
             "🪟",
-            serde_json::json!({ "markdown": false }),
+            serde_json::json!({ "markdown": false, "size": { "width": 420, "height": 320 } }),
         ),
         widget(
             "out.speak",

@@ -25,7 +25,7 @@ use serde::Deserialize;
 use tauri::Manager;
 
 use fonos_core::workflow::llm_step::{run_llm_step, LlmProps};
-use fonos_core::workflow::model::{AudioBuf, Data, DataKind};
+use fonos_core::workflow::model::{AudioBuf, Data, DataKind, PanelSize};
 use fonos_core::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
 
 use super::dictation;
@@ -567,6 +567,8 @@ pub struct PanelOutput {
     pub app: tauri::AppHandle,
     /// Render-as-markdown hint forwarded to the panel (P2 consumes it).
     pub markdown: bool,
+    /// Window dimensions the panel is sized to at open (from the widget prop).
+    pub size: PanelSize,
 }
 
 #[async_trait::async_trait]
@@ -593,7 +595,7 @@ impl Output for PanelOutput {
             )
         };
 
-        super::text_action::show_panel_at_cursor(&self.app).await;
+        super::text_action::show_panel_at_cursor(&self.app, self.size.width, self.size.height).await;
 
         // recvStart resets the panel and carries `markdown` as its 4th arg (the
         // panel JS ignores extra positional args for now). The output runs
@@ -760,9 +762,14 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     .get("markdown")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
+                let size = props
+                    .get("size")
+                    .and_then(|v| serde_json::from_value::<PanelSize>(v.clone()).ok())
+                    .unwrap_or_default();
                 Ok(Arc::new(PanelOutput {
                     app: app.clone(),
                     markdown,
+                    size,
                 }) as Arc<dyn Output>)
             }),
         );

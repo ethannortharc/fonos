@@ -595,14 +595,34 @@ impl Output for PanelOutput {
             )
         };
 
+        // Header name = the recorded run's workflow name (mirrors dialog.rs's
+        // title lookup: read `metadata.workflow_name` off the history entry).
+        // All rusqlite work stays in a scoped std-mutex block dropped before the
+        // await below; entry_id <= 0 or a failed lookup falls back to "".
+        let wf_name = if entry_id > 0 {
+            let state = self.app.state::<AppState>();
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            match fonos_core::storage::get_entry(&db, entry_id) {
+                Ok(e) => e
+                    .metadata
+                    .get("workflow_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                Err(_) => String::new(),
+            }
+        } else {
+            String::new()
+        };
+
         super::text_action::show_panel_at_cursor(&self.app, self.size.width, self.size.height).await;
 
         // recvStart resets the panel and carries `markdown` as its 4th arg (the
         // panel JS ignores extra positional args for now). The output runs
-        // post-processing, so there is no source/mode context to show; P1 uses a
-        // neutral header and lets recvResult carry the text + footer context.
+        // post-processing, so there is no source/mode context to show; the header
+        // shows the workflow name (falling back to "" when it can't be resolved).
         let icon_j = serde_json::to_string("🪟").unwrap_or_default();
-        let name_j = serde_json::to_string("").unwrap_or_default();
+        let name_j = serde_json::to_string(&wf_name).unwrap_or_default();
         let sel_j = serde_json::to_string("").unwrap_or_default();
         super::text_action::panel_js(
             &self.app,

@@ -437,10 +437,15 @@ export default function WidgetForm({
   const rc = roleColor(form.role);
 
   // isNew only: props are type-specific, so switching type resets them.
-  // Mirrors WidgetsTab's old changeType — the id is left untouched (still
-  // freely editable), same accepted minor as before (no id regeneration).
+  // The id is also regenerated to keep its `<type>.custom-…` prefix in sync
+  // with the new type — but ONLY while the id is still the untouched
+  // auto-generated value (matches `^[a-z]+\.custom-\d+$`, the pattern the
+  // BuildingBlocks/FlowsTab "New" affordances mint). A hand-edited id is
+  // never clobbered.
   const changeType = (type_tag: string) => {
-    setForm({ ...form, type_tag, props: {} });
+    const isAutoId = /^[a-z]+\.custom-\d+$/.test(form.id);
+    const id = form.isNew && isAutoId ? `${type_tag}.custom-${Date.now()}` : form.id;
+    setForm({ ...form, type_tag, id, props: {} });
   };
 
   const handleSave = async () => {

@@ -483,9 +483,10 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
 
   const renderCard = (wf: WorkflowRow) => {
     const expanded = expandedId === wf.id;
-    const sub = expanded
-      ? t("flows.hint.edit")
-      : flowNodes(wf).map((n) => n.label).join("  →  ");
+    // Head subtitle is always the pipeline summary (same in both states) —
+    // the edit hint lives only directly above the pipeline editor below, so
+    // expanding no longer shows the same sentence twice.
+    const sub = flowNodes(wf).map((n) => n.label).join("  →  ");
     return (
       <div
         key={wf.id}

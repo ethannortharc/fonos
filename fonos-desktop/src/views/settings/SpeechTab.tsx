@@ -235,7 +235,7 @@ export default function SpeechTab({
           >
             {llmModes.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.icon} {m.name}
+                {m.name}
               </option>
             ))}
           </select>

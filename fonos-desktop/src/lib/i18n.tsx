@@ -861,7 +861,7 @@ const zh: Partial<Record<Key, string>> = {
   "nav.settings": "设置",
 
   "tab.general": "通用",
-  "tab.flows": "Flows",
+  "tab.flows": "流程",
   "tab.models": "模型",
   "tab.scenarios": "场景",
   "tab.dictation": "听写",

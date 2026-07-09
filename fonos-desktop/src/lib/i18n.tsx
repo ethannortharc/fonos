@@ -44,6 +44,7 @@ const en = {
 
   // settings tabs
   "tab.general": "General",
+  "tab.flows": "Flows",
   "tab.models": "Models",
   "tab.scenarios": "Scenarios",
   "tab.dictation": "Dictation",
@@ -52,7 +53,7 @@ const en = {
   "tab.agent": "Agent",
   "tab.notes": "Notes",
   "tab.meeting": "Meeting",
-  "tab.hotkeys": "Hotkeys",
+  "tab.advanced": "Advanced",
   "tab.workflows": "Workflows",
   "tab.widgets": "Widgets",
 
@@ -200,7 +201,6 @@ const en = {
 
   // hotkeys tab
   "hotkeys.presskeys": "Press hotkey...",
-  "hotkeys.workflow-hint": "Workflow trigger keys are configured on the Workflows page.",
   "hotkeys.section.speech": "Speech",
   "hotkeys.speech": "TTS",
   "hotkeys.clicktoset": "Click to set",
@@ -372,9 +372,6 @@ const en = {
   "mtab.llm-hint": "LLM used to generate meeting summaries. OpenRouter models work well for long contexts.",
   "mtab.summary-prompt": "Summary Prompt",
   "mtab.summary-hint": "System prompt sent to the LLM when generating a meeting summary. Use \"- [ ] task\" format to create action items.",
-  "mtab.hotkey": "Hotkey",
-  "mtab.hotkey-notset": "Not set — configure in Hotkeys tab",
-  "mtab.hotkey-hint": "The meeting start/stop hotkey is configured in the Hotkeys tab.",
 
   // onboarding wizard
   "onboard.step.perms": "Permissions",
@@ -731,7 +728,6 @@ const en = {
   "scen.sum.hotkeysnone": "No custom hotkeys",
 
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
-  "wf.title": "Workflows",
   "wf.section.preset": "Preset",
   "wf.section.custom": "Custom",
   "wf.empty.custom": "No custom workflows yet.",
@@ -773,7 +769,6 @@ const en = {
   "flows.new-name": "New flow",
 
   // ── Widgets tab (Workflow P1) — sources/processors/outputs list + editor ──
-  "widgets.title": "Widgets",
   "widgets.section.sources": "Sources",
   "widgets.section.processors": "Processors",
   "widgets.section.outputs": "Outputs",
@@ -857,6 +852,7 @@ const zh: Partial<Record<Key, string>> = {
   "nav.settings": "设置",
 
   "tab.general": "通用",
+  "tab.flows": "Flows",
   "tab.models": "模型",
   "tab.scenarios": "场景",
   "tab.dictation": "听写",
@@ -865,7 +861,7 @@ const zh: Partial<Record<Key, string>> = {
   "tab.agent": "助手",
   "tab.notes": "笔记",
   "tab.meeting": "会议",
-  "tab.hotkeys": "快捷键",
+  "tab.advanced": "高级",
   "tab.workflows": "工作流",
   "tab.widgets": "部件",
 
@@ -1004,7 +1000,6 @@ const zh: Partial<Record<Key, string>> = {
 
   // hotkeys tab
   "hotkeys.presskeys": "请按快捷键…",
-  "hotkeys.workflow-hint": "工作流触发键在「工作流」页配置。",
   "hotkeys.section.speech": "语音",
   "hotkeys.speech": "TTS",
   "hotkeys.clicktoset": "点击设置",
@@ -1176,9 +1171,6 @@ const zh: Partial<Record<Key, string>> = {
   "mtab.llm-hint": "用于生成会议摘要的 LLM。OpenRouter 模型适合长上下文。",
   "mtab.summary-prompt": "摘要提示词",
   "mtab.summary-hint": "生成会议摘要时发送给 LLM 的系统提示词。用「- [ ] 任务」格式创建待办项。",
-  "mtab.hotkey": "快捷键",
-  "mtab.hotkey-notset": "未设置 — 在「快捷键」标签页配置",
-  "mtab.hotkey-hint": "会议开始/停止快捷键在「快捷键」标签页配置。",
 
   // onboarding wizard
   "onboard.step.perms": "权限",
@@ -1519,7 +1511,6 @@ const zh: Partial<Record<Key, string>> = {
   "scen.sum.hotkeysnone": "无自定义快捷键",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
-  "wf.title": "工作流",
   "wf.section.preset": "预置",
   "wf.section.custom": "自定义",
   "wf.empty.custom": "还没有自定义工作流。",
@@ -1561,7 +1552,6 @@ const zh: Partial<Record<Key, string>> = {
   "flows.new-name": "新工作流",
 
   // ── 部件页 (Workflow P1) ────────────────────────────────────────────────
-  "widgets.title": "部件",
   "widgets.section.sources": "来源",
   "widgets.section.processors": "处理器",
   "widgets.section.outputs": "输出",

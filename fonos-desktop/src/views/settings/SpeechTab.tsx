@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types";
 import { listVoices, listModelVoices, generateAndPlay } from "../../lib/api";
-import { HotkeyInput } from "./HotkeysTab";
+import { HotkeyInput } from "../../components/HotkeyInput";
 import { t, useT } from "../../lib/i18n";
 
 const PREVIEW_TEXT = "你好，这是这个音色的试听效果。Hello, this is a preview of this voice.";

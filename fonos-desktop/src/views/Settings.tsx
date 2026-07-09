@@ -1,7 +1,8 @@
 // Settings view — shell that manages state and renders tab components.
-// Tabbed layout: Workflows | General | Models | Speech | Vocab | Agent |
-// Meeting | Hotkeys | Widgets | Scenarios (see TABS in settings/constants.ts,
-// the canonical source of truth for the tab set).
+// Tabbed layout: General | Flows | Models | Vocab | Advanced | Scenarios (see
+// TABS in settings/constants.ts, the canonical source of truth for the tab
+// set). Advanced absorbs Speech/Agent/Meeting + their hotkeys; Flows absorbs
+// Widgets (building blocks) + Workflows + workflow hotkeys.
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -16,14 +17,9 @@ import type { SettingsTab } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
 import ScenariosTab from "./settings/ScenariosTab";
-import WorkflowsTab from "./settings/WorkflowsTab";
-import HotkeysTab from "./settings/HotkeysTab";
-import WidgetsTab from "./settings/WidgetsTab";
-import SpeechTab from "./settings/SpeechTab";
 import VocabTab from "./settings/VocabTab";
-import AgentTab from "./settings/AgentTab";
-import SkillsTab from "./settings/SkillsTab";
-import MeetingTab from "./settings/MeetingTab";
+import FlowsTab from "./settings/FlowsTab";
+import AdvancedTab from "./settings/AdvancedTab";
 
 export default function Settings() {
   const tr = useT();
@@ -33,7 +29,7 @@ export default function Settings() {
   const [error, setError] = useState<string>("");
 
   // Tab state
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("workflows");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("flows");
 
   const loadAll = useCallback(async () => {
     try {
@@ -130,6 +126,11 @@ export default function Settings() {
           <GeneralTab config={config} onSave={handleSave} />
         )}
 
+        {/* ────────────── Flows tab (Flows UI redesign) ────────────── */}
+        {settingsTab === "flows" && (
+          <FlowsTab config={config} />
+        )}
+
         {/* ────────────── Models tab ────────────── */}
         {settingsTab === "models" && (
           <ModelsTab
@@ -137,6 +138,16 @@ export default function Settings() {
             onSave={handleSave}
             setError={setError}
           />
+        )}
+
+        {/* ────────────── Vocabulary tab ────────────── */}
+        {settingsTab === "vocab" && (
+          <VocabTab config={config} onSave={handleSave} />
+        )}
+
+        {/* ────────────── Advanced tab (Speech + Agent + Meeting, Flows UI redesign) ────────────── */}
+        {settingsTab === "advanced" && (
+          <AdvancedTab config={config} modes={modes} onSave={handleSave} />
         )}
 
         {/* ────────────── Scenarios tab (saved bundles + templates) ────────────── */}
@@ -147,45 +158,6 @@ export default function Settings() {
             onReload={loadAll}
             setError={setError}
           />
-        )}
-
-        {/* ────────────── Workflows tab (Workflow P1) ────────────── */}
-        {settingsTab === "workflows" && (
-          <WorkflowsTab />
-        )}
-
-        {/* ────────────── Speech tab (Listen + future STS) ────────────── */}
-        {settingsTab === "speech" && (
-          <SpeechTab config={config} modes={modes} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Vocabulary tab ────────────── */}
-        {settingsTab === "vocab" && (
-          <VocabTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}
-        {settingsTab === "agent" && (
-          <>
-            <AgentTab config={config} onSave={handleSave} />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
-            <SkillsTab />
-          </>
-        )}
-
-        {/* ────────────── Meeting tab ────────────── */}
-        {settingsTab === "meeting" && (
-          <MeetingTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Hotkeys tab ────────────── */}
-        {settingsTab === "hotkeys" && (
-          <HotkeysTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Widgets tab (Workflow P1) ────────────── */}
-        {settingsTab === "widgets" && (
-          <WidgetsTab config={config} />
         )}
 
         {saving && (

@@ -220,6 +220,15 @@ fn main() {
             Err(e) => eprintln!("fonos: workflow migration save failed: {e}"),
         }
     }
+    // One-time migration: formerly-global settings (STT language, insert
+    // strategy, translate target) → widget props (Workflow P2). Runs after
+    // migrate_to_workflows so it operates on the now-workflow-shaped config.
+    if fonos_core::workflow::migrate::migrate_settings_into_flow(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated stt-language/insert-strategy/translate-target into widget props"),
+            Err(e) => eprintln!("fonos: settings migration save failed: {e}"),
+        }
+    }
     let config = config;
 
     // Initialize SQLite database for stats & history

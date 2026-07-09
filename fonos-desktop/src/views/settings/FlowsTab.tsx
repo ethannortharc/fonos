@@ -37,13 +37,18 @@ import type { PipeNode } from "../../components/PipelineView";
 import BuildingBlocks, { TYPE_TAGS } from "./BuildingBlocks";
 import WidgetForm, { widgetToForm } from "./WidgetForm";
 import type { WidgetFormValue } from "./WidgetForm";
+import { inputClass, selectClass } from "./constants";
 
-// ─── Shared class recipes (match WidgetForm/BuildingBlocks/WorkflowsTab) ───────
+// ─── Shared class recipes (canonical: constants.ts; match WidgetForm/BuildingBlocks) ──
+// Local width variants: the flow-name field and the inline slot pickers use
+// fixed/flex widths instead of w-full, so derive from the canonical
+// inputClass/selectClass (no re-literal of the shared bg/border/text/focus
+// recipe) rather than duplicating the string.
 
-const nameInputClass =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
-const slotSelectClass =
-  "flex-1 min-w-[150px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
+const nameInputClass = inputClass.replace("w-full ", "");
+const slotSelectClass = selectClass
+  .replace("w-full", "flex-1 min-w-[150px]")
+  .replace("px-3 py-2", "px-2.5 py-1.5");
 const labelClass = "text-[10px] text-[rgba(255,255,255,0.35)]";
 const headingClass =
   "text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold";

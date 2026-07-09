@@ -34,13 +34,10 @@ import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "
 import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
-import { LANGUAGES } from "./constants";
+import { LANGUAGES, inputClass, selectClass } from "./constants";
 
-// ─── Shared class recipes (match WidgetsTab/WorkflowsTab) ─────────────────────
+// ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
-const inputClass =
-  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
-const selectClass = inputClass + " cursor-pointer appearance-none";
 const textareaClass = inputClass + " leading-relaxed resize-none font-mono";
 const labelClass = "text-[10px] text-[rgba(255,255,255,0.35)]";
 const headingClass =

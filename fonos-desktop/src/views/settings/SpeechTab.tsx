@@ -7,11 +7,17 @@ import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types
 import { listVoices, listModelVoices, generateAndPlay } from "../../lib/api";
 import { HotkeyInput } from "../../components/HotkeyInput";
 import { t, useT } from "../../lib/i18n";
+import { selectClass } from "./constants";
 
 const PREVIEW_TEXT = "你好，这是这个音色的试听效果。Hello, this is a preview of this voice.";
 
+// `control` styles the plain <input>/<textarea> controls on this tab — left
+// as-is (settings polish batch touches selects only, not inputs).
 const control =
   "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] transition-colors";
+// Selects use the canonical house recipe (constants.ts) instead, minus its
+// w-full (these selects are fixed-width via `w-44`, composed below).
+const selectControl = selectClass.replace("w-full ", "");
 
 /** Known built-in speakers per TTS model family (no discovery endpoint in
  *  OMLX yet — curated from the model configs). */
@@ -125,7 +131,7 @@ function VoicePicker({
             if (e.target.value === "__custom__") setCustom(true);
             else onChange(e.target.value);
           }}
-          className={`${control} w-44`}
+          className={`${selectControl} w-44`}
         >
           <option value="default">{t("common.default")}</option>
           {voices.length > 0 && (
@@ -231,7 +237,7 @@ export default function SpeechTab({
           <select
             value={config.listen_mode ?? "listen"}
             onChange={(e) => onSave({ listen_mode: e.target.value })}
-            className={`${control} w-44`}
+            className={`${selectControl} w-44`}
           >
             {llmModes.map((m) => (
               <option key={m.id} value={m.id}>
@@ -244,7 +250,7 @@ export default function SpeechTab({
           <select
             value={config.listen_voice_profile ?? ""}
             onChange={(e) => onSave({ listen_voice_profile: e.target.value })}
-            className={`${control} w-44`}
+            className={`${selectControl} w-44`}
           >
             <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (
@@ -297,7 +303,7 @@ export default function SpeechTab({
           <select
             value={config.sts_llm_profile ?? ""}
             onChange={(e) => onSave({ sts_llm_profile: e.target.value })}
-            className={`${control} w-44`}
+            className={`${selectControl} w-44`}
           >
             <option value="">{t("speech.default-llm-profile")}</option>
             {llmProfiles.map((p) => (
@@ -311,7 +317,7 @@ export default function SpeechTab({
           <select
             value={config.sts_voice_profile ?? ""}
             onChange={(e) => onSave({ sts_voice_profile: e.target.value })}
-            className={`${control} w-44`}
+            className={`${selectControl} w-44`}
           >
             <option value="">{t("speech.default-tts-profile")}</option>
             {ttsProfiles.map((p) => (

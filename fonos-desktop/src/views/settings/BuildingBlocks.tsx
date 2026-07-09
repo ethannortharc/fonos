@@ -22,11 +22,10 @@ import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import WidgetForm, { widgetToForm } from "./WidgetForm";
 import type { WidgetFormValue } from "./WidgetForm";
+import { selectClass } from "./constants";
 
-// ─── Shared class recipes (match WidgetForm/WorkflowsTab) ─────────────────────
+// ─── Shared class recipes (canonical: constants.ts; match WidgetForm/WorkflowsTab) ──
 
-const selectClass =
-  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
 const headingClass =
   "text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold";
 

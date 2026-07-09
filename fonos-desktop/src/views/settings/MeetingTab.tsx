@@ -3,6 +3,7 @@
 
 import type { AppConfig, ModelProfile } from "../../types";
 import { t, useT } from "../../lib/i18n";
+import { selectClass } from "./constants";
 
 const DEFAULT_SUMMARY_PROMPT =
   "You are a helpful meeting assistant. Summarize the meeting transcript below. " +
@@ -47,11 +48,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
         <select
           value={config.meeting_audio_source ?? "auto"}
           onChange={(e) => onSave({ meeting_audio_source: e.target.value })}
-          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-          style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
+          className={selectClass}
         >
           <option value="auto">{t("mtab.audio-auto")}</option>
           <option value="mic_only">{t("mtab.audio-mic")}</option>
@@ -67,11 +64,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
         <select
           value={config.meeting_stt_profile ?? ""}
           onChange={(e) => onSave({ meeting_stt_profile: e.target.value })}
-          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-          style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
+          className={selectClass}
         >
           <option value="">{t("mtab.stt-default")}</option>
           {sttProfiles.map((p) => (
@@ -91,11 +84,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
         <select
           value={config.meeting_llm_profile ?? ""}
           onChange={(e) => onSave({ meeting_llm_profile: e.target.value })}
-          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-          style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
+          className={selectClass}
         >
           <option value="">{t("mtab.llm-none")}</option>
           {llmProfiles.map((p) => (

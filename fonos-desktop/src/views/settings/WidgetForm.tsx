@@ -19,6 +19,14 @@
 // WidgetIcon (Task 1), tinted by the widget's role via roleColor. The
 // `icon` string field is still carried through to WidgetDef for backend
 // compatibility, but is no longer user-editable — see task-2-report.md.
+//
+// isNew type/id picker (Task 3 addition): Task 2 scoped identity to
+// name+icon only, leaving no way to choose a brand-new widget's type_tag or
+// id. When `value.isNew`, the identity block now also renders a `type_tag`
+// <select> (options via the new `typeTags` prop) + an editable `id` text
+// input; switching type resets `props` to `{}` (props are type-specific),
+// mirroring old WidgetsTab's `changeType`. Existing widgets are unaffected —
+// they still show the read-only type_tag/id/builtin badge row.
 
 import { useState, useEffect } from "react";
 import { t, useT } from "../../lib/i18n";
@@ -295,11 +303,17 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, onSave, onCancel, onDelete,
+  value, config, containers, typeTags, onSave, onCancel, onDelete,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
+  /** Allowed type_tags for a NEW widget of value.role (e.g. BuildingBlocks'
+   *  TYPE_TAGS[role]) — populates the isNew type_tag <select> below.
+   *  Ignored for existing widgets (type_tag is fixed once saved). Falls
+   *  back to [value.type_tag] when omitted, so the picker still renders
+   *  something usable even if a caller forgets to pass it. */
+  typeTags?: string[];
   onSave: (w: WidgetDef) => Promise<void> | void;
   onCancel: () => void;
   onDelete?: () => void;
@@ -321,6 +335,13 @@ export default function WidgetForm({
   }, [value.id]);
 
   const rc = roleColor(form.role);
+
+  // isNew only: props are type-specific, so switching type resets them.
+  // Mirrors WidgetsTab's old changeType — the id is left untouched (still
+  // freely editable), same accepted minor as before (no id regeneration).
+  const changeType = (type_tag: string) => {
+    setForm({ ...form, type_tag, props: {} });
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError(t("widgets.err.name-required")); return; }
@@ -379,13 +400,33 @@ export default function WidgetForm({
               className={inputClass}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] text-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded font-mono">{form.type_tag}</span>
-            <span className="text-[9px] text-[rgba(255,255,255,0.2)] font-mono truncate">{form.id}</span>
-            {form.builtin && (
-              <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">{t("common.builtin")}</span>
-            )}
-          </div>
+          {form.isNew ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label={t("widgets.field.type")}>
+                <select value={form.type_tag} onChange={(e) => changeType(e.target.value)} className={selectClass}>
+                  {(typeTags && typeTags.length > 0 ? typeTags : [form.type_tag]).map((tt) => (
+                    <option key={tt} value={tt}>{tt}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t("widgets.field.id")}>
+                <input
+                  type="text"
+                  value={form.id}
+                  onChange={(e) => setForm({ ...form, id: e.target.value })}
+                  className={inputClass + " font-mono"}
+                />
+              </Field>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded font-mono">{form.type_tag}</span>
+              <span className="text-[9px] text-[rgba(255,255,255,0.2)] font-mono truncate">{form.id}</span>
+              {form.builtin && (
+                <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded">{t("common.builtin")}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Configuration (per-type_tag) */}

@@ -27,8 +27,10 @@ export interface PipeNode {
 // ─── Muted connector arrow ──────────────────────────────────────────────────
 
 function Arrow() {
+  // Color matches the mockup's --faint (rgba(255,255,255,0.32)) — same muted
+  // tone as FlowsTab's Chevron, so connectors read consistently across the tab.
   return (
-    <svg width="18" height="14" viewBox="0 0 18 14" className="flex-shrink-0" style={{ color: "rgba(255,255,255,0.18)" }}>
+    <svg width="18" height="14" viewBox="0 0 18 14" className="flex-shrink-0" style={{ color: "rgba(255,255,255,0.32)" }}>
       <line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="1.5" />
       <polyline points="9,2 15,7 9,12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -38,12 +40,15 @@ function Arrow() {
 // ─── "+" mid-chain insert button ────────────────────────────────────────────
 
 function AddStepButton({ onClick }: { onClick: () => void }) {
+  // Matches the mockup's `.addstep`: a neutral dashed square (not an
+  // always-amber circle) that only picks up the accent color on hover, so it
+  // stays quiet inline in the pipeline until interacted with.
   return (
     <button
       onClick={onClick}
       title={t("wf.add-step")}
       aria-label={t("wf.add-step")}
-      className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded-full border border-dashed border-[rgba(245,158,11,0.35)] text-[rgba(251,191,36,0.7)] text-[11px] leading-none hover:text-[#fbbf24] hover:border-[rgba(245,158,11,0.6)] transition-colors"
+      className="flex-shrink-0 w-[22px] h-[22px] flex items-center justify-center rounded-[6px] border border-dashed border-[rgba(255,255,255,0.10)] text-[rgba(255,255,255,0.32)] text-[14px] leading-none hover:text-[#fbbf24] hover:border-[rgba(245,158,11,0.3)] transition-colors"
     >
       +
     </button>
@@ -81,7 +86,10 @@ function NodeCapsule({
         border: "1px solid " + `rgba(${rc.rgb},0.22)`,
         color: `rgba(${rc.rgb},0.95)`,
         borderRadius: 9,
-        padding: "6px 11px",
+        // Matches the mockup: read-only capsules (flow-list previews) sit a
+        // touch tighter than interactive ones (bigger click target once a
+        // flow is expanded for editing).
+        padding: interactive ? "7px 12px" : "5px 10px",
         outline: active ? `2px solid rgba(${rc.rgb},0.55)` : "none",
         outlineOffset: 2,
       }}
@@ -101,7 +109,9 @@ export default function PipelineView({
   interactive?: boolean;
   activeId?: string;
   onNodeClick?: (id: string) => void;
-  onAddStep?: (afterIndex: number) => void;
+  /** Receives the processor-array index to splice the new step at (0 =
+   *  before the first processor, processors.length = after the last). */
+  onAddStep?: (insertIndex: number) => void;
 }) {
   useT();
   return (

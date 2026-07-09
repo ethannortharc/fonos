@@ -161,17 +161,18 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
           onSave={handleSave}
           onCancel={() => { setEditing(null); setDeleteErr(""); }}
           onDelete={editing.builtin ? undefined : handleDelete}
+          deleteError={deleteErr}
         />
-        {deleteErr && (
-          <div className="text-[10px] text-[#ef4444] leading-relaxed px-1">{deleteErr}</div>
-        )}
       </div>
     );
   }
 
   // ── List: three role columns ────────────────────────────────────────────
+  // Side-by-side grid (Inputs / Processors / Outputs), matching the mockup's
+  // `.blocks{grid-template-columns:1fr 1fr 1fr;gap:14px}` — collapses to one
+  // column on narrow widths, same breakpoint convention as Scenarios.tsx.
   return (
-    <div className="flex flex-col gap-5">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-start">
       {ROLES.map(({ role, label }) => {
         const items = widgets.filter((w) => w.role === role);
         const llmTemplates = widgets.filter((w) => w.role === "processor" && w.type_tag === "llm" && w.builtin);

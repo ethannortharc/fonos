@@ -201,7 +201,6 @@ const en = {
 
   // hotkeys tab
   "hotkeys.presskeys": "Press hotkey...",
-  "hotkeys.section.speech": "Speech",
   "hotkeys.speech": "TTS",
   "hotkeys.clicktoset": "Click to set",
   "hotkeys.selectnotebook": "— Select notebook —",
@@ -210,7 +209,6 @@ const en = {
   "hotkeys.dictation.hint": "(hold to talk)",
   "hotkeys.dictationtoggle": "Dictation Toggle",
   "hotkeys.dictationtoggle.hint": "(press to start/stop)",
-  "hotkeys.section.agent": "Agent",
   "hotkeys.agentspeak": "Agent speak",
   "hotkeys.holdtotalk": "(hold-to-talk)",
   "hotkeys.agentpanel": "Agent panel",
@@ -219,7 +217,6 @@ const en = {
   "hotkeys.notepanel": "Note panel",
   "hotkeys.notebookhint": "Notebook shortcuts — bind a hotkey to directly record into a specific notebook",
   "hotkeys.shortcut": "Shortcut",
-  "hotkeys.section.meeting": "Meeting",
   "hotkeys.meeting": "Meeting",
   "hotkeys.section.textactions": "Text Actions",
 
@@ -1000,7 +997,6 @@ const zh: Partial<Record<Key, string>> = {
 
   // hotkeys tab
   "hotkeys.presskeys": "请按快捷键…",
-  "hotkeys.section.speech": "语音",
   "hotkeys.speech": "TTS",
   "hotkeys.clicktoset": "点击设置",
   "hotkeys.selectnotebook": "— 选择笔记本 —",
@@ -1009,7 +1005,6 @@ const zh: Partial<Record<Key, string>> = {
   "hotkeys.dictation.hint": "(按住说话)",
   "hotkeys.dictationtoggle": "听写开关",
   "hotkeys.dictationtoggle.hint": "(按一下开始/停止)",
-  "hotkeys.section.agent": "助手",
   "hotkeys.agentspeak": "助手对话",
   "hotkeys.holdtotalk": "(按住说话)",
   "hotkeys.agentpanel": "助手面板",
@@ -1018,7 +1013,6 @@ const zh: Partial<Record<Key, string>> = {
   "hotkeys.notepanel": "笔记面板",
   "hotkeys.notebookhint": "笔记本快捷键 — 绑定快捷键,直接录入指定笔记本",
   "hotkeys.shortcut": "快捷键",
-  "hotkeys.section.meeting": "会议",
   "hotkeys.meeting": "会议",
   "hotkeys.section.textactions": "文本动作",
 

@@ -303,7 +303,7 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, typeTags, onSave, onCancel, onDelete,
+  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
@@ -317,6 +317,11 @@ export default function WidgetForm({
   onSave: (w: WidgetDef) => Promise<void> | void;
   onCancel: () => void;
   onDelete?: () => void;
+  /** Delete-referrer error owned by the caller (there's no channel back to
+   *  this form for delete outcomes — see the header comment). When set,
+   *  rendered inline in the card's footer, near the Delete button, instead
+   *  of the caller having to render it as a detached sibling below the form. */
+  deleteError?: string;
 }) {
   useT();
   const [form, setForm] = useState<WidgetFormValue>(value);
@@ -370,7 +375,7 @@ export default function WidgetForm({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-4">
+      <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-4 animate-[panel-in_0.18s_ease] motion-reduce:animate-none">
         <div className="text-[12px] font-medium text-[#fafaf9]">
           {form.isNew ? t("widgets.editor.new") : t("widgets.editor.edit")}
         </div>
@@ -464,6 +469,10 @@ export default function WidgetForm({
             </button>
           )}
         </div>
+
+        {deleteError && (
+          <div className="text-[11px] text-[#ef4444] leading-relaxed">{deleteError}</div>
+        )}
       </div>
     </div>
   );

@@ -608,7 +608,10 @@ export default function SkillsTab() {
     setError("");
     try {
       const list = await listSkills();
-      setSkills(list);
+      // Tolerate a null/undefined result (e.g. the browser demo's mock IPC
+      // has no `list_skills` case and falls through to a bare `null`) so
+      // `skills` is always an array — callers below rely on .length/.map.
+      setSkills(list ?? []);
     } catch (e: unknown) {
       // If backend isn't available, show empty list gracefully
       setSkills([]);

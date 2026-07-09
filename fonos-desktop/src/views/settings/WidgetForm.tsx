@@ -395,7 +395,7 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError,
+  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
@@ -406,7 +406,10 @@ export default function WidgetForm({
    *  back to [value.type_tag] when omitted, so the picker still renders
    *  something usable even if a caller forgets to pass it. */
   typeTags?: string[];
-  onSave: (w: WidgetDef) => Promise<void> | void;
+  /** Optional so read-only callers (the Building Blocks catalog) can omit it —
+   *  the Save button is never rendered when `readOnly`, so persistence is moot
+   *  there. Interactive callers (FlowsTab) always pass it. */
+  onSave?: (w: WidgetDef) => Promise<void> | void;
   onCancel: () => void;
   onDelete?: () => void;
   /** Delete-referrer error owned by the caller (there's no channel back to
@@ -414,6 +417,11 @@ export default function WidgetForm({
    *  rendered inline in the card's footer, near the Delete button, instead
    *  of the caller having to render it as a detached sibling below the form. */
   deleteError?: string;
+  /** Read-only detail view (Building Blocks catalog): every field is disabled
+   *  (via a wrapping disabled <fieldset>) and the footer shows only a Close
+   *  button wired to onCancel. Never combined with isNew. Default false keeps
+   *  every existing caller (FlowsTab) visually and behaviourally unchanged. */
+  readOnly?: boolean;
 }) {
   useT();
   const [form, setForm] = useState<WidgetFormValue>(value);
@@ -446,6 +454,7 @@ export default function WidgetForm({
   };
 
   const handleSave = async () => {
+    if (!onSave) return;
     if (!form.name.trim()) { setError(t("widgets.err.name-required")); return; }
     if (!form.id.trim()) { setError(t("widgets.err.type-required")); return; }
     setError("");
@@ -478,6 +487,11 @@ export default function WidgetForm({
         </div>
 
         {error && <div className="text-[11px] text-[#ef4444]">{error}</div>}
+
+        {/* Fields — a disabled fieldset (display:contents, so zero layout
+            change) propagates `disabled` to every descendant input/select/
+            textarea/checkbox/button in read-only mode. */}
+        <fieldset disabled={readOnly} className="contents">
 
         {/* Identity: icon (read-only, by type_tag) + name */}
         <div className="flex flex-col gap-2">
@@ -542,30 +556,44 @@ export default function WidgetForm({
           />
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1 items-center">
-          <button
-            onClick={handleSave}
-            className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
-          >
-            {t("common.save")}
-          </button>
-          <button
-            onClick={handleCancel}
-            className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
-          >
-            {t("common.cancel")}
-          </button>
-          {/* Built-in / not-yet-saved widgets can't be deleted — hide the button. */}
-          {!form.isNew && !form.builtin && onDelete && (
+        </fieldset>
+
+        {/* Actions — read-only shows only a Close button (the Cancel button,
+            relabelled + wired to onCancel); no Save/Delete. */}
+        {readOnly ? (
+          <div className="flex gap-2 pt-1 items-center">
             <button
-              onClick={handleDeleteClick}
-              className="px-3 py-2 rounded-lg bg-transparent border border-[rgba(239,68,68,0.1)] text-[rgba(239,68,68,0.6)] text-[11px] hover:text-[#ef4444] hover:border-[rgba(239,68,68,0.3)] transition-colors"
+              onClick={handleCancel}
+              className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
             >
-              {confirmDelete ? t("widgets.confirm-delete") : t("common.delete")}
+              {t("widgets.close")}
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 pt-1 items-center">
+            <button
+              onClick={handleSave}
+              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
+            >
+              {t("common.save")}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
+            >
+              {t("common.cancel")}
+            </button>
+            {/* Built-in / not-yet-saved widgets can't be deleted — hide the button. */}
+            {!form.isNew && !form.builtin && onDelete && (
+              <button
+                onClick={handleDeleteClick}
+                className="px-3 py-2 rounded-lg bg-transparent border border-[rgba(239,68,68,0.1)] text-[rgba(239,68,68,0.6)] text-[11px] hover:text-[#ef4444] hover:border-[rgba(239,68,68,0.3)] transition-colors"
+              >
+                {confirmDelete ? t("widgets.confirm-delete") : t("common.delete")}
+              </button>
+            )}
+          </div>
+        )}
 
         {deleteError && (
           <div className="text-[11px] text-[#ef4444] leading-relaxed">{deleteError}</div>

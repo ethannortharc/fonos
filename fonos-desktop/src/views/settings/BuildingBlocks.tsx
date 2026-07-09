@@ -1,28 +1,27 @@
-// BuildingBlocks.tsx — three-column widget library (Inputs / Processors /
-// Outputs) that supersedes WidgetsTab (Flows UI redesign, Task 3). Ports
-// WidgetsTab's list/template-copy/delete-referrer shell verbatim, but
-// delegates the per-type_tag property editor to the shared `WidgetForm`
-// (Task 2) instead of a local PropsForm copy — the same component FlowsTab's
-// in-place node editor (Task 4) is expected to use, so there is exactly one
-// form implementation for both surfaces.
+// BuildingBlocks.tsx — read-only reference catalog of the widget library
+// (Sources / Processors / Outputs). Widget creating/editing/deleting no longer
+// lives here: all of that now happens in FlowsTab's in-place node editor (it
+// calls the global saveWidget and supports minting a new widget straight into
+// a flow slot). This surface is a glanceable catalog only — clicking a card
+// opens the shared WidgetForm in read-only mode (every field disabled,
+// Close-only footer) as a detail view, delegating per-type_tag rendering to
+// the same one form implementation FlowsTab uses.
 //
-// Built-in widgets are editable (saveWidget overrides them by id) but never
-// deletable. Custom widgets can be deleted; the backend rejects deletion of
-// a widget still referenced by a workflow and returns the referrer list,
-// which is surfaced verbatim in red below the editor.
+// Cards flow in a responsive wrap grid within each role section, and the
+// sections stack in role order (Sources → Processors → Outputs). TYPE_TAGS is
+// exported unchanged for FlowsTab's slot picker to consume.
 
 import { useState, useEffect } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { TKey } from "../../lib/i18n";
 import type { AppConfig, WidgetDef, WidgetRole } from "../../types";
-import { listWidgets, saveWidget, deleteWidget } from "../../lib/api";
+import { listWidgets } from "../../lib/api";
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import WidgetForm, { widgetToForm } from "./WidgetForm";
 import type { WidgetFormValue } from "./WidgetForm";
-import { selectClass } from "./constants";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetForm/WorkflowsTab) ──
 
@@ -86,7 +85,6 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
   const [containers, setContainers] = useState<Container[]>([]);
   const [editing, setEditing] = useState<WidgetFormValue | null>(null);
-  const [deleteErr, setDeleteErr] = useState<string>("");
 
   const load = async () => {
     try {
@@ -101,54 +99,7 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
 
-  const openNew = (role: WidgetRole) => {
-    setDeleteErr("");
-    const type_tag = TYPE_TAGS[role][0];
-    setEditing({
-      id: `${type_tag}.custom-${Date.now()}`,
-      role, type_tag, name: "", icon: "", props: {}, builtin: false, isNew: true,
-    });
-  };
-
-  // Clone a builtin llm processor's props into a new custom processor.
-  const openTemplate = (w: WidgetDef) => {
-    setDeleteErr("");
-    setEditing({
-      id: `llm.custom-${Date.now()}`,
-      role: "processor", type_tag: "llm",
-      name: `${widgetLabel(w)}${t("widgets.copy-suffix")}`, icon: w.icon ?? "",
-      props: { ...(w.props ?? {}) }, builtin: false, isNew: true,
-    });
-  };
-
-  const openEdit = (w: WidgetDef) => {
-    setDeleteErr("");
-    setEditing(widgetToForm(w));
-  };
-
-  const handleSave = async (w: WidgetDef) => {
-    // Validation + error surfacing happen inside WidgetForm itself — a
-    // rejected saveWidget() here propagates back up through its onSave
-    // await and is shown inline there. This just persists and reloads.
-    await saveWidget(w);
-    setEditing(null);
-    await load();
-  };
-
-  const handleDelete = async () => {
-    if (!editing) return;
-    setDeleteErr("");
-    try {
-      await deleteWidget(editing.id);
-      setEditing(null);
-      await load();
-    } catch (e) {
-      // Backend rejects referenced widgets with the referrer list in the message.
-      setDeleteErr(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  // ── Editor (shared WidgetForm) ────────────────────────────────────────────
+  // ── Detail view (shared WidgetForm, read-only) ────────────────────────────
   if (editing) {
     return (
       <div className="flex flex-col gap-3">
@@ -156,25 +107,21 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
           value={editing}
           config={config}
           containers={containers}
-          typeTags={TYPE_TAGS[editing.role]}
-          onSave={handleSave}
-          onCancel={() => { setEditing(null); setDeleteErr(""); }}
-          onDelete={editing.builtin ? undefined : handleDelete}
-          deleteError={deleteErr}
+          readOnly
+          onCancel={() => setEditing(null)}
         />
       </div>
     );
   }
 
-  // ── List: three role columns ────────────────────────────────────────────
-  // Side-by-side grid (Inputs / Processors / Outputs), matching the mockup's
-  // `.blocks{grid-template-columns:1fr 1fr 1fr;gap:14px}` — collapses to one
-  // column on narrow widths, same breakpoint convention as Scenarios.tsx.
+  // ── Catalog: stacked role sections, cards in a responsive wrap grid ────────
+  // Each section is its heading row followed by an auto-fill grid so cards flow
+  // multiple-per-row by available width (replacing the old fixed 3-column
+  // side-by-side layout). Sections stack in role order (ROLES).
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-start">
+    <div className="flex flex-col gap-5">
       {ROLES.map(({ role, label }) => {
         const items = widgets.filter((w) => w.role === role);
-        const llmTemplates = widgets.filter((w) => w.role === "processor" && w.type_tag === "llm" && w.builtin);
         const rc = roleColor(role);
         return (
           <div key={role} className="flex flex-col gap-2">
@@ -182,34 +129,11 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
               <span className={headingClass} style={{ color: `rgba(${rc.rgb},0.75)` }}>{t(label)}</span>
               <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({items.length})</span>
             </div>
-
-            {items.map((w) => (
-              <WidgetCard key={w.id} w={w} onClick={() => openEdit(w)} />
-            ))}
-
-            {/* Processors: copy an LLM template into a new custom processor. */}
-            {role === "processor" && llmTemplates.length > 0 && (
-              <select
-                value=""
-                onChange={(e) => {
-                  const w = llmTemplates.find((x) => x.id === e.target.value);
-                  if (w) openTemplate(w);
-                }}
-                className={selectClass + " text-[rgba(251,191,36,0.7)]"}
-              >
-                <option value="">{t("widgets.copy-template")}</option>
-                {llmTemplates.map((w) => (
-                  <option key={w.id} value={w.id}>{widgetLabel(w)}</option>
-                ))}
-              </select>
-            )}
-
-            <button
-              onClick={() => openNew(role)}
-              className="w-full py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[11px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
-            >
-              {t("widgets.new")}
-            </button>
+            <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+              {items.map((w) => (
+                <WidgetCard key={w.id} w={w} onClick={() => setEditing(widgetToForm(w))} />
+              ))}
+            </div>
           </div>
         );
       })}

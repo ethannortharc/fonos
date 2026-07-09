@@ -203,7 +203,10 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "insert",
             "插入",
             "⌨️",
-            serde_json::json!({ "strategy": "paste", "press_enter": false }),
+            serde_json::json!({
+                "strategy": if cfg!(target_os = "linux") { "type" } else { "paste" },
+                "press_enter": false
+            }),
         ),
         widget("out.replace", Output, "replace", "替换选区", "🔁", serde_json::json!({})),
         widget("out.clipboard", Output, "clipboard", "剪贴板", "📋", serde_json::json!({})),

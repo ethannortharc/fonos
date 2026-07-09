@@ -347,15 +347,17 @@ fn read_meta_i64(ctx: &RunCtx, key: &str) -> Option<i64> {
 
 /// `insert`: inject the text at the cursor of the frontmost app.
 ///
-/// Delivery reuses [`crate::injection::inject_text`], which resolves the
-/// strategy from the live `AppConfig` (global default + per-app overrides). The
-/// widget's `strategy` prop is schema-only in P1 — exactly as the legacy
-/// dictation `InjectionTextSink` behaved — and is not yet consumed here.
+/// The widget's own `strategy` prop is the fallback default; a per-app
+/// override from the live `AppConfig` still wins over it, via
+/// [`crate::injection::resolve_strategy_for_app_with_default`].
 pub struct InsertOutput {
-    /// Handle used to read the live `AppConfig` for strategy resolution.
+    /// Handle used to read the live `AppConfig` for per-app override resolution.
     pub app: tauri::AppHandle,
     /// Press Return after inserting (send-on-insert).
     pub press_enter: bool,
+    /// This widget's default injection strategy (`"paste"` or `"type"`),
+    /// overridden per-app by `AppConfig.injection_app_overrides`.
+    pub strategy: String,
 }
 
 #[async_trait::async_trait]
@@ -374,7 +376,16 @@ impl Output for InsertOutput {
             let cfg = state.config.lock().map_err(|e| e.to_string())?;
             cfg.clone()
         };
-        crate::injection::inject_text(text, &config)?;
+        let app_name = if config.injection_app_overrides.is_empty() {
+            None
+        } else {
+            let n = crate::commands::selection::frontmost_app();
+            if n.is_empty() { None } else { Some(n) }
+        };
+        let strategy = crate::injection::resolve_strategy_for_app_with_default(
+            &config, app_name.as_deref(), crate::injection::InjectionStrategy::parse(&self.strategy),
+        );
+        crate::injection::inject_text_with_strategy(text, strategy)?;
 
         // Optional Return, after the same settle delay the core pipeline uses.
         // A press_enter failure is non-fatal — the text already landed.
@@ -687,10 +698,9 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     .get("press_enter")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                Ok(Arc::new(InsertOutput {
-                    app: app.clone(),
-                    press_enter,
-                }) as Arc<dyn Output>)
+                let strategy = props.get("strategy").and_then(|v| v.as_str())
+                    .unwrap_or("paste").to_string();
+                Ok(Arc::new(InsertOutput { app: app.clone(), press_enter, strategy }) as Arc<dyn Output>)
             }),
         );
     }

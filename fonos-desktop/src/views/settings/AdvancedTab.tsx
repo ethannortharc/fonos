@@ -16,8 +16,9 @@ import SpeechTab from "./SpeechTab";
 import AgentTab from "./AgentTab";
 import SkillsTab from "./SkillsTab";
 import MeetingTab from "./MeetingTab";
+import InsertionTab from "./InsertionTab";
 
-type Sub = "speech" | "agent" | "meeting";
+type Sub = "speech" | "agent" | "meeting" | "insertion";
 
 // ─── Segmented control — same markup/classes as FlowsTab's top segmented
 //     control (container + SegButton), inlined here per YAGNI (see design doc
@@ -47,11 +48,12 @@ export default function AdvancedTab({ config, modes, onSave }: {
 
   return (
     <div className="flex flex-col">
-      {/* Segmented control [Speech] [Agent] [Meeting] */}
+      {/* Segmented control [Speech] [Agent] [Meeting] [Insertion] */}
       <div className="inline-flex self-start bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-[9px] p-[3px] gap-[3px] mb-[18px]">
         <SegButton active={sub === "speech"} onClick={() => setSub("speech")}><span>{t("tab.speech")}</span></SegButton>
         <SegButton active={sub === "agent"} onClick={() => setSub("agent")}><span>{t("tab.agent")}</span></SegButton>
         <SegButton active={sub === "meeting"} onClick={() => setSub("meeting")}><span>{t("tab.meeting")}</span></SegButton>
+        <SegButton active={sub === "insertion"} onClick={() => setSub("insertion")}><span>{t("tab.insertion")}</span></SegButton>
       </div>
 
       {/* ────────────── Speech sub — hotkey_tts + SpeechTab ────────────── */}
@@ -100,6 +102,11 @@ export default function AdvancedTab({ config, modes, onSave }: {
           />
           <MeetingTab config={config} onSave={onSave} />
         </div>
+      )}
+
+      {/* ────────────── Insertion sub — per-app text-insertion overrides ── */}
+      {sub === "insertion" && (
+        <InsertionTab config={config} onSave={onSave} />
       )}
     </div>
   );

@@ -54,6 +54,7 @@ const en = {
   "tab.notes": "Notes",
   "tab.meeting": "Meeting",
   "tab.advanced": "Advanced",
+  "tab.insertion": "Insertion",
   "tab.workflows": "Workflows",
   "tab.widgets": "Widgets",
 
@@ -871,6 +872,7 @@ const zh: Partial<Record<Key, string>> = {
   "tab.notes": "笔记",
   "tab.meeting": "会议",
   "tab.advanced": "高级",
+  "tab.insertion": "插入",
   "tab.workflows": "工作流",
   "tab.widgets": "部件",
 

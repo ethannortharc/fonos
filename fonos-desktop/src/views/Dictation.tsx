@@ -1,21 +1,20 @@
 // Dictation view — jumping blocks + mic + drum-roller mode slider + activity.
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { MicIcon as MicSvg, TranscriptIcon, HourglassIcon, SparklesIcon, AlertIcon, PinIcon, NotebookIcon, ModeIcon } from "../components/Icons";
+import { TranscriptIcon, HourglassIcon, SparklesIcon, AlertIcon, PinIcon, NotebookIcon, ModeIcon } from "../components/Icons";
 import {
   hasMicrophone,
-  startRecording,
-  stopRecording,
-  processWithLlm,
-  listModes,
+  runWorkflowById,
+  finishCapture,
   listWorkflows,
   saveConfig,
   getConfig,
 } from "../lib/api";
+import { workflowLabel } from "../lib/builtinLabels";
 import { listContainers } from "../lib/storage-api";
 import { t, useT } from "../lib/i18n";
 import type { Container } from "../lib/storage-api";
-import type { ModeEntry, ModelProfile, WorkflowRow } from "../types";
+import type { WorkflowRow } from "../types";
 
 // ─── Jumping color blocks (Canvas) — only when recording ─────────────────────
 
@@ -194,7 +193,7 @@ function ModeDrum({
                 fontSize: isCenter ? 12 : Math.max(9, 11 - dist * 0.7),
                 fontWeight: isCenter ? 600 : 500,
                 whiteSpace: "nowrap",
-              }}>{m.name}</span>
+              }}>{workflowLabel(m)}</span>
             </button>
           );
         };
@@ -252,12 +251,14 @@ interface ActivityEntry {
 
 export default function Dictation() {
   useT();
-  const [modes, setModes] = useState<ModeEntry[]>([]);
+  // Note-target selector state: `dictationMode === "note"` reveals the notebook
+  // strip below (legacy note-target UI, kept intact). The mic button and the
+  // drum no longer read this — both run the workflow engine now.
   const [dictationMode, setDictationMode] = useState<string>("raw");
-  // Voice-workflow picker (drum): microphone-source workflows + the one the
-  // main dictation hotkey triggers (config.active_voice_workflow). Distinct
-  // from the legacy dictationMode above, which still drives this view's own
-  // mic-button recording flow.
+  // Voice-workflow picker (drum): microphone-source workflows. Its selection
+  // (persisted as config.active_voice_workflow) now drives BOTH the main
+  // dictation hotkey AND this view's in-view mic button — both run the selected
+  // workflow through the engine.
   const [voiceWorkflows, setVoiceWorkflows] = useState<WorkflowRow[]>([]);
   const [activeWorkflow, setActiveWorkflow] = useState<string>("wf.dictation");
   const [notebooks, setNotebooks] = useState<Container[]>([]);
@@ -268,18 +269,18 @@ export default function Dictation() {
   const [processing, setProcessing] = useState(false);
   const [recordDuration, setRecordDuration] = useState(0);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [sttModel, setSttModel] = useState("");
-  const [llmModel, setLlmModel] = useState("");
-  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activityRef = useRef<HTMLDivElement>(null);
+  // Label + icon for the "result" activity entry the float:stop listener pushes.
+  // Held in a ref so the once-registered listeners always read the current drum
+  // selection without needing to re-subscribe. Kept in sync by the effect below.
+  const resultMetaRef = useRef<{ label: string; icon: string }>({ label: "", icon: "" });
 
   useEffect(() => {
     if (activityRef.current) activityRef.current.scrollTop = activityRef.current.scrollHeight;
   }, [activity]);
 
   useEffect(() => {
-    listModes().then(setModes).catch(() => {});
     listWorkflows()
       .then((rows) => setVoiceWorkflows(rows.filter((w) => w.source_type_tag === "microphone")))
       .catch(() => {});
@@ -287,16 +288,21 @@ export default function Dictation() {
     getConfig().then((cfg) => {
       if (cfg.dictation_mode) setDictationMode(cfg.dictation_mode);
       setActiveWorkflow(cfg.active_voice_workflow || "wf.dictation");
-      setProfiles(cfg.model_profiles);
-      const sttP = cfg.model_profiles.find((p) => p.id === cfg.stt_profile);
-      const llmP = cfg.model_profiles.find((p) => p.id === cfg.llm_profile);
-      if (sttP) setSttModel(`${sttP.name}${sttP.model ? " · " + sttP.model : ""}`);
-      if (llmP) setLlmModel(`${llmP.name}${llmP.model ? " · " + llmP.model : ""}`);
     }).catch(() => {});
     listContainers()
       .then((all) => setNotebooks(all.filter((c) => c.container_type === "notebook")))
       .catch(() => {});
   }, []);
+
+  // Keep the result-entry label/icon in sync with the drum selection, so the
+  // float:stop listener (registered once) can label the delivered result.
+  useEffect(() => {
+    const wf = voiceWorkflows.find((w) => w.id === activeWorkflow);
+    resultMetaRef.current = {
+      label: wf ? workflowLabel(wf) : t("dict.transcript"),
+      icon: wf?.icon ?? "",
+    };
+  }, [activeWorkflow, voiceWorkflows]);
 
   // When dictationMode changes away from "note", clear the notebook selection
   useEffect(() => {
@@ -316,15 +322,70 @@ export default function Dictation() {
     return () => { if (durationRef.current) clearInterval(durationRef.current); };
   }, [isRecording]);
 
-  // Surface background pipeline/permission errors (hotkey-driven flows that
-  // bypass this view's own try/catch) into the activity feed. The payload is
-  // the structured {message, pane} JSON from error_surface::emit_float_error,
-  // or a plain string (backward compatible).
+  // Subscribe to the engine's terminal `float:*` lifecycle so this view's feed
+  // reflects EVERY workflow run — the in-view mic button and hotkey-triggered
+  // runs alike (both go through the same engine path now). The engine emits, per
+  // run: float:start (mic capture began) → float:processing → float:stop (final
+  // delivered text; "" = no speech) or float:error (surfaced error JSON).
   useEffect(() => {
     const cleanup: (() => void)[] = [];
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
+
+        // Capture began (a mic source started recording).
+        cleanup.push(await listen<string>("float:start", () => {
+          setIsRecording(true);
+          setProcessing(false);
+        }));
+
+        // Capture ended, processing (STT/LLM) started. Flip out of the recording
+        // state and drop a placeholder the terminal float:stop replaces.
+        cleanup.push(await listen("float:processing", () => {
+          setIsRecording(false);
+          setProcessing(true);
+          setActivity((prev) => {
+            if (prev.some((e) => e.type === "processing")) return prev;
+            return [...prev, {
+              id: `${Date.now()}-p-${Math.random()}`,
+              timestamp: new Date(),
+              type: "processing" as const,
+              icon: <HourglassIcon size={12} />,
+              label: t("dict.processing"),
+            }];
+          });
+        }));
+
+        // Terminal delivery. Non-empty payload → a result entry (the delivered
+        // text) replacing the processing placeholder; empty payload → a "no
+        // speech" note, matching the legacy shape (a transcript-type entry).
+        cleanup.push(await listen<string>("float:stop", (event) => {
+          setIsRecording(false);
+          setProcessing(false);
+          const text = typeof event.payload === "string" ? event.payload : String(event.payload ?? "");
+          setActivity((prev) => {
+            const filtered = prev.filter((e) => e.type !== "processing");
+            if (!text) {
+              return [...filtered, {
+                id: `${Date.now()}-ns-${Math.random()}`,
+                timestamp: new Date(),
+                type: "transcript" as const,
+                icon: <TranscriptIcon size={12} />,
+                label: t("dict.no-speech"),
+              }];
+            }
+            const { label, icon } = resultMetaRef.current;
+            return [...filtered, {
+              id: `${Date.now()}-r-${Math.random()}`,
+              timestamp: new Date(),
+              type: "result" as const,
+              icon: icon ? <ModeIcon icon={icon} size={12} /> : <SparklesIcon size={12} />,
+              label: label || t("dict.transcript"),
+              content: text,
+            }];
+          });
+        }));
+
         cleanup.push(await listen<string>("float:error", (event) => {
           const raw = typeof event.payload === "string" ? event.payload : String(event.payload ?? "");
           let message = raw;
@@ -337,16 +398,21 @@ export default function Dictation() {
             // Plain-string payload — use it as-is.
           }
           if (!message) return;
+          // A failed run is terminal too — leave the recording state and drop
+          // any pending processing placeholder before recording the error.
+          setIsRecording(false);
+          setProcessing(false);
           setActivity((prev) => {
+            const base = prev.filter((e) => e.type !== "processing");
             // Best-effort dedup: skip if the most recent entry is an identical
             // error added within the last 1.5s (e.g. the in-view catch below
             // already recorded it). Errors with differing text still appear.
-            const last = prev[prev.length - 1];
+            const last = base[base.length - 1];
             if (last && last.type === "error" && last.content === message &&
                 Date.now() - last.timestamp.getTime() < 1500) {
-              return prev;
+              return base;
             }
-            return [...prev, {
+            return [...base, {
               id: `${Date.now()}-fe-${Math.random()}`,
               timestamp: new Date(),
               type: "error" as const,
@@ -382,88 +448,29 @@ export default function Dictation() {
     setActivity((prev) => [...prev, { ...entry, id: `${Date.now()}-${Math.random()}`, timestamp: new Date() }]);
   }, []);
 
-  const handleStartStop = useCallback(async () => {
+  // Mic button: run the selected voice workflow through the engine (the same
+  // path hotkeys use) and finish its capture on the second click. The feed and
+  // the recording/processing state are driven entirely by the engine's
+  // float:* events (listeners above) — the click only kicks off / ends a run.
+  const handleStartStop = useCallback(() => {
     if (isRecording) {
-      // Resolve actual model names from mode overrides (not just global defaults)
-      const currentMode = modes.find((m) => m.id === dictationMode);
-      const profileLabel = (id: string) => {
-        const p = profiles.find((pr) => pr.id === id);
-        return p ? `${p.name}${p.model ? " · " + p.model : ""}` : id;
-      };
-      const actualStt = currentMode?.stt_model === "apple-speech"
-        ? "Apple Speech"
-        : currentMode?.stt_model ? profileLabel(currentMode.stt_model) : sttModel;
-      const actualLlm = currentMode?.model ? profileLabel(currentMode.model) : llmModel;
-
-      const notebookLabel = dictationMode === "note"
-        ? (selectedNotebookId !== null
-            ? (notebooks.find((n) => n.id === selectedNotebookId)?.title ?? t("dict.notebook"))
-            : t("dict.quick-note"))
-        : undefined;
-
-      setIsRecording(false);
-      setProcessing(true);
-      addActivity({
-        type: "recording",
-        icon: <MicSvg size={12} />,
-        label: notebookLabel ? `${t("dict.recorded")} → ${notebookLabel}` : t("dict.recorded"),
-        duration: recordDuration,
-        model: actualStt || undefined,
-      });
-      try {
-        const result = await stopRecording(dictationMode);
-        if (result.text) {
-          const sttDisplay = result.stt_engine
-            ? `${actualStt} (${result.stt_engine})`
-            : actualStt;
-          const preprocBadge = (result.noise_removed_pct > 0.5 || Math.abs(result.gain_db) > 0.5)
-            ? `HPF: -${result.noise_removed_pct.toFixed(1)}% ${t("dict.noise")} | Norm: ${result.gain_db >= 0 ? "+" : ""}${result.gain_db.toFixed(1)}dB`
-            : undefined;
-          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: t("dict.transcript"), content: result.text, latency: result.latency_ms, duration: result.duration_secs, model: sttDisplay || undefined, tokens: preprocBadge });
-          if (currentMode?.system || currentMode?.user_template) {
-            addActivity({ type: "processing", icon: <HourglassIcon size={12} />, label: t("dict.processing") });
-            try {
-              const llm = await processWithLlm(result.text, dictationMode);
-              // stop_recording left the float pill in "Processing" for LLM
-              // modes (it suppresses its own float:stop so "Done" can't show
-              // before the LLM step). Now that the LLM step resolved, emit the
-              // real final event so the pill shows "Done".
-              try {
-                const { emit } = await import("@tauri-apps/api/event");
-                await emit("float:stop", llm.processed);
-              } catch {
-                // Not running under Tauri (demo/web) — no float pill to update.
-              }
-              setActivity((prev) => {
-                const filtered = prev.filter((e) => e.type !== "processing");
-                const me = modes.find((m) => m.id === dictationMode);
-                return [...filtered, { id: `${Date.now()}-r`, timestamp: new Date(), type: "result" as const, icon: me?.icon ? <ModeIcon icon={me.icon} size={12} /> : <SparklesIcon size={12} />, label: llm.mode_name || dictationMode, content: llm.processed, latency: llm.latency_ms, model: actualLlm || undefined }];
-              });
-            } catch (e: unknown) {
-              const msg = e instanceof Error ? e.message : String(e);
-              // The pill is stuck in "Processing" (stop_recording suppressed its
-              // float:stop for this LLM mode) — surface the failure on it too.
-              try {
-                const { emit } = await import("@tauri-apps/api/event");
-                await emit("float:error", msg);
-              } catch {
-                // Not running under Tauri.
-              }
-              setActivity((prev) => [...prev.filter((x) => x.type !== "processing"), { id: `${Date.now()}-e`, timestamp: new Date(), type: "error" as const, icon: <AlertIcon size={12} />, label: t("dict.error"), content: msg }]);
-            }
-          }
-        } else {
-          addActivity({ type: "transcript", icon: <TranscriptIcon size={12} />, label: t("dict.no-speech"), latency: result.latency_ms });
-        }
-      } catch (e: unknown) {
+      // Second click → end the in-flight capture. float:processing / float:stop
+      // then update the feed and clear the recording state.
+      finishCapture().catch((e: unknown) => {
         addActivity({ type: "error", icon: <AlertIcon size={12} />, label: t("dict.error"), content: e instanceof Error ? e.message : String(e) });
-      } finally { setProcessing(false); }
+      });
     } else {
+      // Fresh feed for a button-initiated session. Optimistically flip into the
+      // recording state; float:start confirms it (events are the source of
+      // truth). On a failed invoke, reset so the button recovers.
       setActivity([]);
-      try { await startRecording(); setIsRecording(true); }
-      catch (e: unknown) { addActivity({ type: "error", icon: <AlertIcon size={12} />, label: t("dict.error"), content: e instanceof Error ? e.message : String(e) }); }
+      setIsRecording(true);
+      runWorkflowById(activeWorkflow || "wf.dictation").catch((e: unknown) => {
+        setIsRecording(false);
+        addActivity({ type: "error", icon: <AlertIcon size={12} />, label: t("dict.error"), content: e instanceof Error ? e.message : String(e) });
+      });
     }
-  }, [isRecording, dictationMode, selectedNotebookId, notebooks, recordDuration, addActivity, modes, sttModel, llmModel, profiles]);
+  }, [isRecording, activeWorkflow, addActivity]);
 
   // Derive the current notebook for display in the activity label
   const currentNotebook = notebooks.find((n) => n.id === selectedNotebookId) ?? null;

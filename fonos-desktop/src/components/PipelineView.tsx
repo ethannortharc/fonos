@@ -4,12 +4,14 @@
 //  - read-only (`interactive` falsy): pure display, used for flow-list row
 //    previews (replaces WorkflowsTab's text-only PipelineSummary).
 //  - interactive: capsules are clickable (drives in-place node editing),
-//    the `activeId` node gets an outline, and — only in gaps between two
-//    processor nodes — a small "+" button offers mid-chain insertion via
-//    `onAddStep(afterIndex)`. Inserting before the first processor or after
-//    the last one is intentionally left to a different affordance in the
-//    caller (e.g. an explicit "append step" button), matching the existing
-//    WorkflowsTab pattern.
+//    the `activeId` node gets an outline, and a small "+" button offers
+//    processor insertion at every insertable position — after the source
+//    (add the first processor), between two processors, and after the last
+//    processor (before the outputs). `onAddStep(insertIndex)` receives the
+//    processor-array index to splice at (0 = before the first processor,
+//    processors.length = after the last), so FlowsTab can insert without
+//    re-deriving positions. Outputs are added through a separate affordance
+//    in the caller (they are a multi-select set, not an ordered chain).
 
 import { t, useT } from "../lib/i18n";
 import type { WidgetRole } from "../types";
@@ -105,18 +107,27 @@ export default function PipelineView({
   return (
     <div className="flex items-center flex-wrap gap-1">
       {nodes.map((n, i) => {
-        // Mid-chain insertion only between two processor nodes — inserting
-        // before the first / after the last processor is a different
-        // affordance (see file header).
+        // A "+" lives in the gap before node i when that gap is a valid
+        // processor-insertion point: the node before is a source or processor
+        // and the node here is a processor or output. That covers "after the
+        // source" (source→processor / source→output), "between processors"
+        // (processor→processor), and "after the last processor"
+        // (processor→output) — but never output→output. insertIndex is the
+        // processor-array index to splice at = # processor nodes before i.
+        const prev = i > 0 ? nodes[i - 1] : undefined;
         const showAdd =
-          !!interactive && !!onAddStep && i > 0 &&
-          nodes[i - 1].role === "processor" && n.role === "processor";
+          !!interactive && !!onAddStep && !!prev &&
+          (prev.role === "source" || prev.role === "processor") &&
+          (n.role === "processor" || n.role === "output");
+        const insertIndex = showAdd
+          ? nodes.slice(0, i).filter((x) => x.role === "processor").length
+          : 0;
         return (
-          <div key={n.id} className="flex items-center gap-1">
+          <div key={`${n.id}:${i}`} className="flex items-center gap-1">
             {i > 0 && (
               <span className="flex items-center gap-0.5">
                 <Arrow />
-                {showAdd && <AddStepButton onClick={() => onAddStep!(i - 1)} />}
+                {showAdd && <AddStepButton onClick={() => onAddStep!(insertIndex)} />}
               </span>
             )}
             <NodeCapsule

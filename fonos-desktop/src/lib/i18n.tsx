@@ -758,6 +758,19 @@ const en = {
   "wf.step.down": "Move down",
   "wf.step.remove": "Remove step",
 
+  // Flows page (Flows UI redesign) — segmented shell + in-place node editor
+  "flows.seg.flows": "Flows",
+  "flows.seg.blocks": "Building blocks",
+  "flows.hint.edit": "This flow's pipeline — click any node to edit it in place, or press + to add a step.",
+  "flows.pick.new": "＋ New…",
+  "flows.pick.processor": "Add a processor…",
+  "flows.pick.output": "Add an output…",
+  "flows.add-output": "Add output",
+  "flows.node.remove": "Remove from flow",
+  "flows.delete-flow": "Delete flow",
+  "flows.dangling": "This building block no longer exists — pick another.",
+  "flows.new-name": "New flow",
+
   // ── Widgets tab (Workflow P1) — sources/processors/outputs list + editor ──
   "widgets.title": "Widgets",
   "widgets.section.sources": "Sources",
@@ -1531,6 +1544,19 @@ const zh: Partial<Record<Key, string>> = {
   "wf.step.up": "上移",
   "wf.step.down": "下移",
   "wf.step.remove": "移除步骤",
+
+  // Flows 页（Flows UI 重设计）—— 分段外壳 + 就地节点编辑器
+  "flows.seg.flows": "流",
+  "flows.seg.blocks": "构建块",
+  "flows.hint.edit": "下面是这条流的管线 —— 点任一节点就地编辑，或按 + 加处理步骤。",
+  "flows.pick.new": "＋ 新建一个…",
+  "flows.pick.processor": "添加处理步骤…",
+  "flows.pick.output": "添加输出…",
+  "flows.add-output": "添加输出",
+  "flows.node.remove": "从流中移除",
+  "flows.delete-flow": "删除工作流",
+  "flows.dangling": "该构建块已不存在 —— 请另选一个。",
+  "flows.new-name": "新工作流",
 
   // ── 部件页 (Workflow P1) ────────────────────────────────────────────────
   "widgets.title": "部件",

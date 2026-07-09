@@ -131,6 +131,20 @@
   #pill.error #result-text{color:rgba(239,68,68,0.6)}
 
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+  /* ── Pane entrance (Bug B) ── Non-mic workflows jump idle→processing→done
+     with back-to-back native resizes on a transparent window; the done pane
+     has no animation, so the compositor goes quiet and stale pixels linger
+     until a hover forces a repaint. A one-shot entrance animation on each
+     pane that becomes visible (display:none→flex restarts it) forces paint. */
+  @keyframes paneIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
+  #idle{animation:paneIn .2s ease}
+  #pill.processing #proc{animation:paneIn .2s ease}
+  #pill.success #result,#pill.error #result{animation:paneIn .2s ease}
+  /* Reduced motion: opacity-only fade still forces a repaint, minimal motion. */
+  @media (prefers-reduced-motion:reduce){
+    @keyframes paneIn{from{opacity:0}to{opacity:1}}
+  }
 </style>
 </head>
 <body>
@@ -331,15 +345,23 @@ function openSettings(){
   window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'show-main-window',payload:'settings'}).catch(()=>{});
 }
 
+// Single-state invariant. A new cycle can begin while a previous state is
+// still showing (success revert pending, an error lingering, an STS turn still
+// speaking). enterState clears any pending revert timer (stopTm / errTimer) and
+// strips EVERY state class before adding the new one — otherwise stacked
+// classes make two panes render at once (a bare overlapped rectangle) and a
+// stale revert timer can fire mid-state, stripping the class and mis-sizing the
+// window. All four state handlers go through it.
+function enterState(cls){
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  var p=document.getElementById('pill');
+  p.classList.remove('recording','processing','success','error');
+  if(cls)p.classList.add(cls);
+}
 function startRec(){
   if(isRec)return;isRec=true;closeMenu();clearErr();
-  var p=document.getElementById('pill');
-  // A new cycle can begin while a previous one is still showing (success
-  // revert pending, STS turn still speaking) — stale state classes left on
-  // the pill make the panes overlap and the layout collapse into a bare
-  // rectangle. Recording always starts from a clean slate.
-  p.classList.remove('processing','success','error');
-  p.classList.add('recording');
+  enterState('recording');
   document.getElementById('rec-dur').textContent='0s';
   let t0=Date.now();
   if(durTm)clearInterval(durTm);
@@ -351,28 +373,26 @@ function showProcessing(){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','success','error');
-  p.classList.add('processing');
+  enterState('processing');
   sz(110,PH);
 }
 function stopRec(text){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','processing');
   if(text){
     document.getElementById('result-icon').textContent='\u2713';
     document.getElementById('result-text').textContent='Done';
-    p.classList.add('success');
   } else {
     document.getElementById('result-icon').textContent='\u2717';
     document.getElementById('result-text').textContent='No speech';
-    p.classList.add('error');
   }
+  // enterState clears any prior revert timer and every state class (so a
+  // lingering 'error'/'success' from the last cycle can't stack with this
+  // one), then this cycle arms its OWN 1200ms revert to idle.
+  enterState(text?'success':'error');
   sz(90,PH);
-  if(stopTm)clearTimeout(stopTm);
+  var p=document.getElementById('pill');
   stopTm=setTimeout(()=>{
     stopTm=null;
     p.classList.remove('success','error');
@@ -394,9 +414,6 @@ function showError(payload){
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  if(errTimer){clearTimeout(errTimer);errTimer=null;}
-  // Cancel a pending stopRec revert so it can't cut this error display short.
-  if(stopTm){clearTimeout(stopTm);stopTm=null;}
 
   var full='',pane=null;
   if(payload){
@@ -412,13 +429,14 @@ function showError(payload){
   var short=full.length>48?full.slice(0,47)+'…':full;
   var disp=pane?short+' — click to open Settings':short;
 
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','processing','success');
   document.getElementById('result-icon').textContent='✗';
   var textEl=document.getElementById('result-text');
   textEl.textContent=disp;
   textEl.title=full; // full message on hover
-  p.classList.add('error');
+  // enterState clears any pending stopRec/error revert (so a prior revert
+  // can't cut this error short) and strips every state class before the
+  // error pane is shown.
+  enterState('error');
   console.warn('fonos float error: '+full);
 
   errActive=true;errPane=pane;
@@ -429,6 +447,7 @@ function showError(payload){
   sz(w,PH);
 
   // Permission errors linger longer so they can be read and clicked.
+  var p=document.getElementById('pill');
   var dur=pane?6000:2600;
   errTimer=setTimeout(function(){
     p.classList.remove('error');

@@ -335,6 +335,13 @@ fn main() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
+    // In-app auto-update (macOS): the updater plugin checks the GitHub Releases
+    // `latest.json` endpoint and installs signed artifacts; the process plugin
+    // exposes relaunch() so the UI can restart into the new version.
+    builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
     // Register global-shortcut plugin on Linux
     #[cfg(target_os = "linux")]
     {

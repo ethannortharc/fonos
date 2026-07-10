@@ -25,6 +25,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
 async-trait = "0.1"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

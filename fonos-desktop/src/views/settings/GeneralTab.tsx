@@ -3,10 +3,177 @@
 // live here as globals; they moved onto per-widget props in P2 (see the stt
 // and insert cases in WidgetForm.tsx) — only per-app overrides remain here.
 
-import { useT, setLocale, resolveLocale } from "../../lib/i18n";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { Update, DownloadEvent } from "@tauri-apps/plugin-updater";
+import { useT, td, setLocale, resolveLocale } from "../../lib/i18n";
 import type { AppConfig } from "../../types";
 import MicrophonePicker from "./MicrophonePicker";
 import DoctorCard from "./DoctorCard";
+
+// ── Updates (in-app auto-update) ──────────────────────────────────────────────
+// Compact section: current version + a state-driven control. On mount it runs a
+// silent check(); the plugin/IPC is absent in the browser demo, so every plugin
+// call is dynamically imported and wrapped in try/catch — a caught failure just
+// falls back to the version + a manual "Check for updates" button.
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "none" }
+  | { kind: "available"; version: string; update: Update }
+  | { kind: "downloading"; percent: number | null }
+  | { kind: "installing" }
+  | { kind: "error" };
+
+function UpdatesSection() {
+  const t = useT();
+  const [version, setVersion] = useState("");
+  const [state, setState] = useState<UpdateState>({ kind: "idle" });
+
+  // Current version — best-effort (absent in the browser demo without IPC).
+  useEffect(() => {
+    import("@tauri-apps/api/app")
+      .then((m) => m.getVersion())
+      .then(setVersion)
+      .catch(() => setVersion(""));
+  }, []);
+
+  // One check(); `silent` swallows failures (browser demo / no plugin) so the
+  // section still renders gracefully as version + a manual check button.
+  const check = useCallback(async (silent: boolean) => {
+    setState({ kind: "checking" });
+    try {
+      const { check: checkForUpdate } = await import("@tauri-apps/plugin-updater");
+      const update = await checkForUpdate();
+      setState(
+        update ? { kind: "available", version: update.version, update } : { kind: "none" }
+      );
+    } catch {
+      setState(silent ? { kind: "idle" } : { kind: "error" });
+    }
+  }, []);
+
+  // Silent check on mount.
+  useEffect(() => {
+    void check(true);
+  }, [check]);
+
+  const install = useCallback(async (update: Update) => {
+    setState({ kind: "downloading", percent: null });
+    try {
+      let total = 0;
+      let downloaded = 0;
+      await update.downloadAndInstall((event: DownloadEvent) => {
+        switch (event.event) {
+          case "Started":
+            total = event.data.contentLength ?? 0;
+            setState({ kind: "downloading", percent: total ? 0 : null });
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            setState({
+              kind: "downloading",
+              percent: total ? Math.round((downloaded / total) * 100) : null,
+            });
+            break;
+          case "Finished":
+            setState({ kind: "installing" });
+            break;
+        }
+      });
+      setState({ kind: "installing" });
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch {
+      setState({ kind: "error" });
+    }
+  }, []);
+
+  const checkButton = (
+    <button
+      onClick={() => void check(false)}
+      className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.55)] hover:text-[rgba(255,255,255,0.8)] transition-colors"
+    >
+      {t("general.update.check")}
+    </button>
+  );
+
+  let control: ReactNode;
+  switch (state.kind) {
+    case "checking":
+      control = (
+        <span className="text-[10.5px] text-[rgba(255,255,255,0.32)]">
+          {t("general.update.checking")}
+        </span>
+      );
+      break;
+    case "available":
+      control = (
+        <>
+          <span className="text-[10.5px] text-[#fbbf24]">
+            {td("general.update.available", [state.version])}
+          </span>
+          <button
+            onClick={() => void install(state.update)}
+            className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.12)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.18)] transition-colors"
+          >
+            {t("general.update.update")}
+          </button>
+        </>
+      );
+      break;
+    case "downloading":
+      control = (
+        <span className="text-[10.5px] text-[rgba(255,255,255,0.32)] tabular-nums">
+          {t("general.update.downloading")}
+          {state.percent !== null ? ` ${state.percent}%` : ""}
+        </span>
+      );
+      break;
+    case "installing":
+      control = (
+        <span className="text-[10.5px] text-[rgba(255,255,255,0.32)]">
+          {t("general.update.installing")}
+        </span>
+      );
+      break;
+    case "none":
+      control = (
+        <>
+          <span className="text-[10.5px] text-[rgba(255,255,255,0.32)]">
+            {t("general.update.uptodate")}
+          </span>
+          {checkButton}
+        </>
+      );
+      break;
+    case "error":
+      control = (
+        <>
+          <span className="text-[10.5px] text-[#f87171]">{t("general.update.error")}</span>
+          {checkButton}
+        </>
+      );
+      break;
+    default:
+      control = checkButton;
+      break;
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">
+          {t("general.update.title")}
+        </div>
+        <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
+          {t("general.update.current")}
+          {version ? `: ${version}` : ""}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">{control}</div>
+    </div>
+  );
+}
 
 export default function GeneralTab({
   config,
@@ -21,6 +188,11 @@ export default function GeneralTab({
     <div className="flex flex-col gap-5">
       {/* ── Setup Doctor (resident config-health card) ── */}
       <DoctorCard />
+
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
+      {/* ── Updates (in-app auto-update) ── */}
+      <UpdatesSection />
 
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
 

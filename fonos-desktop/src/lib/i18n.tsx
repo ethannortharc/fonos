@@ -196,6 +196,18 @@ const en = {
   "general.insert.addoverride": "Add app override",
   "general.insert.overridehint": "Overrides match the frontmost app's name (first match wins).",
 
+  // general tab — in-app updates (auto-update)
+  "general.update.title": "Updates",
+  "general.update.current": "Current version",
+  "general.update.check": "Check for updates",
+  "general.update.checking": "Checking…",
+  "general.update.uptodate": "Up to date",
+  "general.update.available": "{0} available",
+  "general.update.update": "Update",
+  "general.update.downloading": "Downloading…",
+  "general.update.installing": "Installing…",
+  "general.update.error": "Update failed",
+
   // models tab
   "models.defaults": "Default Services",
   "models.notset": "Not set",
@@ -1030,6 +1042,18 @@ const zh: Partial<Record<Key, string>> = {
   "general.insert.appplaceholder": "如 Terminal",
   "general.insert.addoverride": "添加应用覆盖规则",
   "general.insert.overridehint": "覆盖规则按最前台应用的名称匹配(先匹配者生效)。",
+
+  // general tab — in-app updates (auto-update)
+  "general.update.title": "更新",
+  "general.update.current": "当前版本",
+  "general.update.check": "检查更新",
+  "general.update.checking": "检查中…",
+  "general.update.uptodate": "已是最新",
+  "general.update.available": "有新版本 {0}",
+  "general.update.update": "立即更新",
+  "general.update.downloading": "下载中…",
+  "general.update.installing": "安装中…",
+  "general.update.error": "更新失败",
 
   // models tab
   "models.defaults": "默认服务",

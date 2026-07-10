@@ -170,7 +170,7 @@ export default function App() {
           ].join(" ")}
         >
           {/* App icon */}
-          <div className="w-[32px] h-[32px] rounded-[10px] fonos-surface flex items-center justify-center mb-2.5 text-[var(--accent)] shadow-[0_8px_24px_rgba(201,120,24,0.12)] flex-shrink-0">
+          <div className="w-[32px] h-[32px] rounded-[10px] fonos-surface fonos-surface-glow flex items-center justify-center mb-2.5 text-[var(--accent)] flex-shrink-0">
             <FonosMark size={19} />
           </div>
 
@@ -187,11 +187,11 @@ export default function App() {
               className={[
                 "relative w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-[background,transform] duration-200 active:translate-y-px flex-shrink-0",
                 activeTab === item.id
-                  ? "bg-[rgba(245,158,11,0.12)]"
+                  ? "bg-[rgba(242,184,75,0.12)]"
                   : "hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
               style={{
-                stroke: activeTab === item.id ? "#fbbf24" : "#ffffff",
+                stroke: activeTab === item.id ? "var(--accent)" : "#ffffff",
               }}
             >
               <span
@@ -214,11 +214,11 @@ export default function App() {
             className={[
               "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-[background,transform] duration-200 active:translate-y-px flex-shrink-0",
               activeTab === "settings"
-                ? "bg-[rgba(245,158,11,0.12)]"
+                ? "bg-[rgba(242,184,75,0.12)]"
                 : "hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
             style={{
-              stroke: activeTab === "settings" ? "#fbbf24" : "#ffffff",
+              stroke: activeTab === "settings" ? "var(--accent)" : "#ffffff",
             }}
           >
             <span

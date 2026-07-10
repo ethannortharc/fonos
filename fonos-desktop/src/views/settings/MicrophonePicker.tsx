@@ -42,15 +42,15 @@ export default function MicrophonePicker({
               className={[
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-all text-[11px]",
                 selected
-                  ? "bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)]"
+                  ? "bg-[rgba(242,184,75,0.08)] border border-[rgba(242,184,75,0.15)]"
                   : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)]",
               ].join(" ")}
             >
               <div className={[
                 "w-1.5 h-1.5 rounded-full flex-shrink-0",
-                selected ? "bg-[#fbbf24]" : "bg-[rgba(255,255,255,0.1)]",
+                selected ? "bg-[var(--accent)]" : "bg-[rgba(255,255,255,0.1)]",
               ].join(" ")} />
-              <span className={selected ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.45)]"}>
+              <span className={selected ? "text-[var(--accent)]" : "text-[rgba(255,255,255,0.45)]"}>
                 {isAuto ? t("mic.auto") : name}
               </span>
               {isAuto && (
@@ -65,7 +65,7 @@ export default function MicrophonePicker({
 
       <button
         onClick={() => listAudioInputs().then(setAudioInputs).catch(() => {})}
-        className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors self-start"
+        className="text-[9px] text-[rgba(242,184,75,0.4)] hover:text-[var(--accent)] transition-colors self-start"
       >
         {t("mic.refresh")}
       </button>

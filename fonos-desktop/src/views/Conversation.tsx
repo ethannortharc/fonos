@@ -344,7 +344,7 @@ export default function Conversation() {
             onClick={() => setPersonaOpen((v) => !v)}
             className={`text-[10px] px-2.5 py-1 rounded-[8px] transition-colors ${
               personaOpen
-                ? "bg-[rgba(251,191,36,0.12)] text-[#fbbf24]"
+                ? "bg-[rgba(242,184,75,0.12)] text-[var(--accent)]"
                 : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
             }`}
           >
@@ -395,7 +395,7 @@ export default function Conversation() {
         <div className="w-full max-w-[680px] min-h-full mx-auto flex flex-col gap-3">
         {messages.length === 0 && turnState === "idle" && (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center pb-3">
-            <div className="w-14 h-14 rounded-[17px] fonos-surface text-[var(--accent)] flex items-center justify-center shadow-[0_14px_38px_rgba(201,120,24,0.12)]">
+            <div className="w-14 h-14 rounded-[17px] fonos-surface fonos-surface-glow text-[var(--accent)] flex items-center justify-center">
               <FonosMark size={25} />
             </div>
             <div className="text-[14px] font-semibold text-[var(--text-primary)]">{t("conv.empty.title")}</div>
@@ -470,7 +470,7 @@ export default function Conversation() {
               <div className="text-[10.5px] leading-4 font-medium text-[var(--text-secondary)]">
                 {listening ? t("conv.release") : t("conv.hold")}
               </div>
-              <div className="max-w-[150px] truncate text-[9px] leading-3.5 text-[var(--text-faint)]">
+              <div className="text-[9px] leading-3.5 text-[var(--text-faint)] line-clamp-2">
                 {t("conv.call.hint")}
               </div>
             </>
@@ -485,10 +485,10 @@ export default function Conversation() {
           style={{ touchAction: "none" }}
           disabled={!inCall && (turnState === "thinking" || turnState === "speaking")}
           aria-label={inCall ? t("conv.call.hangup") : t("conv.hold")}
-          className={`fonos-call-button relative z-10 w-[60px] h-[60px] rounded-full flex items-center justify-center transition-all duration-300 select-none active:scale-[0.96] disabled:opacity-40 ${
+          className={`fonos-voice-button relative z-10 w-[60px] h-[60px] rounded-full flex items-center justify-center transition-all duration-300 select-none active:scale-[0.96] disabled:opacity-40 ${
             red
-              ? "fonos-call-button-live"
-              : "fonos-call-button-idle"
+              ? "fonos-voice-button-live"
+              : "fonos-voice-button-idle"
           }`}
         >
           {inCall ? (

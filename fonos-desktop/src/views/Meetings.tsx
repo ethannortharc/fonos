@@ -164,7 +164,7 @@ function renderMarkdown(text: string): ReactNode {
           key={`cb-${i}`}
           style={{ display: "flex", alignItems: "flex-start", gap: 6, margin: "2px 0", paddingLeft: 8 }}
         >
-          <span style={{ color: "#fbbf24", flexShrink: 0, marginTop: 1 }}><CheckboxIcon size={12} /></span>
+          <span style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }}><CheckboxIcon size={12} /></span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", lineHeight: "1.5" }}>
             {renderInline(line.replace(/^-\s\[ \]\s/, ""))}
           </span>
@@ -203,7 +203,7 @@ function renderMarkdown(text: string): ReactNode {
           key={`li-${i}`}
           style={{ display: "flex", alignItems: "flex-start", gap: 6, margin: "2px 0", paddingLeft: 8 }}
         >
-          <span style={{ color: "rgba(251,191,36,0.6)", flexShrink: 0, marginTop: 2 }}><BulletIcon size={8} /></span>
+          <span style={{ color: "rgba(242,184,75,0.6)", flexShrink: 0, marginTop: 2 }}><BulletIcon size={8} /></span>
           <span style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", lineHeight: "1.5" }}>
             {renderInline(line.replace(/^-\s/, ""))}
           </span>
@@ -460,7 +460,7 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
   return (
     <div
       data-testid="meeting-detail"
-      style={{ display: "flex", flexDirection: "column", height: "100%", background: "#1a1917" }}
+      style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)" }}
     >
       {/* Top bar */}
       <div style={{
@@ -610,8 +610,8 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
             {/* AI Summary section (collapsible) */}
             <div style={{
               borderRadius: 10,
-              border: "1px solid rgba(251,191,36,0.15)",
-              background: "rgba(251,191,36,0.04)",
+              border: "1px solid rgba(242,184,75,0.15)",
+              background: "rgba(242,184,75,0.04)",
               overflow: "hidden",
             }}>
               <button
@@ -623,10 +623,10 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                   cursor: "pointer", textAlign: "left",
                 }}
               >
-                <span style={{ color: "rgba(251,191,36,0.5)" }}>
+                <span style={{ color: "rgba(242,184,75,0.5)" }}>
                   {summaryOpen ? CHEVRON_DOWN_ICON : CHEVRON_RIGHT_ICON}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(251,191,36,0.7)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(242,184,75,0.7)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                   {t("meet.ai-summary")}
                 </span>
                 {!summaryText && (
@@ -654,10 +654,10 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                             style={{
                               padding: "3px 8px",
                               fontSize: 10,
-                              background: summaryRendered ? "rgba(251,191,36,0.15)" : "none",
+                              background: summaryRendered ? "rgba(242,184,75,0.15)" : "none",
                               border: "none",
                               cursor: "pointer",
-                              color: summaryRendered ? "#fbbf24" : "rgba(255,255,255,0.3)",
+                              color: summaryRendered ? "var(--accent)" : "rgba(255,255,255,0.3)",
                               fontWeight: summaryRendered ? 600 : 400,
                             }}
                           >
@@ -669,10 +669,10 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
                             style={{
                               padding: "3px 8px",
                               fontSize: 10,
-                              background: !summaryRendered ? "rgba(251,191,36,0.15)" : "none",
+                              background: !summaryRendered ? "rgba(242,184,75,0.15)" : "none",
                               border: "none",
                               cursor: "pointer",
-                              color: !summaryRendered ? "#fbbf24" : "rgba(255,255,255,0.3)",
+                              color: !summaryRendered ? "var(--accent)" : "rgba(255,255,255,0.3)",
                               fontWeight: !summaryRendered ? 600 : 400,
                             }}
                           >
@@ -825,7 +825,7 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
   return (
     <div
       data-testid="meetings-list"
-      style={{ display: "flex", flexDirection: "column", height: "100%", background: "#1a1917" }}
+      style={{ display: "flex", flexDirection: "column", height: "100%", background: "var(--bg)" }}
     >
       {/* Header */}
       <div style={{ padding: "16px 20px 8px", flexShrink: 0 }}>
@@ -876,7 +876,7 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
                   }}
                 >
                   {/* Orange left stripe */}
-                  <div style={{ width: 3, flexShrink: 0, background: "#fbbf24" }} />
+                  <div style={{ width: 3, flexShrink: 0, background: "var(--accent)" }} />
 
                   {/* Content */}
                   <div style={{ flex: 1, padding: "10px 12px", minWidth: 0 }}>
@@ -902,8 +902,8 @@ function MeetingList({ onSelectMeeting, refreshKey, embedded }: MeetingListProps
                         <>
                           <span style={{ color: "rgba(255,255,255,0.15)", fontSize: 9 }}>·</span>
                           <span style={{
-                            fontSize: 9, color: "#fbbf24",
-                            background: "rgba(251,191,36,0.1)",
+                            fontSize: 9, color: "var(--accent)",
+                            background: "rgba(242,184,75,0.1)",
                             padding: "1px 5px", borderRadius: 3,
                           }}>
                             {duration}

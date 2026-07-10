@@ -530,7 +530,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
         className={[
           "rounded-[12px] transition-colors",
           expanded
-            ? "border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.02)]"
+            ? "border border-[rgba(242,184,75,0.3)] bg-[rgba(242,184,75,0.02)]"
             : "border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(255,255,255,0.10)]",
         ].join(" ")}
       >
@@ -652,7 +652,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
             {customs.map(renderCard)}
             <button
               onClick={openNewFlow}
-              className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(245,158,11,0.14)] text-[rgba(251,191,36,0.65)] text-[11px] hover:border-[rgba(245,158,11,0.3)] hover:text-[#fbbf24] transition-colors flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(242,184,75,0.14)] text-[rgba(242,184,75,0.65)] text-[11px] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
               {t("wf.new")}

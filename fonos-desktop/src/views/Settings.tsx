@@ -85,7 +85,7 @@ export default function Settings() {
 
   if (!config) {
     return (
-      <div className="flex items-center justify-center h-full bg-[#1a1917]">
+      <div className="flex items-center justify-center h-full bg-[var(--bg)]">
         <span className="text-[rgba(255,255,255,0.3)] text-sm">{t("settings.loading")}</span>
       </div>
     );

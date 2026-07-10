@@ -291,7 +291,7 @@ export default function History({
   const q = query.trim();
 
   return (
-    <div className="flex flex-col h-full bg-[#1a1917]">
+    <div className="flex flex-col h-full bg-[var(--bg)]">
       {/* Header: title + search */}
       <div className="flex items-center gap-4 px-5 pt-4 pb-2.5 flex-shrink-0">
         <h2 className="fonos-page-title flex-shrink-0">{t("nav.history")}</h2>
@@ -331,7 +331,7 @@ export default function History({
             className={[
               "px-2.5 py-1 rounded-[8px] text-[10px] font-medium transition-all border",
               filter === f.id && !q
-                ? "bg-[rgba(245,158,11,0.15)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                ? "bg-[rgba(242,184,75,0.15)] border-[rgba(242,184,75,0.3)] text-[var(--accent)]"
                 : "bg-[rgba(255,255,255,0.035)] border-[rgba(255,255,255,0.045)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.055)]",
             ].join(" ")}
           >
@@ -516,7 +516,7 @@ function EntryCard({
       className={[
         "flex rounded-[12px] border overflow-hidden cursor-pointer transition-colors",
         expanded
-          ? "border-[rgba(245,158,11,0.25)] bg-[rgba(255,255,255,0.04)]"
+          ? "border-[rgba(242,184,75,0.25)] bg-[rgba(255,255,255,0.04)]"
           : "border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.11)] hover:bg-[rgba(255,255,255,0.045)]",
       ].join(" ")}
     >
@@ -706,7 +706,7 @@ function SearchResults({
                       className={[
                         "flex rounded-[10px] border overflow-hidden cursor-pointer transition-colors",
                         expanded
-                          ? "border-[rgba(245,158,11,0.25)] bg-[rgba(255,255,255,0.04)]"
+                          ? "border-[rgba(242,184,75,0.25)] bg-[rgba(255,255,255,0.04)]"
                           : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.025)] hover:bg-[rgba(255,255,255,0.035)]",
                       ].join(" ")}
                     >
@@ -726,7 +726,7 @@ function SearchResults({
                                 </button>
                               )}
                               {canOpenMeeting && (
-                                <button onClick={() => onOpenMeeting(entry)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(251,191,36,0.08)] text-[rgba(251,191,36,0.7)] hover:bg-[rgba(251,191,36,0.15)] transition-colors">
+                                <button onClick={() => onOpenMeeting(entry)} className="text-[9px] px-2 py-1 rounded-md bg-[rgba(242,184,75,0.08)] text-[rgba(242,184,75,0.7)] hover:bg-[rgba(242,184,75,0.15)] transition-colors">
                                   {t("history.open-meeting")}
                                 </button>
                               )}
@@ -742,7 +742,7 @@ function SearchResults({
                           <div className="text-[11px] leading-normal text-[rgba(255,255,255,0.55)] break-words">
                             {snip.before}
                             {snip.match && (
-                              <span className="rounded-[2px] px-[1px]" style={{ background: "rgba(245,158,11,0.22)", color: "#fbbf24" }}>
+                              <span className="rounded-[2px] px-[1px]" style={{ background: "rgba(242,184,75,0.22)", color: "var(--accent)" }}>
                                 {snip.match}
                               </span>
                             )}
@@ -795,10 +795,10 @@ function Radio({ on }: { on: boolean }) {
     <span
       className={[
         "flex h-[13px] w-[13px] shrink-0 items-center justify-center rounded-full border-[1.5px]",
-        on ? "border-[#fbbf24]" : "border-[rgba(255,255,255,0.2)]",
+        on ? "border-[var(--accent)]" : "border-[rgba(255,255,255,0.2)]",
       ].join(" ")}
     >
-      {on && <span className="h-1.5 w-1.5 rounded-full bg-[#fbbf24]" />}
+      {on && <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />}
     </span>
   );
 }
@@ -827,7 +827,7 @@ function CorrectionMenu({
       >
         <button
           onClick={onCorrect}
-          className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left font-semibold text-[#fbbf24] bg-[rgba(251,191,36,0.1)] hover:bg-[rgba(251,191,36,0.16)] transition-colors"
+          className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left font-semibold text-[var(--accent)] bg-[rgba(242,184,75,0.1)] hover:bg-[rgba(242,184,75,0.16)] transition-colors"
         >
           <span className="shrink-0">✎</span>
           <span className="truncate">{t("correct.menu").replace("{sel}", truncateSel(anchor.selection))}</span>
@@ -949,7 +949,7 @@ function CorrectionPopover({
   const segClass = (on: boolean) =>
     [
       "flex-1 py-1.5 text-center text-[10.5px] transition-colors",
-      on ? "bg-[rgba(251,191,36,0.13)] text-[#fbbf24] font-semibold" : "text-[rgba(255,255,255,0.32)] hover:text-[rgba(255,255,255,0.55)]",
+      on ? "bg-[rgba(242,184,75,0.13)] text-[var(--accent)] font-semibold" : "text-[rgba(255,255,255,0.32)] hover:text-[rgba(255,255,255,0.55)]",
     ].join(" ");
 
   return (
@@ -973,16 +973,16 @@ function CorrectionPopover({
             onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
             placeholder={t("correct.changeto-ph")}
             spellCheck={false}
-            className="flex-1 rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[11.5px] text-[#fafaf9] outline-none focus:border-[rgba(251,191,36,0.3)] placeholder:text-[rgba(255,255,255,0.25)]"
+            className="flex-1 rounded-lg border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.04)] px-2.5 py-1.5 text-[11.5px] text-[#fafaf9] outline-none focus:border-[rgba(242,184,75,0.3)] placeholder:text-[rgba(255,255,255,0.25)]"
           />
         </div>
 
         {/* Live preview: strikethrough-red → green (from-part hidden for term-only) */}
-        <div className="my-3 flex items-center gap-2.5 rounded-[9px] border border-[rgba(251,191,36,0.15)] bg-[rgba(251,191,36,0.05)] px-3 py-2 text-[12px]">
+        <div className="my-3 flex items-center gap-2.5 rounded-[9px] border border-[rgba(242,184,75,0.15)] bg-[rgba(242,184,75,0.05)] px-3 py-2 text-[12px]">
           {asRule && (
             <>
               <span className="truncate text-[#f87171] line-through decoration-[rgba(248,113,113,0.5)]">{selection}</span>
-              <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[rgba(251,191,36,0.12)] text-[10px] text-[#fbbf24]">→</span>
+              <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[rgba(242,184,75,0.12)] text-[10px] text-[var(--accent)]">→</span>
             </>
           )}
           {to ? (
@@ -1011,14 +1011,14 @@ function CorrectionPopover({
                 className={[
                   "flex items-center gap-2.5 rounded-[9px] border px-3 py-2 text-left text-[11px] transition-colors",
                   on
-                    ? "border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.05)] text-[#fafaf9]"
+                    ? "border-[rgba(242,184,75,0.4)] bg-[rgba(242,184,75,0.05)] text-[#fafaf9]"
                     : "border-[rgba(255,255,255,0.07)] text-[rgba(255,255,255,0.55)] hover:border-[rgba(255,255,255,0.12)]",
                 ].join(" ")}
               >
                 <Radio on={on} />
                 <span className="truncate">{book.name || t("vocab.unnamed")}</span>
                 {isGlobal && (
-                  <span className="shrink-0 rounded-full bg-[rgba(245,158,11,0.12)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-[#fbbf24]">
+                  <span className="shrink-0 rounded-full bg-[rgba(242,184,75,0.12)] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-[var(--accent)]">
                     {t("common.global")}
                   </span>
                 )}
@@ -1030,7 +1030,7 @@ function CorrectionPopover({
           })}
 
           {newBookMode ? (
-            <div className="flex items-center gap-2.5 rounded-[9px] border border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.05)] px-3 py-2">
+            <div className="flex items-center gap-2.5 rounded-[9px] border border-[rgba(242,184,75,0.4)] bg-[rgba(242,184,75,0.05)] px-3 py-2">
               <Radio on={true} />
               <input
                 autoFocus
@@ -1054,7 +1054,7 @@ function CorrectionPopover({
           ) : (
             <button
               onClick={() => setNewBookMode(true)}
-              className="flex items-center gap-2.5 rounded-[9px] border border-[rgba(255,255,255,0.07)] px-3 py-2 text-left text-[11px] text-[rgba(255,255,255,0.45)] hover:border-[rgba(251,191,36,0.3)] hover:text-[#fbbf24] transition-colors"
+              className="flex items-center gap-2.5 rounded-[9px] border border-[rgba(255,255,255,0.07)] px-3 py-2 text-left text-[11px] text-[rgba(255,255,255,0.45)] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors"
             >
               <span className="w-[13px] shrink-0" />
               {t("correct.newbook")}
@@ -1067,7 +1067,7 @@ function CorrectionPopover({
           <button
             onClick={handleSave}
             disabled={!canSave}
-            className="shrink-0 rounded-lg border border-[rgba(251,191,36,0.35)] bg-[rgba(251,191,36,0.14)] px-3.5 py-1.5 text-[11px] font-semibold text-[#fbbf24] transition-colors hover:bg-[rgba(251,191,36,0.2)] disabled:opacity-40 disabled:hover:bg-[rgba(251,191,36,0.14)]"
+            className="shrink-0 rounded-lg border border-[rgba(242,184,75,0.35)] bg-[rgba(242,184,75,0.14)] px-3.5 py-1.5 text-[11px] font-semibold text-[var(--accent)] transition-colors hover:bg-[rgba(242,184,75,0.2)] disabled:opacity-40 disabled:hover:bg-[rgba(242,184,75,0.14)]"
           >
             {t("correct.save")}
           </button>

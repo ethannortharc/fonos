@@ -29,7 +29,7 @@ export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e
 // width utilities (`w-full`, `flex-1 min-w-0`) at the call site. Exported so the
 // Settings › Scenarios tab reuses the same visual language.
 export const control =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(251,191,36,0.35)] transition-colors";
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(242,184,75,0.35)] transition-colors";
 
 /** Whether the app already has a usable STT configuration — a set default STT
  *  profile, or any model profile advertising the "stt" capability. Used by the
@@ -234,7 +234,7 @@ function Dots({ n }: { n: number }) {
   return (
     <span className="tracking-[2px] text-[8px] font-mono">
       {[0, 1, 2].map((i) => (
-        <span key={i} className={i < n ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.14)]"}>
+        <span key={i} className={i < n ? "text-[var(--accent)]" : "text-[rgba(255,255,255,0.14)]"}>
           ●
         </span>
       ))}
@@ -458,7 +458,7 @@ export default function Scenarios({
           {error && <div className="text-[11px] text-[#f87171]">{error}</div>}
           <button
             onClick={onDone}
-            className="mt-2 px-6 py-2 rounded-lg bg-[rgba(251,191,36,0.14)] border border-[rgba(251,191,36,0.35)] text-[#fbbf24] text-[12px] font-semibold hover:bg-[rgba(251,191,36,0.2)] transition-colors"
+            className="mt-2 px-6 py-2 rounded-lg bg-[rgba(242,184,75,0.14)] border border-[rgba(242,184,75,0.35)] text-[var(--accent)] text-[12px] font-semibold hover:bg-[rgba(242,184,75,0.2)] transition-colors"
           >
             {mode === "fullscreen" ? t("scen.done.start") : t("scen.done.close")}
           </button>
@@ -491,16 +491,16 @@ export default function Scenarios({
               className={[
                 "relative text-left rounded-xl border p-4 flex flex-col gap-2.5 transition-colors",
                 active
-                  ? "border-[rgba(251,191,36,0.45)] bg-[rgba(251,191,36,0.04)]"
-                  : "border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(251,191,36,0.3)]",
+                  ? "border-[rgba(242,184,75,0.45)] bg-[rgba(242,184,75,0.04)]"
+                  : "border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(242,184,75,0.3)]",
               ].join(" ")}
             >
               {active && (
-                <span className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[#fbbf24] text-[#1a1917] text-[10px] font-extrabold flex items-center justify-center">
+                <span className="absolute top-3 right-3 w-4 h-4 rounded-full bg-[var(--accent)] text-[#1a1917] text-[10px] font-extrabold flex items-center justify-center">
                   ✓
                 </span>
               )}
-              <div className="w-9 h-9 rounded-[9px] bg-[rgba(251,191,36,0.12)] flex items-center justify-center text-[16px]">
+              <div className="w-9 h-9 rounded-[9px] bg-[rgba(242,184,75,0.12)] flex items-center justify-center text-[16px]">
                 {m.icon}
               </div>
               <div className="text-[13px] font-semibold text-[#fafaf9]">{t(m.nameKey)}</div>
@@ -586,7 +586,7 @@ export default function Scenarios({
           <button
             onClick={apply}
             disabled={!canApply() || applying}
-            className="px-5 py-2 rounded-lg bg-[rgba(251,191,36,0.14)] border border-[rgba(251,191,36,0.35)] text-[#fbbf24] text-[12px] font-semibold hover:bg-[rgba(251,191,36,0.2)] transition-colors disabled:opacity-40"
+            className="px-5 py-2 rounded-lg bg-[rgba(242,184,75,0.14)] border border-[rgba(242,184,75,0.35)] text-[var(--accent)] text-[12px] font-semibold hover:bg-[rgba(242,184,75,0.2)] transition-colors disabled:opacity-40"
           >
             {applying ? t("scen.applying") : t("scen.apply")}
           </button>
@@ -625,7 +625,7 @@ function Shell({
   if (mode === "overlay") {
     return (
       <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center overflow-y-auto py-10 px-4">
-        <div className="relative w-full max-w-[760px] bg-[#1a1917] border border-[rgba(255,255,255,0.09)] rounded-2xl shadow-2xl p-6">
+        <div className="relative w-full max-w-[760px] bg-[var(--bg)] border border-[rgba(255,255,255,0.09)] rounded-2xl shadow-2xl p-6">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 w-7 h-7 rounded-lg flex items-center justify-center text-[rgba(255,255,255,0.4)] hover:bg-[rgba(255,255,255,0.06)] hover:text-[rgba(255,255,255,0.8)] transition-colors"
@@ -639,7 +639,7 @@ function Shell({
     );
   }
   return (
-    <div className="fixed inset-0 z-50 bg-[#1a1917] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-[var(--bg)] overflow-y-auto">
       <div
         className="h-[38px] w-full flex-shrink-0 bg-[#151413]"
         data-tauri-drag-region=""
@@ -702,11 +702,11 @@ function LocalStep({
                 className={[
                   "rounded-lg border px-2.5 py-2 text-left transition-colors",
                   on
-                    ? "border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.06)]"
+                    ? "border-[rgba(242,184,75,0.4)] bg-[rgba(242,184,75,0.06)]"
                     : "border-[rgba(255,255,255,0.07)] hover:border-[rgba(255,255,255,0.15)]",
                 ].join(" ")}
               >
-                <div className={["text-[11px] font-medium", on ? "text-[#fbbf24]" : "text-[rgba(255,255,255,0.7)]"].join(" ")}>
+                <div className={["text-[11px] font-medium", on ? "text-[var(--accent)]" : "text-[rgba(255,255,255,0.7)]"].join(" ")}>
                   {e.name}
                 </div>
                 <div className="text-[8.5px] mt-0.5">
@@ -846,7 +846,7 @@ function CloudStep({
                 className={[
                   "rounded-lg border px-3 py-2 text-[11px] font-medium transition-colors",
                   on
-                    ? "border-[rgba(251,191,36,0.4)] bg-[rgba(251,191,36,0.06)] text-[#fbbf24]"
+                    ? "border-[rgba(242,184,75,0.4)] bg-[rgba(242,184,75,0.06)] text-[var(--accent)]"
                     : "border-[rgba(255,255,255,0.07)] text-[rgba(255,255,255,0.7)] hover:border-[rgba(255,255,255,0.15)]",
                 ].join(" ")}
               >
@@ -996,7 +996,7 @@ export function PreviewRow({
       {host && <span className="flex-none text-[9px] text-[rgba(255,255,255,0.3)] font-mono">{host}</span>}
       {showVoice && <span className="flex-none text-[9px] text-[rgba(255,255,255,0.3)]">{voice}</span>}
       {needsKey && (
-        <span className="ml-auto flex-none text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(245,158,11,0.12)] text-[#fbbf24]">
+        <span className="ml-auto flex-none text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(242,184,75,0.12)] text-[var(--accent)]">
           {t("scen.saved.needkey")}
         </span>
       )}

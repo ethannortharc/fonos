@@ -276,7 +276,7 @@ export default function Stats() {
     : [];
 
   return (
-    <div className="flex flex-col h-full p-5 gap-3 bg-[#1a1917] overflow-auto">
+    <div className="flex flex-col h-full p-5 gap-3 bg-[var(--bg)] overflow-auto">
       {/* Header + period filter */}
       <div className="flex items-center justify-between flex-shrink-0">
         <h2 className="fonos-page-title">{t("stats.title")}</h2>
@@ -288,7 +288,7 @@ export default function Stats() {
               className={[
                 "px-2.5 py-1 text-[10px] font-medium transition-colors rounded-[8px]",
                 period === p
-                  ? "bg-[rgba(245,158,11,0.12)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] hover:bg-[rgba(255,255,255,0.08)]",
               ].join(" ")}
             >
@@ -356,7 +356,7 @@ export default function Stats() {
                 className={[
                   "px-2 py-0.5 text-[9px] font-medium rounded-md transition-colors",
                   metric === m.id
-                    ? "bg-[rgba(217,119,6,0.15)] text-[#fbbf24]"
+                    ? "bg-[rgba(242,184,75,0.15)] text-[var(--accent)]"
                     : "text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.5)]",
                 ].join(" ")}
               >

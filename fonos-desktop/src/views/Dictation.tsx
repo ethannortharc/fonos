@@ -620,10 +620,10 @@ export default function Dictation() {
             onClick={handleStartStop}
             disabled={processing || hasMic === false}
             className={[
-              "fonos-dictation-button w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 active:scale-[0.97]",
+              "fonos-voice-button w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 active:scale-[0.97]",
               isRecording
-                ? "fonos-dictation-button-live"
-                : "fonos-dictation-button-idle",
+                ? "fonos-voice-button-live"
+                : "fonos-voice-button-idle",
               processing ? "opacity-50 cursor-not-allowed" : "",
             ].join(" ")}
           >
@@ -661,7 +661,7 @@ export default function Dictation() {
               className={[
                 "flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all duration-200 border",
                 dictationMode === "note" && selectedNotebookId === null
-                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] border-[rgba(242,184,75,0.25)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.55)]",
               ].join(" ")}
             >
@@ -676,7 +676,7 @@ export default function Dictation() {
                 className={[
                   "flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all duration-200 border",
                   dictationMode === "note" && selectedNotebookId === nb.id
-                    ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                    ? "bg-[rgba(242,184,75,0.12)] border-[rgba(242,184,75,0.25)] text-[var(--accent)]"
                     : "bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.55)]",
                 ].join(" ")}
               >

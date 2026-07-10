@@ -64,7 +64,7 @@ function ServiceCardDropdown({
             className={[
               "w-full px-3 py-2 text-left text-[11px] transition-colors",
               !currentId
-                ? "bg-[rgba(245,158,11,0.1)] text-[#fbbf24]"
+                ? "bg-[rgba(242,184,75,0.1)] text-[var(--accent)]"
                 : "text-[rgba(255,255,255,0.4)] hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
           >
@@ -77,13 +77,13 @@ function ServiceCardDropdown({
               className={[
                 "w-full px-3 py-2 text-left transition-colors",
                 currentId === p.id
-                  ? "bg-[rgba(245,158,11,0.1)]"
+                  ? "bg-[rgba(242,184,75,0.1)]"
                   : "hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
             >
               <div className={[
                 "text-[11px]",
-                currentId === p.id ? "text-[#fbbf24] font-medium" : "text-[rgba(255,255,255,0.6)]",
+                currentId === p.id ? "text-[var(--accent)] font-medium" : "text-[rgba(255,255,255,0.6)]",
               ].join(" ")}>
                 {p.name}
               </div>

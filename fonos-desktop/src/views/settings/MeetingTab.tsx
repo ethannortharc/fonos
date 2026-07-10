@@ -106,7 +106,7 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
           rows={4}
           value={summaryPrompt}
           onChange={(e) => onSave({ meeting_summary_prompt: e.target.value })}
-          className="rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] leading-relaxed resize-none font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] leading-relaxed resize-none font-mono focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
           style={{
             background: "rgba(255,255,255,0.03)",
             border: "1px solid rgba(255,255,255,0.06)",

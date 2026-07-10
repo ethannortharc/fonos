@@ -267,13 +267,13 @@ export default function ModelProfileEditor({
                     <label className="text-[rgba(255,255,255,0.4)] text-[9px]">API Key</label>
                     <input type="password" value={editingProfile.api_key}
                       onChange={(e) => setEditingProfile({ ...editingProfile, api_key: e.target.value })}
-                      placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                      placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[rgba(255,255,255,0.4)] text-[9px]">{t("mprof.base-url")}</label>
                     <input type="text" value={editingProfile.base_url}
                       onChange={(e) => setEditingProfile({ ...editingProfile, base_url: e.target.value })}
-                      placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                      placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                   </div>
                 </div>
 
@@ -293,7 +293,7 @@ export default function ModelProfileEditor({
                         const allChecked = probedModels.every((m) => m.checked);
                         setProbedModels(probedModels.map((m) => ({ ...m, checked: !allChecked })));
                       }}
-                        className="text-[9px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors">
+                        className="text-[9px] text-[rgba(242,184,75,0.5)] hover:text-[var(--accent)] transition-colors">
                         {probedModels.every((m) => m.checked) ? t("mprof.unselect-all") : t("mprof.select-all")}
                       </button>
                     </div>
@@ -304,7 +304,7 @@ export default function ModelProfileEditor({
                       return (
                         <div key={m.id} className={[
                           "flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors",
-                          m.checked && !alreadyAdded ? "bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.1)]" : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.03)]",
+                          m.checked && !alreadyAdded ? "bg-[rgba(242,184,75,0.05)] border border-[rgba(242,184,75,0.1)]" : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.03)]",
                         ].join(" ")}>
                           <input type="checkbox" checked={m.checked && !alreadyAdded} disabled={alreadyAdded}
                             onChange={() => {
@@ -312,7 +312,7 @@ export default function ModelProfileEditor({
                               updated[i] = { ...m, checked: !m.checked };
                               setProbedModels(updated);
                             }}
-                            className="accent-[#fbbf24] flex-shrink-0" />
+                            className="accent-[var(--accent)] flex-shrink-0" />
                           <span className={["text-[11px] font-mono flex-1 truncate", alreadyAdded ? "text-[rgba(255,255,255,0.15)] line-through" : "text-[rgba(255,255,255,0.6)]"].join(" ")}>{m.id}</span>
                           {/* Capability toggles */}
                           <div className="flex gap-1 flex-shrink-0">
@@ -342,7 +342,7 @@ export default function ModelProfileEditor({
                 <div className="flex gap-2">
                   {probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length > 0 && (
                     <button onClick={handleBatchAdd}
-                      className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90 transition-opacity">
+                      className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-white text-[12px] font-medium hover:opacity-90 transition-opacity">
                       {(() => {
                         const n = probedModels.filter((m) => m.checked && !config.model_profiles.some((p) => p.model === m.id)).length;
                         return (n > 1 ? t("mprof.add-n-models") : t("mprof.add-n-model")).replace("{n}", String(n));
@@ -362,15 +362,15 @@ export default function ModelProfileEditor({
                     <div className="grid grid-cols-2 gap-2">
                       <input type="text" value={editingProfile.name}
                         onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
-                        placeholder={t("mprof.name")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
+                        placeholder={t("mprof.name")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]" />
                       <input type="text" value={editingProfile.model}
                         onChange={(e) => setEditingProfile({ ...editingProfile, model: e.target.value })}
-                        placeholder={t("mprof.model-id")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                        placeholder={t("mprof.model-id")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                     </div>
                     <div className="flex gap-4 text-[11px] text-[rgba(255,255,255,0.5)]">
                       {(["stt", "tts", "llm"] as const).map((cap) => (
                         <label key={cap} className="flex items-center gap-1.5">
-                          <input type="checkbox" checked={editingProfile.capabilities.includes(cap)} onChange={() => toggleCapability(cap)} className="accent-[#fbbf24]" />
+                          <input type="checkbox" checked={editingProfile.capabilities.includes(cap)} onChange={() => toggleCapability(cap)} className="accent-[var(--accent)]" />
                           {cap.toUpperCase()}
                         </label>
                       ))}
@@ -380,13 +380,13 @@ export default function ModelProfileEditor({
                         {([["whisper", "Whisper"], ["chat", "Chat Completions"]] as const).map(([val, label]) => (
                           <button key={val} onClick={() => setEditingProfile({ ...editingProfile, stt_api: val })}
                             className={["flex-1 px-2 py-1 rounded-lg text-[10px] border transition-colors",
-                              editingProfile.stt_api === val ? "bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]" : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.3)]",
+                              editingProfile.stt_api === val ? "bg-[rgba(242,184,75,0.1)] border-[rgba(242,184,75,0.3)] text-[var(--accent)]" : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.3)]",
                             ].join(" ")}>{label}</button>
                         ))}
                       </div>
                     )}
                     <button onClick={handleSaveProfile}
-                      className="py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90">
+                      className="py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-white text-[12px] font-medium hover:opacity-90">
                       {t("mprof.add-profile-btn")}
                     </button>
                   </div>
@@ -401,30 +401,30 @@ export default function ModelProfileEditor({
                   <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.name")}</label>
                   <input type="text" value={editingProfile.name}
                     onChange={(e) => setEditingProfile({ ...editingProfile, name: e.target.value })}
-                    placeholder={t("mprof.ph.name-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]" />
+                    placeholder={t("mprof.ph.name-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.model-id")}</label>
                   <input type="text" value={editingProfile.model}
                     onChange={(e) => setEditingProfile({ ...editingProfile, model: e.target.value })}
-                    placeholder={t("mprof.ph.model-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                    placeholder={t("mprof.ph.model-eg")} className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[rgba(255,255,255,0.4)] text-[11px]">API Key</label>
                   <input type="password" value={editingProfile.api_key}
                     onChange={(e) => setEditingProfile({ ...editingProfile, api_key: e.target.value })}
-                    placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                    placeholder="sk-..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[rgba(255,255,255,0.4)] text-[11px]">{t("mprof.base-url")}</label>
                   <input type="text" value={editingProfile.base_url}
                     onChange={(e) => setEditingProfile({ ...editingProfile, base_url: e.target.value })}
-                    placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] font-mono" />
+                    placeholder="https://..." className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] font-mono" />
                 </div>
                 <div className="flex gap-4 text-[12px] text-[rgba(255,255,255,0.5)]">
                   {(["stt", "tts", "llm"] as const).map((cap) => (
                     <label key={cap} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={editingProfile.capabilities.includes(cap)} onChange={() => toggleCapability(cap)} className="accent-[#fbbf24]" />
+                      <input type="checkbox" checked={editingProfile.capabilities.includes(cap)} onChange={() => toggleCapability(cap)} className="accent-[var(--accent)]" />
                       {cap.toUpperCase()}
                     </label>
                   ))}
@@ -434,13 +434,13 @@ export default function ModelProfileEditor({
                     {([["whisper", "Whisper (multipart)"], ["chat", "Chat Completions (base64)"]] as const).map(([val, label]) => (
                       <button key={val} onClick={() => setEditingProfile({ ...editingProfile, stt_api: val })}
                         className={["flex-1 px-3 py-1.5 rounded-lg text-[11px] border transition-colors",
-                          editingProfile.stt_api === val ? "bg-[rgba(245,158,11,0.1)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]" : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)]",
+                          editingProfile.stt_api === val ? "bg-[rgba(242,184,75,0.1)] border-[rgba(242,184,75,0.3)] text-[var(--accent)]" : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)]",
                         ].join(" ")}>{label}</button>
                     ))}
                   </div>
                 )}
                 <div className="flex gap-2 mt-1">
-                  <button onClick={handleSaveProfile} className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white text-[12px] font-medium hover:opacity-90">{t("mprof.save-changes")}</button>
+                  <button onClick={handleSaveProfile} className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-white text-[12px] font-medium hover:opacity-90">{t("mprof.save-changes")}</button>
                   <button onClick={cancelModelEdit} className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[12px] hover:border-[rgba(255,255,255,0.1)]">{t("common.cancel")}</button>
                 </div>
               </div>
@@ -517,7 +517,7 @@ export default function ModelProfileEditor({
                           <button
                             onClick={() => handleTestStt(p.id)}
                             disabled={sttTest?.id === p.id && sttTest.status === "testing"}
-                            className="text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] text-[11px] px-1.5 transition-colors disabled:opacity-50"
+                            className="text-[rgba(242,184,75,0.5)] hover:text-[var(--accent)] text-[11px] px-1.5 transition-colors disabled:opacity-50"
                           >
                             {t("mprof.test")}
                           </button>
@@ -544,7 +544,7 @@ export default function ModelProfileEditor({
             {/* Add button */}
             <button
               onClick={startAddModel}
-              className="w-full mt-1 py-2 rounded-lg bg-transparent border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] transition-colors"
+              className="w-full mt-1 py-2 rounded-lg bg-transparent border border-dashed border-[rgba(242,184,75,0.12)] text-[rgba(242,184,75,0.6)] text-[12px] hover:border-[rgba(242,184,75,0.25)] transition-colors"
             >
               {t("mprof.add-model")}
             </button>

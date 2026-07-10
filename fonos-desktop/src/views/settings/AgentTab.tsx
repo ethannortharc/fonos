@@ -148,12 +148,12 @@ function TimeoutSlider({
       <div className="flex-1 h-1 bg-[rgba(255,255,255,0.06)] rounded-full relative cursor-pointer">
         {/* Filled portion */}
         <div
-          className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-[rgba(251,191,36,0.3)] to-[#fbbf24]"
+          className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-[rgba(242,184,75,0.3)] to-[var(--accent)]"
           style={{ width: `${percent}%` }}
         />
         {/* Knob */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[#fbbf24] shadow-[0_2px_6px_rgba(251,191,36,0.3)]"
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-[var(--accent)] shadow-[0_2px_6px_rgba(242,184,75,0.3)]"
           style={{ left: `${percent}%`, marginLeft: "-6px" }}
         />
         {/* Hidden native range for interaction */}
@@ -249,7 +249,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
           rows={4}
           value={config.agent_system_prompt ?? ""}
           onChange={(e) => onSave({ agent_system_prompt: e.target.value })}
-          className="rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] leading-relaxed resize-none font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] leading-relaxed resize-none font-mono focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
           style={{
             background: "rgba(255,255,255,0.03)",
             border: "1px solid rgba(255,255,255,0.06)",
@@ -312,7 +312,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
                 onSave({ agent_max_turns: v });
               }
             }}
-            className="rounded-lg px-3 py-1.5 text-[11px] text-[#fafaf9] w-16 focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+            className="rounded-lg px-3 py-1.5 text-[11px] text-[#fafaf9] w-16 focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
             style={{
               background: "rgba(255,255,255,0.03)",
               border: "1px solid rgba(255,255,255,0.06)",
@@ -329,7 +329,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
             type="checkbox"
             checked={config.agent_tts_enabled ?? false}
             onChange={(e) => onSave({ agent_tts_enabled: e.target.checked })}
-            className="accent-[#fbbf24]"
+            className="accent-[var(--accent)]"
           />
           <span className="text-[12px] text-[rgba(255,255,255,0.5)]">
             {t("agent.tts")}

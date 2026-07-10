@@ -1,67 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-124 -124 1272 1272">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a1040"/>
-      <stop offset="50%" stop-color="#2d1b69"/>
-      <stop offset="100%" stop-color="#0f3d3e"/>
+    <linearGradient id="bg" x1="0.08" y1="0.04" x2="0.92" y2="0.96">
+      <stop offset="0" stop-color="#27231b"/>
+      <stop offset="0.55" stop-color="#1b1915"/>
+      <stop offset="1" stop-color="#11100e"/>
     </linearGradient>
-    <linearGradient id="wave1" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#7dd3c0"/>
-      <stop offset="100%" stop-color="#4ecdc4"/>
+    <radialGradient id="amberGlow" cx="38%" cy="43%" r="66%">
+      <stop offset="0" stop-color="#f0ad32" stop-opacity="0.22"/>
+      <stop offset="0.48" stop-color="#d78820" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#9a5a16" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd47a"/>
+      <stop offset="0.5" stop-color="#f0ad32"/>
+      <stop offset="1" stop-color="#c97818"/>
     </linearGradient>
-    <linearGradient id="wave2" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#a78bfa"/>
-      <stop offset="100%" stop-color="#7c5ce0"/>
-    </linearGradient>
-    <linearGradient id="center_glow" x1="0.5" y1="0" x2="0.5" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.85"/>
-    </linearGradient>
-    <clipPath id="roundedSquare">
-      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
-    </clipPath>
-    <!-- Subtle inner shadow -->
-    <filter id="innerGlow">
-      <feGaussianBlur stdDeviation="30" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    <filter id="signalGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0.18  0 .65 0 0 .05  0 0 .16 0 0  0 0 0 .42 0" result="warmBlur"/>
+      <feMerge><feMergeNode in="warmBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <clipPath id="squircle">
+      <rect width="1024" height="1024" rx="228"/>
+    </clipPath>
   </defs>
 
-  <!-- Background -->
-  <g clip-path="url(#roundedSquare)">
+  <g clip-path="url(#squircle)">
     <rect width="1024" height="1024" fill="url(#bg)"/>
-    <!-- Subtle radial highlight -->
-    <circle cx="400" cy="380" r="500" fill="white" opacity="0.03"/>
-    <circle cx="512" cy="512" r="300" fill="white" opacity="0.02"/>
-  </g>
+    <rect width="1024" height="1024" fill="url(#amberGlow)"/>
+    <path d="M90 192C230 62 458 20 668 68c156 36 260 116 356 226V0H0v314c26-42 55-83 90-122z" fill="#fff" opacity="0.022"/>
+    <circle cx="340" cy="500" r="310" fill="none" stroke="#fff" stroke-opacity="0.018" stroke-width="2"/>
 
-  <!-- Sound wave arcs — three concentric arcs radiating from a center point -->
-  <!-- These form the voice/sound motif -->
-  <g clip-path="url(#roundedSquare)">
+    <g fill="none" stroke="url(#signal)" stroke-linecap="round" filter="url(#signalGlow)">
+      <path d="M488 346a206 206 0 0 1 0 332" stroke-width="58"/>
+      <path d="M620 236a350 350 0 0 1 0 552" stroke-width="50" opacity="0.8"/>
+    </g>
+    <circle cx="342" cy="512" r="58" fill="url(#signal)" filter="url(#signalGlow)"/>
+    <circle cx="322" cy="492" r="18" fill="#fff" opacity="0.22"/>
 
-    <!-- Central circle — the voice source -->
-    <circle cx="380" cy="512" r="58" fill="url(#center_glow)"/>
-
-    <!-- Inner wave arc (teal) -->
-    <path d="M 500 340
-             A 200 200 0 0 1 500 684"
-          fill="none" stroke="url(#wave1)" stroke-width="52"
-          stroke-linecap="round" opacity="0.95"/>
-
-    <!-- Middle wave arc (blend) -->
-    <path d="M 580 260
-             A 300 300 0 0 1 580 764"
-          fill="none" stroke="url(#wave2)" stroke-width="46"
-          stroke-linecap="round" opacity="0.85"/>
-
-    <!-- Outer wave arc (purple, fading) -->
-    <path d="M 660 195
-             A 390 390 0 0 1 660 829"
-          fill="none" stroke="#a78bfa" stroke-width="38"
-          stroke-linecap="round" opacity="0.45"/>
-
-    <!-- Subtle accent dots -->
-    <circle cx="380" cy="512" r="22" fill="white" opacity="0.3"/>
-
+    <rect x="1" y="1" width="1022" height="1022" rx="227" fill="none" stroke="#fff" stroke-opacity="0.055" stroke-width="2"/>
   </g>
 </svg>

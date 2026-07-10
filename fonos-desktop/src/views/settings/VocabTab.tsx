@@ -19,7 +19,7 @@ function newBook(): VocabBook {
 }
 
 const input =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]";
 
 /** Chip-style term editor: terms render as removable pills inside an
  *  input-looking container; typing + Enter (or comma / blur) adds, Backspace
@@ -46,12 +46,12 @@ function TermChips({ terms, onChange }: { terms: string[]; onChange: (t: string[
   return (
     <div
       onClick={() => inputRef.current?.focus()}
-      className="min-h-[64px] flex flex-wrap items-start content-start gap-1.5 p-2 rounded-lg cursor-text bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] focus-within:border-[rgba(245,158,11,0.3)] transition-colors"
+      className="min-h-[64px] flex flex-wrap items-start content-start gap-1.5 p-2 rounded-lg cursor-text bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] focus-within:border-[rgba(242,184,75,0.3)] transition-colors"
     >
       {terms.map((term, i) => (
         <span
           key={`${term}-${i}`}
-          className="group inline-flex items-center gap-1 pl-2 pr-1 py-[3px] rounded-md bg-[rgba(251,191,36,0.07)] border border-[rgba(251,191,36,0.12)] text-[10.5px] text-[#fde68a] leading-none select-none"
+          className="group inline-flex items-center gap-1 pl-2 pr-1 py-[3px] rounded-md bg-[rgba(242,184,75,0.07)] border border-[rgba(242,184,75,0.12)] text-[10.5px] text-[#fde68a] leading-none select-none"
         >
           {term}
           <button
@@ -60,7 +60,7 @@ function TermChips({ terms, onChange }: { terms: string[]; onChange: (t: string[
               removeAt(i);
             }}
             tabIndex={-1}
-            className="w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] text-[rgba(253,230,138,0.35)] hover:text-[#fbbf24] hover:bg-[rgba(251,191,36,0.15)] transition-colors"
+            className="w-3.5 h-3.5 rounded flex items-center justify-center text-[10px] text-[rgba(253,230,138,0.35)] hover:text-[var(--accent)] hover:bg-[rgba(242,184,75,0.15)] transition-colors"
           >
             ×
           </button>
@@ -116,7 +116,7 @@ function RuleRow({
         spellCheck={false}
         className={`${input} flex-1 min-w-0 ${isRegex ? "font-mono" : ""}`}
       />
-      <span className="w-5 h-5 rounded-full bg-[rgba(251,191,36,0.08)] text-[#fbbf24] text-[10px] flex items-center justify-center shrink-0">
+      <span className="w-5 h-5 rounded-full bg-[rgba(242,184,75,0.08)] text-[var(--accent)] text-[10px] flex items-center justify-center shrink-0">
         →
       </span>
       <input
@@ -150,7 +150,7 @@ function RuleRow({
             "px-2 py-1.5 text-[9px] font-mono border-l border-[rgba(255,255,255,0.06)] transition-colors",
             rule.case_insensitive
               ? "bg-transparent text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.6)]"
-              : "bg-[rgba(251,191,36,0.12)] text-[#fbbf24]",
+              : "bg-[rgba(242,184,75,0.12)] text-[var(--accent)]",
           ].join(" ")}
         >
           Aa
@@ -225,7 +225,7 @@ export default function VocabTab({
               className={[
                 "rounded-xl border transition-colors",
                 expanded
-                  ? "border-[rgba(251,191,36,0.15)] bg-[rgba(255,255,255,0.025)]"
+                  ? "border-[rgba(242,184,75,0.15)] bg-[rgba(255,255,255,0.025)]"
                   : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(255,255,255,0.1)]",
               ].join(" ")}
             >
@@ -244,7 +244,7 @@ export default function VocabTab({
                   {book.name || t("vocab.unnamed")}
                 </span>
                 {isGlobal && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase tracking-wide bg-[rgba(245,158,11,0.12)] text-[#fbbf24] shrink-0">
+                  <span className="px-1.5 py-0.5 rounded-full text-[8px] font-semibold uppercase tracking-wide bg-[rgba(242,184,75,0.12)] text-[var(--accent)] shrink-0">
                     {t("common.global")}
                   </span>
                 )}
@@ -284,7 +284,7 @@ export default function VocabTab({
                       className={[
                         "px-2.5 py-1.5 rounded-lg text-[10px] transition-all",
                         isGlobal
-                          ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                          ? "bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.25)] text-[var(--accent)]"
                           : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)]",
                       ].join(" ")}
                     >
@@ -355,7 +355,7 @@ export default function VocabTab({
                     ))}
                     <button
                       onClick={() => updateBook(book.id, { rules: [...book.rules, { ...EMPTY_RULE }] })}
-                      className="w-full py-1.5 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-[10px] text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] hover:border-[rgba(251,191,36,0.3)] transition-colors"
+                      className="w-full py-1.5 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-[10px] text-[rgba(255,255,255,0.3)] hover:text-[var(--accent)] hover:border-[rgba(242,184,75,0.3)] transition-colors"
                     >
                       {t("vocab.addrule")}
                     </button>
@@ -378,7 +378,7 @@ export default function VocabTab({
 
         <button
           onClick={addBook}
-          className="self-start px-3 py-2 rounded-lg text-[11px] bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.15)] transition-colors"
+          className="self-start px-3 py-2 rounded-lg text-[11px] bg-[rgba(242,184,75,0.1)] border border-[rgba(242,184,75,0.25)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.15)] transition-colors"
         >
           {t("vocab.addbook")}
         </button>

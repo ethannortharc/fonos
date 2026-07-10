@@ -14,7 +14,7 @@ const PREVIEW_TEXT = "你好，这是这个音色的试听效果。Hello, this i
 // `control` styles the plain <input>/<textarea> controls on this tab — left
 // as-is (settings polish batch touches selects only, not inputs).
 const control =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] transition-colors";
+  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)] transition-colors";
 // Selects use the canonical house recipe (constants.ts) instead, minus its
 // w-full (these selects are fixed-width via `w-44`, composed below).
 const selectControl = selectClass.replace("w-full ", "");
@@ -60,7 +60,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 function SectionHeader({ icon, title, desc }: { icon: string; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-2.5 mb-1">
-      <div className="w-7 h-7 rounded-lg bg-[rgba(251,191,36,0.07)] flex items-center justify-center text-[13px] shrink-0">
+      <div className="w-7 h-7 rounded-lg bg-[rgba(242,184,75,0.07)] flex items-center justify-center text-[13px] shrink-0">
         {icon}
       </div>
       <div>
@@ -167,7 +167,7 @@ function VoicePicker({
         onClick={preview}
         disabled={previewing}
         title={t("speech.preview-title")}
-        className="text-[9px] px-2.5 py-1.5 rounded-md bg-[rgba(251,191,36,0.08)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.16)] disabled:opacity-40 transition-colors shrink-0"
+        className="text-[9px] px-2.5 py-1.5 rounded-md bg-[rgba(242,184,75,0.08)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.16)] disabled:opacity-40 transition-colors shrink-0"
       >
         {previewing ? t("common.playing") : t("common.preview")}
       </button>
@@ -367,7 +367,7 @@ export default function SpeechTab({
               type="checkbox"
               checked={config.call_barge_in ?? true}
               onChange={(e) => onSave({ call_barge_in: e.target.checked })}
-              className="accent-[#fbbf24]"
+              className="accent-[var(--accent)]"
             />
             <span className="text-[10.5px] text-[rgba(255,255,255,0.5)]">
               {t("speech.barge.toggle")}
@@ -397,7 +397,7 @@ function SilenceSlider({ value, onChange }: { value: number; onChange: (v: numbe
         onChange={(e) => setLive(parseInt(e.target.value))}
         onPointerUp={() => { if (live !== value) onChange(live); }}
         onKeyUp={() => { if (live !== value) onChange(live); }}
-        className="w-44 accent-[#fbbf24]"
+        className="w-44 accent-[var(--accent)]"
       />
       <span className="text-[11px] text-[#fafaf9] tabular-nums w-10">{(live / 1000).toFixed(1)}s</span>
     </div>
@@ -424,7 +424,7 @@ function SensitivityPicker({ value, onChange }: { value: number; onChange: (v: n
             i > 0 ? "border-l border-[rgba(255,255,255,0.06)]" : ""
           } ${
             i === activeIdx
-              ? "bg-[rgba(251,191,36,0.14)] text-[#fbbf24]"
+              ? "bg-[rgba(242,184,75,0.14)] text-[var(--accent)]"
               : "bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
           }`}
         >

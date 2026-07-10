@@ -147,7 +147,7 @@ function SectionBadges({ sections }: { sections: string[] }) {
       {sections.map((s) => (
         <span
           key={s}
-          className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(251,191,36,0.1)] text-[rgba(251,191,36,0.7)]"
+          className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-[rgba(242,184,75,0.1)] text-[rgba(242,184,75,0.7)]"
         >
           {t(SECTION_LABEL[s])}
         </span>
@@ -461,7 +461,7 @@ function SavedRow({
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => onApply(scenario.id, scenario.name)}
-              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24]"
+              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.3)] text-[var(--accent)]"
             >
               {t("scen.saved.apply")}
             </button>
@@ -582,7 +582,7 @@ function ImportZone({ onImported }: { onImported: () => void }) {
         onDrop={onDrop}
         className={[
           "rounded-lg border border-dashed px-3 py-3 text-center transition-colors",
-          drag ? "border-[rgba(251,191,36,0.5)] bg-[rgba(251,191,36,0.05)]" : "border-[rgba(255,255,255,0.1)]",
+          drag ? "border-[rgba(242,184,75,0.5)] bg-[rgba(242,184,75,0.05)]" : "border-[rgba(255,255,255,0.1)]",
         ].join(" ")}
       >
         <div className="text-[10.5px] text-[rgba(255,255,255,0.4)]">{t("scen.share.importhint")}</div>
@@ -603,7 +603,7 @@ function ImportZone({ onImported }: { onImported: () => void }) {
       </div>
       {msg && <div className="text-[10px] text-[#4ade80]">{msg}</div>}
       {needKeys.length > 0 && (
-        <div className="text-[10px] text-[#fbbf24]">{td("scen.share.needkeys", [needKeys.join(", ")])}</div>
+        <div className="text-[10px] text-[var(--accent)]">{td("scen.share.needkeys", [needKeys.join(", ")])}</div>
       )}
       {err && <div className="text-[10px] text-[#f87171]">{err}</div>}
     </div>
@@ -615,7 +615,7 @@ function ImportZone({ onImported }: { onImported: () => void }) {
 function IncludeCheck({ v, set, label }: { v: boolean; set: (b: boolean) => void; label: string }) {
   return (
     <label className="flex items-center gap-1.5 text-[10px] text-[rgba(255,255,255,0.55)] cursor-pointer">
-      <input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} className="accent-[#fbbf24]" />
+      <input type="checkbox" checked={v} onChange={(e) => set(e.target.checked)} className="accent-[var(--accent)]" />
       {label}
     </label>
   );
@@ -665,7 +665,7 @@ function SaveCurrent({
             setName("");
             setOpen(false);
           }}
-          className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(251,191,36,0.12)] border border-[rgba(251,191,36,0.3)] text-[#fbbf24] disabled:opacity-40"
+          className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.3)] text-[var(--accent)] disabled:opacity-40"
         >
           {t("scen.saved.save")}
         </button>
@@ -785,7 +785,7 @@ export default function ScenariosTab({
         <p className="text-[10.5px] text-[rgba(255,255,255,0.35)]">{t("scen.tab.template.desc")}</p>
         <button
           onClick={() => setShowTemplates(true)}
-          className="self-start text-[11px] px-3 py-1.5 rounded-md border border-[rgba(251,191,36,0.25)] bg-[rgba(251,191,36,0.08)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.14)] transition-colors"
+          className="self-start text-[11px] px-3 py-1.5 rounded-md border border-[rgba(242,184,75,0.25)] bg-[rgba(242,184,75,0.08)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.14)] transition-colors"
         >
           {t("scen.tab.template.btn")}
         </button>

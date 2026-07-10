@@ -28,8 +28,8 @@
     content:'';position:absolute;left:6px;right:6px;
     top:50%;transform:translateY(-50%);
     height:32px;border-radius:8px;
-    background:rgba(245,158,11,0.1);
-    border:1px solid rgba(245,158,11,0.15);
+    background:rgba(242,184,75,0.1);
+    border:1px solid rgba(242,184,75,0.15);
     pointer-events:none;z-index:0;
   }
   /* Fade top and bottom */
@@ -57,7 +57,7 @@
   }
   .roller-item .m-icon{font-size:14px;line-height:1;flex-shrink:0}
   .roller-item .m-name{font-size:11px;font-weight:500;color:rgba(255,255,255,0.3)}
-  .roller-item.center .m-name{color:rgba(251,191,36,0.95);font-weight:600}
+  .roller-item.center .m-name{color:rgba(242,184,75,0.95);font-weight:600}
 
   .dd-sep{height:1px;background:rgba(255,255,255,0.04);margin:5px 6px}
   .dd-btn{
@@ -85,10 +85,10 @@
   #pill.recording{opacity:1}
 
   #idle{display:flex;align-items:center;justify-content:center;gap:5px}
-  .pill-dot{width:3px;height:3px;border-radius:50%;background:rgba(251,191,36,0.2);flex-shrink:0;transition:all 0.15s}
-  #pill-text{font-size:10px;font-weight:700;color:rgba(251,191,36,0.4);letter-spacing:0.5px;transition:all 0.15s;line-height:1}
-  #pill:hover #pill-text{color:rgba(251,191,36,0.65)}
-  #pill:hover .pill-dot{background:rgba(251,191,36,0.35)}
+  .pill-dot{width:3px;height:3px;border-radius:50%;background:rgba(242,184,75,0.2);flex-shrink:0;transition:all 0.15s}
+  #pill-text{font-size:10px;font-weight:700;color:rgba(242,184,75,0.4);letter-spacing:0.5px;transition:all 0.15s;line-height:1}
+  #pill:hover #pill-text{color:rgba(242,184,75,0.65)}
+  #pill:hover .pill-dot{background:rgba(242,184,75,0.35)}
 
   /* ── Recording ── */
   #rec{display:none;align-items:center;gap:5px}
@@ -100,7 +100,7 @@
   #pill.recording #idle{display:none!important}
   #pill.recording #rec{display:flex}
 
-  #pill.processing{background:rgba(26,25,23,0.92);border-color:rgba(245,158,11,0.12);cursor:default;opacity:1}
+  #pill.processing{background:rgba(26,25,23,0.92);border-color:rgba(242,184,75,0.12);cursor:default;opacity:1}
   #pill.processing #idle{display:none!important}
   #pill.processing #rec{display:flex}
 
@@ -273,7 +273,7 @@ function showProcessing(){
   const pill=document.getElementById('pill');
   pill.classList.remove('recording');
   pill.classList.add('processing');
-  document.getElementById('rec-dot').style.background='#f59e0b';
+  document.getElementById('rec-dot').style.background='#f2b84b';
   document.getElementById('rec-dot').style.animation='pulse 0.8s ease-in-out infinite';
   document.getElementById('rec-wave').style.display='none';
   document.getElementById('rec-dur').textContent='···';
@@ -299,7 +299,7 @@ function drawW(){
   const c=document.getElementById('rec-wave').getContext('2d');
   c.clearRect(0,0,40,14);c.beginPath();
   for(let i=0;i<=24;i++){const x=(i/24)*40,e=Math.sin((i/24)*Math.PI),y=7+Math.sin((i/24)*Math.PI*4+animT*3)*4*e;if(i===0)c.moveTo(x,y);else c.lineTo(x,y);}
-  c.strokeStyle='rgba(251,191,36,0.5)';c.lineWidth=1.5;c.stroke();
+  c.strokeStyle='rgba(242,184,75,0.5)';c.lineWidth=1.5;c.stroke();
 }
 
 document.addEventListener('click',e=>{

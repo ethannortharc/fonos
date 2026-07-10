@@ -21,14 +21,14 @@
         "hiddenTitle": true,
         "visible": false,
         "resizable": true,
-        "backgroundColor": "#1a1917"
+        "backgroundColor": "#181714"
       },
       {
         "label": "float",
         "title": "",
         "url": "float.html",
-        "width": 90,
-        "height": 28,
+        "width": 98,
+        "height": 32,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

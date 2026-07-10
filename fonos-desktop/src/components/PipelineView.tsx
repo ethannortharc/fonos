@@ -48,7 +48,7 @@ function AddStepButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       title={t("wf.add-step")}
       aria-label={t("wf.add-step")}
-      className="flex-shrink-0 w-[22px] h-[22px] flex items-center justify-center rounded-[6px] border border-dashed border-[rgba(255,255,255,0.10)] text-[rgba(255,255,255,0.32)] text-[14px] leading-none hover:text-[#fbbf24] hover:border-[rgba(245,158,11,0.3)] transition-colors"
+      className="flex-shrink-0 w-[22px] h-[22px] flex items-center justify-center rounded-[6px] border border-dashed border-[rgba(255,255,255,0.10)] text-[rgba(255,255,255,0.32)] text-[14px] leading-none hover:text-[var(--accent)] hover:border-[rgba(242,184,75,0.3)] transition-colors"
     >
       +
     </button>

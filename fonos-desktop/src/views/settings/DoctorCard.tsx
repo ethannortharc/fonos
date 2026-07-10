@@ -206,7 +206,7 @@ export default function DoctorCard() {
               <button
                 onClick={() => onFix(f)}
                 disabled={fixing === f.id}
-                className="flex-none text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(251,191,36,0.25)] bg-[rgba(251,191,36,0.1)] text-[#fbbf24] hover:bg-[rgba(251,191,36,0.16)] transition-colors disabled:opacity-50"
+                className="flex-none text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(242,184,75,0.25)] bg-[rgba(242,184,75,0.1)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.16)] transition-colors disabled:opacity-50"
               >
                 {fixing === f.id ? t("doctor.fixing") : td(fixLabelKey(f.fix))}
               </button>

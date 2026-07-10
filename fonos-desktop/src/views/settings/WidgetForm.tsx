@@ -145,7 +145,7 @@ export function VocabChips({
             className={[
               "px-2.5 py-1 rounded-full text-[10px] transition-all",
               on
-                ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                ? "bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.3)] text-[var(--accent)]"
                 : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
             ].join(" ")}
           >
@@ -186,7 +186,7 @@ function SizeControl({
               className={[
                 "px-2.5 py-1 rounded-full text-[10px] transition-all",
                 active
-                  ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.3)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
               ].join(" ")}
             >
@@ -326,7 +326,7 @@ function PropsForm({
             </select>
           </Field>
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
-            <input type="checkbox" checked={pBool(p, "press_enter")} onChange={(e) => set("press_enter", e.target.checked)} className="accent-[#fbbf24]" />
+            <input type="checkbox" checked={pBool(p, "press_enter")} onChange={(e) => set("press_enter", e.target.checked)} className="accent-[var(--accent)]" />
             {t("widgets.field.press_enter")}
           </label>
         </div>
@@ -348,7 +348,7 @@ function PropsForm({
       return (
         <div className="flex flex-col gap-2.5">
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
-            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[var(--accent)]" />
             {t("widgets.field.markdown")}
           </label>
           <Field label={t("widgets.field.size")}>
@@ -364,7 +364,7 @@ function PropsForm({
       return (
         <div className="flex flex-col gap-2.5">
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
-            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[var(--accent)]" />
             {t("widgets.field.markdown")}
           </label>
           <Field label={t("widgets.field.size")}>
@@ -573,7 +573,7 @@ export default function WidgetForm({
           <div className="flex gap-2 pt-1 items-center">
             <button
               onClick={handleSave}
-              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
+              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
             >
               {t("common.save")}
             </button>

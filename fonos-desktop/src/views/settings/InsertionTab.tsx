@@ -73,7 +73,7 @@ export default function InsertionTab({
               onChange={(e) => updateOverrideLocal(i, { app: e.target.value })}
               onBlur={() => persistOverrides(overrides)}
               placeholder={t("general.insert.appplaceholder")}
-              className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.7)] placeholder:text-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[rgba(245,158,11,0.25)]"
+              className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.7)] placeholder:text-[rgba(255,255,255,0.2)] focus:outline-none focus:border-[rgba(242,184,75,0.25)]"
             />
             {INJECTION_STRATEGIES.map((opt) => {
               const selected = (row.strategy || "paste") === opt.value;
@@ -84,7 +84,7 @@ export default function InsertionTab({
                   className={[
                     "px-2.5 py-2 rounded-lg text-[10px] transition-all flex-shrink-0",
                     selected
-                      ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)] text-[#fbbf24] font-medium"
+                      ? "bg-[rgba(242,184,75,0.12)] border border-[rgba(242,184,75,0.25)] text-[var(--accent)] font-medium"
                       : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:border-[rgba(255,255,255,0.08)]",
                   ].join(" ")}
                 >
@@ -94,7 +94,7 @@ export default function InsertionTab({
             })}
             <button
               onClick={() => removeOverride(i)}
-              className="px-2 py-2 rounded-lg text-[13px] leading-none text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] transition-colors flex-shrink-0"
+              className="px-2 py-2 rounded-lg text-[13px] leading-none text-[rgba(255,255,255,0.3)] hover:text-[var(--accent)] transition-colors flex-shrink-0"
             >
               ×
             </button>
@@ -103,7 +103,7 @@ export default function InsertionTab({
 
         <button
           onClick={addOverride}
-          className="text-[10px] text-[rgba(251,191,36,0.5)] hover:text-[#fbbf24] transition-colors self-start"
+          className="text-[10px] text-[rgba(242,184,75,0.5)] hover:text-[var(--accent)] transition-colors self-start"
         >
           {t("general.insert.addoverride")}
         </button>

@@ -20,6 +20,22 @@ function I({ size = defaults.size, className, strokeWidth = defaults.strokeWidth
   );
 }
 
+/**
+ * Fonos signal mark — a compact voice source with two outward echoes.
+ * Kept deliberately simple so it remains recognizable in the 16–32px sizes
+ * used by the sidebar, floating surfaces, tray artwork and empty states.
+ */
+export function FonosMark({ size = 20, className, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="7" cy="12" r="2.15" fill="currentColor" stroke="none" />
+      <path d="M11.2 7.4a6.1 6.1 0 0 1 0 9.2" />
+      <path d="M15 4.45a10 10 0 0 1 0 15.1" />
+    </svg>
+  );
+}
+
 /** Microphone — recording / STT activity */
 export function MicIcon(p: IconProps) {
   return <I {...p}><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /></I>;

@@ -52,13 +52,13 @@ function Toggle({
       onClick={() => onChange(!enabled)}
       className="w-8 h-[18px] rounded-full relative cursor-pointer flex-shrink-0 transition-colors"
       style={{
-        background: enabled ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.06)",
+        background: enabled ? "rgba(242,184,75,0.3)" : "rgba(255,255,255,0.06)",
       }}
     >
       <div
         className="absolute top-[2px] w-[14px] h-[14px] rounded-full transition-all duration-150"
         style={{
-          background: enabled ? "#fbbf24" : "rgba(255,255,255,0.2)",
+          background: enabled ? "var(--accent)" : "rgba(255,255,255,0.2)",
           left: enabled ? undefined : "2px",
           right: enabled ? "2px" : undefined,
         }}
@@ -185,7 +185,7 @@ function SkillForm({
             type="text"
             value={form.icon}
             onChange={(e) => setForm({ ...form, icon: e.target.value })}
-            className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-2 text-center text-[16px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+            className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2 py-2 text-center text-[16px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
             title={t("skills.emoji-title")}
           />
           <input
@@ -193,7 +193,7 @@ function SkillForm({
             value={form.id}
             onChange={(e) => setForm({ ...form, id: e.target.value })}
             placeholder="skill-id"
-            className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+            className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] font-mono focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
           />
         </div>
         <input
@@ -201,14 +201,14 @@ function SkillForm({
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           placeholder={t("skills.ph.name")}
-          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
         />
         <input
           type="text"
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
           placeholder={t("skills.ph.desc")}
-          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[12px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
         />
       </div>
 
@@ -223,7 +223,7 @@ function SkillForm({
               className="px-3 py-1.5 rounded-lg text-[11px] transition-colors"
               style={
                 form.skillType === t
-                  ? { background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.15)", color: "#fbbf24", fontWeight: 500 }
+                  ? { background: "rgba(242,184,75,0.08)", border: "1px solid rgba(242,184,75,0.15)", color: "var(--accent)", fontWeight: 500 }
                   : { background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.3)" }
               }
             >
@@ -241,7 +241,7 @@ function SkillForm({
           value={form.command}
           onChange={(e) => setForm({ ...form, command: e.target.value })}
           placeholder={commandPlaceholder(form.skillType)}
-          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] font-mono focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
         />
       </div>
 
@@ -251,7 +251,7 @@ function SkillForm({
           <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("skills.parameters")}</div>
           <button
             onClick={addParam}
-            className="text-[9px] text-[rgba(251,191,36,0.4)] hover:text-[#fbbf24] transition-colors"
+            className="text-[9px] text-[rgba(242,184,75,0.4)] hover:text-[var(--accent)] transition-colors"
           >
             {t("skills.add")}
           </button>
@@ -265,7 +265,7 @@ function SkillForm({
                   value={param.name}
                   onChange={(e) => updateParam(idx, "name", e.target.value)}
                   placeholder={t("skills.ph.param-name")}
-                  className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2 py-1 text-[10px] text-[#fbbf24] font-mono focus:outline-none"
+                  className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2 py-1 text-[10px] text-[var(--accent)] font-mono focus:outline-none"
                 />
                 <input
                   type="text"
@@ -304,7 +304,7 @@ function SkillForm({
           value={form.responseTemplate}
           onChange={(e) => setForm({ ...form, responseTemplate: e.target.value })}
           placeholder={t("skills.ph.response")}
-          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] font-mono focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] font-mono focus:outline-none focus:border-[rgba(242,184,75,0.3)]"
         />
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
           {t("skills.response-hint")}
@@ -316,7 +316,7 @@ function SkillForm({
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+          className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           {saving ? t("skills.creating") : t("skills.create")}
         </button>
@@ -362,7 +362,7 @@ function TestPanel({ skillId }: { skillId: string }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") run(); }}
           placeholder={t("skills.ph.test-input")}
-          className="flex-1 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2.5 py-1.5 text-[10px] text-[#fafaf9] focus:outline-none focus:border-[rgba(245,158,11,0.2)]"
+          className="flex-1 bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] rounded px-2.5 py-1.5 text-[10px] text-[#fafaf9] focus:outline-none focus:border-[rgba(242,184,75,0.2)]"
         />
         <button
           onClick={run}
@@ -451,7 +451,7 @@ function ImportPanel({
           onChange={(e) => { setJson(e.target.value); setPreview(null); }}
           placeholder={'{\n  "id": "my_skill",\n  "name": "My Skill",\n  ...\n}'}
           rows={6}
-          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[10px] font-mono leading-relaxed focus:outline-none focus:border-[rgba(245,158,11,0.3)] resize-none"
+          className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[10px] font-mono leading-relaxed focus:outline-none focus:border-[rgba(242,184,75,0.3)] resize-none"
         />
       </div>
 
@@ -478,7 +478,7 @@ function ImportPanel({
         <button
           onClick={handleImport}
           disabled={importing}
-          className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+          className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[var(--accent-from)] to-[var(--accent-to)] text-[#1a1917] text-[12px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           {importing ? t("skills.importing") : t("skills.import")}
         </button>
@@ -719,7 +719,7 @@ export default function SkillsTab() {
                 <div className="flex flex-col gap-1.5">
                   {detailSkill.parameters.map((p) => (
                     <div key={p.name} className="flex items-baseline gap-2 text-[10px]">
-                      <span className="text-[#fbbf24] font-mono">{p.name}</span>
+                      <span className="text-[var(--accent)] font-mono">{p.name}</span>
                       <span className="text-[rgba(255,255,255,0.25)]">{p.description}</span>
                       {p.required && <span className="text-[8px] text-[rgba(239,68,68,0.5)]">{t("skills.required")}</span>}
                       {p.default_value && <span className="text-[8px] text-[rgba(255,255,255,0.15)] font-mono">= {p.default_value}</span>}
@@ -840,7 +840,7 @@ export default function SkillsTab() {
       <div className="flex gap-2 mt-1">
         <button
           onClick={() => setView("create")}
-          className="flex-1 py-2 rounded-[10px] border border-dashed border-[rgba(245,158,11,0.12)] text-[rgba(251,191,36,0.6)] text-[12px] hover:border-[rgba(245,158,11,0.25)] hover:text-[rgba(251,191,36,0.8)] transition-colors"
+          className="flex-1 py-2 rounded-[10px] border border-dashed border-[rgba(242,184,75,0.12)] text-[rgba(242,184,75,0.6)] text-[12px] hover:border-[rgba(242,184,75,0.25)] hover:text-[rgba(242,184,75,0.8)] transition-colors"
         >
           {t("skills.create-skill")}
         </button>

@@ -1,18 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #1a1917;
-  --bg-sidebar: #151413;
-  --bg-card: rgba(255,255,255,0.02);
-  --border: rgba(255,255,255,0.05);
-  --border-hover: rgba(255,255,255,0.08);
-  --text-primary: #fafaf9;
-  --text-secondary: rgba(255,255,255,0.35);
-  --text-muted: rgba(255,255,255,0.2);
-  --accent: #fbbf24;
-  --accent-from: #f59e0b;
-  --accent-to: #d97706;
-  --accent-bg: rgba(245,158,11,0.12);
+  --bg: #181714;
+  --bg-sidebar: #131210;
+  --bg-card: rgba(255,255,255,0.035);
+  --border: rgba(255,255,255,0.075);
+  --border-hover: rgba(255,255,255,0.13);
+  --text-primary: #f5f3ef;
+  --text-secondary: rgba(255,255,255,0.62);
+  --text-muted: rgba(255,255,255,0.43);
+  --text-faint: rgba(255,255,255,0.28);
+  --accent: #f2b84b;
+  --accent-from: #f0ad32;
+  --accent-to: #c97818;
+  --accent-bg: rgba(240,173,50,0.13);
+  --accent-glow: rgba(201,120,24,0.12);
   --type-stt: #fbbf24;
   --type-tts: #c4b5fd;
   --type-llm: #86efac;
@@ -29,8 +31,71 @@ html, body, #root {
   padding: 0;
   background: var(--bg);
   color: var(--text-primary);
-  font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background:
+    radial-gradient(circle at 50% -18%, rgba(240, 173, 50, 0.055), transparent 38%),
+    var(--bg);
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 1px solid rgba(242, 184, 75, 0.72);
+  outline-offset: 2px;
+}
+
+::selection {
+  color: var(--text-primary);
+  background: rgba(242, 184, 75, 0.28);
+}
+
+.fonos-surface {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.022)),
+    rgba(24,23,20,0.82);
+  border: 1px solid var(--border);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    0 16px 36px rgba(8,7,5,0.18);
+}
+
+/* .fonos-surface + a soft accent bloom. Both selectors are unlayered (plain
+   rules after @import "tailwindcss"), so this box-shadow beats @layer utilities
+   — and being declared after .fonos-surface it wins the source-order tie for an
+   element carrying both classes. Adds the accent glow on top of the surface
+   shadow stack so the depth is preserved. Pair with .fonos-surface. */
+.fonos-surface-glow {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    0 16px 36px rgba(8,7,5,0.18),
+    0 12px 30px var(--accent-glow);
+}
+
+.fonos-eyebrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.fonos-page-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: -0.012em;
 }
 
 /* Dark scrollbars — without this WebKit shows its light UA scrollbar, which
@@ -59,4 +124,257 @@ html, body, #root {
 @keyframes panel-in {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mic-ambient-breathe {
+  0%, 100% { opacity: 0.42; transform: scale(0.88); filter: blur(20px); }
+  48% { opacity: 0.78; transform: scale(1.08); filter: blur(24px); }
+}
+
+@keyframes mic-ambient-core {
+  0%, 100% { opacity: 0.5; transform: translateY(2px) scale(0.92); }
+  50% { opacity: 0.88; transform: translateY(-1px) scale(1.05); }
+}
+
+@keyframes mic-ambient-floor {
+  0%, 100% { opacity: 0.24; transform: scaleX(0.82); }
+  50% { opacity: 0.52; transform: scaleX(1.08); }
+}
+
+@keyframes voice-control-sheen {
+  0%, 100% { opacity: 0.5; transform: translate(-1px,-1px) scale(0.97); }
+  50% { opacity: 0.82; transform: translate(1px,1px) scale(1.02); }
+}
+
+@keyframes voice-control-caustic {
+  0%, 100% { opacity: 0.52; transform: translate(2px,2px) scale(0.94); }
+  46% { opacity: 0.9; transform: translate(-2px,-1px) scale(1.07); }
+}
+
+.fonos-mic-ambient {
+  --mic-light: 242, 184, 75;
+}
+
+.fonos-mic-ambient-live {
+  --mic-light: 237, 103, 94;
+}
+
+/* Idle: the three aura layers render as a STATIC glow — the breathe animations'
+   rest frame baked in (opacity/transform/filter), no animation. The -live class
+   (VoiceAura active) turns the animations on; prefers-reduced-motion keeps them
+   static even when live (see the media query at the bottom of this file). */
+.fonos-mic-ambient-bloom {
+  background: radial-gradient(ellipse at 50% 48%, rgba(var(--mic-light),0.34) 0%, rgba(var(--mic-light),0.13) 34%, transparent 72%);
+  transform-origin: center;
+  opacity: 0.42;
+  transform: scale(0.88);
+  filter: blur(20px);
+}
+
+.fonos-mic-ambient-core {
+  background: radial-gradient(circle at 46% 40%, rgba(var(--mic-light),0.34), rgba(var(--mic-light),0.08) 48%, transparent 74%);
+  filter: blur(9px);
+  transform-origin: center;
+  opacity: 0.5;
+  transform: translateY(2px) scale(0.92);
+}
+
+.fonos-mic-ambient-floor {
+  background: rgba(var(--mic-light),0.25);
+  filter: blur(12px);
+  transform-origin: center;
+  opacity: 0.24;
+  transform: scaleX(0.82);
+}
+
+.fonos-mic-ambient-live .fonos-mic-ambient-bloom {
+  animation: mic-ambient-breathe 1.7s cubic-bezier(.45, 0, .18, 1) infinite;
+}
+
+.fonos-mic-ambient-live .fonos-mic-ambient-core {
+  animation: mic-ambient-core 1.7s cubic-bezier(.45, 0, .18, 1) infinite;
+}
+
+.fonos-mic-ambient-live .fonos-mic-ambient-floor {
+  animation: mic-ambient-floor 1.7s cubic-bezier(.45, 0, .18, 1) infinite;
+}
+
+/* Shared voice-control button — the dictation mic button (Dictation.tsx) and the
+   call button (Conversation.tsx) are one family. Base = idle: the sheen/caustic
+   pseudo-layers sit at their animation rest frame, static (no animation). The
+   -live class turns the sheen/caustic animations on and adds the breathing halo;
+   -idle gets the warm amber fill + hover lift; prefers-reduced-motion keeps
+   everything static even when live (see media query at end of file). */
+.fonos-voice-button {
+  --control-caustic: 255, 205, 105;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: rgba(255,255,255,0.94);
+  border: 0;
+  background-clip: padding-box;
+}
+
+.fonos-voice-button::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255,255,255,0.31), transparent 29%),
+    linear-gradient(155deg, rgba(255,255,255,0.08), transparent 44%);
+  transform-origin: center;
+  opacity: 0.5;
+  transform: translate(-1px,-1px) scale(0.97);
+  pointer-events: none;
+}
+
+.fonos-voice-button::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 76% 82%, rgba(var(--control-caustic),0.3), transparent 47%);
+  transform-origin: center;
+  opacity: 0.52;
+  transform: translate(2px,2px) scale(0.94);
+  pointer-events: none;
+}
+
+.fonos-voice-button-live::before {
+  animation: voice-control-sheen 6.2s cubic-bezier(.45,0,.2,1) infinite;
+}
+
+.fonos-voice-button-live::after {
+  animation: voice-control-caustic 5.1s cubic-bezier(.45,0,.2,1) infinite;
+}
+
+.fonos-voice-button-idle {
+  color: #211a12;
+  background:
+    radial-gradient(circle at 70% 76%, rgba(130,65,8,0.18), transparent 48%),
+    linear-gradient(145deg, #f2bd59 0%, #df942b 46%, #c4731d 72%, #9f5213 100%);
+  box-shadow:
+    0 12px 28px rgba(154,82,13,0.25),
+    0 4px 10px rgba(7,5,2,0.19),
+    inset 0 1px 0 rgba(255,244,218,0.3),
+    inset 0 0 0 1px rgba(255,255,255,0.09),
+    inset 0 -7px 13px rgba(92,42,5,0.2);
+}
+
+.fonos-voice-button-idle:hover {
+  filter: brightness(1.08) saturate(1.04);
+  transform: translateY(-1px);
+}
+
+/* Live affordance: a soft halo breathes out from the button. Gated to -live so
+   it never runs at idle. The keyframes repeat -live's static shadow stack so the
+   button's depth is preserved; at rest (0%/100%) the extra ring is transparent,
+   matching -live's static box-shadow exactly. Kept a modest blur/spread so the
+   overflow:hidden call dock barely clips it. prefers-reduced-motion turns it off. */
+@keyframes voice-button-live-pulse {
+  0%, 100% {
+    box-shadow:
+      0 12px 28px rgba(91,27,25,0.31),
+      0 6px 18px rgba(208,72,63,0.15),
+      inset 0 1px 0 rgba(255,235,231,0.2),
+      inset 0 0 0 1px rgba(255,255,255,0.075),
+      inset 0 -7px 13px rgba(57,14,13,0.28),
+      0 0 0 0 rgba(240,113,104,0);
+  }
+  50% {
+    box-shadow:
+      0 12px 28px rgba(91,27,25,0.31),
+      0 6px 18px rgba(208,72,63,0.15),
+      inset 0 1px 0 rgba(255,235,231,0.2),
+      inset 0 0 0 1px rgba(255,255,255,0.075),
+      inset 0 -7px 13px rgba(57,14,13,0.28),
+      0 0 14px 3px rgba(240,113,104,0.5);
+  }
+}
+
+.fonos-voice-button-live {
+  --control-caustic: 238, 102, 93;
+  color: #fff8f5;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,220,214,0.17), transparent 30%),
+    linear-gradient(145deg, #cf6b63 0%, #a8443f 52%, #672826 100%);
+  box-shadow:
+    0 12px 28px rgba(91,27,25,0.31),
+    0 6px 18px rgba(208,72,63,0.15),
+    inset 0 1px 0 rgba(255,235,231,0.2),
+    inset 0 0 0 1px rgba(255,255,255,0.075),
+    inset 0 -7px 13px rgba(57,14,13,0.28);
+  animation: voice-button-live-pulse 2.1s ease-in-out infinite;
+}
+
+.fonos-call-dock {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 42% 115% at 50% -34%, rgba(255,207,112,0.12), rgba(225,144,40,0.035) 46%, transparent 72%),
+    linear-gradient(180deg, rgba(38,36,31,0.96), rgba(23,22,19,0.94));
+  border: 1px solid rgba(255,255,255,0.085);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.045),
+    inset 0 -1px 0 rgba(0,0,0,0.2),
+    0 18px 46px rgba(7,5,2,0.23);
+}
+
+.fonos-call-dock::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 24%;
+  right: 24%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(244,193,96,0.52), transparent);
+}
+
+.fonos-call-dock::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  bottom: -34px;
+  width: 110px;
+  height: 54px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: rgba(216,137,34,0.09);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.fonos-call-meter {
+  background: rgba(242,184,75,0.48);
+  box-shadow: 0 0 8px rgba(242,184,75,0.08);
+  transform-origin: center;
+}
+
+@keyframes call-meter-live {
+  0%, 100% { transform: scaleY(0.46); opacity: 0.42; }
+  48% { transform: scaleY(1); opacity: 0.95; }
+}
+
+.fonos-call-meter-live {
+  background: rgba(240,113,104,0.8);
+  box-shadow: 0 0 9px rgba(240,113,104,0.15);
+  animation: call-meter-live 0.82s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Live-state selectors so these win over the -live animation rules above
+     (same specificity, later in source). Idle already has no animation. */
+  .fonos-mic-ambient-live .fonos-mic-ambient-bloom,
+  .fonos-mic-ambient-live .fonos-mic-ambient-core,
+  .fonos-mic-ambient-live .fonos-mic-ambient-floor,
+  .fonos-voice-button-live::before,
+  .fonos-voice-button-live::after,
+  .fonos-voice-button-live,
+  .fonos-call-meter-live { animation: none; }
 }

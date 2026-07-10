@@ -251,7 +251,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
             data-testid="audio-play-btn"
             onClick={() => onPlay(entry.audio_ref!)}
             title={t("notes.play-audio")}
-            className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.3)] hover:text-[#fbbf24] hover:bg-[rgba(245,158,11,0.08)] transition-colors"
+            className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.3)] hover:text-[var(--accent)] hover:bg-[rgba(242,184,75,0.08)] transition-colors"
           >
             {PLAY_ICON}
           </button>
@@ -293,7 +293,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
             onChange={(e) => setEditText(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={4}
-            className="w-full bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-lg px-3 py-2 text-[13px] text-[rgba(255,255,255,0.8)] resize-none outline-none focus:border-[rgba(245,158,11,0.4)] transition-colors"
+            className="w-full bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-lg px-3 py-2 text-[13px] text-[rgba(255,255,255,0.8)] resize-none outline-none focus:border-[rgba(242,184,75,0.4)] transition-colors"
           />
           <div className="flex gap-2 justify-end">
             <button
@@ -306,7 +306,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
               data-testid="save-entry-btn"
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1 text-[11px] bg-[rgba(245,158,11,0.12)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.2)] rounded-lg transition-colors disabled:opacity-50"
+              className="px-3 py-1 text-[11px] bg-[rgba(242,184,75,0.12)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.2)] rounded-lg transition-colors disabled:opacity-50"
             >
               {saving ? t("notes.saving") : t("notes.save")}
             </button>
@@ -412,7 +412,7 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
   return (
     <div
       data-testid="notebook-detail"
-      className="flex flex-col h-full bg-[#1a1917]"
+      className="flex flex-col h-full bg-[var(--bg)]"
     >
       {/* Top bar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
@@ -594,7 +594,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
   return (
     <div
       data-testid="notes-view"
-      className="flex flex-col h-full bg-[#1a1917]"
+      className="flex flex-col h-full bg-[var(--bg)]"
     >
       {/* Header (hidden when embedded in the History view) */}
       {!embedded && (
@@ -613,7 +613,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
               className={[
                 "flex-shrink-0 px-3 py-1.5 rounded-full text-[10px] font-medium transition-all border",
                 nb.id === selectedId
-                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.25)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] border-[rgba(242,184,75,0.25)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.03)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.35)] hover:border-[rgba(255,255,255,0.12)]",
               ].join(" ")}
             >

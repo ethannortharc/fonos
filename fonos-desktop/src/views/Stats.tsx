@@ -276,19 +276,19 @@ export default function Stats() {
     : [];
 
   return (
-    <div className="flex flex-col h-full p-5 gap-3 bg-[#1a1917] overflow-auto">
+    <div className="flex flex-col h-full p-5 gap-3 bg-[var(--bg)] overflow-auto">
       {/* Header + period filter */}
       <div className="flex items-center justify-between flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9]">{t("stats.title")}</h2>
+        <h2 className="fonos-page-title">{t("stats.title")}</h2>
         <div className="flex gap-1">
           {(["7d", "30d", "90d"] as Period[]).map((p) => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
               className={[
-                "px-2.5 py-1 text-[10px] font-medium transition-colors rounded-lg",
+                "px-2.5 py-1 text-[10px] font-medium transition-colors rounded-[8px]",
                 period === p
-                  ? "bg-[rgba(245,158,11,0.12)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.35)] hover:bg-[rgba(255,255,255,0.08)]",
               ].join(" ")}
             >
@@ -300,12 +300,12 @@ export default function Stats() {
 
       {/* Hero: the product's core value metric */}
       {today && (
-        <div className="bg-[rgba(217,119,6,0.06)] border border-[rgba(217,119,6,0.15)] rounded-[12px] px-5 py-4 flex items-end justify-between">
+        <div className="bg-[rgba(217,119,6,0.07)] border border-[rgba(217,119,6,0.18)] rounded-[14px] px-5 py-4.5 flex items-end justify-between shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
           <div>
             <div className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.35)] mb-1">
               {t("stats.time-saved")} · {t(("stats.period." + period) as any)}
             </div>
-            <div className="text-[30px] font-semibold text-[#fafaf9] leading-none">
+            <div className="text-[30px] font-semibold tracking-[-0.03em] text-[var(--text-primary)] leading-none tabular-nums">
               {formatTimeSaved(agg.timeSaved)}
             </div>
           </div>
@@ -320,17 +320,17 @@ export default function Stats() {
 
       {/* KPI tiles */}
       {kpis.length > 0 && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           {kpis.map((k) => (
             <div
               key={k.label}
-              className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] rounded-[10px] p-3 flex flex-col gap-0.5 min-w-0"
+              className="bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.075)] rounded-[12px] p-3.5 flex flex-col gap-1 min-w-0"
             >
-              <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] truncate">
+              <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] truncate">
                 {k.label}
               </span>
-              <span className="text-[17px] font-semibold text-[#fafaf9] truncate">{k.value}</span>
-              <span className="text-[9px] text-[rgba(255,255,255,0.25)] truncate">{k.sub}</span>
+              <span className="text-[19px] font-semibold tracking-[-0.02em] text-[var(--text-primary)] truncate tabular-nums">{k.value}</span>
+              <span className="text-[10px] text-[var(--text-muted)] truncate">{k.sub}</span>
             </div>
           ))}
         </div>
@@ -356,7 +356,7 @@ export default function Stats() {
                 className={[
                   "px-2 py-0.5 text-[9px] font-medium rounded-md transition-colors",
                   metric === m.id
-                    ? "bg-[rgba(217,119,6,0.15)] text-[#fbbf24]"
+                    ? "bg-[rgba(242,184,75,0.15)] text-[var(--accent)]"
                     : "text-[rgba(255,255,255,0.3)] hover:text-[rgba(255,255,255,0.5)]",
                 ].join(" ")}
               >

@@ -109,12 +109,12 @@ function UpdatesSection() {
     case "available":
       control = (
         <>
-          <span className="text-[10.5px] text-[#fbbf24]">
+          <span className="text-[10.5px] text-[var(--accent)]">
             {td("general.update.available", [state.version])}
           </span>
           <button
             onClick={() => void install(state.update)}
-            className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.12)] text-[#fbbf24] hover:bg-[rgba(245,158,11,0.18)] transition-colors"
+            className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(242,184,75,0.3)] bg-[rgba(242,184,75,0.12)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.18)] transition-colors"
           >
             {t("general.update.update")}
           </button>
@@ -210,7 +210,7 @@ export default function GeneralTab({
               className={[
                 "px-3 py-1.5 rounded-lg text-[10.5px] border transition-all",
                 (config.ui_language ?? "auto") === val
-                  ? "bg-[rgba(245,158,11,0.12)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  ? "bg-[rgba(242,184,75,0.12)] border-[rgba(242,184,75,0.3)] text-[var(--accent)]"
                   : "bg-[rgba(255,255,255,0.02)] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.7)]",
               ].join(" ")}
             >

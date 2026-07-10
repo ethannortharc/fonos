@@ -20,7 +20,7 @@ export const TABS: { key: SettingsTab; label: TKey }[] = [
 // local variant from `selectClass` rather than re-literal the recipe, e.g.
 // `selectClass.replace("w-full ", "")`).
 export const inputClass =
-  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
+  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(242,184,75,0.3)]";
 export const selectClass = inputClass + " cursor-pointer appearance-none";
 
 export const PROVIDERS = [

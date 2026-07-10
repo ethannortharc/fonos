@@ -6,6 +6,7 @@ import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
 import Scenarios, { isSttConfigured } from "./views/Scenarios";
+import { FonosMark } from "./components/Icons";
 import { getConfig } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
@@ -134,17 +135,17 @@ export default function App() {
   // First-run: render the wizard instead of the shell (after all hooks so the
   // hook order stays stable across the loading → onboarding transition).
   if (!gateReady) {
-    return <div className="h-screen bg-[#1a1917]" />;
+    return <div className="h-screen bg-[var(--bg)]" />;
   }
   if (showSetup) {
     return <Scenarios mode="fullscreen" onDone={() => setShowSetup(false)} />;
   }
 
   return (
-    <div className="flex flex-col h-screen select-none bg-[#1a1917]">
+    <div className="flex flex-col h-screen select-none bg-[var(--bg)]">
       {/* macOS title bar — traffic lights at y≈7, 12px diameter, center y≈13 */}
       <div
-        className="relative h-[38px] flex-shrink-0 bg-[#151413]"
+        className="relative h-[38px] flex-shrink-0 bg-[var(--bg-sidebar)] border-b border-[rgba(255,255,255,0.035)]"
         data-tauri-drag-region=""
       >
         <button
@@ -164,13 +165,13 @@ export default function App() {
         {/* Sidebar */}
         <div
           className={[
-            "flex-shrink-0 bg-[#151413] border-r border-[rgba(255,255,255,0.05)] flex flex-col items-center py-2 gap-0.5 transition-all duration-200",
+            "flex-shrink-0 bg-[var(--bg-sidebar)] border-r border-[rgba(255,255,255,0.06)] flex flex-col items-center py-2 gap-0.5 transition-all duration-200",
             collapsed ? "w-0 overflow-hidden border-r-0 p-0" : "w-[54px]",
           ].join(" ")}
         >
           {/* App icon */}
-          <div className="w-[30px] h-[30px] rounded-[9px] bg-gradient-to-br from-[#f59e0b] to-[#d97706] flex items-center justify-center mb-2 shadow-[0_2px_10px_rgba(245,158,11,0.25)] flex-shrink-0">
-            <span className="text-[#1a1917] text-sm font-bold">f</span>
+          <div className="w-[32px] h-[32px] rounded-[10px] fonos-surface fonos-surface-glow flex items-center justify-center mb-2.5 text-[var(--accent)] flex-shrink-0">
+            <FonosMark size={19} />
           </div>
 
           {/* Nav items */}
@@ -184,18 +185,18 @@ export default function App() {
               onClick={() => setActiveTab(item.id)}
               title={t(item.label)}
               className={[
-                "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-colors flex-shrink-0",
+                "relative w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-[background,transform] duration-200 active:translate-y-px flex-shrink-0",
                 activeTab === item.id
-                  ? "bg-[rgba(245,158,11,0.12)]"
+                  ? "bg-[rgba(242,184,75,0.12)]"
                   : "hover:bg-[rgba(255,255,255,0.04)]",
               ].join(" ")}
               style={{
-                stroke: activeTab === item.id ? "#fbbf24" : "#ffffff",
+                stroke: activeTab === item.id ? "var(--accent)" : "#ffffff",
               }}
             >
               <span
                 className="flex transition-opacity"
-                style={{ opacity: activeTab === item.id ? 1 : 0.22 }}
+                style={{ opacity: activeTab === item.id ? 1 : 0.46 }}
               >
                 {item.icon}
               </span>
@@ -211,18 +212,18 @@ export default function App() {
             onClick={() => setActiveTab("settings")}
             title={t("nav.settings")}
             className={[
-              "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-colors flex-shrink-0",
+              "w-[38px] h-[38px] rounded-[10px] flex items-center justify-center transition-[background,transform] duration-200 active:translate-y-px flex-shrink-0",
               activeTab === "settings"
-                ? "bg-[rgba(245,158,11,0.12)]"
+                ? "bg-[rgba(242,184,75,0.12)]"
                 : "hover:bg-[rgba(255,255,255,0.04)]",
             ].join(" ")}
             style={{
-              stroke: activeTab === "settings" ? "#fbbf24" : "#ffffff",
+              stroke: activeTab === "settings" ? "var(--accent)" : "#ffffff",
             }}
           >
             <span
               className="flex transition-opacity"
-              style={{ opacity: activeTab === "settings" ? 1 : 0.22 }}
+              style={{ opacity: activeTab === "settings" ? 1 : 0.46 }}
             >
               {SETTINGS_ICON}
             </span>
@@ -230,12 +231,12 @@ export default function App() {
 
           {/* Version */}
           {appVersion && (
-            <span className="text-[7px] text-[rgba(255,255,255,0.1)] mt-1 flex-shrink-0">v{appVersion}</span>
+            <span className="text-[8px] text-[rgba(255,255,255,0.25)] mt-1 flex-shrink-0">v{appVersion}</span>
           )}
         </div>
 
         {/* Content area */}
-        <div className="flex-1 overflow-hidden bg-[#1a1917]">
+        <div className="flex-1 overflow-hidden bg-[var(--bg)]">
           {activeTab === "dictation" && <Dictation />}
           {activeTab === "voice" && <Conversation />}
           {activeTab === "stats" && <Stats />}

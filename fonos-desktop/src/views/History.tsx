@@ -293,9 +293,9 @@ export default function History({
   return (
     <div className="flex flex-col h-full bg-[#1a1917]">
       {/* Header: title + search */}
-      <div className="flex items-center gap-3 px-5 pt-4 pb-2 flex-shrink-0">
-        <h2 className="text-[13px] font-semibold text-[#fafaf9] flex-shrink-0">{t("nav.history")}</h2>
-        <div className="flex-1 flex items-center gap-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2.5 py-1.5">
+      <div className="flex items-center gap-4 px-5 pt-4 pb-2.5 flex-shrink-0">
+        <h2 className="fonos-page-title flex-shrink-0">{t("nav.history")}</h2>
+        <div className="flex-1 flex items-center gap-2 rounded-[10px] border border-[rgba(255,255,255,0.085)] bg-[rgba(255,255,255,0.035)] px-3 py-1.5 focus-within:border-[rgba(240,173,50,0.3)] transition-colors">
           <svg width={12} height={12} viewBox="0 0 24 24" fill="none" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="stroke-[rgba(255,255,255,0.3)] flex-shrink-0">
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -308,7 +308,7 @@ export default function History({
             onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); }}
             placeholder={t("history.search")}
             spellCheck={false}
-            className="flex-1 bg-transparent outline-none border-none text-[#fafaf9] text-[11px] placeholder:text-[rgba(255,255,255,0.2)]"
+            className="flex-1 bg-transparent outline-none border-none text-[var(--text-primary)] text-[11px] placeholder:text-[var(--text-faint)]"
           />
           {query && (
             <button
@@ -329,10 +329,10 @@ export default function History({
             data-testid={`history-filter-${f.id}`}
             onClick={() => { setFilter(f.id); setNotesInitialId(null); }}
             className={[
-              "px-3 py-1 rounded-full text-[10px] font-medium transition-all border",
+              "px-2.5 py-1 rounded-[8px] text-[10px] font-medium transition-all border",
               filter === f.id && !q
                 ? "bg-[rgba(245,158,11,0.15)] border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
-                : "bg-[rgba(255,255,255,0.04)] border-transparent text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.55)]",
+                : "bg-[rgba(255,255,255,0.035)] border-[rgba(255,255,255,0.045)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.055)]",
             ].join(" ")}
           >
             {t(f.label)}
@@ -453,7 +453,7 @@ function TypeBadge({ type }: { type: string }) {
   const c = STRIPE_COLOR[type] || "#a8a29e";
   return (
     <span
-      className="text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide"
+      className="text-[9px] font-semibold px-1.5 py-0.5 rounded-[5px] uppercase tracking-wide"
       style={{ background: `${c}18`, color: c }}
     >
       {type}
@@ -514,16 +514,16 @@ function EntryCard({
         onToggle();
       }}
       className={[
-        "flex rounded-[10px] border overflow-hidden cursor-pointer transition-colors",
+        "flex rounded-[12px] border overflow-hidden cursor-pointer transition-colors",
         expanded
           ? "border-[rgba(245,158,11,0.25)] bg-[rgba(255,255,255,0.04)]"
-          : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.025)] hover:bg-[rgba(255,255,255,0.035)]",
+          : "border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.11)] hover:bg-[rgba(255,255,255,0.045)]",
       ].join(" ")}
     >
       <div className="w-[3px] flex-shrink-0" style={{ background: stripe }} />
-      <div className="flex-1 px-3 py-2 min-w-0">
-        <div className="flex items-center gap-1.5 mb-1">
-          <span className="text-[9px] text-[rgba(255,255,255,0.25)] font-mono">{formatTime(entry.created_at)}</span>
+      <div className="flex-1 px-3.5 py-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[10px] text-[var(--text-faint)] font-mono">{formatTime(entry.created_at)}</span>
           <TypeBadge type={entry.source_type} />
           {entry.mode && entry.mode !== "raw" && entry.mode !== entry.source_type && (
             <span className="text-[8px] text-[rgba(255,255,255,0.18)] bg-[rgba(255,255,255,0.03)] px-1.5 py-0.5 rounded">{entry.mode}</span>
@@ -544,7 +544,7 @@ function EntryCard({
           <>
             <div
               onMouseUp={emitSelection}
-              className="text-[11px] leading-relaxed text-[rgba(255,255,255,0.7)] whitespace-pre-wrap break-words select-text cursor-text"
+              className="text-[12.5px] leading-relaxed text-[rgba(255,255,255,0.76)] whitespace-pre-wrap break-words select-text cursor-text"
             >
               {text || <span className="italic text-[rgba(255,255,255,0.2)]">{t("history.no-content")}</span>}
             </div>
@@ -582,7 +582,7 @@ function EntryCard({
         ) : (
           <div
             onMouseUp={emitSelection}
-            className={["text-[11px] leading-normal break-words select-text cursor-text", text ? "text-[rgba(255,255,255,0.55)]" : "italic text-[rgba(255,255,255,0.2)]"].join(" ")}
+            className={["text-[12px] leading-relaxed break-words select-text cursor-text", text ? "text-[var(--text-secondary)]" : "italic text-[var(--text-faint)]"].join(" ")}
           >
             {preview(text) || t("history.no-content")}
           </div>

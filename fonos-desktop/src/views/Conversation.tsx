@@ -17,6 +17,7 @@ import {
 } from "../lib/api";
 import type { AppConfig } from "../types";
 import { t, useT, type TKey } from "../lib/i18n";
+import { FonosMark } from "../components/Icons";
 
 type TurnState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -309,13 +310,13 @@ export default function Conversation() {
   ).padStart(2, "0")}`;
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-[var(--bg)]">
       {/* ── header ── */}
-      <div className="flex items-center justify-between px-5 pt-4 pb-3">
+      <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[rgba(255,255,255,0.045)]">
         <div className="flex items-center gap-3">
-          <h1 className="text-[15px] font-semibold text-[#fafaf9]">{t("conv.title")}</h1>
+          <h1 className="fonos-page-title">{t("conv.title")}</h1>
           <span
-            className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full bg-[rgba(255,255,255,0.04)]"
+            className="flex items-center gap-1.5 text-[9.5px] font-medium px-2 py-0.5 rounded-full bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.055)]"
             style={{ color: meta.color }}
           >
             <span
@@ -341,7 +342,7 @@ export default function Conversation() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPersonaOpen((v) => !v)}
-            className={`text-[10px] px-2.5 py-1 rounded-md transition-colors ${
+            className={`text-[10px] px-2.5 py-1 rounded-[8px] transition-colors ${
               personaOpen
                 ? "bg-[rgba(251,191,36,0.12)] text-[#fbbf24]"
                 : "bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
@@ -351,7 +352,7 @@ export default function Conversation() {
           </button>
           <button
             onClick={handleReset}
-            className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)] transition-colors"
+            className="text-[10px] px-2.5 py-1 rounded-[8px] bg-[rgba(255,255,255,0.04)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.065)] transition-colors"
           >
             {t("conv.newchat")}
           </button>
@@ -360,8 +361,8 @@ export default function Conversation() {
 
       {/* ── persona drawer ── */}
       {personaOpen && (
-        <div className="mx-5 mb-3 p-3 rounded-xl bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)]">
-          <div className="text-[10px] text-[rgba(255,255,255,0.35)] mb-1.5">
+        <div className="mx-5 mb-3 p-3.5 rounded-[14px] fonos-surface">
+          <div className="text-[11px] text-[var(--text-muted)] mb-2">
             {t("conv.persona.desc")}
           </div>
           <textarea
@@ -372,16 +373,16 @@ export default function Conversation() {
             }}
             rows={3}
             spellCheck={false}
-            className="w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-2 text-[#fafaf9] text-[11px] leading-relaxed resize-y focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
+            className="w-full bg-[rgba(255,255,255,0.035)] border border-[rgba(255,255,255,0.08)] rounded-[10px] px-3 py-2.5 text-[var(--text-primary)] text-[12px] leading-relaxed resize-y focus:outline-none focus:border-[rgba(240,173,50,0.35)]"
           />
           <div className="flex items-center justify-between mt-1.5">
-            <span className="text-[9px] text-[rgba(255,255,255,0.2)]">
+            <span className="text-[10px] text-[var(--text-faint)]">
               {t("conv.persona.applies")}{personaDirty ? t("conv.persona.unsaved") : ""}
             </span>
             <button
               onClick={savePersonaDefault}
               disabled={!personaDirty}
-              className="text-[9px] px-2 py-1 rounded-md bg-[rgba(251,191,36,0.1)] text-[#fbbf24] disabled:opacity-30 transition-opacity"
+              className="text-[10px] px-2.5 py-1 rounded-md bg-[rgba(240,173,50,0.11)] text-[var(--accent)] disabled:opacity-30 transition-opacity"
             >
               {t("conv.persona.savedefault")}
             </button>
@@ -390,19 +391,17 @@ export default function Conversation() {
       )}
 
       {/* ── transcript ── */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-2 flex flex-col gap-2.5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="w-full max-w-[680px] min-h-full mx-auto flex flex-col gap-3">
         {messages.length === 0 && turnState === "idle" && (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
-            <div className="w-14 h-14 rounded-full bg-[rgba(251,191,36,0.06)] flex items-center justify-center">
-              <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-                <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-                <line x1="12" y1="18" x2="12" y2="22" />
-              </svg>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center pb-3">
+            <div className="w-14 h-14 rounded-[17px] fonos-surface text-[var(--accent)] flex items-center justify-center shadow-[0_14px_38px_rgba(201,120,24,0.12)]">
+              <FonosMark size={25} />
             </div>
-            <div className="text-[12px] text-[rgba(255,255,255,0.5)]">{t("conv.empty.title")}</div>
-            <div className="text-[10px] text-[rgba(255,255,255,0.25)]">
-              ⌥S {t("conv.empty.hint")} {config?.sts_max_turns ?? 8} {t("conv.empty.turns")}
+            <div className="text-[14px] font-semibold text-[var(--text-primary)]">{t("conv.empty.title")}</div>
+            <div className="text-[11px] text-[var(--text-muted)] max-w-[360px] leading-relaxed">
+              <span className="font-mono text-[var(--text-secondary)] bg-[rgba(255,255,255,0.045)] border border-[rgba(255,255,255,0.07)] rounded-md px-1.5 py-0.5 mr-1">⌥S</span>
+              {t("conv.empty.hint")} {config?.sts_max_turns ?? 8} {t("conv.empty.turns")}
             </div>
           </div>
         )}
@@ -410,12 +409,12 @@ export default function Conversation() {
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[78%] px-3 py-2 rounded-2xl text-[11.5px] leading-relaxed whitespace-pre-wrap ${
+              className={`max-w-[76%] px-3.5 py-2.5 rounded-[16px] text-[12.5px] leading-relaxed whitespace-pre-wrap border ${
                 m.role === "user"
-                  ? "bg-[rgba(251,191,36,0.1)] text-[#fde68a] rounded-br-md"
+                  ? "bg-[rgba(240,173,50,0.11)] border-[rgba(240,173,50,0.11)] text-[#f7d993] rounded-br-[5px]"
                   : m.role === "assistant"
-                    ? "bg-[rgba(255,255,255,0.045)] text-[#e7e5e4] rounded-bl-md"
-                    : "bg-[rgba(239,68,68,0.08)] text-[rgba(252,165,165,0.9)] rounded-bl-md"
+                    ? "bg-[rgba(255,255,255,0.045)] border-[rgba(255,255,255,0.055)] text-[#e7e5e4] rounded-bl-[5px]"
+                    : "bg-[rgba(239,68,68,0.08)] border-[rgba(239,68,68,0.1)] text-[rgba(252,165,165,0.9)] rounded-bl-[5px]"
               }`}
             >
               {m.text}
@@ -448,13 +447,36 @@ export default function Conversation() {
                 style={{ height: h, animationDelay: `${i * 0.12}s`, animationDuration: "0.7s" }}
               />
             ))}
-            <span className="text-[9px] text-[rgba(74,222,128,0.6)] ml-1">{t("conv.speaking")}</span>
+            <span className="text-[10px] text-[rgba(74,222,128,0.72)] ml-1">{t("conv.speaking")}</span>
           </div>
         )}
+        </div>
       </div>
 
-      {/* ── talk button: click = call toggle · hold = walkie-talkie ── */}
-      <div className="flex flex-col items-center gap-2 pb-6 pt-2">
+      {/* ── voice console: click = call toggle · hold = walkie-talkie ── */}
+      <div className="fonos-call-dock w-[min(440px,calc(100%-40px))] mx-auto mb-5 rounded-[18px] grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3">
+        <div className="relative z-10 min-w-0 flex flex-col gap-0.5">
+          {inCall ? (
+            <>
+              <div className="text-[13px] leading-4 font-semibold tabular-nums tracking-[-0.01em] text-[#f07168]">
+                {mmss}
+              </div>
+              <div className="text-[9.5px] leading-3.5 text-[var(--text-muted)]">
+                {t("conv.call.hangup")}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-[10.5px] leading-4 font-medium text-[var(--text-secondary)]">
+                {listening ? t("conv.release") : t("conv.hold")}
+              </div>
+              <div className="max-w-[150px] truncate text-[9px] leading-3.5 text-[var(--text-faint)]">
+                {t("conv.call.hint")}
+              </div>
+            </>
+          )}
+        </div>
+
         <button
           onPointerDown={onPointerDown}
           onPointerUp={onPointerUp}
@@ -463,43 +485,42 @@ export default function Conversation() {
           style={{ touchAction: "none" }}
           disabled={!inCall && (turnState === "thinking" || turnState === "speaking")}
           aria-label={inCall ? t("conv.call.hangup") : t("conv.hold")}
-          className={`relative w-[72px] h-[72px] rounded-full flex items-center justify-center transition-all select-none disabled:opacity-40 ${
+          className={`fonos-call-button relative z-10 w-[60px] h-[60px] rounded-full flex items-center justify-center transition-all duration-300 select-none active:scale-[0.96] disabled:opacity-40 ${
             red
-              ? "bg-[#ef4444] scale-110 shadow-[0_0_0_10px_rgba(239,68,68,0.15),0_0_0_20px_rgba(239,68,68,0.06)]"
-              : "bg-[rgba(251,191,36,0.9)] hover:bg-[#fbbf24] shadow-[0_4px_20px_rgba(251,191,36,0.25)]"
+              ? "fonos-call-button-live"
+              : "fonos-call-button-idle"
           }`}
         >
-          {red && (
-            <span className="absolute inset-0 rounded-full bg-[rgba(239,68,68,0.4)] animate-ping" />
-          )}
           {inCall ? (
             // Hang-up (phone-off) glyph.
-            <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#1a1917" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <svg className="relative z-10" width={23} height={23} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.29.62 2 2 0 0 1 1.72 2v2a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67" />
               <path d="M22 2 2 22" />
               <path d="M5 12.66a19.4 19.4 0 0 1-2.68-6.14A2 2 0 0 1 4.31 4H6a2 2 0 0 1 2 1.72c.13.85.32 1.68.57 2.49" />
             </svg>
           ) : (
-            <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#1a1917" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
-              <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
-              <line x1="12" y1="18" x2="12" y2="22" />
+            // The primary action is starting a call; hold-to-talk remains a secondary gesture.
+            <svg className="relative z-10" width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16.8v2.8a1.9 1.9 0 0 1-2.08 1.9 18.7 18.7 0 0 1-8.15-2.9 18.35 18.35 0 0 1-5.66-5.66 18.7 18.7 0 0 1-2.9-8.2A1.9 1.9 0 0 1 4.1 2.67h2.8a1.9 1.9 0 0 1 1.9 1.63c.12.9.34 1.77.64 2.61a1.9 1.9 0 0 1-.43 2L7.83 10.1a15.2 15.2 0 0 0 6.07 6.07l1.19-1.19a1.9 1.9 0 0 1 2-.43c.84.3 1.71.52 2.61.64A1.9 1.9 0 0 1 21 16.8Z" />
             </svg>
           )}
         </button>
-        {inCall ? (
-          <>
-            <div className="text-[11px] font-medium tabular-nums text-[#ef4444]">{mmss}</div>
-            <div className="text-[9px] text-[rgba(255,255,255,0.25)]">{t("conv.call.hangup")}</div>
-          </>
-        ) : (
-          <>
-            <div className="text-[9px] text-[rgba(255,255,255,0.25)]">
-              {listening ? t("conv.release") : t("conv.hold")}
-            </div>
-            <div className="text-[9px] text-[rgba(255,255,255,0.18)]">{t("conv.call.hint")}</div>
-          </>
-        )}
+
+        <div className="relative z-10 flex min-w-0 flex-col items-end gap-1.5">
+          <div className="flex h-4 items-center gap-[3px]" aria-hidden="true">
+            {[5, 10, 7, 13, 8].map((height, i) => (
+              <span
+                key={i}
+                className={`fonos-call-meter w-[2px] rounded-full ${red || turnState === "speaking" ? "fonos-call-meter-live" : ""}`}
+                style={{ height, animationDelay: `${i * -0.11}s` }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1 h-1 rounded-full ${inCall ? "bg-[#f07168]" : "bg-[var(--accent)]"}`} />
+            <span className="text-[8.5px] leading-3 font-medium tracking-[0.08em] text-[var(--text-faint)]">⌥S</span>
+          </div>
+        </div>
       </div>
     </div>
   );

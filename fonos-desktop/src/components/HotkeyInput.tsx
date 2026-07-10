@@ -44,10 +44,10 @@ export function HotkeyInput({ value, onChange, placeholder }: {
       onKeyDown={handleKeyDown}
       placeholder={placeholder ?? t("hotkeys.clicktoset")}
       className={[
-        "bg-[rgba(255,255,255,0.03)] border rounded-lg px-3 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none font-mono cursor-pointer",
+        "bg-[rgba(255,255,255,0.03)] border rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[10px] focus:outline-none font-mono cursor-pointer",
         capturing ? "border-[rgba(245,158,11,0.3)]" : "border-[rgba(255,255,255,0.06)]",
       ].join(" ")}
-      style={{ width: 140 }}
+      style={{ width: 132 }}
     />
   );
 }

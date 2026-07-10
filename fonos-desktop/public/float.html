@@ -13,18 +13,22 @@
   /* ── Dropdown ── */
   #dropdown{
     display:none;flex-direction:column;
-    background:rgba(26,25,23,0.96);
-    backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
-    border:1px solid rgba(255,255,255,0.07);border-radius:14px;
-    padding:6px;margin-bottom:8px;
-    width:148px;
+    background:rgba(22,21,18,0.95);
+    backdrop-filter:blur(30px) saturate(115%);-webkit-backdrop-filter:blur(30px) saturate(115%);
+    border:1px solid rgba(255,255,255,0.1);border-radius:16px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 18px 44px rgba(4,3,2,.32);
+    padding:7px;margin-bottom:9px;
+    width:156px;
   }
   #dropdown.show{display:flex}
 
   /* ── iOS-style drum roller ── */
   .roller{
-    position:relative;height:96px;overflow:hidden;
+    position:relative;height:102px;overflow:hidden;
   }
+  .roller.single{height:38px}
+  .roller.double{height:68px}
+  .roller.single::before,.roller.single::after,.roller.double::before,.roller.double::after{display:none}
   /* Center highlight band */
   .roller::after{
     content:'';position:absolute;left:6px;right:6px;
@@ -52,21 +56,22 @@
   }
   .roller-item{
     display:flex;align-items:center;gap:8px;
-    height:32px;padding:0 12px;
+    height:34px;padding:0 12px;border-radius:9px;
     font-family:-apple-system,'SF Pro Text',sans-serif;
     cursor:pointer;position:relative;z-index:1;
     transition:opacity 0.15s;
   }
-  .roller-item .m-icon{font-size:14px;line-height:1;flex-shrink:0;color:rgba(255,255,255,0.3)}
-  .roller-item .m-name{font-size:11px;font-weight:500;color:rgba(255,255,255,0.3)}
+  .roller-item .m-icon{font-size:14px;line-height:1;flex-shrink:0;color:rgba(255,255,255,0.42)}
+  .roller-item .m-name{font-size:12px;font-weight:500;color:rgba(255,255,255,0.45)}
   .roller-item.center .m-icon{color:rgba(251,191,36,0.95)}
   .roller-item.center .m-name{color:rgba(251,191,36,0.95);font-weight:600}
+  .roller.single .roller-item.center,.roller.double .roller-item.center{background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.14)}
 
   .dd-sep{height:1px;background:rgba(255,255,255,0.04);margin:5px 6px}
   .dd-btn{
     display:flex;align-items:center;gap:7px;
-    padding:6px 10px;border-radius:8px;cursor:pointer;
-    font-size:11px;color:rgba(255,255,255,0.35);transition:all 0.12s;
+    padding:7px 10px;border-radius:9px;cursor:pointer;
+    font-size:12px;color:rgba(255,255,255,0.48);transition:background .16s,color .16s;
     font-family:-apple-system,sans-serif;font-weight:500;
   }
   .dd-btn:hover{background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7)}
@@ -75,10 +80,11 @@
   /* ── Pill ── */
   #pill{
     display:inline-flex;align-items:center;justify-content:center;
-    height:26px;
-    background:rgba(26,25,23,0.82);
-    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-    border:1px solid rgba(255,255,255,0.06);border-radius:13px;
+    height:30px;
+    background:rgba(22,21,18,0.9);
+    backdrop-filter:blur(22px) saturate(112%);-webkit-backdrop-filter:blur(22px) saturate(112%);
+    border:1px solid rgba(255,255,255,0.1);border-radius:15px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(7,5,2,.24);
     font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
     /* Scoped transition (was `all`): the only properties that ever change
        between states/hover are background, border-color and opacity, so the
@@ -89,25 +95,26 @@
        with respect to resize_float; only paint-only properties may tween. */
     transition:background 0.3s ease,border-color 0.3s ease,opacity 0.3s ease;
     cursor:pointer;
-    padding:0 10px;
-    opacity:0.4;
+    padding:0 11px;
+    opacity:0.55;
   }
-  #pill:hover{background:rgba(26,25,23,0.92);border-color:rgba(255,255,255,0.1);opacity:1}
+  #pill:hover{background:rgba(24,23,20,0.96);border-color:rgba(255,255,255,0.16);opacity:1}
   #pill.recording{opacity:1}
 
-  #idle{display:flex;align-items:center;justify-content:center;gap:5px}
-  .pill-dot{width:3px;height:3px;border-radius:50%;background:rgba(251,191,36,0.2);flex-shrink:0;transition:all 0.15s}
-  #pill-text{font-size:10px;font-weight:700;color:rgba(251,191,36,0.4);letter-spacing:0.5px;transition:all 0.15s;line-height:1}
-  #pill:hover #pill-text{color:rgba(251,191,36,0.65)}
-  #pill:hover .pill-dot{background:rgba(251,191,36,0.35)}
+  #idle{display:flex;align-items:center;justify-content:center;gap:6px}
+  #idle-mark{width:15px;height:15px;color:rgba(251,191,36,.88);display:flex;align-items:center;justify-content:center;transition:color 0.15s}
+  #idle-mark svg{display:block}
+  #pill-text{font-size:10px;font-weight:750;color:rgba(251,191,36,0.78);letter-spacing:0.7px;transition:color 0.15s;line-height:1}
+  #pill:hover #pill-text{color:rgba(251,191,36,0.98)}
+  #pill:hover #idle-mark{color:rgba(251,191,36,1)}
 
   /* ── Recording ── */
   #rec{display:none;align-items:center;gap:5px}
   #rec-dot{width:6px;height:6px;border-radius:50%;background:#ff453a;animation:pulse 1s ease-in-out infinite;flex-shrink:0}
   #rec-wave{width:40px;height:14px}
-  #rec-dur{font-size:9px;color:rgba(255,255,255,0.3);font-family:'SF Mono',monospace;letter-spacing:0.3px}
+  #rec-dur{font-size:10px;color:rgba(255,255,255,0.52);font-family:'SF Mono',monospace;letter-spacing:0.3px}
 
-  #pill.recording{background:rgba(26,25,23,0.92);border-color:rgba(255,69,58,0.12);cursor:default}
+  #pill.recording{background:rgba(22,21,18,0.92);border-color:rgba(255,69,58,0.12);cursor:default}
   #pill.recording #idle{display:none!important}
   #pill.recording #rec{display:flex}
 
@@ -115,27 +122,27 @@
   #proc{display:none;align-items:center;gap:5px}
   #proc-dots{display:flex;gap:3px}
   .pd{width:4px;height:4px;border-radius:50%;background:#fbbf24;animation:pulse 1.2s ease-in-out infinite}
-  #proc-label{font-size:9px;color:rgba(251,191,36,0.5);font-family:-apple-system,sans-serif}
+  #proc-label{font-size:10px;color:rgba(251,191,36,0.72);font-family:-apple-system,sans-serif}
 
-  #pill.processing{background:rgba(26,25,23,0.92);border-color:rgba(251,191,36,0.08);cursor:default;opacity:1}
+  #pill.processing{background:rgba(22,21,18,0.92);border-color:rgba(251,191,36,0.08);cursor:default;opacity:1}
   #pill.processing #idle{display:none!important}
   #pill.processing #proc{display:flex}
 
   /* ── Result (success / error) ── */
   #result{display:none;align-items:center;gap:4px}
   #result-icon{font-size:10px;line-height:1;display:flex;align-items:center}
-  #result-text{font-size:9px;font-family:-apple-system,sans-serif;white-space:nowrap}
+  #result-text{font-size:10px;font-family:-apple-system,sans-serif;white-space:nowrap}
   /* Inline SVG glyphs render as blocks so they center cleanly with no
      baseline descender gap in the tiny result pane / menu button. */
   #result-icon svg,.s-icon svg,.m-icon svg{display:block}
 
-  #pill.success{background:rgba(26,25,23,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
+  #pill.success{background:rgba(22,21,18,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
   #pill.success #idle{display:none!important}
   #pill.success #result{display:flex}
   #pill.success #result-icon{color:#86efac}
   #pill.success #result-text{color:rgba(134,239,172,0.6)}
 
-  #pill.error{background:rgba(26,25,23,0.92);border-color:rgba(239,68,68,0.12);cursor:default;opacity:1}
+  #pill.error{background:rgba(22,21,18,0.92);border-color:rgba(239,68,68,0.12);cursor:default;opacity:1}
   #pill.error #idle{display:none!important}
   #pill.error #result{display:flex}
   #pill.error #result-icon{color:#ef4444}
@@ -171,9 +178,8 @@
   <div id="dropdown"></div>
   <div id="pill" onclick="onPillClick(event)">
     <div id="idle">
-      <span class="pill-dot"></span>
+      <span id="idle-mark"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="7" cy="12" r="2.15" fill="currentColor" stroke="none"/><path d="M11.2 7.4a6.1 6.1 0 0 1 0 9.2"/><path d="M15 4.45a10 10 0 0 1 0 15.1"/></svg></span>
       <span id="pill-text">FONOS</span>
-      <span class="pill-dot"></span>
     </div>
     <div id="proc">
       <div id="proc-dots"><div class="pd"></div><div class="pd" style="animation-delay:.2s"></div><div class="pd" style="animation-delay:.4s"></div></div>
@@ -284,11 +290,11 @@ let rollerIdx=0; // index into circular list, maps to center slot
 let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
 const S=window.devicePixelRatio||2;
-const PH=28;
-const IDLE_W=90,REC_W=115,PROC_W=110,MENU_W=160;
+const PH=32;
+const IDLE_W=98,REC_W=122,PROC_W=116,MENU_W=168;
 
 // Width for a success/no-speech result pill. English/short labels stay at the
-// 90px idle width (IDLE_W is the floor); a longer localized label — e.g. the
+// 98px idle width (IDLE_W is the floor); a longer localized label — e.g. the
 // zh "未识别到语音" — grows the pill just enough that it never clips. CJK glyphs
 // are ~full-em at the 9px result font, latin ~5px; +icon(12)+gap(4)+pad(20)+slack.
 function resultW(label){
@@ -473,6 +479,23 @@ function renderMenu(){
 
   function renderTrack(){
     track.textContent='';
+    roller.classList.remove('single','double');
+    if(allModes.length<=2){
+      roller.classList.add(allModes.length===1?'single':'double');
+      allModes.forEach(m=>{
+        const item=document.createElement('div');
+        item.className='roller-item'+(m.id===currentMode?' center':'');
+        const icon=document.createElement('span');icon.className='m-icon';setModeIcon(icon,m.icon);
+        const name=document.createElement('span');name.className='m-name';name.textContent=m.name;
+        item.appendChild(icon);item.appendChild(name);
+        item.onclick=ev=>{
+          ev.stopPropagation();currentMode=m.id;rollerIdx=allModes.indexOf(m);saveCfg();renderTrack();setTimeout(closeMenu,120);
+        };
+        track.appendChild(item);
+      });
+      track.style.transform='translateY(0px)';
+      return;
+    }
     // Show 3 items: prev, current, next (circular)
     for(let offset=-1;offset<=1;offset++){
       const m=modeAt(rollerIdx+offset);
@@ -493,9 +516,9 @@ function renderMenu(){
       };
       track.appendChild(item);
     }
-    // Position track so center item is in the middle of the 96px roller
-    // 3 items × 32px = 96px, center is item[1] at y=32, roller center at y=48
-    // offset = 48 - 32 - 16 = 0 → already centered naturally
+    // Position track so center item is in the middle of the 102px roller
+    // 3 items × 34px = 102px, center is item[1] spanning y=34..68, its center
+    // at y=51 = roller center (102/2) → already centered naturally at translateY(0)
     track.style.transform='translateY(0px)';
   }
   renderTrack();

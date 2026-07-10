@@ -1,13 +1,12 @@
 // Dictation view — jumping blocks + mic + drum-roller mode slider + activity.
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { TranscriptIcon, HourglassIcon, SparklesIcon, AlertIcon, PinIcon, NotebookIcon, ModeIcon } from "../components/Icons";
+import { TranscriptIcon, HourglassIcon, SparklesIcon, AlertIcon, PinIcon, NotebookIcon, ModeIcon, FonosMark } from "../components/Icons";
 import {
   hasMicrophone,
   runWorkflowById,
   finishCapture,
   listWorkflows,
-  saveConfig,
   getConfig,
 } from "../lib/api";
 import { workflowLabel } from "../lib/builtinLabels";
@@ -37,13 +36,13 @@ function JumpingBlocks({ active }: { active: boolean }) {
     ctx.scale(dpr, dpr);
     const W = rect.width;
     const H = rect.height;
-    const barCount = 48;
-    const gap = 2.5;
+    const barCount = 36;
+    const gap = 3;
     // Don't span full width — leave ~15% margin on each side
     const margin = W * 0.12;
     const usableW = W - margin * 2;
     const barW = (usableW - (barCount - 1) * gap) / barCount;
-    const maxH = H * 0.45;
+    const maxH = H * 0.34;
     const baseY = H * 0.72;
 
     const draw = () => {
@@ -81,8 +80,8 @@ function JumpingBlocks({ active }: { active: boolean }) {
 
         // Opacity: bright near-center, smoothly fades to invisible at edges
         const opacityEnvelope = micClear * Math.max(0, 1 - Math.pow(absNx, 1.8) * 0.95);
-        const opacity = (0.12 + opacityEnvelope * 0.5) * fade;
-        ctx.fillStyle = `rgba(251, 191, 36, ${opacity})`;
+        const opacity = (0.07 + opacityEnvelope * 0.34) * fade;
+        ctx.fillStyle = `rgba(240, 173, 50, ${opacity})`;
         ctx.beginPath();
         ctx.roundRect(x, baseY - barH, barW, barH, 1.5);
         ctx.fill();
@@ -139,7 +138,46 @@ function ModeDrum({
   };
 
   if (modes.length === 0) {
-    return <div className="text-[10px] text-[rgba(255,255,255,0.12)] text-center py-2">{t("dict.no-modes")}</div>;
+    return <div className="text-[11px] text-[var(--text-faint)] text-center py-2">{t("dict.no-modes")}</div>;
+  }
+
+  if (modes.length === 1) {
+    const only = modes[0];
+    return (
+      <div className="h-10 flex items-center justify-center">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-[9px] bg-[rgba(240,173,50,0.1)] border border-[rgba(240,173,50,0.18)] text-[var(--accent)]">
+          <ModeIcon icon={only.icon ?? ""} size={13} />
+          <span className="text-[11px] font-semibold">{workflowLabel(only)}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (modes.length === 2) {
+    return (
+      <div className="h-10 flex items-center justify-center">
+        <div className="flex items-center rounded-[10px] border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.025)] p-0.5">
+          {modes.map((mode) => {
+            const activeMode = mode.id === current;
+            return (
+              <button
+                key={mode.id}
+                onClick={() => onChange(mode.id)}
+                className={[
+                  "flex items-center gap-1.5 px-3 py-1 rounded-[8px] text-[10.5px] font-medium transition-colors",
+                  activeMode
+                    ? "bg-[rgba(240,173,50,0.12)] text-[var(--accent)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                ].join(" ")}
+              >
+                <ModeIcon icon={mode.icon ?? ""} size={12} />
+                {workflowLabel(mode)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -153,8 +191,8 @@ function ModeDrum({
       {/* No background highlight — text gradient alone provides the visual cue */}
 
       {/* Fade edges */}
-      <div className="absolute left-0 top-0 bottom-0 w-24 bg-gradient-to-r from-[#1a1917] to-transparent z-10 pointer-events-none" />
-      <div className="absolute right-0 top-0 bottom-0 w-24 bg-gradient-to-l from-[#1a1917] to-transparent z-10 pointer-events-none" />
+      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-[var(--bg)] to-transparent z-10 pointer-events-none" />
+      <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[var(--bg)] to-transparent z-10 pointer-events-none" />
 
       {/* 3-column layout: left items | center item | right items — center always at 50% */}
       {(() => {
@@ -162,16 +200,11 @@ function ModeDrum({
           const m = modeAt(idx + offset);
           const isCenter = offset === 0;
           const dist = Math.abs(offset);
-          const t = dist / 3;
-          const baseOpacity = Math.max(0.06, 1 - t * t);
-          const opacity = baseOpacity;
-          const scale = 1 - t * 0.1;
-          const amberAmount = Math.max(0, 1 - t * 0.9);
-          const r = Math.round(251 * amberAmount + 180 * (1 - amberAmount));
-          const g = Math.round(191 * amberAmount + 180 * (1 - amberAmount));
-          const b = Math.round(36 * amberAmount + 180 * (1 - amberAmount));
-          const textAlpha = Math.max(0.1, 1 - t * t);
-          const textColor = `rgba(${r}, ${g}, ${b}, ${textAlpha})`;
+          const opacity = isCenter ? 1 : dist === 1 ? 0.62 : 0.3;
+          // Subtle depth cue: flanking items sit slightly back so the selected
+          // (center) item reads unambiguously. Opacity above still does the bulk.
+          const itemScale = isCenter ? 1 : 0.92;
+          const textColor = isCenter ? "var(--accent)" : "rgba(255,255,255,0.62)";
           return (
             <button
               key={`${offset}-${m.id}`}
@@ -185,12 +218,12 @@ function ModeDrum({
                 "flex items-center gap-1 py-1.5 transition-all duration-300 whitespace-nowrap flex-shrink-0",
                 isCenter ? "px-3" : "px-2 cursor-pointer",
               ].join(" ")}
-              style={{ opacity, transform: `scale(${scale})` }}
+              style={{ opacity, transform: `scale(${itemScale})` }}
             >
-              <span style={{ color: textColor }}><ModeIcon icon={m.icon ?? ""} size={isCenter ? 14 : Math.max(10, 13 - dist * 1)} /></span>
+              <span style={{ color: textColor }}><ModeIcon icon={m.icon ?? ""} size={isCenter ? 13 : 12} /></span>
               <span style={{
                 color: textColor,
-                fontSize: isCenter ? 12 : Math.max(9, 11 - dist * 0.7),
+                fontSize: isCenter ? 11 : 10.5,
                 fontWeight: isCenter ? 600 : 500,
                 whiteSpace: "nowrap",
               }}>{workflowLabel(m)}</span>
@@ -201,7 +234,7 @@ function ModeDrum({
         return (
           <div className="flex items-center w-full transition-transform duration-200">
             <div className="flex-1 flex justify-end overflow-hidden">
-              {[-3, -2, -1].map(renderSlot)}
+              {[-2, -1].map(renderSlot)}
             </div>
             <div className="flex-shrink-0">{renderSlot(0)}</div>
             <div className="flex-1 flex justify-start overflow-hidden">
@@ -218,17 +251,32 @@ function ModeDrum({
 
 function MicIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="1" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="21" />
+    <svg className="relative z-10" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="1" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <line x1="12" y1="17" x2="12" y2="21" />
     </svg>
   );
 }
 
 function StopIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+    <svg className="relative z-10" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
       <rect x="5" y="5" width="14" height="14" rx="2" />
     </svg>
+  );
+}
+
+function VoiceAura({ active }: { active: boolean }) {
+  return (
+    <div
+      className={["fonos-mic-ambient absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[59%] w-[142px] h-[112px] pointer-events-none", active ? "fonos-mic-ambient-live" : ""].join(" ")}
+      aria-hidden="true"
+    >
+      <span className="fonos-mic-ambient-bloom absolute inset-[5px] rounded-full" />
+      <span className="fonos-mic-ambient-core absolute inset-[24px] rounded-full" />
+      <span className="fonos-mic-ambient-floor absolute left-[28px] right-[28px] bottom-[9px] h-[18px] rounded-full" />
+    </div>
   );
 }
 
@@ -255,10 +303,12 @@ export default function Dictation() {
   // strip below (legacy note-target UI, kept intact). The mic button and the
   // drum no longer read this — both run the workflow engine now.
   const [dictationMode, setDictationMode] = useState<string>("raw");
-  // Voice-workflow picker (drum): microphone-source workflows. Its selection
-  // (persisted as config.active_voice_workflow) now drives BOTH the main
-  // dictation hotkey AND this view's in-view mic button — both run the selected
-  // workflow through the engine.
+  // Voice-workflow picker (drum): microphone-source workflows. This view's
+  // selection is VIEW-LOCAL (test-page scope): initialized from
+  // config.active_voice_workflow as the default but NOT saved back — only this
+  // view's in-view mic button follows it (runWorkflowById below). The float
+  // pill's roller is the sole writer of config.active_voice_workflow, and the
+  // global dictation hotkey follows that.
   const [voiceWorkflows, setVoiceWorkflows] = useState<WorkflowRow[]>([]);
   const [activeWorkflow, setActiveWorkflow] = useState<string>("wf.dictation");
   const [notebooks, setNotebooks] = useState<Container[]>([]);
@@ -537,29 +587,43 @@ export default function Dictation() {
 
   // Derive the current notebook for display in the activity label
   const currentNotebook = notebooks.find((n) => n.id === selectedNotebookId) ?? null;
+  const currentWorkflow = voiceWorkflows.find((w) => w.id === activeWorkflow) ?? voiceWorkflows[0] ?? null;
+  const currentWorkflowName = currentWorkflow ? workflowLabel(currentWorkflow) : t("nav.dictation");
 
   return (
-    <div className="flex flex-col h-full bg-[#1a1917]">
+    <div className="flex flex-col h-full bg-[var(--bg)]">
       {/* ══ Top: Recording panel ══ */}
-      <div className="relative flex flex-col items-center justify-center flex-shrink-0" style={{ height: 200 }}>
+      <div className="relative flex flex-col items-center justify-center flex-shrink-0 overflow-hidden" style={{ height: 218 }}>
+        <div className="absolute inset-x-[18%] top-[-90px] h-[210px] rounded-full bg-[rgba(240,173,50,0.06)] blur-[54px] pointer-events-none" />
+        <div className="absolute inset-x-5 top-3 flex items-center justify-between z-[6]">
+          <span className="fonos-page-title">{t("nav.dictation")}</span>
+          <span className="flex items-center gap-1.5 text-[10px] font-medium text-[var(--text-muted)]">
+            <span className={[
+              "w-1.5 h-1.5 rounded-full",
+              isRecording ? "bg-[var(--danger)] animate-pulse" : processing ? "bg-[var(--accent)] animate-pulse" : hasMic === false ? "bg-[var(--danger)]" : "bg-[rgba(134,239,172,0.75)]",
+            ].join(" ")} />
+            {isRecording ? `${recordDuration.toFixed(1)}s` : processing ? t("dict.processing") : hasMic === false ? t("dict.no-mic") : t("dict.ready")}
+          </span>
+        </div>
         {/* Layer 1: Jumping blocks — hidden when idle, fades in when recording */}
         <JumpingBlocks active={isRecording} />
 
         {/* Center blur — clears space for mic */}
         <div className="absolute z-[2] rounded-full pointer-events-none"
-          style={{ width: 100, height: 100, left: "50%", top: "38%", transform: "translate(-50%, -50%)",
-            background: "radial-gradient(circle, #1a1917 28%, rgba(26,25,23,0.9) 48%, transparent 70%)" }} />
+          style={{ width: 116, height: 116, left: "50%", top: "43%", transform: "translate(-50%, -50%)",
+            background: "radial-gradient(circle, #181714 28%, rgba(24,23,20,0.92) 50%, transparent 72%)" }} />
 
         {/* Layer 2: Mic button */}
-        <div className="relative z-[5] flex flex-col items-center">
+        <div className="relative z-[5] flex flex-col items-center mt-1">
+          <VoiceAura active={isRecording} />
           <button
             onClick={handleStartStop}
             disabled={processing || hasMic === false}
             className={[
-              "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300",
+              "fonos-dictation-button w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 active:scale-[0.97]",
               isRecording
-                ? "bg-gradient-to-br from-[#ef4444] to-[#dc2626] shadow-[0_0_40px_rgba(239,68,68,0.35)] scale-105"
-                : "bg-gradient-to-br from-[#f59e0b] to-[#d97706] shadow-[0_0_30px_rgba(245,158,11,0.2)]",
+                ? "fonos-dictation-button-live"
+                : "fonos-dictation-button-idle",
               processing ? "opacity-50 cursor-not-allowed" : "",
             ].join(" ")}
           >
@@ -567,17 +631,18 @@ export default function Dictation() {
               <span className="text-white text-sm font-bold">&middot;&middot;&middot;</span>
             ) : <MicIcon />}
           </button>
-          <span className="text-[10px] font-mono text-[rgba(255,255,255,0.18)] mt-1.5">
+          <span className="text-[10px] font-mono text-[var(--text-muted)] mt-2 tabular-nums">
             {isRecording ? `${recordDuration.toFixed(1)}s` : hasMic === false ? t("dict.no-mic") : "\u2318\u21e7Space"}
           </span>
         </div>
 
         {/* Layer 3: Horizontal drum-roller mode selector */}
-        <div className="absolute bottom-0 left-0 right-0 z-[5]">
+        <div className="absolute bottom-0 left-5 right-5 z-[5]">
           <ModeDrum modes={voiceWorkflows} current={activeWorkflow} onChange={(id) => {
-            // Pick which voice workflow the main dictation hotkey triggers.
+            // View-local selection only (test-page scope): drives this view's mic
+            // button, NOT persisted. The float pill's roller is the sole writer of
+            // config.active_voice_workflow; the global hotkey follows that.
             setActiveWorkflow(id);
-            saveConfig(JSON.stringify({ active_voice_workflow: id })).catch(() => {});
           }} />
         </div>
       </div>
@@ -632,21 +697,34 @@ export default function Dictation() {
         </div>
       )}
 
-      <div className="mx-5 border-t border-[rgba(255,255,255,0.04)]" />
+      <div className="mx-5 border-t border-[rgba(255,255,255,0.07)]" />
 
       {/* ══ Bottom: Activity ══ */}
       <div className="flex flex-col flex-1 min-h-0 px-5 pt-3 pb-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.2)] font-medium">{t("dict.activity")}</span>
+          <span className="fonos-eyebrow">{t("dict.activity")}</span>
           {activity.length > 0 && (
             <button onClick={() => setActivity([])} className="text-[9px] text-[rgba(255,255,255,0.12)] hover:text-[rgba(255,255,255,0.3)] transition-colors">{t("dict.clear")}</button>
           )}
         </div>
         <div ref={activityRef} className="flex-1 overflow-y-auto min-h-0">
           {activity.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full gap-1">
-              <span className="text-[rgba(255,255,255,0.1)] text-[11px]">{processing ? t("dict.processing") : t("dict.ready")}</span>
-              {!processing && <span className="text-[rgba(255,255,255,0.06)] text-[10px]">{t("dict.results-hint")}</span>}
+            <div className="flex items-center justify-center h-full pb-5">
+              <div className="fonos-surface w-full max-w-[430px] rounded-[16px] px-4 py-3.5 flex items-center gap-3.5">
+                <div className="w-9 h-9 rounded-[11px] bg-[rgba(240,173,50,0.1)] border border-[rgba(240,173,50,0.14)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+                  <FonosMark size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold text-[var(--text-primary)]">
+                    {processing ? t("dict.processing") : t("dict.ready")}
+                  </div>
+                  {!processing && <div className="text-[11px] text-[var(--text-muted)] mt-0.5 truncate">{t("dict.results-hint")}</div>}
+                </div>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <span className="text-[9px] font-mono text-[var(--text-secondary)] bg-[rgba(255,255,255,0.045)] border border-[rgba(255,255,255,0.07)] rounded-md px-1.5 py-0.5">⌘⇧Space</span>
+                  <span className="max-w-[118px] truncate text-[9px] text-[var(--text-faint)]">{currentWorkflowName}</span>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="relative pl-5">

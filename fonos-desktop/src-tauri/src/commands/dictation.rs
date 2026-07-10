@@ -79,8 +79,10 @@ fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
     };
 
     let scale = target.scale_factor();
-    let pill_w = 90.0; // logical pixels
-    let pill_h = 28.0;
+    // Pill geometry, three-way lockstep: tauri.conf.json float window (98×32)
+    // ↔ float.html IDLE_W/PH ↔ here.
+    let pill_w = 98.0; // logical pixels
+    let pill_h = 32.0;
     // ~110pt above screen bottom to clear macOS Dock + gap above it
     let dock_clearance = 110.0;
 
@@ -121,8 +123,10 @@ fn move_float_to_monitor(app: &tauri::AppHandle, _primary: bool) {
     let mon_y = target.position().y as f64;
     let mon_w = target.size().width as f64;
     let mon_h = target.size().height as f64;
-    let pill_w = 90.0 * scale;
-    let pill_h = 28.0 * scale;
+    // Pill geometry, three-way lockstep: tauri.conf.json float window (98×32)
+    // ↔ float.html IDLE_W/PH ↔ here.
+    let pill_w = 98.0 * scale;
+    let pill_h = 32.0 * scale;
     let taskbar = 48.0 * scale; // approximate Linux taskbar height
     let x = mon_x + (mon_w - pill_w) / 2.0;
     let y = mon_y + mon_h - pill_h - taskbar;

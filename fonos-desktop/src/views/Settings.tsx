@@ -94,7 +94,7 @@ export default function Settings() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-[#1a1917]">
+    <div className="flex flex-col h-full overflow-auto bg-[var(--bg)]">
       <div className="flex flex-col p-4">
         {/* Error */}
         {error && (
@@ -104,16 +104,16 @@ export default function Settings() {
         )}
 
         {/* Tab bar */}
-        <div className="flex gap-0 border-b border-[rgba(255,255,255,0.06)] mb-3">
+        <div className="flex gap-1 border-b border-[rgba(255,255,255,0.07)] mb-3">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setSettingsTab(t.key)}
               className={[
-                "py-2 px-3.5 text-[11px] font-medium cursor-pointer transition-colors",
+                "relative py-1.5 px-3 text-[11px] font-medium rounded-t-[8px] cursor-pointer transition-colors",
                 settingsTab === t.key
-                  ? "text-[#fbbf24] border-b-2 border-[#fbbf24]"
-                  : "text-[rgba(255,255,255,0.3)]",
+                  ? "text-[var(--accent)] border-b-2 border-[var(--accent)] bg-[rgba(240,173,50,0.045)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[rgba(255,255,255,0.025)]",
               ].join(" ")}
             >
               {tr(t.label)}

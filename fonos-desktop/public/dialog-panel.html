@@ -50,8 +50,14 @@ body{background:transparent;overflow:hidden}
   white-space:pre-wrap;word-break:break-word}
 .ba code,.bu code{font-family:'SF Mono',ui-monospace,monospace;font-size:10.5px;
   background:rgba(255,255,255,.08);border-radius:4px;padding:1px 4px}
+.ba pre,.bu pre{background:rgba(255,255,255,.06);border-radius:6px;padding:6px 8px;
+  margin:3px 0;overflow-x:auto;white-space:pre}
+.ba pre code,.bu pre code{background:none;padding:0;display:block}
 .ba strong,.bu strong{font-weight:600;color:#fff}
+.ba em,.bu em{font-style:italic}
+.ba .mdH,.bu .mdH{display:block;margin:4px 0 2px;font-size:12.5px}
 .ba ul,.bu ul{margin:2px 0 2px 16px}
+.ba ol,.bu ol{margin:2px 0 2px 16px}
 .ba li,.bu li{margin:1px 0}
 
 .tw{display:flex;justify-content:flex-start}
@@ -93,19 +99,41 @@ function iv(c,a){var t=$t();return t?t.invoke(c,a||{}):Promise.reject(new Error(
 function hide(){iv('hide_dialog_panel').catch(function(e){console.error(e)})}
 
 /* ── Minimal, injection-safe markdown (escape first, then a tiny subset) ──── */
+/* Pass order: escape -> fenced code (placeholdered) -> inline code -> bold ->
+   italic -> links -> line pass (headings/ol/ul) -> restore fenced code. */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function md(t){
   var e=esc(t);
+  var fb=[]; // fenced code blocks, restored after line pass so their content
+             // is never mistaken for list/heading markup
+  var M1=String.fromCharCode(1), M2=String.fromCharCode(2); // ASCII placeholder delimiters (unlikely in prose)
+  e=e.replace(/```([^\n`]*)\n([\s\S]*?)```/g,function(_,lang,code){
+    fb.push('<pre><code>'+code.replace(/\n$/,'')+'</code></pre>');
+    return M1+(fb.length-1)+M2;
+  });
   e=e.replace(/`([^`]+)`/g,'<code>$1</code>');
   e=e.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-  var lines=e.split('\n'), out=[], inList=false;
+  e=e.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  e=e.replace(/\[([^\]]+)\]\([^)]*\)/g,'<em>$1</em>'); // no nav in these panels: text only
+  var lines=e.split('\n'), out=[], inUl=false, inOl=false;
   for(var i=0;i<lines.length;i++){
-    var m=lines[i].match(/^\s*[-*]\s+(.*)$/);
-    if(m){ if(!inList){out.push('<ul>');inList=true;} out.push('<li>'+m[1]+'</li>'); }
-    else { if(inList){out.push('</ul>');inList=false;} out.push(lines[i]); }
+    var line=lines[i];
+    var h=line.match(/^#{1,3}\s+(.*)$/);
+    var o=!h&&line.match(/^\s*\d+[.)]\s+(.*)$/);
+    var u=!h&&!o&&line.match(/^\s*[-*]\s+(.*)$/);
+    if(o){ if(inUl){out.push('</ul>');inUl=false;} if(!inOl){out.push('<ol>');inOl=true;} out.push('<li>'+o[1]+'</li>'); }
+    else if(u){ if(inOl){out.push('</ol>');inOl=false;} if(!inUl){out.push('<ul>');inUl=true;} out.push('<li>'+u[1]+'</li>'); }
+    else {
+      if(inUl){out.push('</ul>');inUl=false;}
+      if(inOl){out.push('</ol>');inOl=false;}
+      out.push(h?'<div class="mdH"><strong>'+h[1]+'</strong></div>':line);
+    }
   }
-  if(inList)out.push('</ul>');
-  return out.join('\n');
+  if(inUl)out.push('</ul>');
+  if(inOl)out.push('</ol>');
+  e=out.join('\n');
+  e=e.replace(new RegExp(M1+'(\\d+)'+M2,'g'),function(_,idx){return fb[idx];});
+  return e;
 }
 
 /* ── Bubbles ──────────────────────────────────────────────────────────────── */

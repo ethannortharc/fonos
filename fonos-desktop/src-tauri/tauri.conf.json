@@ -35,7 +35,8 @@
         "visible": true,
         "resizable": false,
         "skipTaskbar": true,
-        "focus": false
+        "focus": false,
+        "shadow": false
       },
       {
         "label": "agent-panel",

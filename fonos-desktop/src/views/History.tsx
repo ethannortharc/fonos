@@ -29,7 +29,10 @@ const FILTERS: { id: HistoryFilter; label: TKey }[] = [
   { id: "agent", label: "history.filter.agent" },
 ];
 
-const STRIPE_COLOR: Record<string, string> = {
+// Categorical palette for the type badge chips — now the SOLE per-type color
+// signal on entry cards (the old left edge stripe double-encoded this and
+// read as a messy row of mixed-color bars; removed).
+const TYPE_COLOR: Record<string, string> = {
   dictation: "#a8a29e",
   agent: "#c084fc",
   note: "#4ade80",
@@ -450,11 +453,11 @@ export default function History({
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 function TypeBadge({ type }: { type: string }) {
-  const c = STRIPE_COLOR[type] || "#a8a29e";
+  const c = TYPE_COLOR[type] || "#a8a29e";
   return (
     <span
       className="text-[9px] font-semibold px-1.5 py-0.5 rounded-[5px] uppercase tracking-wide"
-      style={{ background: `${c}18`, color: c }}
+      style={{ background: `${c}22`, color: c }}
     >
       {type}
     </span>
@@ -481,7 +484,6 @@ function EntryCard({
   onDelete: () => void;
   onCorrect?: (entry: Entry, selection: string, rect: DOMRect) => void;
 }) {
-  const stripe = STRIPE_COLOR[entry.source_type] || "#a8a29e";
   const text = entryText(entry);
   const notebook = entry.source_type === "note" && entry.container_id != null
     ? containers.get(entry.container_id)
@@ -514,14 +516,13 @@ function EntryCard({
         onToggle();
       }}
       className={[
-        "flex rounded-[12px] border overflow-hidden cursor-pointer transition-colors",
+        "rounded-[12px] border overflow-hidden cursor-pointer transition-colors",
         expanded
           ? "border-[rgba(242,184,75,0.25)] bg-[rgba(255,255,255,0.04)]"
           : "border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.11)] hover:bg-[rgba(255,255,255,0.045)]",
       ].join(" ")}
     >
-      <div className="w-[3px] flex-shrink-0" style={{ background: stripe }} />
-      <div className="flex-1 px-3.5 py-2.5 min-w-0">
+      <div className="px-3.5 py-2.5 min-w-0">
         <div className="flex items-center gap-1.5 mb-1.5">
           <span className="text-[10px] text-[var(--text-faint)] font-mono">{formatTime(entry.created_at)}</span>
           <TypeBadge type={entry.source_type} />
@@ -607,10 +608,9 @@ function MeetingCard({
     <div
       data-testid="history-meeting-card"
       onClick={onOpen}
-      className="flex rounded-[10px] border border-[rgba(251,191,36,0.12)] bg-[rgba(251,191,36,0.03)] overflow-hidden cursor-pointer hover:bg-[rgba(251,191,36,0.06)] transition-colors"
+      className="rounded-[10px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.03)] overflow-hidden cursor-pointer hover:border-[rgba(255,255,255,0.11)] hover:bg-[rgba(255,255,255,0.045)] transition-colors"
     >
-      <div className="w-[3px] flex-shrink-0 bg-[#fbbf24]" />
-      <div className="flex-1 px-3 py-2.5 min-w-0">
+      <div className="px-3.5 py-2.5 min-w-0">
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-[9px] text-[rgba(255,255,255,0.25)] font-mono">{formatTime(item.latest.created_at)}</span>
           <TypeBadge type="meeting" />
@@ -685,14 +685,13 @@ function SearchResults({
             <div key={group.type}>
               <div
                 className="text-[9px] font-semibold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
-                style={{ color: STRIPE_COLOR[group.type] }}
+                style={{ color: TYPE_COLOR[group.type] }}
               >
                 {t(GROUP_LABEL[group.type])}
                 <span className="text-[rgba(255,255,255,0.2)] font-normal">{group.items.length}</span>
               </div>
               <div className="flex flex-col gap-1.5">
                 {group.items.map((entry) => {
-                  const stripe = STRIPE_COLOR[entry.source_type] || "#a8a29e";
                   const expanded = expandedId === entry.id;
                   const text = entryText(entry);
                   const snip = makeSnippet(text, query);
@@ -704,14 +703,13 @@ function SearchResults({
                       data-testid="history-search-result"
                       onClick={() => setExpandedId(expanded ? null : entry.id)}
                       className={[
-                        "flex rounded-[10px] border overflow-hidden cursor-pointer transition-colors",
+                        "rounded-[10px] border overflow-hidden cursor-pointer transition-colors",
                         expanded
                           ? "border-[rgba(242,184,75,0.25)] bg-[rgba(255,255,255,0.04)]"
                           : "border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.025)] hover:bg-[rgba(255,255,255,0.035)]",
                       ].join(" ")}
                     >
-                      <div className="w-[3px] flex-shrink-0" style={{ background: stripe }} />
-                      <div className="flex-1 px-3 py-2 min-w-0">
+                      <div className="px-3 py-2 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1">
                           <span className="text-[9px] text-[rgba(255,255,255,0.25)] font-mono">{formatTime(entry.created_at)}</span>
                           <TypeBadge type={entry.source_type} />

@@ -123,8 +123,11 @@
 
   /* ── Result (success / error) ── */
   #result{display:none;align-items:center;gap:4px}
-  #result-icon{font-size:10px;line-height:1}
+  #result-icon{font-size:10px;line-height:1;display:flex;align-items:center}
   #result-text{font-size:9px;font-family:-apple-system,sans-serif;white-space:nowrap}
+  /* Inline SVG glyphs render as blocks so they center cleanly with no
+     baseline descender gap in the tiny result pane / menu button. */
+  #result-icon svg,.s-icon svg,.m-icon svg{display:block}
 
   #pill.success{background:rgba(26,25,23,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
   #pill.success #idle{display:none!important}
@@ -200,6 +203,8 @@ var SVG_ICONS={
   '🎙':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
   '🎙️':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
   '📌':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/></svg>',
+  '🎤':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  '⚙':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 function setModeIcon(el,emoji){
   var svg=SVG_ICONS[emoji];
@@ -210,6 +215,59 @@ function setModeIcon(el,emoji){
   } else {
     el.textContent=emoji;
   }
+}
+
+/* ── Pill-chrome glyphs (same stroke-based, currentColor icon language as the
+   app's WidgetIcon/Icons; each host element's CSS supplies the color: green
+   for success ✓, red for error ✗, muted white for the menu gear). check/cross
+   use a slightly heavier stroke so the bare marks stay legible in the ~11px
+   result pane. */
+var CHROME_SVG={
+  check:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  cross:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  gear:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+};
+function setIconSvg(el,svg){
+  el.textContent='';
+  /* SVG strings are hardcoded above — safe static content */
+  var tpl=document.createElement('template');tpl.innerHTML=svg;
+  el.appendChild(tpl.content);
+}
+
+/* ── Tiny inline i18n ── The pill has a handful of static strings; the main app
+   owns the full dictionary (lib/i18n). Locale follows config.ui_language
+   ("auto"/"en"/"zh"), resolved the same way (auto → system language). Legacy
+   roller mode names are intentionally NOT localized — that menu is slated for
+   removal in P3. */
+const STR={
+  en:{proc:'Processing',done:'Done',nospeech:'No speech',error:'Error',clickSettings:' — click to open Settings',settings:'Settings'},
+  zh:{proc:'处理中',done:'完成',nospeech:'未识别到语音',error:'错误',clickSettings:' — 点按打开设置',settings:'设置'},
+};
+let LOCALE='en';
+function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
+// Mirrors lib/i18n.resolveLocale: explicit "en"/"zh" win, "auto"/undefined
+// follows navigator.language.
+function resolveLocale(setting){
+  if(setting==='en'||setting==='zh')return setting;
+  return (navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en';
+}
+// Set the active locale and re-render any currently-visible static label so a
+// live language switch (config:saved) takes effect without waiting for the
+// next state change. Exposed on window (classic script) for tests to drive.
+function applyLocale(setting){
+  LOCALE=resolveLocale(setting);
+  renderStaticLabels();
+}
+// Last transient result label key ('done'|'nospeech') so a live locale switch
+// during the ~1.2s result window re-localizes it; null for idle / dynamic
+// backend error text (which is not localized).
+let lastResultKey=null;
+function renderStaticLabels(){
+  var pl=document.getElementById('proc-label');if(pl)pl.textContent=L('proc');
+  if(lastResultKey){var rt=document.getElementById('result-text');if(rt)rt.textContent=L(lastResultKey);}
+  // Settings caption only exists while the menu is open (rebuilt on each open).
+  var cap=document.querySelector('#dropdown .dd-btn .dd-cap');
+  if(cap)cap.textContent=L('settings');
 }
 
 // Fallback voice workflows shown before list_workflows resolves (or if it
@@ -228,6 +286,16 @@ let errActive=false,errPane=null,errTimer=null,stopTm=null;
 const S=window.devicePixelRatio||2;
 const PH=28;
 const IDLE_W=90,REC_W=115,PROC_W=110,MENU_W=160;
+
+// Width for a success/no-speech result pill. English/short labels stay at the
+// 90px idle width (IDLE_W is the floor); a longer localized label — e.g. the
+// zh "未识别到语音" — grows the pill just enough that it never clips. CJK glyphs
+// are ~full-em at the 9px result font, latin ~5px; +icon(12)+gap(4)+pad(20)+slack.
+function resultW(label){
+  var t=0;
+  for(var i=0;i<label.length;i++)t+=label.charCodeAt(i)>0x2e7f?9.5:5;
+  return Math.max(IDLE_W,Math.round(t+42));
+}
 
 // Dev-only assertions: the vite dev server / a plain browser load via
 // http(s):, the packaged app via tauri:. Keeps assert noise out of prod logs.
@@ -448,8 +516,8 @@ function renderMenu(){
   // Separator + Settings
   const sep=document.createElement('div');sep.className='dd-sep';dd.appendChild(sep);
   const btn=document.createElement('div');btn.className='dd-btn';
-  const bIcon=document.createElement('span');bIcon.className='s-icon';bIcon.textContent='⚙️';
-  const bText=document.createElement('span');bText.textContent='Settings';
+  const bIcon=document.createElement('span');bIcon.className='s-icon';setIconSvg(bIcon,CHROME_SVG.gear);
+  const bText=document.createElement('span');bText.className='dd-cap';bText.textContent=L('settings');
   btn.appendChild(bIcon);btn.appendChild(bText);
   btn.onclick=ev=>{ev.stopPropagation();closeMenu();openSettings();};
   dd.appendChild(btn);
@@ -463,6 +531,7 @@ function loadCfg(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return;
   window.__TAURI_INTERNALS__.invoke('get_config').then(c=>{
     if(c&&c.active_voice_workflow)currentMode=c.active_voice_workflow;
+    if(c)applyLocale(c.ui_language);
   }).catch(()=>{});
 }
 function loadModes(){
@@ -495,6 +564,7 @@ function enterState(cls){
   var p=document.getElementById('pill');
   p.classList.remove('recording','processing','success','error');
   if(cls)p.classList.add(cls);
+  else lastResultKey=null; // idle: no transient result label to re-localize
   expectedState=cls||null;
 }
 function startRec(){
@@ -518,14 +588,11 @@ function stopRec(text){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
+  var key=text?'done':'nospeech';
+  lastResultKey=key;
   applyVisual(()=>{
-    if(text){
-      document.getElementById('result-icon').textContent='\u2713';
-      document.getElementById('result-text').textContent='Done';
-    } else {
-      document.getElementById('result-icon').textContent='\u2717';
-      document.getElementById('result-text').textContent='No speech';
-    }
+    setIconSvg(document.getElementById('result-icon'),text?CHROME_SVG.check:CHROME_SVG.cross);
+    document.getElementById('result-text').textContent=L(key);
     // enterState clears any prior revert timer and every state class (so a
     // lingering 'error'/'success' from the last cycle can't stack with this
     // one), then this cycle arms its OWN 1200ms revert to idle. The timer is
@@ -536,7 +603,7 @@ function stopRec(text){
       stopTm=null;
       idleSz();
     },1200);
-  },IDLE_W,PH);
+  },resultW(L(key)),PH);
 }
 function clearErr(){
   errActive=false;errPane=null;
@@ -567,11 +634,16 @@ function showError(payload){
       else{full=String(payload);}
     }catch(_){full=String(payload);}
   }
-  if(!full)full='Error';
+  if(!full)full=L('error');
+
+  // The backend error message is not localized (it's a diagnostic string); only
+  // the fallback and the click hint follow the pill language. lastResultKey is
+  // cleared so a live locale switch doesn't try to re-localize this dynamic text.
+  lastResultKey=null;
 
   // Truncate to ~48 chars for the pill; append the click hint when clickable.
   var short=full.length>48?full.slice(0,47)+'…':full;
-  var disp=pane?short+' — click to open Settings':short;
+  var disp=pane?short+L('clickSettings'):short;
 
   console.warn('fonos float error: '+full);
   errActive=true;errPane=pane;
@@ -581,7 +653,7 @@ function showError(payload){
   var w=Math.max(110,Math.min(440,Math.round(disp.length*5)+44));
 
   applyVisual(function(){
-    document.getElementById('result-icon').textContent='✗';
+    setIconSvg(document.getElementById('result-icon'),CHROME_SVG.cross);
     var textEl=document.getElementById('result-text');
     textEl.textContent=disp;
     textEl.title=full; // full message on hover
@@ -620,6 +692,13 @@ function setup(){
   listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
+  // Settings changed (not a pill terminal event): live-update the language and
+  // active voice workflow from the small subset save_config emits.
+  listen('config:saved',e=>{
+    var p=e&&e.payload;if(!p)return;
+    if(p.active_voice_workflow)currentMode=p.active_voice_workflow;
+    applyLocale(p.ui_language);
+  });
   loadCfg();loadModes();idleSz();
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,100)):setTimeout(setup,100);

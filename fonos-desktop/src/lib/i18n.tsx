@@ -173,6 +173,8 @@ const en = {
   "vocab.empty.title": "No vocabulary books yet",
   "vocab.empty.desc":
     "Add one for your domain terms — names, jargon, product words — and dictation will start getting them right.",
+  "vocab.attach-hint":
+    "To apply a book, open Flows, click a flow's Transcribe or LLM step, and tick the book there.",
 
   // general tab (extended)
   "general.stt.title": "Speech Recognition",
@@ -1007,6 +1009,7 @@ const zh: Partial<Record<Key, string>> = {
   "vocab.rulecount": "规则",
   "vocab.empty.title": "还没有词汇本",
   "vocab.empty.desc": "为你的领域词汇建一本 — 人名、行话、产品名 — 听写从此不再写错。",
+  "vocab.attach-hint": "要让词汇书生效：打开「流程」，点击流程里的听写或大模型节点，在表单中勾选词汇书。",
 
   // general tab (extended)
   "general.stt.title": "语音识别",

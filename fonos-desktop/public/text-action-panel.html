@@ -71,8 +71,12 @@ body{background:transparent;overflow:hidden}
 </head>
 <body>
 <div id="drop">
-  <div id="hdr">
-    <span id="hM"><span id="hI"></span><span id="hN"></span></span>
+  <!-- Header is a drag region (move the floating window). The attribute is
+       matched against the exact mousedown target, so the close button below
+       (no attribute) stays clickable; the title spans carry it individually
+       so a drag started on the label text still moves the window. -->
+  <div id="hdr" data-tauri-drag-region>
+    <span id="hM" data-tauri-drag-region><span id="hI" data-tauri-drag-region></span><span id="hN" data-tauri-drag-region></span></span>
     <button id="hX" onclick="hide()">&#10005;</button>
   </div>
   <div id="sel"></div>

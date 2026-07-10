@@ -35,7 +35,7 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "out.replace": "builtin.out.replace",
   "out.clipboard": "builtin.out.clipboard",
   "out.panel": "builtin.out.panel",
-  "out.dialog-explain": "builtin.out.dialog-explain",
+  "out.dialog": "builtin.out.dialog",
   "out.speak": "builtin.out.speak",
   "out.quicknote": "builtin.out.quicknote",
 };

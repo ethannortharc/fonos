@@ -846,7 +846,7 @@ const en = {
   "builtin.out.replace": "Replace selection",
   "builtin.out.clipboard": "Clipboard",
   "builtin.out.panel": "Popup panel",
-  "builtin.out.dialog-explain": "Explain dialog",
+  "builtin.out.dialog": "Dialog",
   "builtin.out.speak": "Speak",
   "builtin.out.quicknote": "Quick note",
 };
@@ -1640,7 +1640,7 @@ const zh: Partial<Record<Key, string>> = {
   "builtin.out.replace": "替换选区",
   "builtin.out.clipboard": "剪贴板",
   "builtin.out.panel": "悬浮板",
-  "builtin.out.dialog-explain": "解释对话框",
+  "builtin.out.dialog": "对话框",
   "builtin.out.speak": "朗读",
   "builtin.out.quicknote": "快速笔记",
 };

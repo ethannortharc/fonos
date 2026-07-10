@@ -251,7 +251,7 @@ function ModeDrum({
 
 function MicIcon() {
   return (
-    <svg className="relative z-10" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg className="fonos-voice-glyph relative z-10" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="1" width="6" height="12" rx="3" />
       <path d="M5 10a7 7 0 0 0 14 0" />
       <line x1="12" y1="17" x2="12" y2="21" />
@@ -261,8 +261,8 @@ function MicIcon() {
 
 function StopIcon() {
   return (
-    <svg className="relative z-10" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="5" y="5" width="14" height="14" rx="2" />
+    <svg className="fonos-voice-glyph relative z-10" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="5" y="5" width="14" height="14" rx="2.5" />
     </svg>
   );
 }
@@ -628,7 +628,7 @@ export default function Dictation() {
             ].join(" ")}
           >
             {isRecording ? <StopIcon /> : processing ? (
-              <span className="text-white text-sm font-bold">&middot;&middot;&middot;</span>
+              <span className="fonos-voice-glyph relative z-10 text-sm font-bold">&middot;&middot;&middot;</span>
             ) : <MicIcon />}
           </button>
           <span className="text-[10px] font-mono text-[var(--text-muted)] mt-2 tabular-nums">

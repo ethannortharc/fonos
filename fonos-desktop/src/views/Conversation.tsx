@@ -491,19 +491,23 @@ export default function Conversation() {
               : "fonos-voice-button-idle"
           }`}
         >
-          {inCall ? (
-            // Hang-up (phone-off) glyph.
-            <svg className="relative z-10" width={23} height={23} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.29.62 2 2 0 0 1 1.72 2v2a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67" />
-              <path d="M22 2 2 22" />
-              <path d="M5 12.66a19.4 19.4 0 0 1-2.68-6.14A2 2 0 0 1 4.31 4H6a2 2 0 0 1 2 1.72c.13.85.32 1.68.57 2.49" />
-            </svg>
-          ) : (
-            // The primary action is starting a call; hold-to-talk remains a secondary gesture.
-            <svg className="relative z-10" width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 16.8v2.8a1.9 1.9 0 0 1-2.08 1.9 18.7 18.7 0 0 1-8.15-2.9 18.35 18.35 0 0 1-5.66-5.66 18.7 18.7 0 0 1-2.9-8.2A1.9 1.9 0 0 1 4.1 2.67h2.8a1.9 1.9 0 0 1 1.9 1.63c.12.9.34 1.77.64 2.61a1.9 1.9 0 0 1-.43 2L7.83 10.1a15.2 15.2 0 0 0 6.07 6.07l1.19-1.19a1.9 1.9 0 0 1 2-.43c.84.3 1.71.52 2.61.64A1.9 1.9 0 0 1 21 16.8Z" />
-            </svg>
-          )}
+          {/* One handset, two orientations: state reads through form, not just
+              color — a slight receiver tilt at idle (primary action: start a
+              call; hold-to-talk stays a secondary gesture), rotated 135° into
+              the hang-up position while in a call. */}
+          <svg
+            className={`fonos-voice-glyph relative z-10 transition-transform duration-300 motion-reduce:transition-none ${inCall ? "rotate-[135deg]" : "-rotate-[10deg]"}`}
+            width={24}
+            height={24}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 16.8v2.8a1.9 1.9 0 0 1-2.08 1.9 18.7 18.7 0 0 1-8.15-2.9 18.35 18.35 0 0 1-5.66-5.66 18.7 18.7 0 0 1-2.9-8.2A1.9 1.9 0 0 1 4.1 2.67h2.8a1.9 1.9 0 0 1 1.9 1.63c.12.9.34 1.77.64 2.61a1.9 1.9 0 0 1-.43 2L7.83 10.1a15.2 15.2 0 0 0 6.07 6.07l1.19-1.19a1.9 1.9 0 0 1 2-.43c.84.3 1.71.52 2.61.64A1.9 1.9 0 0 1 21 16.8Z" />
+          </svg>
         </button>
 
         <div className="relative z-10 flex min-w-0 flex-col items-end gap-1.5">

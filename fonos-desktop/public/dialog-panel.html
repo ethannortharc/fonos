@@ -87,7 +87,10 @@ body{background:transparent;overflow:hidden}
 </head>
 <body>
 <div id="root">
-  <div id="hdr"><span id="hT">Dialog</span><button id="hX" onclick="hide()">&#10005;</button></div>
+  <!-- Title bar is a drag region (move the floating window). Matched against the
+       exact mousedown target, so the close button (no attribute) stays clickable
+       while the title text carries the attribute so a drag on it still moves. -->
+  <div id="hdr" data-tauri-drag-region><span id="hT" data-tauri-drag-region>Dialog</span><button id="hX" onclick="hide()">&#10005;</button></div>
   <div id="log"></div>
   <div id="composer">
     <textarea id="ta" rows="1" placeholder="Reply…"></textarea>

@@ -156,7 +156,7 @@ select:focus-visible {
 }
 
 .fonos-mic-ambient-live {
-  --mic-light: 237, 103, 94;
+  --mic-light: 244, 138, 52;
 }
 
 /* Idle: the three aura layers render as a STATIC glow — the breathe animations'
@@ -222,8 +222,8 @@ select:focus-visible {
   inset: 1px;
   border-radius: inherit;
   background:
-    radial-gradient(circle at 30% 18%, rgba(255,255,255,0.31), transparent 29%),
-    linear-gradient(155deg, rgba(255,255,255,0.08), transparent 44%);
+    radial-gradient(ellipse 34% 24% at 30% 16%, rgba(255,255,255,0.44), rgba(255,255,255,0.1) 52%, transparent 74%),
+    linear-gradient(155deg, rgba(255,255,255,0.09), transparent 44%);
   transform-origin: center;
   opacity: 0.5;
   transform: translate(-1px,-1px) scale(0.97);
@@ -251,22 +251,44 @@ select:focus-visible {
   animation: voice-control-caustic 5.1s cubic-bezier(.45,0,.2,1) infinite;
 }
 
+/* Glyphs are engraved, not stickered-on: tone-on-tone espresso (the amber's own
+   shadow end) with a 1px light bevel below, so the mark reads pressed into the
+   molten surface. The bevel is a static filter, not an animation. */
+.fonos-voice-glyph {
+  filter: drop-shadow(0 1px 0 rgba(255,243,210,0.38));
+}
+
+.fonos-voice-button-live .fonos-voice-glyph {
+  filter: drop-shadow(0 1px 0 rgba(255,226,178,0.28));
+}
+
 .fonos-voice-button-idle {
-  color: #211a12;
+  color: #402e11;
   background:
-    radial-gradient(circle at 70% 76%, rgba(130,65,8,0.18), transparent 48%),
-    linear-gradient(145deg, #f2bd59 0%, #df942b 46%, #c4731d 72%, #9f5213 100%);
+    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,255,255,0.85), rgba(255,255,255,0.3) 55%, transparent 100%),
+    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,250,234,0.5), rgba(255,246,218,0.14) 52%, transparent 74%),
+    radial-gradient(circle at 70% 78%, rgba(128,60,6,0.26), transparent 52%),
+    linear-gradient(148deg, #f6c464 0%, #e0972c 46%, #c26f16 72%, #98500f 100%);
   box-shadow:
-    0 12px 28px rgba(154,82,13,0.25),
-    0 4px 10px rgba(7,5,2,0.19),
-    inset 0 1px 0 rgba(255,244,218,0.3),
-    inset 0 0 0 1px rgba(255,255,255,0.09),
-    inset 0 -7px 13px rgba(92,42,5,0.2);
+    0 16px 32px rgba(150,80,12,0.3),
+    0 5px 12px rgba(7,5,2,0.26),
+    inset 0 1px 0 rgba(255,246,220,0.38),
+    inset 0 0 0 1px rgba(255,255,255,0.1),
+    inset 0 -2px 4px rgba(84,38,4,0.34),
+    inset 0 -8px 14px rgba(92,42,5,0.24);
 }
 
 .fonos-voice-button-idle:hover {
-  filter: brightness(1.08) saturate(1.04);
-  transform: translateY(-1px);
+  filter: brightness(1.07) saturate(1.05);
+  transform: translateY(-1px) scale(1.02);
+}
+
+/* Press-in: this unlayered rule must exist (and come after :hover) because the
+   Tailwind active:scale utility lives in a cascade layer and loses to the hover
+   transform above; without it the button would not compress under the pointer. */
+.fonos-voice-button-idle:active {
+  filter: brightness(0.98) saturate(1.08);
+  transform: translateY(0) scale(0.97);
 }
 
 /* Live affordance: a soft halo breathes out from the button. Gated to -live so
@@ -277,36 +299,43 @@ select:focus-visible {
 @keyframes voice-button-live-pulse {
   0%, 100% {
     box-shadow:
-      0 12px 28px rgba(91,27,25,0.31),
-      0 6px 18px rgba(208,72,63,0.15),
-      inset 0 1px 0 rgba(255,235,231,0.2),
-      inset 0 0 0 1px rgba(255,255,255,0.075),
-      inset 0 -7px 13px rgba(57,14,13,0.28),
-      0 0 0 0 rgba(240,113,104,0);
+      0 14px 30px rgba(110,52,6,0.36),
+      0 6px 18px rgba(226,130,32,0.22),
+      inset 0 1px 0 rgba(255,232,190,0.32),
+      inset 0 0 0 1px rgba(255,255,255,0.08),
+      inset 0 -2px 4px rgba(66,28,3,0.4),
+      inset 0 -8px 14px rgba(74,32,4,0.3),
+      0 0 0 0 rgba(255,158,64,0);
   }
   50% {
     box-shadow:
-      0 12px 28px rgba(91,27,25,0.31),
-      0 6px 18px rgba(208,72,63,0.15),
-      inset 0 1px 0 rgba(255,235,231,0.2),
-      inset 0 0 0 1px rgba(255,255,255,0.075),
-      inset 0 -7px 13px rgba(57,14,13,0.28),
-      0 0 14px 3px rgba(240,113,104,0.5);
+      0 14px 30px rgba(110,52,6,0.36),
+      0 6px 18px rgba(226,130,32,0.22),
+      inset 0 1px 0 rgba(255,232,190,0.32),
+      inset 0 0 0 1px rgba(255,255,255,0.08),
+      inset 0 -2px 4px rgba(66,28,3,0.4),
+      inset 0 -8px 14px rgba(74,32,4,0.3),
+      0 0 16px 4px rgba(255,158,64,0.45);
   }
 }
 
+/* Live = ember, not red: the same molten family driven deeper and hotter. The
+   "recording" red signal lives in the status badge/meter, never on the button. */
 .fonos-voice-button-live {
-  --control-caustic: 238, 102, 93;
-  color: #fff8f5;
+  --control-caustic: 255, 172, 82;
+  color: #38250b;
   background:
-    radial-gradient(circle at 30% 20%, rgba(255,220,214,0.17), transparent 30%),
-    linear-gradient(145deg, #cf6b63 0%, #a8443f 52%, #672826 100%);
+    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,251,240,0.72), rgba(255,247,228,0.24) 55%, transparent 100%),
+    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,238,204,0.4), rgba(255,228,178,0.11) 52%, transparent 74%),
+    radial-gradient(circle at 70% 78%, rgba(92,40,4,0.42), transparent 54%),
+    linear-gradient(148deg, #ea9c32 0%, #c37113 48%, #9d5410 74%, #7f430e 100%);
   box-shadow:
-    0 12px 28px rgba(91,27,25,0.31),
-    0 6px 18px rgba(208,72,63,0.15),
-    inset 0 1px 0 rgba(255,235,231,0.2),
-    inset 0 0 0 1px rgba(255,255,255,0.075),
-    inset 0 -7px 13px rgba(57,14,13,0.28);
+    0 14px 30px rgba(110,52,6,0.36),
+    0 6px 18px rgba(226,130,32,0.22),
+    inset 0 1px 0 rgba(255,232,190,0.32),
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    inset 0 -2px 4px rgba(66,28,3,0.4),
+    inset 0 -8px 14px rgba(74,32,4,0.3);
   animation: voice-button-live-pulse 2.1s ease-in-out infinite;
 }
 

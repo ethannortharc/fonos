@@ -624,7 +624,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
       </div>
 
       {view === "blocks" ? (
-        <BuildingBlocks config={config} />
+        <BuildingBlocks />
       ) : (
         <div className="flex flex-col gap-5">
           {error && expandedId === null && (

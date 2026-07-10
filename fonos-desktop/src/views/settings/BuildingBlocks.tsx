@@ -1,27 +1,23 @@
-// BuildingBlocks.tsx — read-only reference catalog of the widget library
-// (Sources / Processors / Outputs). Widget creating/editing/deleting no longer
-// lives here: all of that now happens in FlowsTab's in-place node editor (it
-// calls the global saveWidget and supports minting a new widget straight into
-// a flow slot). This surface is a glanceable catalog only — clicking a card
-// opens the shared WidgetForm in read-only mode (every field disabled,
-// Close-only footer) as a detail view, delegating per-type_tag rendering to
-// the same one form implementation FlowsTab uses.
+// BuildingBlocks.tsx — the "Components" catalog: one descriptive card per
+// widget TYPE (type_tag), grouped into the three role sections
+// (Sources / Processors / Outputs). It documents the component vocabulary of
+// the workflow engine — the kinds of building block a flow can be made of —
+// rather than the concrete widget INSTANCES a user has configured (those are
+// created and edited inside FlowsTab's in-place node editor).
 //
-// Cards flow in a responsive wrap grid within each role section, and the
-// sections stack in role order (Sources → Processors → Outputs). TYPE_TAGS is
-// exported unchanged for FlowsTab's slot picker to consume.
+// Each card shows the type's role-colored icon, its localized name, a
+// two-line description, and a count of how many configured instances of that
+// type currently exist. Cards are informational only (no click / detail view).
+// Sections stack in role order (Sources → Processors → Outputs), cards flow in
+// a responsive wrap grid. TYPE_TAGS is exported unchanged for FlowsTab's slot
+// picker to consume.
 
 import { useState, useEffect } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { TKey } from "../../lib/i18n";
-import type { AppConfig, WidgetDef, WidgetRole } from "../../types";
+import type { WidgetDef, WidgetRole } from "../../types";
 import { listWidgets } from "../../lib/api";
-import { listContainers } from "../../lib/storage-api";
-import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
-import { widgetLabel } from "../../lib/builtinLabels";
-import WidgetForm, { widgetToForm } from "./WidgetForm";
-import type { WidgetFormValue } from "./WidgetForm";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetForm/WorkflowsTab) ──
 
@@ -45,34 +41,47 @@ const ROLES: { role: WidgetRole; label: TKey }[] = [
   { role: "output", label: "widgets.section.outputs" },
 ];
 
-// ─── Widget card (list row) ────────────────────────────────────────────────────
+// type_tag → its localized name/description i18n keys. A static typed map (no
+// dynamic key construction) so every reference stays TKey-checked. Covers every
+// tag across all three TYPE_TAGS role lists.
+const TYPE_META: Record<string, { name: TKey; desc: TKey }> = {
+  microphone: { name: "widgets.type.microphone.name", desc: "widgets.type.microphone.desc" },
+  selection: { name: "widgets.type.selection.name", desc: "widgets.type.selection.desc" },
+  stt: { name: "widgets.type.stt.name", desc: "widgets.type.stt.desc" },
+  llm: { name: "widgets.type.llm.name", desc: "widgets.type.llm.desc" },
+  insert: { name: "widgets.type.insert.name", desc: "widgets.type.insert.desc" },
+  replace: { name: "widgets.type.replace.name", desc: "widgets.type.replace.desc" },
+  clipboard: { name: "widgets.type.clipboard.name", desc: "widgets.type.clipboard.desc" },
+  notebook: { name: "widgets.type.notebook.name", desc: "widgets.type.notebook.desc" },
+  speak: { name: "widgets.type.speak.name", desc: "widgets.type.speak.desc" },
+  panel: { name: "widgets.type.panel.name", desc: "widgets.type.panel.desc" },
+  dialog: { name: "widgets.type.dialog.name", desc: "widgets.type.dialog.desc" },
+};
 
-function WidgetCard({ w, onClick }: { w: WidgetDef; onClick: () => void }) {
-  const rc = roleColor(w.role);
+// ─── Type card (informational — one per type_tag) ───────────────────────────────
+
+function TypeCard({ role, tag, count }: { role: WidgetRole; tag: string; count: number }) {
+  const rc = roleColor(role);
+  const meta = TYPE_META[tag];
+  const name = meta ? t(meta.name) : tag;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); }
-      }}
-      className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] hover:border-[rgba(255,255,255,0.08)] transition-colors cursor-pointer flex items-center gap-2.5 px-3.5 py-2.5"
-    >
-      <span
-        className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md"
-        style={{
-          background: `rgba(${rc.rgb},0.08)`,
-          border: `1px solid rgba(${rc.rgb},0.22)`,
-          color: `rgba(${rc.rgb},0.95)`,
-        }}
-      >
-        <WidgetIcon typeTag={w.type_tag} size={13} />
-      </span>
-      <span className="flex-1 min-w-0 text-[#fafaf9] text-[12px] font-medium truncate" title={widgetLabel(w)}>{widgetLabel(w)}</span>
-      <span className="text-[9px] text-[rgba(255,255,255,0.3)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded font-mono flex-shrink-0">{w.type_tag}</span>
-      {w.builtin && (
-        <span className="text-[8px] text-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded flex-shrink-0">{t("common.builtin")}</span>
+    <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)] flex flex-col gap-2 px-3.5 py-3">
+      <div className="flex items-center gap-2.5">
+        <span
+          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-md"
+          style={{
+            background: `rgba(${rc.rgb},0.08)`,
+            border: `1px solid rgba(${rc.rgb},0.22)`,
+            color: `rgba(${rc.rgb},0.95)`,
+          }}
+        >
+          <WidgetIcon typeTag={tag} size={13} />
+        </span>
+        <span className="flex-1 min-w-0 text-[#fafaf9] text-[12px] font-medium truncate" title={name}>{name}</span>
+        <span className="text-[9px] text-[rgba(255,255,255,0.15)] flex-shrink-0">({count})</span>
+      </div>
+      {meta && (
+        <p className="m-0 text-[11px] leading-[1.5] text-[rgba(255,255,255,0.42)] line-clamp-2">{t(meta.desc)}</p>
       )}
     </div>
   );
@@ -80,11 +89,9 @@ function WidgetCard({ w, onClick }: { w: WidgetDef; onClick: () => void }) {
 
 // ─── Main BuildingBlocks ───────────────────────────────────────────────────────
 
-export default function BuildingBlocks({ config }: { config: AppConfig }) {
+export default function BuildingBlocks() {
   useT();
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
-  const [containers, setContainers] = useState<Container[]>([]);
-  const [editing, setEditing] = useState<WidgetFormValue | null>(null);
 
   const load = async () => {
     try {
@@ -95,43 +102,31 @@ export default function BuildingBlocks({ config }: { config: AppConfig }) {
   };
 
   useEffect(() => { load(); }, []);
-  useEffect(() => {
-    listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
-  }, []);
 
-  // ── Detail view (shared WidgetForm, read-only) ────────────────────────────
-  if (editing) {
-    return (
-      <div className="flex flex-col gap-3">
-        <WidgetForm
-          value={editing}
-          config={config}
-          containers={containers}
-          readOnly
-          onCancel={() => setEditing(null)}
-        />
-      </div>
-    );
-  }
-
-  // ── Catalog: stacked role sections, cards in a responsive wrap grid ────────
-  // Each section is its heading row followed by an auto-fill grid so cards flow
-  // multiple-per-row by available width (replacing the old fixed 3-column
-  // side-by-side layout). Sections stack in role order (ROLES).
+  // ── Catalog: stacked role sections, one card per type_tag in a wrap grid ───
+  // Each section is its heading row (role-colored, from ab2549f) followed by an
+  // auto-fill grid of type cards. The per-card count chip reports how many
+  // configured instances of that type currently exist. Sections stack in role
+  // order (ROLES).
   return (
     <div className="flex flex-col gap-5">
       {ROLES.map(({ role, label }) => {
-        const items = widgets.filter((w) => w.role === role);
+        const tags = TYPE_TAGS[role];
         const rc = roleColor(role);
         return (
           <div key={role} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <span className={headingClass} style={{ color: `rgba(${rc.rgb},0.75)` }}>{t(label)}</span>
-              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({items.length})</span>
+              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({tags.length})</span>
             </div>
-            <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
-              {items.map((w) => (
-                <WidgetCard key={w.id} w={w} onClick={() => setEditing(widgetToForm(w))} />
+            <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
+              {tags.map((tag) => (
+                <TypeCard
+                  key={tag}
+                  role={role}
+                  tag={tag}
+                  count={widgets.filter((w) => w.type_tag === tag).length}
+                />
               ))}
             </div>
           </div>

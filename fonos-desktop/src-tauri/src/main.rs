@@ -229,6 +229,15 @@ fn main() {
             Err(e) => eprintln!("fonos: settings migration save failed: {e}"),
         }
     }
+    // Idempotent (sentinel-free) remap of built-in ids renamed after they
+    // shipped — currently out.dialog-explain → out.dialog — so configs from
+    // earlier P2 builds keep resolving. A no-op once no stale ids remain.
+    if fonos_core::workflow::migrate::remap_renamed_builtins(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: remapped renamed built-in ids (out.dialog-explain → out.dialog)"),
+            Err(e) => eprintln!("fonos: builtin remap save failed: {e}"),
+        }
+    }
     let config = config;
 
     // Initialize SQLite database for stats & history

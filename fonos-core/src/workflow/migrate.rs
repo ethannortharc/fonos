@@ -535,6 +535,50 @@ pub fn migrate_settings_into_flow(config: &mut AppConfig) -> bool {
     true
 }
 
+/// Idempotent remap of built-in ids that were renamed after shipping in an
+/// earlier build, so configs saved by those builds (carrying the old id) keep
+/// working. Unlike the one-time `migrate_*` functions this carries NO sentinel:
+/// it is a cheap unconditional scan that becomes a no-op (returns `false`) once
+/// no stale ids remain.
+///
+/// Currently handles a single rename: the dialog output widget
+/// `out.dialog-explain` → `out.dialog` (the widget is generic — its props carry
+/// no explain-specific config — so "explain" semantics live in `wf.explain`,
+/// not in the widget id). Both the `config.widgets` entry and any workflow
+/// `outputs` reference are rewritten. If a config already carries an `out.dialog`
+/// widget entry, the stale `out.dialog-explain` entry is dropped instead of
+/// renamed (avoiding a duplicate id). Returns `true` if anything changed.
+pub fn remap_renamed_builtins(config: &mut AppConfig) -> bool {
+    /// (old_id, new_id) pairs for built-ins renamed after they shipped.
+    const RENAMES: [(&str, &str); 1] = [("out.dialog-explain", "out.dialog")];
+    let mut changed = false;
+
+    for (old_id, new_id) in RENAMES {
+        // Widgets: rename the stale entry in place — unless a new-id entry
+        // already exists, in which case drop the stale one to avoid a duplicate.
+        if let Some(pos) = config.widgets.iter().position(|w| w.id == old_id) {
+            if config.widgets.iter().any(|w| w.id == new_id) {
+                config.widgets.remove(pos);
+            } else {
+                config.widgets[pos].id = new_id.to_string();
+            }
+            changed = true;
+        }
+
+        // Workflow output references.
+        for wf in config.workflows.iter_mut() {
+            for out in wf.outputs.iter_mut() {
+                if out == old_id {
+                    *out = new_id.to_string();
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1142,5 +1186,91 @@ mod tests {
         assert!(cfg.widgets.iter().all(|w| w.id != "out.insert"), "no override needed for default strategy");
         assert!(cfg.widgets.iter().all(|w| w.id != "llm.translate"), "no override needed for default target");
         assert!(cfg.widgets.is_empty(), "an all-default config seeds zero override widgets");
+    }
+
+    // ── remap_renamed_builtins: out.dialog-explain → out.dialog ──────────────
+
+    /// A stale `out.dialog-explain` widget entry and any workflow output that
+    /// references it are both renamed to `out.dialog`.
+    #[test]
+    fn remap_renames_dialog_widget_and_workflow_refs() {
+        let mut cfg = AppConfig::default();
+        cfg.widgets.push(WidgetDef {
+            id: "out.dialog-explain".into(),
+            role: WidgetRole::Output,
+            type_tag: "dialog".into(),
+            name: "解释对话框".into(),
+            icon: "💬".into(),
+            props: serde_json::json!({}),
+            builtin: true,
+        });
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.explain".into(),
+            name: "选中解释".into(),
+            icon: "💡".into(),
+            hotkey: String::new(),
+            source: "src.selection".into(),
+            processors: vec!["llm.explain".into()],
+            outputs: vec!["out.dialog-explain".into()],
+            builtin: true,
+        });
+
+        assert!(remap_renamed_builtins(&mut cfg), "first pass reports a change");
+
+        assert!(cfg.widgets.iter().any(|w| w.id == "out.dialog"), "widget id renamed");
+        assert!(!cfg.widgets.iter().any(|w| w.id == "out.dialog-explain"), "old widget id gone");
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.explain").unwrap();
+        assert_eq!(wf.outputs, vec!["out.dialog".to_string()], "workflow output ref renamed");
+    }
+
+    /// If both the old and new widget ids are present, the stale old entry is
+    /// dropped (not renamed) so no duplicate `out.dialog` id results.
+    #[test]
+    fn remap_drops_stale_old_widget_when_new_already_exists() {
+        let mut cfg = AppConfig::default();
+        for id in ["out.dialog-explain", "out.dialog"] {
+            cfg.widgets.push(WidgetDef {
+                id: id.into(),
+                role: WidgetRole::Output,
+                type_tag: "dialog".into(),
+                name: "对话框".into(),
+                icon: "💬".into(),
+                props: serde_json::json!({}),
+                builtin: true,
+            });
+        }
+
+        assert!(remap_renamed_builtins(&mut cfg), "reports a change (stale dropped)");
+        assert_eq!(
+            cfg.widgets.iter().filter(|w| w.id == "out.dialog").count(),
+            1,
+            "exactly one out.dialog entry — no duplicate"
+        );
+        assert!(!cfg.widgets.iter().any(|w| w.id == "out.dialog-explain"), "stale entry dropped");
+    }
+
+    /// Idempotent: a second pass over an already-remapped config is a no-op.
+    #[test]
+    fn remap_is_idempotent() {
+        let mut cfg = AppConfig::default();
+        cfg.widgets.push(WidgetDef {
+            id: "out.dialog-explain".into(),
+            role: WidgetRole::Output,
+            type_tag: "dialog".into(),
+            name: "解释对话框".into(),
+            icon: "💬".into(),
+            props: serde_json::json!({}),
+            builtin: true,
+        });
+        assert!(remap_renamed_builtins(&mut cfg), "first pass changes config");
+        assert!(!remap_renamed_builtins(&mut cfg), "second pass is a no-op");
+    }
+
+    /// A fresh (already-current) config with no stale ids is untouched.
+    #[test]
+    fn remap_noop_on_fresh_config() {
+        let mut cfg = AppConfig::default();
+        assert!(!remap_renamed_builtins(&mut cfg), "fresh config: nothing to remap");
+        assert!(cfg.widgets.is_empty() && cfg.workflows.is_empty());
     }
 }

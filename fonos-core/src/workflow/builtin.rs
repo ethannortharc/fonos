@@ -232,10 +232,10 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             serde_json::json!({ "markdown": false, "size": { "width": 420, "height": 320 } }),
         ),
         widget(
-            "out.dialog-explain",
+            "out.dialog",
             Output,
             "dialog",
-            "解释对话框",
+            "对话框",
             "💬",
             serde_json::json!({
                 "markdown": true,
@@ -291,7 +291,7 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
             "💡",
             "src.selection",
             &["llm.explain"],
-            &["out.dialog-explain"],
+            &["out.dialog"],
         ),
         workflow("wf.listen", "朗读", "🎧", "src.selection", &["llm.summarize"], &["out.speak"]),
         workflow("wf.note", "记笔记", "📓", "src.mic-hold", &["stt.default"], &["out.quicknote"]),
@@ -469,20 +469,20 @@ mod tests {
         assert!(built_in_widgets().iter().any(|w| w.id == "llm.explain"));
         let d = built_in_widgets()
             .into_iter()
-            .find(|w| w.id == "out.dialog-explain")
+            .find(|w| w.id == "out.dialog")
             .unwrap();
         assert_eq!(d.type_tag, "dialog");
         // Its props must deserialize as DialogProps — the desktop `dialog`
         // factory does this at instantiation; core `validate` does not, so
         // guard the shape here.
         let dp: crate::workflow::dialog::DialogProps =
-            serde_json::from_value(d.props.clone()).expect("out.dialog-explain props are DialogProps");
+            serde_json::from_value(d.props.clone()).expect("out.dialog props are DialogProps");
         assert!(dp.markdown);
         assert!(matches!(dp.engine, crate::workflow::dialog::DialogEngine::Llm { .. }));
         assert!(built_in_workflows().iter().any(|w| w.id == "wf.explain"));
 
         // Chain type-check: src.selection (Text) → llm.explain (Text→Text) →
-        // out.dialog-explain (accepts Text) validates end to end via the real
+        // out.dialog (accepts Text) validates end to end via the real
         // `engine::validate`, using doubles registered under the production
         // type_tags this chain resolves to.
         let mut reg = Registry::default();

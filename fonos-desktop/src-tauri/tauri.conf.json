@@ -136,7 +136,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
     "icon": [
       "resources/icon.icns",
       "resources/icon_32x32.png",

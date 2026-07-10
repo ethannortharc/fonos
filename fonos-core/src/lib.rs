@@ -30,6 +30,7 @@ pub mod tts;
 pub mod vad;
 pub mod vocab;
 pub mod voice_store;
+pub mod workflow;
 
 pub use error::Error;
 

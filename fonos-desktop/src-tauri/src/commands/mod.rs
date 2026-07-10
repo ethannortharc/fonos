@@ -17,6 +17,10 @@ pub mod storage;
 pub mod text_action;
 pub mod tts;
 pub mod voices;
+pub mod widget_uppercase;
+pub mod workflow_cfg;
+pub mod workflow_exec;
+pub mod workflow_widgets;
 
 // Re-export storage commands at the commands level so integration tests can
 // import them as `fonos_app::commands::list_entries` etc.
@@ -66,22 +70,6 @@ pub fn hide_agent_panel(app: tauri::AppHandle, state: tauri::State<'_, AppState>
         let _ = w.hide();
     }
     Ok(())
-}
-
-/// Set the default note target to Quick Note. Called from hotkey handler before panel opens.
-pub fn set_default_note_target(handle: &tauri::AppHandle) {
-    use tauri::Manager;
-    let state: &AppState = handle.state::<AppState>().inner();
-    let qn_id = state.db.lock().ok().and_then(|db| {
-        db.query_row(
-            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
-            [], |r| r.get::<_, i64>(0)
-        ).ok()
-    });
-    if let Ok(mut t) = state.note_target.lock() {
-        *t = qn_id;
-        eprintln!("fonos: default note target set to {:?}", qn_id);
-    }
 }
 
 /// Set the target notebook for note mode. Called by note panel when user selects a notebook.
@@ -286,4 +274,9 @@ pub struct AppState {
     /// Whether a hands-free "call mode" loop is running (issue #24). The loop
     /// task polls this flag for cooperative cancellation; `call_stop` clears it.
     pub call_active: Arc<std::sync::atomic::AtomicBool>,
+    /// The workflow component registry, built once in `main`'s `.setup()` (it
+    /// needs an `AppHandle`, only available there) and shared by every workflow
+    /// run and the settings CRUD commands. Built exactly once — `run_workflow`
+    /// and `workflow_cfg` both borrow this instance rather than rebuilding.
+    pub registry: Arc<fonos_core::workflow::registry::Registry>,
 }

@@ -31,6 +31,11 @@ impl EventSink for PillEventSink {
 
 /// Delivers text at the cursor via the injection module, resolving the
 /// per-app strategy from the live config.
+///
+/// Constructed only on the Linux dictation path (`stop_and_process_dictation`,
+/// `cfg(target_os = "linux")`); macOS dictation now runs through the workflow
+/// engine's `insert` output, so this is dead code on the macOS build.
+#[allow(dead_code)]
 pub struct InjectionTextSink(pub std::sync::Arc<std::sync::Mutex<fonos_core::config::AppConfig>>);
 
 impl TextSink for InjectionTextSink {

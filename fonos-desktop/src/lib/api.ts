@@ -22,6 +22,9 @@ import type {
   TtsResult,
   VoiceEntry,
   VoiceList,
+  WidgetDef,
+  WorkflowDef,
+  WorkflowRow,
 } from "../types";
 
 // ─── Dictation ────────────────────────────────────────────────────────────────
@@ -458,4 +461,40 @@ export async function callStop(): Promise<void> {
 
 export async function listModelVoices(profileId: string): Promise<string[]> {
   return invoke<string[]>("list_model_voices", { profileId });
+}
+
+// ── Workflow (Workflow P1) — components & pipelines ───────────────────────
+
+/** List every effective widget: built-ins overlaid by the user's config. */
+export async function listWidgets(): Promise<WidgetDef[]> {
+  return invoke<WidgetDef[]>("list_widgets");
+}
+
+/** List every effective workflow, each tagged with its source widget's
+ *  `type_tag` (used to filter e.g. microphone-sourced workflows). */
+export async function listWorkflows(): Promise<WorkflowRow[]> {
+  return invoke<WorkflowRow[]>("list_workflows");
+}
+
+/** Save (create or update, matched by id) a widget definition. Rejects if
+ *  `type_tag` isn't registered for the declared `role`. */
+export async function saveWidget(widget: WidgetDef): Promise<void> {
+  return invoke<void>("save_widget", { widget });
+}
+
+/** Delete a custom widget by id. Rejects built-in ids and widgets still
+ *  referenced by an effective workflow. */
+export async function deleteWidget(id: string): Promise<void> {
+  return invoke<void>("delete_widget", { id });
+}
+
+/** Save (create or update, matched by id) a workflow definition. Validates
+ *  the full source → processors → outputs chain before persisting. */
+export async function saveWorkflow(workflow: WorkflowDef): Promise<void> {
+  return invoke<void>("save_workflow", { workflow });
+}
+
+/** Delete a custom workflow by id. Rejects built-in ids. */
+export async function deleteWorkflow(id: string): Promise<void> {
+  return invoke<void>("delete_workflow", { id });
 }

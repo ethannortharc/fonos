@@ -181,13 +181,14 @@ function setModeIcon(el,emoji){
   }
 }
 
+// Fallback voice workflows shown before list_workflows resolves (or if it
+// fails). The live list comes from list_workflows filtered to microphone
+// sources; the main dictation hotkey triggers whichever one is selected.
 const BUILTIN_MODES=[
-  {id:'raw',icon:'📝',name:'Raw'},
-  {id:'clean',icon:'✨',name:'Clean'},
-  {id:'translate',icon:'🌐',name:'Translate'},
+  {id:'wf.dictation',icon:'🎤',name:'Dictation'},
 ];
 let allModes=[...BUILTIN_MODES];
-let currentMode='raw',isRec=false,animId=null,animT=0,durTm=null;
+let currentMode='wf.dictation',isRec=false,animId=null,animT=0,durTm=null;
 let rollerIdx=0; // index into circular list, maps to center slot
 // Error state: while an error is showing, clicking the pill opens the
 // permission's System Settings pane (if any) instead of the mode menu.
@@ -305,19 +306,23 @@ function renderMenu(){
 
 function saveCfg(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return;
-  window.__TAURI_INTERNALS__.invoke('save_config',{configJson:JSON.stringify({dictation_mode:currentMode})}).catch(()=>{});
+  window.__TAURI_INTERNALS__.invoke('save_config',{configJson:JSON.stringify({active_voice_workflow:currentMode})}).catch(()=>{});
 }
 function loadCfg(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return;
   window.__TAURI_INTERNALS__.invoke('get_config').then(c=>{
-    if(c&&c.dictation_mode)currentMode=c.dictation_mode;
+    if(c&&c.active_voice_workflow)currentMode=c.active_voice_workflow;
   }).catch(()=>{});
 }
 function loadModes(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
-  return window.__TAURI_INTERNALS__.invoke('list_modes').then(modes=>{
-    if(Array.isArray(modes)&&modes.length>0){
-      allModes=modes.map(m=>({id:m.id,icon:m.icon||'⚙',name:m.name}));
+  // Voice workflows only: filter list_workflows to microphone-source rows.
+  return window.__TAURI_INTERNALS__.invoke('list_workflows').then(rows=>{
+    if(Array.isArray(rows)){
+      var mic=rows.filter(w=>w&&w.source_type_tag==='microphone');
+      if(mic.length>0){
+        allModes=mic.map(w=>({id:w.id,icon:w.icon||'⚙',name:w.name}));
+      }
     }
   }).catch(()=>{});
 }

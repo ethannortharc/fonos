@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use crate::{Error, Result};
 use crate::modes::OutputTarget;
+use crate::workflow::model::{WidgetDef, WorkflowDef};
 
 /// Per-app override for the text injection strategy.
 ///
@@ -212,6 +213,29 @@ pub struct AppConfig {
     /// snapshot of the profiles behind the default assignments plus those
     /// assignments. Applied / imported / exported from the Scenarios view.
     pub saved_scenarios: Vec<crate::scenarios::SavedScenario>,
+
+    // ── Workflows (Workflow P1) ──────────────────────────────────────────
+
+    /// Custom / overriding widget definitions. A config entry whose id matches
+    /// a built-in replaces that built-in wholesale; entries with new ids are
+    /// appended. See [`crate::workflow::engine::effective_widgets`].
+    #[serde(default)]
+    pub widgets: Vec<WidgetDef>,
+    /// Custom / overriding workflow definitions, overlaid on the built-ins the
+    /// same way as [`AppConfig::widgets`]. See
+    /// [`crate::workflow::engine::effective_workflows`].
+    #[serde(default)]
+    pub workflows: Vec<WorkflowDef>,
+    /// Set once the one-time migration of legacy hotkeys/modes into workflow
+    /// defs has run, so it never runs again.
+    #[serde(default)]
+    pub workflow_migration_done: bool,
+    /// Id of the voice (microphone-source) workflow that the primary dictation
+    /// hotkey (`workflow-wf.dictation`) triggers. Empty falls back to the
+    /// built-in `"wf.dictation"`. Written by the Dictation drum / float pill
+    /// picker; read by [`crate::workflow::engine::resolve_trigger_target`].
+    #[serde(default)]
+    pub active_voice_workflow: String,
 }
 
 impl Default for AppConfig {
@@ -280,6 +304,10 @@ impl Default for AppConfig {
             vocab_books: Vec::new(),
             global_vocab_books: Vec::new(),
             saved_scenarios: Vec::new(),
+            widgets: Vec::new(),
+            workflows: Vec::new(),
+            workflow_migration_done: false,
+            active_voice_workflow: String::new(),
         }
     }
 }

@@ -27,6 +27,8 @@ pub enum SourceType {
     Listen,
     /// Text-action result: selection grabbed via hotkey, processed by a mode's LLM step.
     Transform,
+    /// Workflow run: a Source→Processor→Output pipeline executed by the engine.
+    Workflow,
 }
 
 impl SourceType {
@@ -38,6 +40,7 @@ impl SourceType {
             SourceType::Meeting => "meeting",
             SourceType::Listen => "listen",
             SourceType::Transform => "transform",
+            SourceType::Workflow => "workflow",
         }
     }
 
@@ -48,6 +51,7 @@ impl SourceType {
             "meeting" => SourceType::Meeting,
             "listen" => SourceType::Listen,
             "transform" => SourceType::Transform,
+            "workflow" => SourceType::Workflow,
             _ => SourceType::Dictation,
         }
     }
@@ -373,6 +377,20 @@ pub fn update_entry_container(conn: &Connection, id: i64, container_id: Option<i
         params![id, container_id],
     )
     .map_err(|e| Error::Database(format!("update_entry_container: {e}")))?;
+    Ok(())
+}
+
+/// Set the audio-file reference of an entry.
+///
+/// Used by the workflow `speak` output: the entry is already in history (the
+/// engine's recorder wrote it before delivery); after synthesizing its spoken
+/// audio, the WAV path is linked back to the entry without copying data.
+pub fn update_entry_audio_ref(conn: &Connection, id: i64, audio_ref: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET audio_ref = ?2 WHERE id = ?1",
+        params![id, audio_ref],
+    )
+    .map_err(|e| Error::Database(format!("update_entry_audio_ref: {e}")))?;
     Ok(())
 }
 
@@ -1024,6 +1042,12 @@ mod tests {
     }
 
     #[test]
+    fn source_type_workflow_roundtrip() {
+        assert_eq!(SourceType::Workflow.as_str(), "workflow");
+        assert!(matches!(SourceType::from_str("workflow"), SourceType::Workflow));
+    }
+
+    #[test]
     fn update_entry_container_links_entry_and_keeps_it_in_history() {
         let conn = Connection::open_in_memory().unwrap();
         init_storage_db(&conn);
@@ -1053,5 +1077,21 @@ mod tests {
         assert_eq!(get_entry(&conn, id).unwrap().container_id, Some(nb));
         // Linking must NOT remove the entry from the flat history listing.
         assert_eq!(get_entries(&conn, &EntryFilter::default()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn update_entry_audio_ref_links_wav_path_without_touching_text() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_storage_db(&conn);
+        let id = seed_entry(&conn, "spoken briefing", Some("spoken briefing"));
+        assert!(get_entry(&conn, id).unwrap().audio_ref.is_none());
+
+        update_entry_audio_ref(&conn, id, "/data/listen/listen_42.wav").unwrap();
+
+        let got = get_entry(&conn, id).unwrap();
+        assert_eq!(got.audio_ref.as_deref(), Some("/data/listen/listen_42.wav"));
+        // Linking the audio file must not disturb the entry's text.
+        assert_eq!(got.raw_text, "spoken briefing");
+        assert_eq!(got.processed_text.as_deref(), Some("spoken briefing"));
     }
 }

@@ -1,19 +1,15 @@
 // Settings view constants and form types.
 
-export type SettingsTab = "general" | "models" | "scenarios" | "dictation" | "speech" | "vocab" | "agent" | "notes" | "meeting" | "hotkeys";
+export type SettingsTab = "general" | "flows" | "models" | "vocab" | "advanced" | "scenarios";
 
 import type { TKey } from "../../lib/i18n";
 
 export const TABS: { key: SettingsTab; label: TKey }[] = [
   { key: "general", label: "tab.general" },
+  { key: "flows", label: "tab.flows" },
   { key: "models", label: "tab.models" },
-  { key: "dictation", label: "tab.dictation" },
-  { key: "speech", label: "tab.speech" },
   { key: "vocab", label: "tab.vocab" },
-  { key: "agent", label: "tab.agent" },
-  { key: "notes", label: "tab.notes" },
-  { key: "meeting", label: "tab.meeting" },
-  { key: "hotkeys", label: "tab.hotkeys" },
+  { key: "advanced", label: "tab.advanced" },
   { key: "scenarios", label: "tab.scenarios" },
 ];
 
@@ -59,44 +55,6 @@ export const CAP_BADGE: Record<string, string> = {
   stt: "bg-[rgba(245,158,11,0.1)] text-[rgba(251,191,36,0.7)]",
   tts: "bg-[rgba(196,181,253,0.08)] text-[rgba(196,181,253,0.6)]",
   llm: "bg-[rgba(134,239,172,0.08)] text-[rgba(134,239,172,0.6)]",
-};
-
-export interface ModeForm {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  system: string;
-  user_template: string;
-  temperature: number;
-  model: string;
-  stt_model: string;
-  stt_prompt: string;
-  stt_temperature: number;
-  max_tokens: number;
-  output_language: string;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-  vocab_books: string[];
-}
-
-export const EMPTY_MODE: ModeForm = {
-  id: "",
-  name: "",
-  description: "",
-  icon: "\u2728",
-  system: "",
-  user_template: "{text}",
-  temperature: 0.3,
-  model: "",
-  stt_model: "",
-  stt_prompt: "",
-  stt_temperature: 0,
-  max_tokens: 4096,
-  output_language: "auto",
-  auto_paste: true,
-  auto_press_enter: false,
-  vocab_books: [],
 };
 
 export interface ModelForm {

@@ -18,6 +18,9 @@ fn parse_source_type(s: &str) -> Option<SourceType> {
         "agent" => Some(SourceType::Agent),
         "note" => Some(SourceType::Note),
         "meeting" => Some(SourceType::Meeting),
+        "listen" => Some(SourceType::Listen),
+        "transform" => Some(SourceType::Transform),
+        "workflow" => Some(SourceType::Workflow),
         _ => None,
     }
 }

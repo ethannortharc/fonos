@@ -42,7 +42,12 @@ fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
 
 /// Position the note-panel window centered horizontally near the cursor,
 /// slightly below the macOS menu bar — mirrors agent panel placement.
+///
+/// Retained for the P2 note-panel rebuild: the note-panel window is kept, but
+/// the P1 `wf.note` workflow saves with no panel, so nothing positions it after
+/// the legacy note dispatch arm was removed in Task 10.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("note-panel") else { return };
@@ -179,20 +184,17 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
             Err(e) => eprintln!("fonos: could not parse {} hotkey '{}': {}", label, combo, e),
         }
     };
-    try_add(&config.hotkey_dictation, "dictation");
-    try_add(&config.hotkey_dictation_toggle, "dictation-toggle");
+    // Non-workflow triggers keep their dedicated labels + dispatch arms.
     try_add(&config.hotkey_agent, "agent");
     try_add(&config.hotkey_agent_panel, "agent-panel");
-    try_add(&config.hotkey_note, "note");
     try_add(&config.hotkey_meeting, "meeting");
-    for (i, b) in config.text_actions.iter().enumerate() {
-        try_add(&b.hotkey, &format!("text-action-{i}"));
-    }
-    try_add(&config.hotkey_listen, "listen");
     try_add(&config.hotkey_sts, "sts");
-    if config.notebook_hotkey_1 > 0 { try_add(&config.hotkey_note_1, "note-1"); }
-    if config.notebook_hotkey_2 > 0 { try_add(&config.hotkey_note_2, "note-2"); }
-    if config.notebook_hotkey_3 > 0 { try_add(&config.hotkey_note_3, "note-3"); }
+    // Dictation / note / listen / text-actions are unified onto the workflow
+    // engine (Workflow P1): every workflow that carries a hotkey registers under
+    // a `workflow-{id}` label handled by the `starts_with("workflow-")` arm.
+    for wf in fonos_core::workflow::engine::effective_workflows(config) {
+        try_add(&wf.hotkey, &format!("workflow-{}", wf.id));
+    }
     configs
 }
 
@@ -203,6 +205,19 @@ fn main() {
         match config.save() {
             Ok(()) => eprintln!("fonos: migrated quick-transform hotkey to text_actions"),
             Err(e) => eprintln!("fonos: config migration save failed: {e}"),
+        }
+    }
+    // One-time migration: legacy dictation / note / listen / text-action config
+    // → workflow engine (Workflow P1). Runs after the transform migration above
+    // so the text_actions it produces are folded into `wf.ta-*` workflows here,
+    // and before build_hotkey_configs reads the (now workflow-shaped) config.
+    if fonos_core::workflow::migrate::migrate_to_workflows(
+        &mut config,
+        &fonos_core::modes::load_custom_modes(),
+    ) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated dictation/note/listen/text-actions to workflows"),
+            Err(e) => eprintln!("fonos: workflow migration save failed: {e}"),
         }
     }
     let config = config;
@@ -291,18 +306,11 @@ fn main() {
 
     let meeting_state = commands::meeting::MeetingState::new();
 
-    let app_state = AppState {
-        audio_capture: Arc::new(Mutex::new(None)),
-        audio_playback: Arc::new(Mutex::new(None)),
-        config: Arc::new(Mutex::new(config)),
-        db: Arc::new(Mutex::new(db_conn)),
-        agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
-        meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
-        note_target: Arc::new(Mutex::new(None)),
-        agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
-        sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
-        call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    };
+    // `AppState` construction is deferred into `.setup()` below: its `registry`
+    // field is built by `build_registry(handle)`, and the `AppHandle` is only
+    // available inside setup. The owned pieces built above (config, db_conn,
+    // agent_state, meeting_state) are moved into the setup closure, which
+    // assembles AppState and `manage`s it before anything else in setup reads it.
 
     // `mut` is only exercised on Linux (the global-shortcut plugin block below);
     // on macOS the binding is never reassigned.
@@ -316,7 +324,6 @@ fn main() {
     }
 
     builder
-        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             // Config commands
             commands::config::get_config,
@@ -424,8 +431,36 @@ fn main() {
             commands::meeting::hide_meeting_panel,
             commands::meeting::export_meeting_md,
             commands::meeting::export_meeting_json,
+            // Workflow / widget CRUD commands (settings pages)
+            commands::workflow_cfg::list_widgets,
+            commands::workflow_cfg::list_workflows,
+            commands::workflow_cfg::save_widget,
+            commands::workflow_cfg::save_workflow,
+            commands::workflow_cfg::delete_widget,
+            commands::workflow_cfg::delete_workflow,
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            // Assemble and manage the shared AppState first — the rest of setup
+            // (and every command) reaches it via `app.state::<AppState>()`. The
+            // workflow registry is built exactly once here, from this handle, and
+            // shared by `run_workflow` and the settings CRUD commands (rather than
+            // rebuilt per run). Managing here (vs. on the builder) is equivalent:
+            // no command runs before setup completes.
+            let app_state = AppState {
+                audio_capture: Arc::new(Mutex::new(None)),
+                audio_playback: Arc::new(Mutex::new(None)),
+                config: Arc::new(Mutex::new(config)),
+                db: Arc::new(Mutex::new(db_conn)),
+                agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
+                meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
+                note_target: Arc::new(Mutex::new(None)),
+                agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
+                sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
+                call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                registry: Arc::new(commands::workflow_widgets::build_registry(app.handle().clone())),
+            };
+            app.manage(app_state);
+
             // 0. Make agent-panel window fully transparent:
             //    - Clear webview background so only #drop div is visible
             //    - Disable window shadow so macOS doesn't draw a rectangular outline
@@ -485,8 +520,6 @@ fn main() {
             // Snapshot the config so registration goes through the same
             // build_hotkey_configs() path the hotkey:reload listener uses.
             let cfg = state.config.lock().unwrap().clone();
-            let (note1_nb, note2_nb, note3_nb) =
-                (cfg.notebook_hotkey_1, cfg.notebook_hotkey_2, cfg.notebook_hotkey_3);
 
             let mut hm = hotkey::HotkeyManager::new();
             let mut any_hotkey = false;
@@ -494,243 +527,22 @@ fn main() {
                 hm.register(hk);
                 any_hotkey = true;
             }
-            // Notebook-specific note shortcuts (only registered if a notebook is bound)
-            eprintln!("fonos: note shortcuts: 1='{}' nb={}, 2='{}' nb={}, 3='{}' nb={}",
-                cfg.hotkey_note_1, note1_nb, cfg.hotkey_note_2, note2_nb, cfg.hotkey_note_3, note3_nb);
 
             if any_hotkey {
                 let app_handle = app.handle().clone();
-                // Move notebook IDs into the closure so note-1/2/3 handlers can access them
-                let nb1 = note1_nb;
-                let nb2 = note2_nb;
-                let nb3 = note3_nb;
-                // Toggle state: generation counter + last action time for debounce
-                let toggle_gen: Arc<std::sync::atomic::AtomicU64> = Arc::new(std::sync::atomic::AtomicU64::new(0));
+                // Toggle debounce: ignore a toggle key-down that lands within
+                // TOGGLE_DELAY_MS of the last toggle action. Key-repeat is already
+                // suppressed by the hotkey layer, so this only guards against a
+                // fast physical double-press re-triggering the same mic workflow.
                 let toggle_last_action: Arc<Mutex<std::time::Instant>> = Arc::new(Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(10)));
-                const TOGGLE_DELAY_MS: u64 = 500; // hold 500ms to trigger
-                let tg_gen = Arc::clone(&toggle_gen);
+                const TOGGLE_DELAY_MS: u64 = 500;
                 let tg_last = Arc::clone(&toggle_last_action);
                 hm.set_callback(move |label, is_down| {
-                    use tauri::Emitter;
                     let handle = app_handle.clone();
                     let label = label.to_string();
-                    let note1_nb = nb1;
-                    let note2_nb = nb2;
-                    let note3_nb = nb3;
-                    let gen = Arc::clone(&tg_gen);
                     let last_action = Arc::clone(&tg_last);
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
-                            "dictation" | "dictation-toggle" => {
-                                let is_toggle = label == "dictation-toggle";
-
-                                // Hold mode: key_down=start, key_up=stop
-                                if !is_toggle {
-                                    if is_down {
-                                        let state: tauri::State<'_, AppState> = handle.state();
-                                        if let Err(e) = commands::dictation::start_recording(
-                                            handle.clone(), state, None
-                                        ).await {
-                                            crate::error_surface::emit_float_error(&handle, &e);
-                                        }
-                                        return;
-                                    }
-                                    // key_up → fall through to stop logic
-                                } else {
-                                    // Toggle mode: hold for 500ms to trigger (fires while held).
-                                    // key_down → increment generation, spawn delayed check
-                                    // key_up → increment generation (cancels pending)
-                                    // Debounce: ignore if <500ms since last action
-                                    use std::sync::atomic::Ordering;
-
-                                    if !is_down {
-                                        // Key released — cancel any pending delayed trigger
-                                        gen.fetch_add(1, Ordering::SeqCst);
-                                        return;
-                                    }
-
-                                    // Key down — check debounce
-                                    {
-                                        let last = last_action.lock().unwrap();
-                                        if last.elapsed().as_millis() < TOGGLE_DELAY_MS as u128 {
-                                            eprintln!("fonos: toggle debounce — too soon since last action");
-                                            return;
-                                        }
-                                    }
-
-                                    // Increment generation and spawn a delayed check
-                                    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
-                                    let gen2 = Arc::clone(&gen);
-                                    let last2 = Arc::clone(&last_action);
-                                    let h2 = handle.clone();
-                                    tokio::spawn(async move {
-                                        tokio::time::sleep(std::time::Duration::from_millis(TOGGLE_DELAY_MS)).await;
-
-                                        // Check if generation still matches (key hasn't been released/re-pressed)
-                                        if gen2.load(Ordering::SeqCst) != my_gen {
-                                            eprintln!("fonos: toggle cancelled (key released before {}ms)", TOGGLE_DELAY_MS);
-                                            return;
-                                        }
-
-                                        // Record action time for debounce
-                                        *last2.lock().unwrap() = std::time::Instant::now();
-
-                                        if crate::commands::dictation::is_recording() {
-                                            eprintln!("fonos: toggle → stopping");
-                                            let state: tauri::State<'_, AppState> = h2.state();
-                                            let state2: tauri::State<'_, AppState> = h2.state();
-                                            let dictation_t0 = std::time::Instant::now();
-                                            match commands::dictation::stop_recording(h2.clone(), state, None).await {
-                                                Ok(result) => {
-                                                    if result.text.is_empty() {
-                                                        let _ = h2.emit("float:stop", "");
-                                                    } else {
-                                                        let mode = {
-                                                            let cfg = state2.config.lock().unwrap();
-                                                            cfg.dictation_mode.clone()
-                                                        };
-                                                        let has_llm = {
-                                                            let all = fonos_core::modes::all_modes();
-                                                            all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
-                                                        };
-                                                        if has_llm {
-                                                            {
-                                                                // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
-                                                                // processed text, emit exactly one terminal pill event, classify errors.
-                                                                let llm_res = commands::llm::process_with_llm(state2, result.text, mode.clone()).await;
-                                                                let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
-                                                                    processed: l.processed,
-                                                                    auto_paste: l.auto_paste,
-                                                                    auto_press_enter: l.auto_press_enter,
-                                                                });
-                                                                let (events, text_sink) = {
-                                                                    let s: tauri::State<AppState> = h2.state();
-                                                                    (
-                                                                        crate::adapters::PillEventSink(h2.clone()),
-                                                                        crate::adapters::InjectionTextSink(s.config.clone()),
-                                                                    )
-                                                                };
-                                                                if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
-                                                                    == fonos_core::pipeline::DeliveryOutcome::Delivered
-                                                                {
-                                                                    // End-to-end dictation latency (key release → delivered), issue #4.
-                                                                    let db_arc = {
-                                                                        let s: tauri::State<AppState> = h2.state();
-                                                                        s.db.clone()
-                                                                    };
-                                                                    let guard = db_arc.lock();
-                                                                    if let Ok(db) = guard {
-                                                                        let _ = fonos_core::stats::record_dictation_latency(
-                                                                            &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                                                        );
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        // Raw mode — stop_recording already emitted
-                                                        // float:stop/float:error; don't repaint over it.
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    if e.contains("not recording") {
-                                                        // Harmless start/stop race — silent idle revert.
-                                                        let _ = h2.emit("float:stop", "");
-                                                    } else {
-                                                        crate::error_surface::emit_float_error(&h2, &e);
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            eprintln!("fonos: toggle → starting");
-                                            let state: tauri::State<'_, AppState> = h2.state();
-                                            if let Err(e) = commands::dictation::start_recording(h2.clone(), state, None).await {
-                                                crate::error_surface::emit_float_error(&h2, &e);
-                                            }
-                                        }
-                                    });
-                                    return;
-                                }
-
-                                // ── Stop + process (hold key-up OR toggle second press) ──
-                                {
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    let state2: tauri::State<'_, AppState> = handle.state();
-                                    let dictation_t0 = std::time::Instant::now();
-                                    match commands::dictation::stop_recording(
-                                        handle.clone(), state, None
-                                    ).await {
-                                        Ok(result) => {
-                                            if !result.text.is_empty() {
-                                                let session_id = fonos_core::stats::new_session_id();
-                                                let mode = {
-                                                    let cfg = state2.config.lock().unwrap();
-                                                    cfg.dictation_mode.clone()
-                                                };
-                                                // Mode processing: LLM if mode has prompts, else raw inject
-                                                let has_llm = {
-                                                    let all = fonos_core::modes::all_modes();
-                                                    all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
-                                                };
-                                                if has_llm {
-                                                    {
-                                                        // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
-                                                        // processed text, emit exactly one terminal pill event, classify errors.
-                                                        let llm_res = commands::llm::process_with_llm(state2.clone(), result.text.clone(), mode.clone()).await;
-                                                        let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
-                                                            processed: l.processed,
-                                                            auto_paste: l.auto_paste,
-                                                            auto_press_enter: l.auto_press_enter,
-                                                        });
-                                                        let (events, text_sink) = {
-                                                            let s: tauri::State<AppState> = handle.state();
-                                                            (
-                                                                crate::adapters::PillEventSink(handle.clone()),
-                                                                crate::adapters::InjectionTextSink(s.config.clone()),
-                                                            )
-                                                        };
-                                                        if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
-                                                            == fonos_core::pipeline::DeliveryOutcome::Delivered
-                                                        {
-                                                            // End-to-end dictation latency (key release → delivered), issue #4.
-                                                            let db_arc = {
-                                                                let s: tauri::State<AppState> = handle.state();
-                                                                s.db.clone()
-                                                            };
-                                                            let guard = db_arc.lock();
-                                                            if let Ok(db) = guard {
-                                                                let _ = fonos_core::stats::record_dictation_latency(
-                                                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                                                );
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                // Note: raw mode injection is handled inside stop_recording() —
-                                                // do NOT inject again here for !has_llm modes.
-                                                if let Ok(db) = state2.db.lock() {
-                                                    let n = {
-                                                        let all = fonos_core::modes::all_modes();
-                                                        if all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some()) { 2 } else { 1 }
-                                                    };
-                                                    let _ = fonos_core::stats::tag_session(&db, &session_id, n);
-                                                }
-                                            } else {
-                                                // Empty transcript — still stop the pill
-                                                let _ = handle.emit("float:stop", "");
-                                            }
-                                        }
-                                        Err(e) => {
-                                            if e.contains("not recording") {
-                                                // Harmless start/stop race — silent idle revert.
-                                                let _ = handle.emit("float:stop", "");
-                                            } else {
-                                                crate::error_surface::emit_float_error(&handle, &e);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
                             "agent" => {
                                 // Press-and-hold: key down starts recording, key up stops and processes.
                                 // Uses Tauri WebviewWindow::eval() to call JS functions directly in
@@ -922,171 +734,6 @@ fn main() {
                                 }
                             }
 
-                            "note" => {
-                                // Hold-to-talk for notes:
-                                // Key-down: show panel + start recording
-                                //   (if panel visible & showing result → dismiss instead)
-                                // Key-up: stop recording → show result → auto-dismiss after 2s
-                                use tauri::Manager;
-
-                                fn note_js(h: &tauri::AppHandle, js: &str) {
-                                    if let Some(panel) = h.get_webview_window("note-panel") {
-                                        let _ = panel.eval(js);
-                                    }
-                                }
-
-                                if is_down {
-                                    if let Some(panel) = handle.get_webview_window("note-panel") {
-                                        let visible = panel.is_visible().unwrap_or(false);
-                                        if !visible {
-                                            // Set default note target to Quick Note immediately (no race)
-                                            crate::commands::set_default_note_target(&handle);
-                                            // Show panel
-                                            move_note_panel_to_cursor(&handle);
-                                            let _ = panel.show();
-                                            let _ = panel.set_focus();
-                                            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                                            note_js(&handle, "recvShow()");
-                                        } else {
-                                            // Panel already visible — cancel any auto-dismiss timer,
-                                            // keep current notebook selection intact
-                                            note_js(&handle, "cancelDismiss()");
-                                        }
-                                    }
-                                    // Start recording (keep current notebook target)
-                                    note_js(&handle, "recvRecording()");
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if let Err(e) = commands::dictation::start_recording(
-                                        handle.clone(), state, Some(true)
-                                    ).await {
-                                        eprintln!("fonos: note hotkey start error: {e}");
-                                    }
-                                } else {
-                                    // Key up: stop recording, show result, auto-dismiss
-                                    note_js(&handle, "recvRecordingStop()");
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    match commands::dictation::stop_recording(
-                                        handle.clone(), state, Some("note".to_string())
-                                    ).await {
-                                        Ok(result) => {
-                                            if result.text.is_empty() {
-                                                eprintln!("fonos: note recording empty");
-                                                // Dismiss immediately if nothing recorded
-                                                note_js(&handle, "recvDismiss()");
-                                                if let Some(panel) = handle.get_webview_window("note-panel") {
-                                                    let _ = panel.hide();
-                                                }
-                                                return;
-                                            }
-                                            eprintln!("fonos: note saved: {} chars", result.text.len());
-                                            // Show the transcribed text in the panel
-                                            let esc = result.text
-                                                .replace('\\', "\\\\")
-                                                .replace('\'', "\\'")
-                                                .replace('\n', "\\n");
-                                            note_js(&handle, &format!("recvResult('{}')", esc));
-                                            // The note panel is the real UI, but stop_recording
-                                            // suppresses its own float:stop for LLM modes (note
-                                            // has an LLM prompt) and this path runs no LLM step,
-                                            // so end the float pill here — otherwise it stays
-                                            // stuck in "Processing".
-                                            let _ = handle.emit("float:stop", &result.text);
-                                            // Panel will auto-dismiss after 2s via JS timer,
-                                            // or user can press hotkey again to dismiss immediately
-                                        }
-                                        Err(e) => {
-                                            if !e.contains("not recording") {
-                                                eprintln!("fonos: note stop error: {e}");
-                                            }
-                                            note_js(&handle, "recvDismiss()");
-                                            if let Some(panel) = handle.get_webview_window("note-panel") {
-                                                let _ = panel.hide();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            "note-1" | "note-2" | "note-3" => {
-                                // Notebook-specific hold-to-talk: same as "note" but sets a specific notebook target
-                                use tauri::Manager;
-
-                                fn note_nb_js(h: &tauri::AppHandle, js: &str) {
-                                    if let Some(panel) = h.get_webview_window("note-panel") {
-                                        let _ = panel.eval(js);
-                                    }
-                                }
-
-                                // Determine which notebook ID to target
-                                let nb_id = match label.as_str() {
-                                    "note-1" => note1_nb,
-                                    "note-2" => note2_nb,
-                                    "note-3" => note3_nb,
-                                    _ => 0,
-                                };
-
-                                if is_down && nb_id > 0 {
-                                    // Set the notebook target
-                                    {
-                                        let st = handle.state::<AppState>().inner();
-                                        if let Ok(mut t) = st.note_target.lock() { *t = Some(nb_id); }
-                                    }
-                                    // Show panel + select the target notebook
-                                    if let Some(panel) = handle.get_webview_window("note-panel") {
-                                        let visible = panel.is_visible().unwrap_or(false);
-                                        if !visible {
-                                            move_note_panel_to_cursor(&handle);
-                                            let _ = panel.show();
-                                            let _ = panel.set_focus();
-                                            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                                            note_nb_js(&handle, &format!("recvShow({})", nb_id));
-                                        } else {
-                                            note_nb_js(&handle, "cancelDismiss()");
-                                            note_nb_js(&handle, &format!("selectNotebookById({})", nb_id));
-                                        }
-                                    }
-                                    note_nb_js(&handle, "recvRecording()");
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if let Err(e) = commands::dictation::start_recording(
-                                        handle.clone(), state, Some(true)
-                                    ).await {
-                                        eprintln!("fonos: note-N hotkey start error: {e}");
-                                    }
-                                } else if !is_down {
-                                    // Key up: stop + show result + auto-dismiss
-                                    note_nb_js(&handle, "recvRecordingStop()");
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    match commands::dictation::stop_recording(
-                                        handle.clone(), state, Some("note".to_string())
-                                    ).await {
-                                        Ok(result) => {
-                                            if result.text.is_empty() {
-                                                note_nb_js(&handle, "recvDismiss()");
-                                                if let Some(panel) = handle.get_webview_window("note-panel") {
-                                                    let _ = panel.hide();
-                                                }
-                                                return;
-                                            }
-                                            let esc = result.text.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
-                                            note_nb_js(&handle, &format!("recvResult('{}')", esc));
-                                            // End the float pill — stop_recording suppresses its
-                                            // float:stop for LLM modes (note) and this path runs
-                                            // no LLM step, so it'd otherwise stay in "Processing".
-                                            let _ = handle.emit("float:stop", &result.text);
-                                        }
-                                        Err(e) => {
-                                            if !e.contains("not recording") {
-                                                eprintln!("fonos: note-N stop error: {e}");
-                                            }
-                                            note_nb_js(&handle, "recvDismiss()");
-                                            if let Some(panel) = handle.get_webview_window("note-panel") {
-                                                let _ = panel.hide();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
                             "meeting" => {
                                 // Toggle meeting mode on key down only
                                 if !is_down { return; }
@@ -1165,25 +812,129 @@ fn main() {
                                     let _ = commands::sts::run_sts_turn(handle.clone()).await;
                                 }
                             }
-                            "listen" => {
-                                // Capture the current selection into the Listen queue
-                                // (summarize + synthesize; async, pill shows progress).
-                                if !is_down { return; }
-                                let _ = commands::listen::run_listen_capture(handle.clone()).await;
-                            }
-                            l if l.starts_with("text-action-") => {
-                                // Generic text action: selection → mode LLM step → configured target.
-                                if !is_down { return; }
-                                let binding = {
+                            l if l.starts_with("workflow-") => {
+                                // Resolve the trigger target and the source
+                                // widget's capture semantics under the config
+                                // lock, then drop it before any await. The
+                                // primary dictation label
+                                // (`workflow-wf.dictation`) redirects to
+                                // `active_voice_workflow` via
+                                // `resolve_trigger_target`, so the main dictation
+                                // hotkey fires the user's selected voice
+                                // workflow; every other `workflow-{id}` label
+                                // triggers its own id. `is_mic` gates the
+                                // two-phase mic dance, and `capture`
+                                // ("hold"|"toggle") is the mic widget's prop. A
+                                // missing/dangling workflow is logged and the
+                                // trigger dropped.
+                                let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
-                                    let cfg = state.config.lock().unwrap();
-                                    l.strip_prefix("text-action-")
-                                        .and_then(|s| s.parse::<usize>().ok())
-                                        .and_then(|i| cfg.text_actions.get(i).cloned())
+                                    let config = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(e) => {
+                                            eprintln!("fonos: workflow hotkey — config lock poisoned: {e}");
+                                            return;
+                                        }
+                                    };
+                                    let wf_id =
+                                        fonos_core::workflow::engine::resolve_trigger_target(l, &config);
+                                    let widgets =
+                                        fonos_core::workflow::engine::effective_widgets(&config);
+                                    fonos_core::workflow::engine::effective_workflows(&config)
+                                        .into_iter()
+                                        .find(|w| w.id == wf_id)
+                                        .map(|wf| {
+                                            let src = widgets.iter().find(|w| w.id == wf.source);
+                                            let is_mic = src
+                                                .map(|w| w.type_tag == "microphone")
+                                                .unwrap_or(false);
+                                            let capture = src
+                                                .and_then(|w| {
+                                                    w.props.get("capture").and_then(|v| v.as_str())
+                                                })
+                                                .unwrap_or("hold")
+                                                .to_string();
+                                            (wf.id, is_mic, capture)
+                                        })
                                 };
-                                match binding {
-                                    Some(b) => commands::text_action::run_text_action(handle.clone(), b).await,
-                                    None => eprintln!("fonos: text action '{l}' has no binding"),
+                                let Some((wf_id, is_mic, capture)) = resolved else {
+                                    eprintln!(
+                                        "fonos: workflow trigger '{l}' resolved to no definition — ignoring hotkey"
+                                    );
+                                    return;
+                                };
+
+                                if is_mic {
+                                    // Toggle key-downs are debounced (guards a fast
+                                    // physical double-press); hold needs no debounce.
+                                    if capture == "toggle" && is_down {
+                                        {
+                                            let last = last_action.lock().unwrap();
+                                            if last.elapsed().as_millis()
+                                                < TOGGLE_DELAY_MS as u128
+                                            {
+                                                eprintln!("fonos: workflow toggle debounce — too soon since last action");
+                                                return;
+                                            }
+                                        }
+                                        *last_action.lock().unwrap() = std::time::Instant::now();
+                                    }
+                                    // MicSource starts on key-down and blocks (no
+                                    // timeout) until finish_active_capture fires.
+                                    // is_recording() here + run_workflow's own
+                                    // IN_FLIGHT guard together prevent a second
+                                    // capture starting while one is live, so the
+                                    // single global CAPTURE_DONE signal always
+                                    // targets the run the trigger owns.
+                                    match (
+                                        capture.as_str(),
+                                        is_down,
+                                        commands::dictation::is_recording(),
+                                    ) {
+                                        // hold: key-down starts, key-up finishes.
+                                        ("hold", true, false) => {
+                                            commands::workflow_exec::run_workflow(
+                                                handle.clone(),
+                                                wf_id,
+                                            )
+                                            .await;
+                                        }
+                                        // Finish is unconditional on key-up — NOT
+                                        // gated on is_recording() — because a fast
+                                        // tap can release the key before
+                                        // start_recording flips IS_RECORDING (set
+                                        // only after mic warm-up completes). If
+                                        // finish were gated here, that key-up would
+                                        // no-op and MicSource::acquire would be
+                                        // left awaiting CAPTURE_DONE forever (no
+                                        // timeout), hanging the mic live until the
+                                        // next gesture. This is safe because
+                                        // MicSource::acquire registers its
+                                        // CAPTURE_DONE waiter before calling
+                                        // start_recording, so an "early" finish
+                                        // still latches via notify_waiters(); and
+                                        // when nothing is capturing, finishing is a
+                                        // harmless no-op (notify_waiters with no
+                                        // registered waiter is simply dropped).
+                                        ("hold", false, _) => {
+                                            commands::workflow_widgets::finish_active_capture();
+                                        }
+                                        // toggle: 1st press starts, 2nd press finishes.
+                                        ("toggle", true, false) => {
+                                            commands::workflow_exec::run_workflow(
+                                                handle.clone(),
+                                                wf_id,
+                                            )
+                                            .await;
+                                        }
+                                        ("toggle", true, true) => {
+                                            commands::workflow_widgets::finish_active_capture();
+                                        }
+                                        _ => {}
+                                    }
+                                } else if is_down {
+                                    // Non-mic sources (e.g. selection) fire once on key-down.
+                                    commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
                                 }
                             }
 

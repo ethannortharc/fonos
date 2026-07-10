@@ -1,29 +1,25 @@
 // Settings view — shell that manages state and renders tab components.
-// Tabbed layout: Models | Modes | Hotkeys | Language
+// Tabbed layout: General | Flows | Models | Vocab | Advanced | Scenarios (see
+// TABS in settings/constants.ts, the canonical source of truth for the tab
+// set). Advanced absorbs Speech/Agent/Meeting + their hotkeys; Flows absorbs
+// Widgets (building blocks) + Workflows + workflow hotkeys.
 
 import { useState, useEffect, useCallback } from "react";
 import {
   getConfig,
   saveConfig,
   listModes,
-  saveCustomMode,
-  deleteCustomMode,
 } from "../lib/api";
 import type { AppConfig, ModeEntry } from "../types";
 import { t, useT } from "../lib/i18n";
 import { TABS } from "./settings/constants";
-import type { SettingsTab, ModeForm } from "./settings/constants";
+import type { SettingsTab } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
 import ModelsTab from "./settings/ModelsTab";
 import ScenariosTab from "./settings/ScenariosTab";
-import ModesTab from "./settings/ModesTab";
-import HotkeysTab from "./settings/HotkeysTab";
-import SpeechTab from "./settings/SpeechTab";
 import VocabTab from "./settings/VocabTab";
-import AgentTab from "./settings/AgentTab";
-import SkillsTab from "./settings/SkillsTab";
-import NotesTab from "./settings/NotesTab";
-import MeetingTab from "./settings/MeetingTab";
+import FlowsTab from "./settings/FlowsTab";
+import AdvancedTab from "./settings/AdvancedTab";
 
 export default function Settings() {
   const tr = useT();
@@ -33,7 +29,7 @@ export default function Settings() {
   const [error, setError] = useState<string>("");
 
   // Tab state
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("flows");
 
   const loadAll = useCallback(async () => {
     try {
@@ -85,52 +81,6 @@ export default function Settings() {
     [config]
   );
 
-  const handleSaveMode = useCallback(
-    async (form: ModeForm) => {
-      if (!form.id || !form.name) {
-        setError(t("settings.mode-required"));
-        return;
-      }
-      setError("");
-      try {
-        await saveCustomMode({
-          id: form.id,
-          name: form.name,
-          description: form.description,
-          icon: form.icon,
-          system: form.system,
-          user_template: form.user_template,
-          temperature: form.temperature,
-          model: form.model,
-          stt_model: form.stt_model,
-          stt_prompt: form.stt_prompt,
-          stt_temperature: form.stt_temperature,
-          max_tokens: form.max_tokens,
-          output_language: form.output_language,
-          auto_paste: form.auto_paste,
-          auto_press_enter: form.auto_press_enter,
-          vocab_books: form.vocab_books,
-        });
-        loadAll();
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [loadAll]
-  );
-
-  const handleDeleteMode = useCallback(
-    async (id: string) => {
-      try {
-        await deleteCustomMode(id);
-        loadAll();
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [loadAll]
-  );
-
   // ── Loading state ───────────────────────────────────────────────────────────
 
   if (!config) {
@@ -176,6 +126,11 @@ export default function Settings() {
           <GeneralTab config={config} onSave={handleSave} />
         )}
 
+        {/* ────────────── Flows tab (Flows UI redesign) ────────────── */}
+        {settingsTab === "flows" && (
+          <FlowsTab config={config} />
+        )}
+
         {/* ────────────── Models tab ────────────── */}
         {settingsTab === "models" && (
           <ModelsTab
@@ -183,6 +138,16 @@ export default function Settings() {
             onSave={handleSave}
             setError={setError}
           />
+        )}
+
+        {/* ────────────── Vocabulary tab ────────────── */}
+        {settingsTab === "vocab" && (
+          <VocabTab config={config} onSave={handleSave} />
+        )}
+
+        {/* ────────────── Advanced tab (Speech + Agent + Meeting, Flows UI redesign) ────────────── */}
+        {settingsTab === "advanced" && (
+          <AdvancedTab config={config} modes={modes} onSave={handleSave} />
         )}
 
         {/* ────────────── Scenarios tab (saved bundles + templates) ────────────── */}
@@ -193,50 +158,6 @@ export default function Settings() {
             onReload={loadAll}
             setError={setError}
           />
-        )}
-
-        {/* ────────────── Dictation tab (Modes) ────────────── */}
-        {settingsTab === "dictation" && (
-          <ModesTab
-            config={config}
-            modes={modes}
-            onSaveMode={handleSaveMode}
-            onDeleteMode={handleDeleteMode}
-          />
-        )}
-
-        {/* ────────────── Speech tab (Listen + future STS) ────────────── */}
-        {settingsTab === "speech" && (
-          <SpeechTab config={config} modes={modes} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Vocabulary tab ────────────── */}
-        {settingsTab === "vocab" && (
-          <VocabTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Agent tab (Agent config + Skills) ────────────── */}
-        {settingsTab === "agent" && (
-          <>
-            <AgentTab config={config} onSave={handleSave} />
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
-            <SkillsTab />
-          </>
-        )}
-
-        {/* ────────────── Notes tab ────────────── */}
-        {settingsTab === "notes" && (
-          <NotesTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Meeting tab ────────────── */}
-        {settingsTab === "meeting" && (
-          <MeetingTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Hotkeys tab ────────────── */}
-        {settingsTab === "hotkeys" && (
-          <HotkeysTab config={config} onSave={handleSave} />
         )}
 
         {saving && (

@@ -1,4 +1,4 @@
-// Meeting settings tab — audio source, STT model, LLM model, summary prompt, hotkey.
+// Meeting settings tab — audio source, STT model, LLM model, summary prompt.
 // Uses Tailwind classes (same as other settings tabs like AgentTab).
 
 import type { AppConfig, ModelProfile } from "../../types";
@@ -126,26 +126,6 @@ export default function MeetingTab({ config, onSave }: MeetingTabProps) {
         />
         <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
           {t("mtab.summary-hint")}
-        </div>
-      </div>
-
-      {/* ── Hotkey (display only) ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <SectionLabel>{t("mtab.hotkey")}</SectionLabel>
-        <div
-          className="rounded-lg px-3 py-2 text-[11px] text-[rgba(255,255,255,0.4)]"
-          style={{
-            background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.04)",
-          }}
-        >
-          {config.hotkey_meeting
-            ? <span className="font-mono">{config.hotkey_meeting}</span>
-            : <span className="italic text-[rgba(255,255,255,0.2)]">{t("mtab.hotkey-notset")}</span>
-          }
-        </div>
-        <div className="text-[9px] text-[rgba(255,255,255,0.12)] italic">
-          {t("mtab.hotkey-hint")}
         </div>
       </div>
 

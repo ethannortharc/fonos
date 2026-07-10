@@ -387,21 +387,30 @@ export default function Dictation() {
           });
         }));
 
-        // Engine run completed: {raw, final, workflow_id}. Show the raw
-        // transcript AND the final result as two entries (the legacy feed's
-        // shape) when they differ; otherwise a single result entry. The result
-        // is labeled by the run's OWN workflow (resolved from workflow_id),
-        // falling back to the raw id — not the drum's current selection.
+        // Engine run completed: {raw, final, workflow_id}. Fires for EVERY
+        // engine run, not just microphone-source ones — selection-source
+        // workflows (e.g. wf.explain) go through the same engine path and
+        // land here too. This feed is scoped to voice runs only, so a
+        // workflow_id that isn't one of the current voiceWorkflows (mirrored
+        // via voiceWorkflowsRef, kept in sync by the effect above) is silently
+        // ignored: no entry is added. float:processing fires ahead of every
+        // engine run regardless of source, so an ignored run can still have
+        // left a "processing" placeholder in the feed — drop it here too so
+        // it doesn't strand.
         track(await listen<{ raw?: string; final?: string; workflow_id?: string }>(
           "workflow:done",
           (event) => {
             const p = event.payload ?? {};
-            const raw = typeof p.raw === "string" ? p.raw : "";
-            const final = typeof p.final === "string" ? p.final : "";
             const wfId = typeof p.workflow_id === "string" ? p.workflow_id : "";
             const wf = voiceWorkflowsRef.current.find((w) => w.id === wfId);
-            const label = wf ? workflowLabel(wf) : (wfId || t("dict.transcript"));
-            const icon = wf?.icon ?? "";
+            if (!wf) {
+              setActivity((prev) => prev.filter((e) => e.type !== "processing"));
+              return;
+            }
+            const raw = typeof p.raw === "string" ? p.raw : "";
+            const final = typeof p.final === "string" ? p.final : "";
+            const label = workflowLabel(wf);
+            const icon = wf.icon ?? "";
             const resultIcon = icon ? <ModeIcon icon={icon} size={12} /> : <SparklesIcon size={12} />;
             setActivity((prev) => {
               const filtered = prev.filter((e) => e.type !== "processing");

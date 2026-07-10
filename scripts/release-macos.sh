@@ -11,7 +11,9 @@
 # the base64 key content OR a path to the key file — so pointing it at the key
 # file keeps the secret out of the command line. For convenience this script
 # also accepts TAURI_SIGNING_PRIVATE_KEY_PATH and bridges it across. The key has
-# no password; export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" if yours does not.
+# no password; an empty password still must be passed explicitly or the
+# signer prompts on a TTY (os error 6 headless) — default it here.
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}"
 #
 #   TAURI_SIGNING_PRIVATE_KEY=$HOME/.tauri/fonos.key ./scripts/release-macos.sh
 #   # or, equivalently:

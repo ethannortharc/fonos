@@ -14,8 +14,6 @@
     "core:window:allow-unminimize",
     "core:window:allow-set-position",
     "core:window:allow-set-size",
-    "global-shortcut:default",
-    "updater:default",
-    "process:allow-restart"
+    "global-shortcut:default"
   ]
 }

@@ -1,0 +1,9 @@
+{
+  "identifier": "main-updater",
+  "description": "Self-update + relaunch — main window only (panels render LLM output and must not reach these IPCs)",
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod call;
 pub mod config;
+pub mod dialog;
 pub mod dictation;
 pub mod doctor;
 pub mod listen;
@@ -118,6 +119,17 @@ pub fn resize_agent_panel(app: tauri::AppHandle, width: u32, height: u32) -> Res
 /// Resize the float window, keeping it horizontally centered on its current monitor
 /// and pinned to the same bottom edge. Uses absolute monitor center rather than
 /// relative offsets to prevent rounding drift across resize cycles.
+///
+/// No-op geometry is skipped: on a transparent NSWindow every set_size /
+/// set_position forces the window server to re-composite the surface, so
+/// repeated same-geometry calls (idle→idle reverts, defensive re-sizing)
+/// would churn the compositor for nothing — and every such churn is another
+/// chance to interleave a stale frame into the composite.
+///
+/// NOTE: this command must stay synchronous (non-async), so it runs on the
+/// main thread and float.html's `await invoke('resize_float')` is a real
+/// barrier: when the promise resolves, the frame change has been applied.
+/// The front-end's paint/resize ordering relies on that.
 #[tauri::command]
 pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<(), String> {
     use tauri::Manager;
@@ -147,10 +159,81 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
             old_pos.x + (old_size.width as i32 - width as i32) / 2
         };
 
-        w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
-            .map_err(|e| e.to_string())?;
-        w.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(new_x, new_y)))
-            .map_err(|e| e.to_string())?;
+        let size_changed = old_size.width != width || old_size.height != height;
+        let pos_changed = old_pos.x != new_x || old_pos.y != new_y;
+        if size_changed {
+            w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
+                .map_err(|e| e.to_string())?;
+        }
+        if pos_changed {
+            w.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(new_x, new_y)))
+                .map_err(|e| e.to_string())?;
+        }
+        // The frame change has been applied (sync command on the main thread);
+        // now make the window server drop the old composite — see
+        // refresh_ns_window. Skipped-geometry calls skip this too: no frame
+        // change, nothing new for the window server to go stale on (the
+        // no-resize state transitions are covered by refresh_float_window).
+        #[cfg(target_os = "macos")]
+        if size_changed || pos_changed {
+            refresh_ns_window(&w);
+        }
+    }
+    Ok(())
+}
+
+/// Make the window server drop a transparent window's stale composite:
+/// recompute the NSWindow shadow from current content and force a display pass.
+///
+/// On macOS, a `transparent:true` borderless NSWindow that is programmatically
+/// resized or moved can keep its PREVIOUS backing store / shadow composited on
+/// screen until the window receives a natural display pass — which is why a
+/// click (activation → display) used to repair the float pill's ghost. That
+/// ghost is two superimposed window frames (e.g. the 110px processing frame
+/// under/over the 90px idle frame); no in-webview repaint can fix it because
+/// the stale layer lives below the webview, at the window-server level. The
+/// canonical AppKit remedy is `[window invalidateShadow]` plus forcing a
+/// display pass (`displayIfNeeded`).
+///
+/// NSWindow methods must run on the main thread. Sync Tauri commands already
+/// execute there (and `run_on_main_thread` then runs the closure inline, so
+/// ordering is preserved), but routing through it keeps this helper correct
+/// when called from any other thread.
+#[cfg(target_os = "macos")]
+pub(crate) fn refresh_ns_window(w: &tauri::WebviewWindow) {
+    let win = w.clone();
+    let _ = w.run_on_main_thread(move || {
+        let Ok(ptr) = win.ns_window() else { return };
+        if ptr.is_null() {
+            return;
+        }
+        let ns_window = ptr as *mut objc2::runtime::AnyObject;
+        // SAFETY: `ptr` is the live NSWindow backing `win` (the captured
+        // handle keeps it alive for the closure's duration) and we are on
+        // the main thread. Both selectors take no arguments and return void.
+        unsafe {
+            let _: () = objc2::msg_send![ns_window, invalidateShadow];
+            let _: () = objc2::msg_send![ns_window, displayIfNeeded];
+        }
+    });
+}
+
+/// Fire-and-forget window-server refresh for the float pill.
+///
+/// float.html calls this after its repaint-guard flash settles on every state
+/// transition. It matters for transitions that do NOT change window geometry
+/// (success→idle at equal 90px widths, defensive idle reverts): those skip
+/// `resize_float`'s native call entirely — and with it the shadow invalidation
+/// above — yet the window server may still hold a stale composite from an
+/// earlier frame. Resizing transitions get the invalidation twice (at frame
+/// change and at settle); both are imperceptible no-ops when nothing is stale.
+/// No-op on non-macOS platforms.
+#[tauri::command]
+pub fn refresh_float_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(_w) = app.get_webview_window("float") {
+        #[cfg(target_os = "macos")]
+        refresh_ns_window(&_w);
     }
     Ok(())
 }
@@ -197,16 +280,52 @@ pub(crate) fn monitor_under_cursor(
     Some((target, cursor))
 }
 
-/// Position the text-action panel near the mouse cursor: below-right by
-/// default, flipped left/up when it would cross the monitor edge.
+/// Position the text-action panel near the mouse cursor, parameterized on the
+/// window's actual `(w, h)` (a panel's size comes from its `PanelSize` prop, not
+/// a fixed conf value). Below-right by default, flipped left/up when it would
+/// cross the monitor edge.
 #[cfg(target_os = "macos")]
-pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle) {
+pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
     use tauri::Manager;
     let Some(panel) = app.get_webview_window("text-action-panel") else { return };
     let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
-    let (panel_w, panel_h) = (380.0_f64, 280.0_f64); // logical px — matches tauri.conf.json
+    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the panel's PanelSize
+    let offset = 12.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+    let mon_h = target.size().height as f64 / scale;
+
+    // Below-right of the cursor; flip to the opposite side at monitor edges.
+    let mut x = cursor.x + offset;
+    let mut y = cursor.y + offset;
+    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
+    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
+    // Never leave the monitor; keep clear of the macOS menu bar.
+    x = x.max(mon_x);
+    y = y.max(mon_y + 28.0);
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
+/// Position the dialog panel near the mouse cursor, parameterized on the
+/// window's actual `(w, h)` (a Dialog's size comes from its `PanelSize` prop,
+/// not a fixed conf value). Same below-right-then-flip logic as
+/// [`move_text_action_panel_to_cursor`], for the `"dialog-panel"` label.
+#[cfg(target_os = "macos")]
+pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("dialog-panel") else { return };
+    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
+
+    let scale = target.scale_factor();
+    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the Dialog's PanelSize
     let offset = 12.0_f64;
 
     let mon_x = target.position().x as f64 / scale;
@@ -271,6 +390,13 @@ pub struct AppState {
     pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
     /// STS conversation memory (issue #24), reset when the app restarts.
     pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
+    /// Active Dialog follow-up session (session-type output). Set by
+    /// [`dialog::DialogOutput`] when a dialog workflow delivers its first turn,
+    /// and driven by [`dialog::dialog_send`] for follow-ups. Replaced when a new
+    /// dialog workflow delivers; the prior Conversation container stays in
+    /// history. A `tokio::sync::Mutex` because the guard is held across the
+    /// `next_turn().await` in `dialog_send`.
+    pub dialog_session: Arc<tokio::sync::Mutex<Option<dialog::ActiveDialog>>>,
     /// Whether a hands-free "call mode" loop is running (issue #24). The loop
     /// task polls this flag for cooperative cancellation; `call_stop` clears it.
     pub call_active: Arc<std::sync::atomic::AtomicBool>,

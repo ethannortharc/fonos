@@ -23,7 +23,7 @@
 // The backend is the final validator throughout; frontend only pre-hints the
 // microphone-needs-stt rule.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, WidgetDef, WidgetRole, WorkflowDef, WorkflowRow } from "../../types";
 import { listWorkflows, listWidgets, saveWorkflow, deleteWorkflow, saveWidget } from "../../lib/api";
@@ -37,13 +37,18 @@ import type { PipeNode } from "../../components/PipelineView";
 import BuildingBlocks, { TYPE_TAGS } from "./BuildingBlocks";
 import WidgetForm, { widgetToForm } from "./WidgetForm";
 import type { WidgetFormValue } from "./WidgetForm";
+import { inputClass, selectClass } from "./constants";
 
-// ─── Shared class recipes (match WidgetForm/BuildingBlocks/WorkflowsTab) ───────
+// ─── Shared class recipes (canonical: constants.ts; match WidgetForm/BuildingBlocks) ──
+// Local width variants: the flow-name field and the inline slot pickers use
+// fixed/flex widths instead of w-full, so derive from the canonical
+// inputClass/selectClass (no re-literal of the shared bg/border/text/focus
+// recipe) rather than duplicating the string.
 
-const nameInputClass =
-  "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
-const slotSelectClass =
-  "flex-1 min-w-[150px] bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)] cursor-pointer appearance-none";
+const nameInputClass = inputClass.replace("w-full ", "");
+const slotSelectClass = selectClass
+  .replace("w-full", "flex-1 min-w-[150px]")
+  .replace("px-3 py-2", "px-2.5 py-1.5");
 const labelClass = "text-[10px] text-[rgba(255,255,255,0.35)]";
 const headingClass =
   "text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold";
@@ -182,6 +187,9 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [error, setError] = useState<string>("");
+  // Root of the currently-expanded flow card — used by the outside-click
+  // listener below to tell inside-the-editor clicks from page-background ones.
+  const expandedCardRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
     try {
@@ -367,10 +375,38 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     }
   };
 
+  /** Collapse the open flow — the exact state changes the chevron performs
+   *  when it collapses (clears expanded id + active node + picker + error).
+   *  Per-edit auto-save already persisted everything, so this discards nothing
+   *  beyond a half-filled new-widget-in-slot form, same as the chevron. */
+  const collapse = () => {
+    setError(""); setActiveNodeId(null); setPicker(null);
+    setExpandedId(null);
+  };
+
   const toggleCard = (id: string) => {
     setError(""); setActiveNodeId(null); setPicker(null);
     setExpandedId((prev) => (prev === id ? null : id));
   };
+
+  // Clicking anywhere outside the expanded card collapses it — same effect as
+  // the chevron. `mousedown` (not click) so this fires before another card's
+  // expand click handler: clicking a different flow's header collapses this
+  // one AND expands that one in the same gesture. Clicks inside the card
+  // subtree (including the in-place node editor, which renders inline — no
+  // portal) are ignored via contains(). Listener only exists while expanded.
+  useEffect(() => {
+    if (!expandedId) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = expandedCardRef.current;
+      if (el && !el.contains(e.target as Node)) collapse();
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    // collapse only calls stable state setters; re-keying on expandedId alone
+    // avoids re-registering the listener on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedId]);
 
   const switchView = (v: "flows" | "blocks") => {
     setActiveNodeId(null); setPicker(null); setError("");
@@ -483,12 +519,14 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
 
   const renderCard = (wf: WorkflowRow) => {
     const expanded = expandedId === wf.id;
-    const sub = expanded
-      ? t("flows.hint.edit")
-      : flowNodes(wf).map((n) => n.label).join("  →  ");
+    // Head subtitle is always the pipeline summary (same in both states) —
+    // the edit hint lives only directly above the pipeline editor below, so
+    // expanding no longer shows the same sentence twice.
+    const sub = flowNodes(wf).map((n) => n.label).join("  →  ");
     return (
       <div
         key={wf.id}
+        ref={expanded ? expandedCardRef : undefined}
         className={[
           "rounded-[12px] transition-colors",
           expanded
@@ -586,7 +624,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
       </div>
 
       {view === "blocks" ? (
-        <BuildingBlocks config={config} />
+        <BuildingBlocks />
       ) : (
         <div className="flex flex-col gap-5">
           {error && expandedId === null && (

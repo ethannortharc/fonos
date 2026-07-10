@@ -124,6 +124,46 @@ pub async fn process_text(
     }
 }
 
+/// Multi-turn chat completion: POST a prebuilt OpenAI-style messages array and
+/// return the assistant content. Sibling to [`process_text`] (single-shot);
+/// used by the Dialog session for follow-up turns.
+///
+/// Dispatches on `service.provider` exactly like `process_text` does, reusing
+/// the same per-provider callers ([`call_anthropic`], [`call_google`],
+/// [`call_openai_compatible`]) so the HTTP mechanics (endpoint resolution,
+/// auth header, request shape, response parsing) stay identical to the
+/// single-shot path. Errors are stringified for the simpler `Result<_, String>`
+/// signature callers of `chat` expect.
+pub async fn chat(
+    service: &ServiceConfig,
+    messages: Vec<serde_json::Value>,
+    temperature: f64,
+    max_tokens: u32,
+) -> std::result::Result<String, String> {
+    let result = match service.provider.as_str() {
+        "anthropic" => {
+            call_anthropic(&service.api_key, &service.model, &messages, temperature, max_tokens)
+                .await
+        }
+        "google" => {
+            call_google(&service.api_key, &service.model, &messages, temperature, max_tokens).await
+        }
+        _ => {
+            call_openai_compatible(
+                &service.api_key,
+                &service.model,
+                &service.base_url,
+                &messages,
+                temperature,
+                max_tokens,
+                &service.provider,
+            )
+            .await
+        }
+    };
+    result.map(|r| r.text).map_err(|e| e.to_string())
+}
+
 /// Build chat messages for applying `mode` to `text`.
 ///
 /// Substitutes `{text}` and `{target_lang}` in the mode's user template
@@ -318,6 +358,30 @@ pub async fn call_anthropic(
     })
 }
 
+/// Convert an OpenAI-style `messages` slice into Gemini's multi-turn `contents`
+/// array, preserving order.
+///
+/// Maps every non-`"system"` message to `{"role": <mapped>, "parts": [{"text":
+/// <content>}]}`, translating `"assistant"` → `"model"` (Gemini's term for the
+/// model turn) and passing `"user"` through unchanged.
+///
+/// `"system"` messages are filtered out here, not translated. Gemini has a
+/// separate `systemInstruction` field for that, but `call_google` does not
+/// currently populate it from `messages` — see the note there. This is a
+/// pure, side-effect-free function so it can be unit tested without any
+/// network access.
+fn google_contents_from_messages(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    messages
+        .iter()
+        .filter(|m| m["role"] != "system")
+        .map(|m| {
+            let role = if m["role"] == "assistant" { "model" } else { "user" };
+            let text = m["content"].as_str().unwrap_or("");
+            serde_json::json!({"role": role, "parts": [{"text": text}]})
+        })
+        .collect()
+}
+
 /// Call the Google Generative Language API (Gemini).
 ///
 /// Converts the OpenAI-style `messages` slice into Google's
@@ -332,16 +396,22 @@ pub async fn call_google(
     temperature: f64,
     max_tokens: u32,
 ) -> Result<LlmResponse> {
+    // NOTE (pre-existing, out of scope here): `system` below is placed under
+    // the JSON key `system_instruction` (snake_case), whereas every other key
+    // in this request body (`generationConfig`, `maxOutputTokens`, ...) — and
+    // Gemini's documented v1beta schema — use camelCase (`systemInstruction`).
+    // That mismatch means the system prompt likely isn't actually honored by
+    // the live API today, i.e. it is not reliably forwarded to Gemini. Left
+    // unchanged here: we have no live Gemini credentials to verify a rename
+    // is safe, and `process_text` (single-turn) already depends on this exact
+    // shape. Tracked separately; `contents` (below) is the only thing this
+    // fix changes.
     let system = messages
         .iter()
         .find(|m| m["role"] == "system")
         .and_then(|m| m["content"].as_str())
         .unwrap_or("");
-    let user_text = messages
-        .iter()
-        .find(|m| m["role"] == "user")
-        .and_then(|m| m["content"].as_str())
-        .unwrap_or("");
+    let contents = google_contents_from_messages(messages);
 
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
@@ -349,7 +419,7 @@ pub async fn call_google(
     );
     let body = serde_json::json!({
         "system_instruction": {"parts": [{"text": system}]},
-        "contents": [{"parts": [{"text": user_text}]}],
+        "contents": contents,
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
     });
 
@@ -450,5 +520,43 @@ mod tests {
         let bare = crate::modes::Mode::default(); // no user_template → raw {text}
         let msgs2 = build_mode_messages(&bare, "raw text", "");
         assert_eq!(msgs2[0]["content"], "raw text");
+    }
+
+    // ─── google_contents_from_messages (Gemini multi-turn conversion) ────────
+
+    #[test]
+    fn google_contents_single_user_message() {
+        let messages = vec![serde_json::json!({"role": "user", "content": "hello"})];
+        let contents = google_contents_from_messages(&messages);
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["role"], "user");
+        assert_eq!(contents[0]["parts"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn google_contents_multi_turn_filters_system_and_preserves_order() {
+        let messages = vec![
+            serde_json::json!({"role": "system", "content": "sys prompt"}),
+            serde_json::json!({"role": "user", "content": "first"}),
+            serde_json::json!({"role": "assistant", "content": "reply"}),
+            serde_json::json!({"role": "user", "content": "followup"}),
+        ];
+        let contents = google_contents_from_messages(&messages);
+        assert_eq!(contents.len(), 3); // system filtered out
+        assert_eq!(contents[0]["role"], "user");
+        assert_eq!(contents[0]["parts"][0]["text"], "first");
+        assert_eq!(contents[1]["role"], "model");
+        assert_eq!(contents[1]["parts"][0]["text"], "reply");
+        assert_eq!(contents[2]["role"], "user");
+        assert_eq!(contents[2]["parts"][0]["text"], "followup");
+    }
+
+    #[test]
+    fn google_contents_translates_assistant_role_to_model() {
+        let messages = vec![serde_json::json!({"role": "assistant", "content": "hi there"})];
+        let contents = google_contents_from_messages(&messages);
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["role"], "model");
+        assert_eq!(contents[0]["parts"][0]["text"], "hi there");
     }
 }

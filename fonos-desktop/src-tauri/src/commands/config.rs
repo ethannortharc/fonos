@@ -59,16 +59,36 @@ pub fn save_config(
         })
     });
 
+    // Snapshot the small subset that satellite windows (the float pill) live-
+    // consume in their own loadCfg, for the config:saved event below. Captured
+    // before `updated` is moved into the shared state.
+    let saved_ui_language = updated.ui_language.clone();
+    let saved_active_voice_workflow = updated.active_voice_workflow.clone();
+
     // Update in-memory state.
     *guard = updated;
     drop(guard); // release lock before emitting
 
+    use tauri::Emitter;
+
     // If hotkeys changed, notify the hotkey manager to re-register.
     if hotkey_changed {
-        use tauri::Emitter;
         eprintln!("fonos: hotkey config changed — emitting reload signal");
         let _ = app.emit("hotkey:reload", ());
     }
+
+    // Notify satellite windows (e.g. the float pill) that config was saved so
+    // they can live-update — the pill re-reads its UI language and active voice
+    // workflow without a restart. Only the fields those windows read in their
+    // own loadCfg are sent, not the whole config. This is a settings-change
+    // signal, distinct from the engine's float:* terminal events.
+    let _ = app.emit(
+        "config:saved",
+        serde_json::json!({
+            "ui_language": saved_ui_language,
+            "active_voice_workflow": saved_active_voice_workflow,
+        }),
+    );
 
     Ok(())
 }

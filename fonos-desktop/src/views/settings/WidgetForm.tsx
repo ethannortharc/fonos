@@ -34,12 +34,10 @@ import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "
 import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
+import { LANGUAGES, inputClass, selectClass } from "./constants";
 
-// ─── Shared class recipes (match WidgetsTab/WorkflowsTab) ─────────────────────
+// ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
-const inputClass =
-  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
-const selectClass = inputClass + " cursor-pointer appearance-none";
 const textareaClass = inputClass + " leading-relaxed resize-none font-mono";
 const labelClass = "text-[10px] text-[rgba(255,255,255,0.35)]";
 const headingClass =
@@ -159,6 +157,64 @@ export function VocabChips({
   );
 }
 
+/** Panel/dialog window size: preset buttons (S/M/L) + width/height number
+ *  inputs, shared by the "panel" and "dialog" cases below. `size` is the
+ *  widget's `props.size` object (possibly partial/undefined — defaults to
+ *  420×320, matching PanelSize::default() on the backend). */
+function SizeControl({
+  size, onChange,
+}: {
+  size: { width?: number; height?: number };
+  onChange: (size: { width: number; height: number }) => void;
+}) {
+  const width = size.width ?? 420;
+  const height = size.height ?? 320;
+  const presets: { key: string; label: string; width: number; height: number }[] = [
+    { key: "s", label: t("widgets.size.s"), width: 320, height: 240 },
+    { key: "m", label: t("widgets.size.m"), width: 420, height: 320 },
+    { key: "l", label: t("widgets.size.l"), width: 560, height: 440 },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5">
+        {presets.map((preset) => {
+          const active = width === preset.width && height === preset.height;
+          return (
+            <button
+              key={preset.key}
+              onClick={() => onChange({ width: preset.width, height: preset.height })}
+              className={[
+                "px-2.5 py-1 rounded-full text-[10px] transition-all",
+                active
+                  ? "bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)] text-[#fbbf24]"
+                  : "bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] hover:border-[rgba(255,255,255,0.12)]",
+              ].join(" ")}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label={t("widgets.field.width")}>
+          <input
+            type="number" min={1} value={width}
+            onChange={(e) => onChange({ width: parseInt(e.target.value) || width, height })}
+            className={inputClass}
+          />
+        </Field>
+        <Field label={t("widgets.field.height")}>
+          <input
+            type="number" min={1} value={height}
+            onChange={(e) => onChange({ height: parseInt(e.target.value) || height, width })}
+            className={inputClass}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
@@ -214,6 +270,13 @@ function PropsForm({
         <div className="flex flex-col gap-2.5">
           <Field label={t("widgets.field.model")}>
             <ModelSelector capKey="stt" value={pStr(p, "model_profile")} profiles={config.model_profiles} onChange={(v) => set("model_profile", v)} />
+          </Field>
+          <Field label={t("widgets.field.language")}>
+            <select value={pStr(p, "language", "auto")} onChange={(e) => set("language", e.target.value)} className={selectClass}>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
+              ))}
+            </select>
           </Field>
           <Field label={t("widgets.field.stt_prompt")}>
             <input type="text" value={pStr(p, "stt_prompt")} onChange={(e) => set("stt_prompt", e.target.value)} className={inputClass} />
@@ -283,11 +346,40 @@ function PropsForm({
 
     case "panel":
       return (
-        <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
-          <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
-          {t("widgets.field.markdown")}
-        </label>
+        <div className="flex flex-col gap-2.5">
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            {t("widgets.field.markdown")}
+          </label>
+          <Field label={t("widgets.field.size")}>
+            <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
+          </Field>
+        </div>
       );
+
+    case "dialog": {
+      const engine = (p.engine as { kind?: string; model_profile?: string; system?: string | null }) ?? {};
+      const setEngine = (patch: Partial<{ model_profile: string; system: string }>) =>
+        set("engine", { kind: "llm", model_profile: engine.model_profile ?? "", system: engine.system ?? "", ...patch });
+      return (
+        <div className="flex flex-col gap-2.5">
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "markdown")} onChange={(e) => set("markdown", e.target.checked)} className="accent-[#fbbf24]" />
+            {t("widgets.field.markdown")}
+          </label>
+          <Field label={t("widgets.field.size")}>
+            <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
+          </Field>
+          <div className={headingClass}>{t("widgets.field.engine")}</div>
+          <Field label={t("widgets.field.model")}>
+            <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+          </Field>
+          <Field label={t("widgets.field.dialog.system")}>
+            <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
+          </Field>
+        </div>
+      );
+    }
 
     // selection / replace / clipboard — no configurable props.
     case "uppercase":
@@ -303,7 +395,7 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError,
+  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
@@ -314,7 +406,10 @@ export default function WidgetForm({
    *  back to [value.type_tag] when omitted, so the picker still renders
    *  something usable even if a caller forgets to pass it. */
   typeTags?: string[];
-  onSave: (w: WidgetDef) => Promise<void> | void;
+  /** Optional so read-only callers (the Building Blocks catalog) can omit it —
+   *  the Save button is never rendered when `readOnly`, so persistence is moot
+   *  there. Interactive callers (FlowsTab) always pass it. */
+  onSave?: (w: WidgetDef) => Promise<void> | void;
   onCancel: () => void;
   onDelete?: () => void;
   /** Delete-referrer error owned by the caller (there's no channel back to
@@ -322,6 +417,11 @@ export default function WidgetForm({
    *  rendered inline in the card's footer, near the Delete button, instead
    *  of the caller having to render it as a detached sibling below the form. */
   deleteError?: string;
+  /** Read-only detail view (Building Blocks catalog): every field is disabled
+   *  (via a wrapping disabled <fieldset>) and the footer shows only a Close
+   *  button wired to onCancel. Never combined with isNew. Default false keeps
+   *  every existing caller (FlowsTab) visually and behaviourally unchanged. */
+  readOnly?: boolean;
 }) {
   useT();
   const [form, setForm] = useState<WidgetFormValue>(value);
@@ -342,13 +442,19 @@ export default function WidgetForm({
   const rc = roleColor(form.role);
 
   // isNew only: props are type-specific, so switching type resets them.
-  // Mirrors WidgetsTab's old changeType — the id is left untouched (still
-  // freely editable), same accepted minor as before (no id regeneration).
+  // The id is also regenerated to keep its `<type>.custom-…` prefix in sync
+  // with the new type — but ONLY while the id is still the untouched
+  // auto-generated value (matches `^[a-z]+\.custom-\d+$`, the pattern the
+  // BuildingBlocks/FlowsTab "New" affordances mint). A hand-edited id is
+  // never clobbered.
   const changeType = (type_tag: string) => {
-    setForm({ ...form, type_tag, props: {} });
+    const isAutoId = /^[a-z]+\.custom-\d+$/.test(form.id);
+    const id = form.isNew && isAutoId ? `${type_tag}.custom-${Date.now()}` : form.id;
+    setForm({ ...form, type_tag, id, props: {} });
   };
 
   const handleSave = async () => {
+    if (!onSave) return;
     if (!form.name.trim()) { setError(t("widgets.err.name-required")); return; }
     if (!form.id.trim()) { setError(t("widgets.err.type-required")); return; }
     setError("");
@@ -377,10 +483,15 @@ export default function WidgetForm({
     <div className="flex flex-col gap-3">
       <div className="rounded-[10px] bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-4 animate-[panel-in_0.18s_ease] motion-reduce:animate-none">
         <div className="text-[12px] font-medium text-[#fafaf9]">
-          {form.isNew ? t("widgets.editor.new") : t("widgets.editor.edit")}
+          {readOnly ? t("widgets.editor.view") : form.isNew ? t("widgets.editor.new") : t("widgets.editor.edit")}
         </div>
 
         {error && <div className="text-[11px] text-[#ef4444]">{error}</div>}
+
+        {/* Fields — a disabled fieldset (display:contents, so zero layout
+            change) propagates `disabled` to every descendant input/select/
+            textarea/checkbox/button in read-only mode. */}
+        <fieldset disabled={readOnly} className="contents">
 
         {/* Identity: icon (read-only, by type_tag) + name */}
         <div className="flex flex-col gap-2">
@@ -445,30 +556,44 @@ export default function WidgetForm({
           />
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1 items-center">
-          <button
-            onClick={handleSave}
-            className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
-          >
-            {t("common.save")}
-          </button>
-          <button
-            onClick={handleCancel}
-            className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
-          >
-            {t("common.cancel")}
-          </button>
-          {/* Built-in / not-yet-saved widgets can't be deleted — hide the button. */}
-          {!form.isNew && !form.builtin && onDelete && (
+        </fieldset>
+
+        {/* Actions — read-only shows only a Close button (the Cancel button,
+            relabelled + wired to onCancel); no Save/Delete. */}
+        {readOnly ? (
+          <div className="flex gap-2 pt-1 items-center">
             <button
-              onClick={handleDeleteClick}
-              className="px-3 py-2 rounded-lg bg-transparent border border-[rgba(239,68,68,0.1)] text-[rgba(239,68,68,0.6)] text-[11px] hover:text-[#ef4444] hover:border-[rgba(239,68,68,0.3)] transition-colors"
+              onClick={handleCancel}
+              className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
             >
-              {confirmDelete ? t("widgets.confirm-delete") : t("common.delete")}
+              {t("widgets.close")}
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 pt-1 items-center">
+            <button
+              onClick={handleSave}
+              className="flex-1 py-2 rounded-lg bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-[#1a1917] text-[11px] font-semibold hover:opacity-90 transition-opacity"
+            >
+              {t("common.save")}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 rounded-lg bg-transparent border border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.4)] text-[11px] hover:border-[rgba(255,255,255,0.1)] transition-colors"
+            >
+              {t("common.cancel")}
+            </button>
+            {/* Built-in / not-yet-saved widgets can't be deleted — hide the button. */}
+            {!form.isNew && !form.builtin && onDelete && (
+              <button
+                onClick={handleDeleteClick}
+                className="px-3 py-2 rounded-lg bg-transparent border border-[rgba(239,68,68,0.1)] text-[rgba(239,68,68,0.6)] text-[11px] hover:text-[#ef4444] hover:border-[rgba(239,68,68,0.3)] transition-colors"
+              >
+                {confirmDelete ? t("widgets.confirm-delete") : t("common.delete")}
+              </button>
+            )}
+          </div>
+        )}
 
         {deleteError && (
           <div className="text-[11px] text-[#ef4444] leading-relaxed">{deleteError}</div>

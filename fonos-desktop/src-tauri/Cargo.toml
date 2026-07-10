@@ -32,6 +32,9 @@ signal-hook = "0.3"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25"
 core-foundation = "0.10"
+# NSWindow shadow invalidation for the transparent float pill (already in the
+# dependency tree via tauri/wry — this only makes it a direct dependency).
+objc2 = "0.6"
 
 [dev-dependencies]
 # Used by test_build.rs for Cargo.toml validation.

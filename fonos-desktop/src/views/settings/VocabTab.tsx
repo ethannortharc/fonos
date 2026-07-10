@@ -210,6 +210,9 @@ export default function VocabTab({
         <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
           {t("vocab.desc")}
         </div>
+        <div className="text-[10px] text-[rgba(255,255,255,0.3)] mt-1">
+          {t("vocab.attach-hint")}
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

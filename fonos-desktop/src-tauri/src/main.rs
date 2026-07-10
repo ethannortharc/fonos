@@ -220,6 +220,24 @@ fn main() {
             Err(e) => eprintln!("fonos: workflow migration save failed: {e}"),
         }
     }
+    // One-time migration: formerly-global settings (STT language, insert
+    // strategy, translate target) → widget props (Workflow P2). Runs after
+    // migrate_to_workflows so it operates on the now-workflow-shaped config.
+    if fonos_core::workflow::migrate::migrate_settings_into_flow(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated stt-language/insert-strategy/translate-target into widget props"),
+            Err(e) => eprintln!("fonos: settings migration save failed: {e}"),
+        }
+    }
+    // Idempotent (sentinel-free) remap of built-in ids renamed after they
+    // shipped — currently out.dialog-explain → out.dialog — so configs from
+    // earlier P2 builds keep resolving. A no-op once no stale ids remain.
+    if fonos_core::workflow::migrate::remap_renamed_builtins(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: remapped renamed built-in ids (out.dialog-explain → out.dialog)"),
+            Err(e) => eprintln!("fonos: builtin remap save failed: {e}"),
+        }
+    }
     let config = config;
 
     // Initialize SQLite database for stats & history
@@ -375,6 +393,7 @@ fn main() {
             commands::voices::record_voice_sample,
             // Window commands
             commands::resize_float,
+            commands::refresh_float_window,
             commands::resize_agent_panel,
             commands::hide_agent_panel,
             commands::hide_note_panel,
@@ -382,6 +401,9 @@ fn main() {
             commands::text_action::text_action_copy,
             commands::text_action::text_action_insert,
             commands::text_action::text_action_save_notebook,
+            commands::dialog::dialog_send,
+            commands::dialog::hide_dialog_panel,
+            commands::dialog::dialog_save_notebook,
             commands::set_note_notebook,
             // LLM commands
             commands::llm::process_with_llm,
@@ -438,6 +460,9 @@ fn main() {
             commands::workflow_cfg::save_workflow,
             commands::workflow_cfg::delete_widget,
             commands::workflow_cfg::delete_workflow,
+            // Workflow execution (frontend entry points to the engine)
+            commands::workflow_exec::run_workflow_by_id,
+            commands::workflow_widgets::finish_capture,
         ])
         .setup(move |app| {
             // Assemble and manage the shared AppState first — the rest of setup
@@ -456,6 +481,7 @@ fn main() {
                 note_target: Arc::new(Mutex::new(None)),
                 agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
                 sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
+                dialog_session: Arc::new(tokio::sync::Mutex::new(None)),
                 call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 registry: Arc::new(commands::workflow_widgets::build_registry(app.handle().clone())),
             };

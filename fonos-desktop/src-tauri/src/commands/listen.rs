@@ -44,7 +44,13 @@ async fn create_guarded(
     match do_create(state, &text).await {
         Ok((id, title)) => {
             eprintln!("fonos: listen item created: {title}");
-            events.emit(PipelineEvent::Delivered(title));
+            // Not an engine run: no workflow identity, so no `workflow:done`.
+            // `raw` carries the captured selection that was spoken back.
+            events.emit(PipelineEvent::Delivered {
+                raw: text.clone(),
+                final_text: title,
+                workflow: None,
+            });
             Ok(id)
         }
         Err(e) => {

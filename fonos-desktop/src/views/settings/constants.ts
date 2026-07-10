@@ -13,6 +13,16 @@ export const TABS: { key: SettingsTab; label: TKey }[] = [
   { key: "scenarios", label: "tab.scenarios" },
 ];
 
+// Canonical text-input / select recipe (the "house style"), originally
+// defined in WidgetForm.tsx for the Flows UI. Single source of truth for
+// every settings surface — import these instead of redefining the strings
+// locally (a select-only caller with its own fixed width should derive a
+// local variant from `selectClass` rather than re-literal the recipe, e.g.
+// `selectClass.replace("w-full ", "")`).
+export const inputClass =
+  "w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-2 text-[#fafaf9] text-[11px] focus:outline-none focus:border-[rgba(245,158,11,0.3)]";
+export const selectClass = inputClass + " cursor-pointer appearance-none";
+
 export const PROVIDERS = [
   { id: "openai", label: "OpenAI", url: "https://api.openai.com" },
   { id: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1" },

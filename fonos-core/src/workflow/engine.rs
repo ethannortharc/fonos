@@ -305,8 +305,14 @@ pub async fn run(
         }
     }
 
-    // 7. Every output accepted the result.
-    ctx.events.emit(PipelineEvent::Delivered(final_text.clone()));
+    // 7. Every output accepted the result. Carry the raw transcript, the final
+    //    text, and this run's workflow id so surfaces can show both texts
+    //    labeled by the workflow that produced them.
+    ctx.events.emit(PipelineEvent::Delivered {
+        raw: raw_text.clone(),
+        final_text: final_text.clone(),
+        workflow: Some(wf.id.clone()),
+    });
     Ok(RunOutcome { raw_text, final_text, entry_id })
 }
 
@@ -523,7 +529,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -533,7 +538,11 @@ mod tests {
         assert_eq!(sink.0.lock().unwrap().as_slice(), ["HELLO"]);
         let ev = cap.0.lock().unwrap();
         assert!(matches!(ev[0], PipelineEvent::Processing));
-        assert!(matches!(&ev[1], PipelineEvent::Delivered(t) if t == "HELLO"));
+        assert!(matches!(
+            &ev[1],
+            PipelineEvent::Delivered { raw, final_text, workflow }
+                if raw == "hello" && final_text == "HELLO" && workflow.as_deref() == Some("wf.t")
+        ));
         assert_eq!(ev.len(), 2);
     }
 
@@ -543,7 +552,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -568,7 +576,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -588,7 +595,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: Some(rec.clone()),
         };
@@ -734,7 +740,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -763,7 +768,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };
@@ -791,7 +795,6 @@ mod tests {
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
             events: cap.clone(),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         };

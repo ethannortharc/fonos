@@ -498,3 +498,36 @@ export async function saveWorkflow(workflow: WorkflowDef): Promise<void> {
 export async function deleteWorkflow(id: string): Promise<void> {
   return invoke<void>("delete_workflow", { id });
 }
+
+/** Fire-and-forget a workflow run through the engine — the same path hotkeys
+ *  use. Resolves immediately; run progress arrives via the `float:*` events. */
+export async function runWorkflowById(workflowId: string): Promise<void> {
+  return invoke<void>("run_workflow_by_id", { workflow_id: workflowId });
+}
+
+/** Finish the in-flight microphone capture (the mic button's "stop"), the same
+ *  routine the hotkey key-up / second press triggers. No-op if nothing is
+ *  capturing. */
+export async function finishCapture(): Promise<void> {
+  return invoke<void>("finish_capture");
+}
+
+// ── Dialog session-type output (Workflow P2) ──────────────────────────────
+
+/** Send a follow-up turn to the active Dialog session and render the reply in
+ *  the dialog panel. Rejects if no dialog session is currently open. */
+export async function dialogSend(text: string): Promise<void> {
+  return invoke<void>("dialog_send", { text });
+}
+
+/** Hide the floating dialog panel (does not clear the active session). */
+export async function hideDialogPanel(): Promise<void> {
+  return invoke<void>("hide_dialog_panel");
+}
+
+/** Confirm-save a Dialog's already-persisted Conversation container; returns
+ *  the container id for the UI to link to / navigate to. */
+export async function dialogSaveNotebook(containerId: number): Promise<number> {
+  // dialog_save_notebook is rename_all="snake_case" → pass the snake_case key.
+  return invoke<number>("dialog_save_notebook", { container_id: containerId });
+}

@@ -16,8 +16,24 @@ impl EventSink for PillEventSink {
             PipelineEvent::Processing => {
                 let _ = self.0.emit("float:processing", ());
             }
-            PipelineEvent::Delivered(text) => {
-                let _ = self.0.emit("float:stop", &text);
+            PipelineEvent::Delivered { raw, final_text, workflow } => {
+                // Pill contract unchanged: the final text drives `float:stop`.
+                let _ = self.0.emit("float:stop", &final_text);
+                // Engine (workflow) runs additionally surface the raw transcript
+                // and final result so the Dictation feed can show both, labeled
+                // by the run's workflow. This sink is the single emitter of
+                // `workflow:done`; non-workflow deliveries carry `None` and skip
+                // it.
+                if let Some(workflow_id) = workflow {
+                    let _ = self.0.emit(
+                        "workflow:done",
+                        serde_json::json!({
+                            "raw": raw,
+                            "final": final_text,
+                            "workflow_id": workflow_id,
+                        }),
+                    );
+                }
             }
             PipelineEvent::NoSpeech => {
                 let _ = self.0.emit("float:stop", "");

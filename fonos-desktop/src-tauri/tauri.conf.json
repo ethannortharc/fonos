@@ -28,14 +28,15 @@
         "title": "",
         "url": "float.html",
         "width": 90,
-        "height": 24,
+        "height": 28,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "visible": true,
         "resizable": false,
         "skipTaskbar": true,
-        "focus": false
+        "focus": false,
+        "shadow": false
       },
       {
         "label": "agent-panel",
@@ -85,6 +86,20 @@
         "url": "text-action-panel.html",
         "width": 380,
         "height": 280,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
+      },
+      {
+        "label": "dialog-panel",
+        "title": "",
+        "url": "dialog-panel.html",
+        "width": 420,
+        "height": 320,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,

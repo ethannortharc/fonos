@@ -3,6 +3,7 @@
 import { useState, KeyboardEvent } from "react";
 import type { AppConfig, ModelProfile } from "../../types";
 import { t, useT } from "../../lib/i18n";
+import { selectClass } from "./constants";
 
 // ─── Section label style (shared settings-tab look) ──────────────────────────
 
@@ -207,11 +208,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
         <select
           value={config.agent_llm_profile ?? ""}
           onChange={(e) => onSave({ agent_llm_profile: e.target.value })}
-          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-          style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
+          className={selectClass}
         >
           <option value="">{t("agent.none")}</option>
           {llmProfiles.map((p) => (
@@ -231,11 +228,7 @@ export default function AgentTab({ config, onSave }: AgentTabProps) {
         <select
           value={config.agent_stt_profile ?? ""}
           onChange={(e) => onSave({ agent_stt_profile: e.target.value })}
-          className="w-full rounded-lg px-3 py-2 text-[11px] text-[#fafaf9] cursor-pointer appearance-none focus:outline-none focus:border-[rgba(245,158,11,0.3)]"
-          style={{
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-          }}
+          className={selectClass}
         >
           <option value="">{t("agent.stt-default")}</option>
           {sttProfiles.map((p) => (

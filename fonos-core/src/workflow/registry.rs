@@ -18,9 +18,6 @@ use crate::workflow::model::{Data, DataKind, WidgetDef, WidgetRole, WorkflowDef}
 pub struct RunCtx {
     /// Sink for pipeline lifecycle events (`Processing`, `Delivered`, ...).
     pub events: Arc<dyn EventSink>,
-    /// Target language for translation-capable processors. Empty means no
-    /// translation requested.
-    pub translate_target: String,
     /// Out-of-band channel between components: sources write `"app_name"` /
     /// `"editable"`; the recorder writes `"entry_id"`; a speak output writes
     /// `"audio_ref"`. A JSON object, guarded by a mutex since components run
@@ -33,14 +30,12 @@ pub struct RunCtx {
 }
 
 impl RunCtx {
-    /// Build a bare-bones [`RunCtx`] for tests: events go nowhere,
-    /// `translate_target` is empty, `meta` is an empty object, and there is
-    /// no recorder. Used by this crate's own component tests and by
-    /// desktop-side integration tests.
+    /// Build a bare-bones [`RunCtx`] for tests: events go nowhere, `meta` is
+    /// an empty object, and there is no recorder. Used by this crate's own
+    /// component tests and by desktop-side integration tests.
     pub fn for_test() -> RunCtx {
         RunCtx {
             events: Arc::new(NullSink),
-            translate_target: String::new(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
         }

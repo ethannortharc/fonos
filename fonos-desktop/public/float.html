@@ -80,7 +80,15 @@
     backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border:1px solid rgba(255,255,255,0.06);border-radius:13px;
     font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
-    transition:all 0.3s ease;cursor:pointer;
+    /* Scoped transition (was `all`): the only properties that ever change
+       between states/hover are background, border-color and opacity, so the
+       aesthetic is identical — but `all` would also animate any future
+       geometry property (width/padding/…) against the INSTANT native window
+       resize, handing the compositor mid-flight frames where the pill is
+       wider than the already-resized window. Geometry changes must be atomic
+       with respect to resize_float; only paint-only properties may tween. */
+    transition:background 0.3s ease,border-color 0.3s ease,opacity 0.3s ease;
+    cursor:pointer;
     padding:0 10px;
     opacity:0.4;
   }
@@ -115,8 +123,11 @@
 
   /* ── Result (success / error) ── */
   #result{display:none;align-items:center;gap:4px}
-  #result-icon{font-size:10px;line-height:1}
+  #result-icon{font-size:10px;line-height:1;display:flex;align-items:center}
   #result-text{font-size:9px;font-family:-apple-system,sans-serif;white-space:nowrap}
+  /* Inline SVG glyphs render as blocks so they center cleanly with no
+     baseline descender gap in the tiny result pane / menu button. */
+  #result-icon svg,.s-icon svg,.m-icon svg{display:block}
 
   #pill.success{background:rgba(26,25,23,0.92);border-color:rgba(134,239,172,0.12);cursor:default;opacity:1}
   #pill.success #idle{display:none!important}
@@ -131,6 +142,28 @@
   #pill.error #result-text{color:rgba(239,68,68,0.6)}
 
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+  /* ── Pane entrance (Bug B) ── Non-mic workflows jump idle→processing→done
+     with back-to-back native resizes on a transparent window; the done pane
+     has no animation, so the compositor goes quiet and stale pixels linger
+     until a hover forces a repaint. A one-shot entrance animation on each
+     pane that becomes visible (display:none→flex restarts it) forces paint. */
+  @keyframes paneIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
+  #idle{animation:paneIn .2s ease}
+  #pill.processing #proc{animation:paneIn .2s ease}
+  #pill.success #result,#pill.error #result{animation:paneIn .2s ease}
+  /* Reduced motion: opacity-only fade still forces a repaint, minimal motion. */
+  @media (prefers-reduced-motion:reduce){
+    @keyframes paneIn{from{opacity:0}to{opacity:1}}
+  }
+
+  /* ── Repaint guard ── Full-viewport, hit-test-invisible div flashed by
+     flashRepaint() (see JS) to force WebKit to damage the ENTIRE transparent
+     surface after every transition, not just the changed pane's rect.
+     Deliberately plain: no transform / will-change / opacity animation, so
+     WebKit cannot promote it to its own compositing layer — the damage must
+     land on the root layer that owns the stale pixels. */
+  #repaint-guard{position:fixed;inset:0;background:transparent;pointer-events:none;z-index:99}
 </style>
 </head>
 <body>
@@ -157,6 +190,7 @@
     </div>
   </div>
 </div>
+<div id="repaint-guard"></div>
 
 <script>
 /* ── SVG icon mapper (matches main app Icons.tsx) ── */
@@ -169,6 +203,8 @@ var SVG_ICONS={
   '🎙':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
   '🎙️':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
   '📌':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/></svg>',
+  '🎤':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>',
+  '⚙':'<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
 };
 function setModeIcon(el,emoji){
   var svg=SVG_ICONS[emoji];
@@ -179,6 +215,59 @@ function setModeIcon(el,emoji){
   } else {
     el.textContent=emoji;
   }
+}
+
+/* ── Pill-chrome glyphs (same stroke-based, currentColor icon language as the
+   app's WidgetIcon/Icons; each host element's CSS supplies the color: green
+   for success ✓, red for error ✗, muted white for the menu gear). check/cross
+   use a slightly heavier stroke so the bare marks stay legible in the ~11px
+   result pane. */
+var CHROME_SVG={
+  check:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  cross:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  gear:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+};
+function setIconSvg(el,svg){
+  el.textContent='';
+  /* SVG strings are hardcoded above — safe static content */
+  var tpl=document.createElement('template');tpl.innerHTML=svg;
+  el.appendChild(tpl.content);
+}
+
+/* ── Tiny inline i18n ── The pill has a handful of static strings; the main app
+   owns the full dictionary (lib/i18n). Locale follows config.ui_language
+   ("auto"/"en"/"zh"), resolved the same way (auto → system language). Legacy
+   roller mode names are intentionally NOT localized — that menu is slated for
+   removal in P3. */
+const STR={
+  en:{proc:'Processing',done:'Done',nospeech:'No speech',error:'Error',clickSettings:' — click to open Settings',settings:'Settings'},
+  zh:{proc:'处理中',done:'完成',nospeech:'未识别到语音',error:'错误',clickSettings:' — 点按打开设置',settings:'设置'},
+};
+let LOCALE='en';
+function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
+// Mirrors lib/i18n.resolveLocale: explicit "en"/"zh" win, "auto"/undefined
+// follows navigator.language.
+function resolveLocale(setting){
+  if(setting==='en'||setting==='zh')return setting;
+  return (navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en';
+}
+// Set the active locale and re-render any currently-visible static label so a
+// live language switch (config:saved) takes effect without waiting for the
+// next state change. Exposed on window (classic script) for tests to drive.
+function applyLocale(setting){
+  LOCALE=resolveLocale(setting);
+  renderStaticLabels();
+}
+// Last transient result label key ('done'|'nospeech') so a live locale switch
+// during the ~1.2s result window re-localizes it; null for idle / dynamic
+// backend error text (which is not localized).
+let lastResultKey=null;
+function renderStaticLabels(){
+  var pl=document.getElementById('proc-label');if(pl)pl.textContent=L('proc');
+  if(lastResultKey){var rt=document.getElementById('result-text');if(rt)rt.textContent=L(lastResultKey);}
+  // Settings caption only exists while the menu is open (rebuilt on each open).
+  var cap=document.querySelector('#dropdown .dd-btn .dd-cap');
+  if(cap)cap.textContent=L('settings');
 }
 
 // Fallback voice workflows shown before list_workflows resolves (or if it
@@ -195,18 +284,135 @@ let rollerIdx=0; // index into circular list, maps to center slot
 let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
 const S=window.devicePixelRatio||2;
-function sz(w,h){
-  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
-  window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
-}
 const PH=28;
-const ITEM_H=32;
-function idleSz(){sz(90,PH);}
-function recSz(){sz(115,PH);}
-function menuSz(){
-  const dd=document.getElementById('dropdown');
-  requestAnimationFrame(()=>{sz(160,PH+dd.offsetHeight+10);});
+const IDLE_W=90,REC_W=115,PROC_W=110,MENU_W=160;
+
+// Width for a success/no-speech result pill. English/short labels stay at the
+// 90px idle width (IDLE_W is the floor); a longer localized label — e.g. the
+// zh "未识别到语音" — grows the pill just enough that it never clips. CJK glyphs
+// are ~full-em at the 9px result font, latin ~5px; +icon(12)+gap(4)+pad(20)+slack.
+function resultW(label){
+  var t=0;
+  for(var i=0;i<label.length;i++)t+=label.charCodeAt(i)>0x2e7f?9.5:5;
+  return Math.max(IDLE_W,Math.round(t+42));
 }
+
+// Dev-only assertions: the vite dev server / a plain browser load via
+// http(s):, the packaged app via tauri:. Keeps assert noise out of prod logs.
+const DEV=location.protocol==='http:'||location.protocol==='https:';
+
+// Logical size last sent to resize_float — i.e. the REAL window geometry
+// (a superseded queued shrink never updates it). applyVisual compares
+// transition targets against this to decide grow vs shrink.
+let curW=0,curH=0;
+function sz(w,h){
+  // Only applyVisual may call this: every native resize must ride the
+  // protected transition path (paint/resize ordering + full-surface repaint).
+  curW=w;curH=h;
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
+  // resize_float is a sync Tauri command, so it runs on the main thread and
+  // the NSWindow frame change has been applied by the time this resolves.
+  return window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
+}
+
+/* ── Full-surface invalidation (structural fix for the ghost-layer bug) ──
+   WKWebView repaints partial damage rects: a state swap whose animation only
+   touches the small pane region re-rasterizes just that rect, so stale pixels
+   elsewhere in the transparent surface (an old pill outline at a different
+   width, the closed menu's glass) survive until something else — typically
+   the hover transition — happens to damage them. flashRepaint toggles the
+   full-viewport #repaint-guard's background between transparent and a 1%-alpha
+   wash: both edges of the flash mark the whole viewport dirty in the root
+   layer, and the resulting layer-tree commit + composite also re-evaluates the
+   pill/menu backdrop-filter layers, flushing any stale one. The OFF edge is
+   the one that matters — it lands two frames after the LAST transition and
+   repaints the full surface at the settled final state (overlapping flashes
+   coalesce via `flashTok`). Chosen over alternatives: toggling a transform on
+   <html> churns compositor layer creation (its own flicker risk), and a
+   second native resize re-enters the exact resize path being fixed. The guard
+   is pointer-events:none, so clicks and elementFromPoint pass through.
+
+   The flash fixes stale pixels INSIDE the webview. The stale layer can also
+   live BELOW it: the window server may keep compositing the transparent
+   NSWindow's previous backing store + shadow (two superimposed pill frames,
+   e.g. 110px processing over 90px idle) until the window gets a display pass
+   — which is why a click used to repair it. So after the OFF-edge repaint has
+   had a frame to commit, ask the native side to invalidateShadow + force a
+   display pass on the NSWindow (refresh_float_window, fire-and-forget).
+   `flashTok` already coalesces bursts — only the last transition's flash
+   reaches its OFF edge, so at most one native call per settled burst. */
+let flashTok=0;
+function flashRepaint(){
+  const g=document.getElementById('repaint-guard');
+  if(!g)return;
+  const tok=++flashTok;
+  g.style.background='rgba(127,127,127,0.01)';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(tok!==flashTok)return;
+    g.style.background='transparent';
+    // One more frame so the OFF-edge full-surface repaint (settled final
+    // state) has been committed, THEN drop the window server's composite —
+    // invalidating before the settled paint would recompute the shadow from
+    // the old content. Same-size transitions skip resize_float entirely, so
+    // this is their ONLY native invalidation; resizing ones get it twice
+    // (frame-change time + here), both imperceptible.
+    requestAnimationFrame(()=>{
+      if(tok!==flashTok)return;
+      if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+      window.__TAURI_INTERNALS__.invoke('refresh_float_window').catch(()=>{});
+    });
+  }));
+}
+
+// Dev-only single-state invariant check: after every transition the pill must
+// carry exactly the state class enterState last set — one of the four for
+// active states, none for idle. More than one means panes are stacking again.
+let expectedState=null; // maintained by enterState
+function assertState(){
+  if(!DEV)return;
+  const p=document.getElementById('pill');
+  const have=['recording','processing','success','error'].filter(c=>p.classList.contains(c));
+  console.assert(have.length<=1&&(have[0]||null)===expectedState,
+    '[float] state invariant violated: expected '+(expectedState||'idle')+', got ['+have.join(',')+']');
+}
+
+/* ── Single protected transition path ──
+   EVERY visual transition (state change, menu open/close, revert timers,
+   startup sizing) goes through applyVisual so the paint/resize ordering is
+   encoded once, not per call site:
+   - GROW: resize the native window FIRST (awaiting sz(), i.e. the frame
+     change is applied), then paint the new content — painting wider content
+     into the still-small window would clip it and hand the compositor a
+     mid-transition frame.
+   - SHRINK: paint the new (smaller) content first, wait two rAFs so a frame
+     containing it has actually been committed, then shrink the window —
+     shrinking first would clip the still-wide old content.
+   - SAME SIZE: no native call at all (and Rust-side resize_float also skips
+     no-op geometry as a second line of defense).
+   Every path ends in flashRepaint() so the whole surface is re-rasterized at
+   the final state. `seq` supersedes queued work when a newer transition
+   begins (rapid hotkey sequences): the newest transition always wins and no
+   stale resize can land after it. */
+let seq=0;
+function applyVisual(mutate,w,h){
+  const tok=++seq;
+  const paint=()=>{mutate();assertState();};
+  if(w===curW&&h===curH){
+    paint();flashRepaint();
+  }else if(w>curW||h>curH){
+    sz(w,h).then(()=>{
+      if(tok!==seq)return;
+      paint();flashRepaint();
+    });
+  }else{
+    paint();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      if(tok!==seq)return;
+      sz(w,h).then(()=>{if(tok===seq)flashRepaint();});
+    }));
+  }
+}
+function idleSz(){applyVisual(()=>{enterState(null);},IDLE_W,PH);}
 
 function onPillClick(e){
   // While an error is showing, a click opens the relevant System Settings pane
@@ -228,15 +434,28 @@ function toggleMenu(e){
   else{
     // Reload modes each time menu opens — picks up newly added modes
     loadModes().then(()=>{
+      if(isRec)return; // recording started while modes were loading
       rollerIdx=allModes.findIndex(m=>m.id===currentMode);
       if(rollerIdx<0)rollerIdx=0;
-      renderMenu();dd.classList.add('show');menuSz();
+      renderMenu();
+      // Menu open is a GROW: lay the menu out invisibly (visibility:hidden
+      // computes layout but paints nothing) so its height can be measured
+      // BEFORE the resize, then let applyVisual grow the window first and
+      // reveal the menu only once the frame change has been applied.
+      dd.style.visibility='hidden';
+      dd.classList.add('show');
+      const h=dd.offsetHeight;
+      applyVisual(()=>{dd.style.visibility='';},MENU_W,PH+h+10);
     });
   }
 }
 function closeMenu(){
-  document.getElementById('dropdown').classList.remove('show');
-  idleSz();
+  // No-op when already closed: this is called defensively on every outside
+  // click and on window blur, and must not churn the window geometry (or
+  // clobber a wide error pill) when there is nothing to close.
+  const dd=document.getElementById('dropdown');
+  if(!dd.classList.contains('show'))return;
+  applyVisual(()=>{dd.classList.remove('show');},IDLE_W,PH);
 }
 
 // Get mode at circular index
@@ -297,8 +516,8 @@ function renderMenu(){
   // Separator + Settings
   const sep=document.createElement('div');sep.className='dd-sep';dd.appendChild(sep);
   const btn=document.createElement('div');btn.className='dd-btn';
-  const bIcon=document.createElement('span');bIcon.className='s-icon';bIcon.textContent='⚙️';
-  const bText=document.createElement('span');bText.textContent='Settings';
+  const bIcon=document.createElement('span');bIcon.className='s-icon';setIconSvg(bIcon,CHROME_SVG.gear);
+  const bText=document.createElement('span');bText.className='dd-cap';bText.textContent=L('settings');
   btn.appendChild(bIcon);btn.appendChild(bText);
   btn.onclick=ev=>{ev.stopPropagation();closeMenu();openSettings();};
   dd.appendChild(btn);
@@ -312,6 +531,7 @@ function loadCfg(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return;
   window.__TAURI_INTERNALS__.invoke('get_config').then(c=>{
     if(c&&c.active_voice_workflow)currentMode=c.active_voice_workflow;
+    if(c)applyLocale(c.ui_language);
   }).catch(()=>{});
 }
 function loadModes(){
@@ -331,53 +551,59 @@ function openSettings(){
   window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'show-main-window',payload:'settings'}).catch(()=>{});
 }
 
+// Single-state invariant. A new cycle can begin while a previous state is
+// still showing (success revert pending, an error lingering, an STS turn still
+// speaking). enterState clears any pending revert timer (stopTm / errTimer) and
+// strips EVERY state class before adding the new one — otherwise stacked
+// classes make two panes render at once (a bare overlapped rectangle) and a
+// stale revert timer can fire mid-state, stripping the class and mis-sizing the
+// window. All four state handlers go through it.
+function enterState(cls){
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
+  var p=document.getElementById('pill');
+  p.classList.remove('recording','processing','success','error');
+  if(cls)p.classList.add(cls);
+  else lastResultKey=null; // idle: no transient result label to re-localize
+  expectedState=cls||null;
+}
 function startRec(){
   if(isRec)return;isRec=true;closeMenu();clearErr();
-  var p=document.getElementById('pill');
-  // A new cycle can begin while a previous one is still showing (success
-  // revert pending, STS turn still speaking) — stale state classes left on
-  // the pill make the panes overlap and the layout collapse into a bare
-  // rectangle. Recording always starts from a clean slate.
-  p.classList.remove('processing','success','error');
-  p.classList.add('recording');
-  document.getElementById('rec-dur').textContent='0s';
-  let t0=Date.now();
-  if(durTm)clearInterval(durTm);
-  durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
-  if(animId)cancelAnimationFrame(animId);animT=0;drawW();
-  recSz();
+  applyVisual(()=>{
+    enterState('recording');
+    document.getElementById('rec-dur').textContent='0s';
+    const t0=Date.now();
+    if(durTm)clearInterval(durTm);
+    durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
+    if(animId)cancelAnimationFrame(animId);animT=0;drawW();
+  },REC_W,PH);
 }
 function showProcessing(){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','success','error');
-  p.classList.add('processing');
-  sz(110,PH);
+  applyVisual(()=>{enterState('processing');},PROC_W,PH);
 }
 function stopRec(text){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','processing');
-  if(text){
-    document.getElementById('result-icon').textContent='\u2713';
-    document.getElementById('result-text').textContent='Done';
-    p.classList.add('success');
-  } else {
-    document.getElementById('result-icon').textContent='\u2717';
-    document.getElementById('result-text').textContent='No speech';
-    p.classList.add('error');
-  }
-  sz(90,PH);
-  if(stopTm)clearTimeout(stopTm);
-  stopTm=setTimeout(()=>{
-    stopTm=null;
-    p.classList.remove('success','error');
-    idleSz();
-  },1200);
+  var key=text?'done':'nospeech';
+  lastResultKey=key;
+  applyVisual(()=>{
+    setIconSvg(document.getElementById('result-icon'),text?CHROME_SVG.check:CHROME_SVG.cross);
+    document.getElementById('result-text').textContent=L(key);
+    // enterState clears any prior revert timer and every state class (so a
+    // lingering 'error'/'success' from the last cycle can't stack with this
+    // one), then this cycle arms its OWN 1200ms revert to idle. The timer is
+    // armed inside the mutation, after enterState, so enterState's timer
+    // sweep can never cancel the revert it belongs to.
+    enterState(text?'success':'error');
+    stopTm=setTimeout(()=>{
+      stopTm=null;
+      idleSz();
+    },1200);
+  },resultW(L(key)),PH);
 }
 function clearErr(){
   errActive=false;errPane=null;
@@ -394,9 +620,11 @@ function showError(payload){
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  if(errTimer){clearTimeout(errTimer);errTimer=null;}
-  // Cancel a pending stopRec revert so it can't cut this error display short.
+  // Sweep pending reverts NOW (not just in enterState, which may run a tick
+  // later on the grow path): a success revert firing inside that gap would
+  // supersede this transition and strand errActive without an error pane.
   if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
 
   var full='',pane=null;
   if(payload){
@@ -406,35 +634,40 @@ function showError(payload){
       else{full=String(payload);}
     }catch(_){full=String(payload);}
   }
-  if(!full)full='Error';
+  if(!full)full=L('error');
+
+  // The backend error message is not localized (it's a diagnostic string); only
+  // the fallback and the click hint follow the pill language. lastResultKey is
+  // cleared so a live locale switch doesn't try to re-localize this dynamic text.
+  lastResultKey=null;
 
   // Truncate to ~48 chars for the pill; append the click hint when clickable.
   var short=full.length>48?full.slice(0,47)+'…':full;
-  var disp=pane?short+' — click to open Settings':short;
+  var disp=pane?short+L('clickSettings'):short;
 
-  var p=document.getElementById('pill');
-  p.classList.remove('recording','processing','success');
-  document.getElementById('result-icon').textContent='✗';
-  var textEl=document.getElementById('result-text');
-  textEl.textContent=disp;
-  textEl.title=full; // full message on hover
-  p.classList.add('error');
   console.warn('fonos float error: '+full);
-
   errActive=true;errPane=pane;
 
-  // Size the pill to the displayed text so it never overflows (mirrors the
-  // sz()/recSz() resize pattern): ~5px/char at 9px + icon/padding overhead.
+  // Size the pill to the displayed text so it never overflows:
+  // ~5px/char at 9px + icon/padding overhead.
   var w=Math.max(110,Math.min(440,Math.round(disp.length*5)+44));
-  sz(w,PH);
 
-  // Permission errors linger longer so they can be read and clicked.
-  var dur=pane?6000:2600;
-  errTimer=setTimeout(function(){
-    p.classList.remove('error');
-    clearErr();
-    idleSz();
-  },dur);
+  applyVisual(function(){
+    setIconSvg(document.getElementById('result-icon'),CHROME_SVG.cross);
+    var textEl=document.getElementById('result-text');
+    textEl.textContent=disp;
+    textEl.title=full; // full message on hover
+    // enterState clears any pending stopRec/error revert (so a prior revert
+    // can't cut this error short) and strips every state class before the
+    // error pane is shown. The revert is armed after it, inside the same
+    // mutation, so the sweep can't cancel this cycle's own timer.
+    enterState('error');
+    // Permission errors linger longer so they can be read and clicked.
+    errTimer=setTimeout(function(){
+      clearErr();
+      idleSz();
+    },pane?6000:2600);
+  },w,PH);
 }
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;
@@ -459,6 +692,13 @@ function setup(){
   listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
+  // Settings changed (not a pill terminal event): live-update the language and
+  // active voice workflow from the small subset save_config emits.
+  listen('config:saved',e=>{
+    var p=e&&e.payload;if(!p)return;
+    if(p.active_voice_workflow)currentMode=p.active_voice_workflow;
+    applyLocale(p.ui_language);
+  });
   loadCfg();loadModes();idleSz();
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,100)):setTimeout(setup,100);

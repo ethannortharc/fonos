@@ -25,7 +25,7 @@ use serde::Deserialize;
 use tauri::Manager;
 
 use fonos_core::workflow::llm_step::{run_llm_step, LlmProps};
-use fonos_core::workflow::model::{AudioBuf, Data, DataKind};
+use fonos_core::workflow::model::{AudioBuf, Data, DataKind, PanelSize};
 use fonos_core::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
 
 use super::dictation;
@@ -44,6 +44,15 @@ static CAPTURE_DONE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 /// the signal — starting/stopping the stream stays inside `MicSource::acquire`.
 pub fn finish_active_capture() {
     CAPTURE_DONE.notify_waiters();
+}
+
+/// Frontend entry point for finishing an in-flight [`MicSource`] capture — the
+/// in-view mic button's "stop" calls this, the same routine the hotkey key-up
+/// (hold) / second-press (toggle) uses. Thin command wrapper over
+/// [`finish_active_capture`]; when nothing is capturing it is a harmless no-op.
+#[tauri::command(rename_all = "snake_case")]
+pub fn finish_capture() {
+    finish_active_capture();
 }
 
 // ─── Selection source ────────────────────────────────────────────────────────
@@ -157,6 +166,13 @@ pub struct SttProps {
     /// STT sampling temperature (0.0 = most deterministic).
     #[serde(default)]
     pub temperature: f64,
+    /// STT language hint (BCP-47 tag or "auto"); replaces global config.stt_language.
+    #[serde(default = "default_stt_language")]
+    pub language: String,
+}
+
+fn default_stt_language() -> String {
+    "auto".to_string()
 }
 
 /// Processor that transcribes an audio buffer to text via the shared STT core.
@@ -207,21 +223,21 @@ impl Processor for SttProcessor {
             };
 
             // Effective vocab books = global ∪ this widget's, cloned out of the
-            // config lock so they outlive the transcription await.
-            let (language, books) = {
+            // config lock so they outlive the transcription await. Language is
+            // this widget's own prop now — no config lock needed for it.
+            let books: Vec<fonos_core::vocab::VocabBook> = {
                 let config = state.config.lock().map_err(|e| e.to_string())?;
-                let books: Vec<fonos_core::vocab::VocabBook> = fonos_core::vocab::effective_books(
+                fonos_core::vocab::effective_books(
                     &config.vocab_books,
                     &config.global_vocab_books,
                     &self.props.vocab_books,
                 )
                 .into_iter()
                 .cloned()
-                .collect();
-                (config.stt_language.clone(), books)
+                .collect()
             };
 
-            (svc, language, books)
+            (svc, self.props.language.clone(), books)
         };
 
         let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();
@@ -257,9 +273,9 @@ impl Processor for SttProcessor {
 /// the effective vocab glossary (global ∪ this widget's books), and call the
 /// shared pure runner [`run_llm_step`].
 ///
-/// Mirrors the LLM half of `commands/text_action.rs`, but takes the translation
-/// target from [`RunCtx::translate_target`] (set by the engine) rather than the
-/// live config.
+/// Mirrors the LLM half of `commands/text_action.rs`, but translation targets
+/// are baked into the prompt template (`llm.translate`'s `user_template`)
+/// rather than substituted from a runtime target language.
 pub struct LlmProcessor {
     /// Handle used to reach `AppState` for service + vocab resolution.
     pub app: tauri::AppHandle,
@@ -277,7 +293,7 @@ impl Processor for LlmProcessor {
         DataKind::Text
     }
 
-    async fn process(&self, input: Data, ctx: &RunCtx) -> Result<Data, String> {
+    async fn process(&self, input: Data, _ctx: &RunCtx) -> Result<Data, String> {
         let text = input.into_text()?;
 
         // Resolve the LLM service and precompute the glossary block up front,
@@ -301,16 +317,11 @@ impl Processor for LlmProcessor {
             (service, glossary)
         };
 
-        // `ctx.translate_target` is a plain field (no lock), so borrowing it
-        // across the await is fine.
-        let out = run_llm_step(
-            &self.props,
-            &text,
-            &service,
-            &ctx.translate_target,
-            glossary.as_deref(),
-        )
-        .await?;
+        // Translation targets are baked into the prompt (see `llm.translate`'s
+        // hardcoded template), so no runtime target language is threaded
+        // through here.
+        let out = run_llm_step(&self.props, &text, &service, "", glossary.as_deref())
+            .await?;
         Ok(Data::Text(out))
     }
 }
@@ -345,15 +356,17 @@ fn read_meta_i64(ctx: &RunCtx, key: &str) -> Option<i64> {
 
 /// `insert`: inject the text at the cursor of the frontmost app.
 ///
-/// Delivery reuses [`crate::injection::inject_text`], which resolves the
-/// strategy from the live `AppConfig` (global default + per-app overrides). The
-/// widget's `strategy` prop is schema-only in P1 — exactly as the legacy
-/// dictation `InjectionTextSink` behaved — and is not yet consumed here.
+/// The widget's own `strategy` prop is the fallback default; a per-app
+/// override from the live `AppConfig` still wins over it, via
+/// [`crate::injection::resolve_strategy_for_app_with_default`].
 pub struct InsertOutput {
-    /// Handle used to read the live `AppConfig` for strategy resolution.
+    /// Handle used to read the live `AppConfig` for per-app override resolution.
     pub app: tauri::AppHandle,
     /// Press Return after inserting (send-on-insert).
     pub press_enter: bool,
+    /// This widget's default injection strategy (`"paste"` or `"type"`),
+    /// overridden per-app by `AppConfig.injection_app_overrides`.
+    pub strategy: String,
 }
 
 #[async_trait::async_trait]
@@ -372,7 +385,16 @@ impl Output for InsertOutput {
             let cfg = state.config.lock().map_err(|e| e.to_string())?;
             cfg.clone()
         };
-        crate::injection::inject_text(text, &config)?;
+        let app_name = if config.injection_app_overrides.is_empty() {
+            None
+        } else {
+            let n = crate::commands::selection::frontmost_app();
+            if n.is_empty() { None } else { Some(n) }
+        };
+        let strategy = crate::injection::resolve_strategy_for_app_with_default(
+            &config, app_name.as_deref(), crate::injection::InjectionStrategy::parse(&self.strategy),
+        );
+        crate::injection::inject_text_with_strategy(text, strategy)?;
 
         // Optional Return, after the same settle delay the core pipeline uses.
         // A press_enter failure is non-fatal — the text already landed.
@@ -554,6 +576,8 @@ pub struct PanelOutput {
     pub app: tauri::AppHandle,
     /// Render-as-markdown hint forwarded to the panel (P2 consumes it).
     pub markdown: bool,
+    /// Window dimensions the panel is sized to at open (from the widget prop).
+    pub size: PanelSize,
 }
 
 #[async_trait::async_trait]
@@ -580,14 +604,34 @@ impl Output for PanelOutput {
             )
         };
 
-        super::text_action::show_panel_at_cursor(&self.app).await;
+        // Header name = the recorded run's workflow name (mirrors dialog.rs's
+        // title lookup: read `metadata.workflow_name` off the history entry).
+        // All rusqlite work stays in a scoped std-mutex block dropped before the
+        // await below; entry_id <= 0 or a failed lookup falls back to "".
+        let wf_name = if entry_id > 0 {
+            let state = self.app.state::<AppState>();
+            let db = state.db.lock().map_err(|e| e.to_string())?;
+            match fonos_core::storage::get_entry(&db, entry_id) {
+                Ok(e) => e
+                    .metadata
+                    .get("workflow_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                Err(_) => String::new(),
+            }
+        } else {
+            String::new()
+        };
+
+        super::text_action::show_panel_at_cursor(&self.app, self.size.width, self.size.height).await;
 
         // recvStart resets the panel and carries `markdown` as its 4th arg (the
         // panel JS ignores extra positional args for now). The output runs
-        // post-processing, so there is no source/mode context to show; P1 uses a
-        // neutral header and lets recvResult carry the text + footer context.
+        // post-processing, so there is no source/mode context to show; the header
+        // shows the workflow name (falling back to "" when it can't be resolved).
         let icon_j = serde_json::to_string("🪟").unwrap_or_default();
-        let name_j = serde_json::to_string("").unwrap_or_default();
+        let name_j = serde_json::to_string(&wf_name).unwrap_or_default();
         let sel_j = serde_json::to_string("").unwrap_or_default();
         super::text_action::panel_js(
             &self.app,
@@ -685,10 +729,9 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     .get("press_enter")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                Ok(Arc::new(InsertOutput {
-                    app: app.clone(),
-                    press_enter,
-                }) as Arc<dyn Output>)
+                let strategy = props.get("strategy").and_then(|v| v.as_str())
+                    .unwrap_or(if cfg!(target_os = "linux") { "type" } else { "paste" }).to_string();
+                Ok(Arc::new(InsertOutput { app: app.clone(), press_enter, strategy }) as Arc<dyn Output>)
             }),
         );
     }
@@ -748,9 +791,29 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     .get("markdown")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
+                let size = props
+                    .get("size")
+                    .and_then(|v| serde_json::from_value::<PanelSize>(v.clone()).ok())
+                    .unwrap_or_default();
                 Ok(Arc::new(PanelOutput {
                     app: app.clone(),
                     markdown,
+                    size,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "dialog",
+            Box::new(move |props| {
+                let props: fonos_core::workflow::dialog::DialogProps =
+                    serde_json::from_value(props.clone())
+                        .map_err(|e| format!("dialog props: {e}"))?;
+                Ok(Arc::new(super::dialog::DialogOutput {
+                    app: app.clone(),
+                    props,
                 }) as Arc<dyn Output>)
             }),
         );

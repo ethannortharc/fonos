@@ -28,12 +28,19 @@ pub(crate) fn panel_js(h: &tauri::AppHandle, js: &str) {
     }
 }
 
-/// Show the panel near the cursor and focus it (focus enables Esc/blur dismissal).
+/// Size the panel to `(w, h)`, position it near the cursor, and focus it (focus
+/// enables Esc/blur dismissal).
 ///
 /// `pub(crate)` so the workflow `panel` output ([`super::workflow_widgets`])
-/// can position and reveal the shared panel identically.
-pub(crate) async fn show_panel_at_cursor(handle: &tauri::AppHandle) {
+/// can size, position, and reveal the shared panel identically (the panel's size
+/// comes from its `PanelSize` prop, mirroring [`super::dialog::show_dialog_at_cursor`]).
+pub(crate) async fn show_panel_at_cursor(handle: &tauri::AppHandle, w: u32, h: u32) {
     use tauri::Manager;
+    if let Some(panel) = handle.get_webview_window("text-action-panel") {
+        let _ = panel.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+            w as f64, h as f64,
+        )));
+    }
     // NOTE: `move_text_action_panel_to_cursor` lives in `commands/mod.rs`,
     // not `crate::` (main.rs) as the task brief assumed — see the doc
     // comment on `commands::monitor_under_cursor` for why (main.rs and
@@ -41,7 +48,7 @@ pub(crate) async fn show_panel_at_cursor(handle: &tauri::AppHandle) {
     // crate-root item defined only in main.rs isn't visible when this file
     // is compiled as part of the lib.rs crate root).
     #[cfg(target_os = "macos")]
-    super::move_text_action_panel_to_cursor(handle);
+    super::move_text_action_panel_to_cursor(handle, w, h);
     if let Some(panel) = handle.get_webview_window("text-action-panel") {
         let _ = panel.show();
         let _ = panel.set_focus();

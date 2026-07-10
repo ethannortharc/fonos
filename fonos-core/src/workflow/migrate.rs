@@ -1,8 +1,7 @@
-//! One-time migration of legacy config (modes / dictation / note / listen /
-//! text-actions) into the workflow model (Workflow P1).
+//! One-time migrations of legacy config into the workflow model.
 //!
-//! [`migrate_to_workflows`] rewrites the legacy hotkey + mode fields of an
-//! [`AppConfig`] into overlay [`WorkflowDef`]s / [`WidgetDef`]s in
+//! [`migrate_to_workflows`] (Workflow P1) rewrites the legacy hotkey + mode
+//! fields of an [`AppConfig`] into overlay [`WorkflowDef`]s / [`WidgetDef`]s in
 //! `config.workflows` / `config.widgets`, then clears the legacy *note* and
 //! *listen* hotkey fields (only macOS ever read them, and Task 10 deleted those
 //! dispatch arms). The *dictation* hotkey fields are deliberately KEPT: Linux's
@@ -12,6 +11,13 @@
 //! ignores them (`build_hotkey_configs` iterates `effective_workflows`). It is
 //! idempotent: guarded by `config.workflow_migration_done` and a no-op
 //! (returning `false`) once that flag is set.
+//!
+//! [`migrate_settings_into_flow`] (Workflow P2) later seeds three
+//! formerly-global settings — STT language, insert strategy, translate target
+//! — onto widget props, guarded by the separate
+//! `config.settings_inflow_migration_done` sentinel. It runs after
+//! `migrate_to_workflows` (see `main.rs`) so it can operate on the
+//! now-workflow-shaped config.
 
 use std::collections::BTreeMap;
 
@@ -427,6 +433,150 @@ fn upsert_workflow(config: &mut AppConfig, workflow: WorkflowDef) {
         Some(slot) => *slot = workflow,
         None => config.workflows.push(workflow),
     }
+}
+
+/// One-shot (idempotent) relocation of three formerly-global settings onto
+/// widget props: STT language, insert strategy, and the translate target
+/// (baked into the translate prompt). Custom widgets are patched in place;
+/// built-ins get an override only when the user's value differs from the
+/// built-in default. Returns `true` if anything changed.
+///
+/// Idempotent: guarded by `config.settings_inflow_migration_done` and a no-op
+/// (returning `false`) once that flag is set. Intended to run once at desktop
+/// startup, immediately after [`migrate_to_workflows`] (see `main.rs`).
+pub fn migrate_settings_into_flow(config: &mut AppConfig) -> bool {
+    if config.settings_inflow_migration_done {
+        return false;
+    }
+    let platform_insert_default = if cfg!(target_os = "linux") { "type" } else { "paste" };
+
+    // Helper: fetch a fresh copy of a built-in widget def by id.
+    fn builtin(id: &str) -> Option<WidgetDef> {
+        crate::workflow::builtin::built_in_widgets().into_iter().find(|w| w.id == id)
+    }
+    // Helper: set a string prop on a widget def's json object.
+    fn set_prop(w: &mut WidgetDef, key: &str, val: &str) {
+        if let Some(obj) = w.props.as_object_mut() {
+            obj.insert(key.to_string(), serde_json::Value::String(val.to_string()));
+        }
+    }
+
+    // (1) STT language — patch custom stt widgets; override builtin if non-"auto".
+    for w in config.widgets.iter_mut().filter(|w| w.type_tag == "stt") {
+        set_prop(w, "language", &config.stt_language);
+    }
+    if config.stt_language != "auto" && !config.widgets.iter().any(|w| w.id == "stt.default") {
+        if let Some(mut w) = builtin("stt.default") {
+            w.builtin = false;
+            set_prop(&mut w, "language", &config.stt_language);
+            upsert_widget(config, w);
+        }
+    }
+
+    // (2) Insert strategy — patch custom insert widgets; override builtin if != platform default.
+    for w in config.widgets.iter_mut().filter(|w| w.type_tag == "insert") {
+        set_prop(w, "strategy", &config.injection_strategy);
+    }
+    if config.injection_strategy != platform_insert_default
+        && !config.widgets.iter().any(|w| w.id == "out.insert")
+    {
+        if let Some(mut w) = builtin("out.insert") {
+            w.builtin = false;
+            set_prop(&mut w, "strategy", &config.injection_strategy);
+            upsert_widget(config, w);
+        }
+    }
+
+    // (3) Translate target. Two independent concerns:
+    //
+    //   a) Any EXISTING custom/overriding llm widget in `config.widgets` that
+    //      still carries a literal `{target_lang}` placeholder (pre-P2 custom
+    //      widgets, or ones copied from the old llm.translate template) gets
+    //      it substituted with the user's real target. This matters because
+    //      `LlmProcessor` now always passes `""` for `translate_target` at
+    //      runtime (translation is prompt-based post-P2 — see
+    //      `crate::llm::process_text`), which would otherwise silently
+    //      default any such leftover placeholder to "English", regressing a
+    //      non-English target the user had configured.
+    //   b) The built-in `llm.translate` widget itself no longer has a
+    //      placeholder — Task 2 hardcoded it to "English" — so a non-English
+    //      target instead gets an override that bakes the real target into
+    //      the "to English." clause of the built-in prompt text.
+    let target = config.translate_target.clone();
+    for w in config.widgets.iter_mut().filter(|w| w.type_tag == "llm") {
+        if let Some(obj) = w.props.as_object_mut() {
+            for key in ["system", "user_template"] {
+                if let Some(s) = obj.get(key).and_then(|v| v.as_str()) {
+                    if s.contains("{target_lang}") {
+                        let replaced = s.replace("{target_lang}", &target);
+                        obj.insert(key.to_string(), serde_json::Value::String(replaced));
+                    }
+                }
+            }
+        }
+    }
+    // Translate target → bake into the built-in translate prompt for non-default users.
+    if target != "English" && !target.is_empty()
+        && !config.widgets.iter().any(|w| w.id == "llm.translate")
+    {
+        if let Some(mut w) = builtin("llm.translate") {
+            w.builtin = false;
+            if let Some(obj) = w.props.as_object_mut() {
+                if let Some(s) = obj.get("user_template").and_then(|v| v.as_str()) {
+                    let replaced = s.replace("to English.", &format!("to {target}."));
+                    obj.insert("user_template".to_string(), serde_json::Value::String(replaced));
+                }
+            }
+            upsert_widget(config, w);
+        }
+    }
+
+    config.settings_inflow_migration_done = true;
+    true
+}
+
+/// Idempotent remap of built-in ids that were renamed after shipping in an
+/// earlier build, so configs saved by those builds (carrying the old id) keep
+/// working. Unlike the one-time `migrate_*` functions this carries NO sentinel:
+/// it is a cheap unconditional scan that becomes a no-op (returns `false`) once
+/// no stale ids remain.
+///
+/// Currently handles a single rename: the dialog output widget
+/// `out.dialog-explain` → `out.dialog` (the widget is generic — its props carry
+/// no explain-specific config — so "explain" semantics live in `wf.explain`,
+/// not in the widget id). Both the `config.widgets` entry and any workflow
+/// `outputs` reference are rewritten. If a config already carries an `out.dialog`
+/// widget entry, the stale `out.dialog-explain` entry is dropped instead of
+/// renamed (avoiding a duplicate id). Returns `true` if anything changed.
+pub fn remap_renamed_builtins(config: &mut AppConfig) -> bool {
+    /// (old_id, new_id) pairs for built-ins renamed after they shipped.
+    const RENAMES: [(&str, &str); 1] = [("out.dialog-explain", "out.dialog")];
+    let mut changed = false;
+
+    for (old_id, new_id) in RENAMES {
+        // Widgets: rename the stale entry in place — unless a new-id entry
+        // already exists, in which case drop the stale one to avoid a duplicate.
+        if let Some(pos) = config.widgets.iter().position(|w| w.id == old_id) {
+            if config.widgets.iter().any(|w| w.id == new_id) {
+                config.widgets.remove(pos);
+            } else {
+                config.widgets[pos].id = new_id.to_string();
+            }
+            changed = true;
+        }
+
+        // Workflow output references.
+        for wf in config.workflows.iter_mut() {
+            for out in wf.outputs.iter_mut() {
+                if out == old_id {
+                    *out = new_id.to_string();
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    changed
 }
 
 #[cfg(test)]
@@ -983,5 +1133,144 @@ mod tests {
                 assert!(widget_ids.contains(o), "{}: output '{o}' missing", wf.id);
             }
         }
+    }
+
+    // ── migrate_settings_into_flow (Workflow P2) ─────────────────────────────
+    // One-shot relocation of three formerly-global settings (STT language,
+    // insert strategy, translate target) onto widget props.
+
+    #[test]
+    fn relocation_seeds_nondefault_stt_language() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_language = "Chinese".into();
+        assert!(migrate_settings_into_flow(&mut cfg));
+        let w = cfg.widgets.iter().find(|w| w.id == "stt.default").unwrap();
+        assert_eq!(w.props.get("language").unwrap(), "Chinese");
+    }
+
+    #[test]
+    fn relocation_seeds_nondefault_insert_strategy() {
+        let mut cfg = AppConfig::default();
+        // Pick whichever strategy is NOT the platform default so the test is
+        // meaningful (and passes) on both Linux and macOS/Windows CI runners.
+        let non_default = if cfg!(target_os = "linux") { "paste" } else { "type" };
+        cfg.injection_strategy = non_default.to_string();
+        assert!(migrate_settings_into_flow(&mut cfg));
+        let w = cfg.widgets.iter().find(|w| w.id == "out.insert").unwrap();
+        assert_eq!(w.props.get("strategy").unwrap(), non_default);
+    }
+
+    #[test]
+    fn relocation_bakes_translate_target_into_prompt() {
+        let mut cfg = AppConfig::default();
+        cfg.translate_target = "Chinese".into();
+        assert!(migrate_settings_into_flow(&mut cfg));
+        let w = cfg.widgets.iter().find(|w| w.id == "llm.translate").unwrap();
+        let ut = w.props.get("user_template").unwrap().as_str().unwrap();
+        assert!(ut.contains("Chinese") && !ut.contains("{target_lang}"));
+    }
+
+    #[test]
+    fn relocation_is_idempotent() {
+        let mut cfg = AppConfig::default();
+        cfg.stt_language = "Chinese".into();
+        assert!(migrate_settings_into_flow(&mut cfg));
+        assert!(!migrate_settings_into_flow(&mut cfg)); // sentinel set → no-op
+    }
+
+    #[test]
+    fn relocation_noop_for_defaults() {
+        let mut cfg = AppConfig::default(); // stt=auto, target=English, strategy=platform-default
+        assert!(migrate_settings_into_flow(&mut cfg));
+        assert!(cfg.widgets.iter().all(|w| w.id != "stt.default"), "no override needed for default stt");
+        assert!(cfg.widgets.iter().all(|w| w.id != "out.insert"), "no override needed for default strategy");
+        assert!(cfg.widgets.iter().all(|w| w.id != "llm.translate"), "no override needed for default target");
+        assert!(cfg.widgets.is_empty(), "an all-default config seeds zero override widgets");
+    }
+
+    // ── remap_renamed_builtins: out.dialog-explain → out.dialog ──────────────
+
+    /// A stale `out.dialog-explain` widget entry and any workflow output that
+    /// references it are both renamed to `out.dialog`.
+    #[test]
+    fn remap_renames_dialog_widget_and_workflow_refs() {
+        let mut cfg = AppConfig::default();
+        cfg.widgets.push(WidgetDef {
+            id: "out.dialog-explain".into(),
+            role: WidgetRole::Output,
+            type_tag: "dialog".into(),
+            name: "解释对话框".into(),
+            icon: "💬".into(),
+            props: serde_json::json!({}),
+            builtin: true,
+        });
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.explain".into(),
+            name: "选中解释".into(),
+            icon: "💡".into(),
+            hotkey: String::new(),
+            source: "src.selection".into(),
+            processors: vec!["llm.explain".into()],
+            outputs: vec!["out.dialog-explain".into()],
+            builtin: true,
+        });
+
+        assert!(remap_renamed_builtins(&mut cfg), "first pass reports a change");
+
+        assert!(cfg.widgets.iter().any(|w| w.id == "out.dialog"), "widget id renamed");
+        assert!(!cfg.widgets.iter().any(|w| w.id == "out.dialog-explain"), "old widget id gone");
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.explain").unwrap();
+        assert_eq!(wf.outputs, vec!["out.dialog".to_string()], "workflow output ref renamed");
+    }
+
+    /// If both the old and new widget ids are present, the stale old entry is
+    /// dropped (not renamed) so no duplicate `out.dialog` id results.
+    #[test]
+    fn remap_drops_stale_old_widget_when_new_already_exists() {
+        let mut cfg = AppConfig::default();
+        for id in ["out.dialog-explain", "out.dialog"] {
+            cfg.widgets.push(WidgetDef {
+                id: id.into(),
+                role: WidgetRole::Output,
+                type_tag: "dialog".into(),
+                name: "对话框".into(),
+                icon: "💬".into(),
+                props: serde_json::json!({}),
+                builtin: true,
+            });
+        }
+
+        assert!(remap_renamed_builtins(&mut cfg), "reports a change (stale dropped)");
+        assert_eq!(
+            cfg.widgets.iter().filter(|w| w.id == "out.dialog").count(),
+            1,
+            "exactly one out.dialog entry — no duplicate"
+        );
+        assert!(!cfg.widgets.iter().any(|w| w.id == "out.dialog-explain"), "stale entry dropped");
+    }
+
+    /// Idempotent: a second pass over an already-remapped config is a no-op.
+    #[test]
+    fn remap_is_idempotent() {
+        let mut cfg = AppConfig::default();
+        cfg.widgets.push(WidgetDef {
+            id: "out.dialog-explain".into(),
+            role: WidgetRole::Output,
+            type_tag: "dialog".into(),
+            name: "解释对话框".into(),
+            icon: "💬".into(),
+            props: serde_json::json!({}),
+            builtin: true,
+        });
+        assert!(remap_renamed_builtins(&mut cfg), "first pass changes config");
+        assert!(!remap_renamed_builtins(&mut cfg), "second pass is a no-op");
+    }
+
+    /// A fresh (already-current) config with no stale ids is untouched.
+    #[test]
+    fn remap_noop_on_fresh_config() {
+        let mut cfg = AppConfig::default();
+        assert!(!remap_renamed_builtins(&mut cfg), "fresh config: nothing to remap");
+        assert!(cfg.widgets.is_empty() && cfg.workflows.is_empty());
     }
 }

@@ -83,6 +83,24 @@ pub fn resolve_strategy_for_app(config: &AppConfig, app_name: Option<&str>) -> I
     InjectionStrategy::parse(&config.injection_strategy)
 }
 
+/// Like `resolve_strategy_for_app`, but the fallback (when no per-app override
+/// matches) is an explicit widget-provided default rather than the global
+/// `config.injection_strategy`.
+pub fn resolve_strategy_for_app_with_default(
+    config: &AppConfig, app_name: Option<&str>, default: InjectionStrategy,
+) -> InjectionStrategy {
+    if let Some(name) = app_name {
+        let name_lower = name.to_lowercase();
+        for o in &config.injection_app_overrides {
+            let pat = o.app.trim().to_lowercase();
+            if !pat.is_empty() && name_lower.contains(&pat) {
+                return InjectionStrategy::parse(&o.strategy);
+            }
+        }
+    }
+    default
+}
+
 /// Injects `text` at the current cursor position using the strategy resolved
 /// from `config` (global default + per-app overrides).
 ///
@@ -410,4 +428,25 @@ extern "C" {
     /// Returns non-zero while a secure input field (password entry) is
     /// focused anywhere on the system; simulated input is blocked then.
     fn IsSecureEventInputEnabled() -> u8;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fonos_core::config::InjectionAppOverride;
+
+    #[test]
+    fn widget_default_used_when_no_override() {
+        let cfg = AppConfig::default(); // no overrides
+        let s = resolve_strategy_for_app_with_default(&cfg, Some("TextEdit"), InjectionStrategy::Type);
+        assert_eq!(s, InjectionStrategy::Type);
+    }
+
+    #[test]
+    fn per_app_override_beats_widget_default() {
+        let mut cfg = AppConfig::default();
+        cfg.injection_app_overrides.push(InjectionAppOverride { app: "Slack".into(), strategy: "type".into() });
+        let s = resolve_strategy_for_app_with_default(&cfg, Some("Slack"), InjectionStrategy::Paste);
+        assert_eq!(s, InjectionStrategy::Type);
+    }
 }

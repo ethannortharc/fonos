@@ -20,8 +20,11 @@ pub struct LlmProps {
     #[serde(default)]
     pub system: Option<String>,
     /// Optional user message template; `{text}` is substituted by
-    /// [`crate::llm::process_text`].
-    #[serde(default)]
+    /// [`crate::llm::process_text`]. Defaults to `Some("{text}")` so a
+    /// from-scratch `llm` widget whose form left the template untouched still
+    /// deserializes to a runnable template instead of `None` (which
+    /// `process_text` rejects at run time).
+    #[serde(default = "default_user_template")]
     pub user_template: Option<String>,
     /// Model profile id to resolve into a [`crate::llm::ServiceConfig`].
     /// Empty string means "use the global LLM profile" — resolved by the
@@ -44,6 +47,9 @@ pub struct LlmProps {
     pub vocab_books: Vec<String>,
 }
 
+fn default_user_template() -> Option<String> {
+    Some("{text}".to_string())
+}
 fn default_temp() -> f64 {
     0.1
 }
@@ -114,12 +120,22 @@ mod tests {
     fn llm_props_serde_defaults_from_empty_object() {
         let props: LlmProps = serde_json::from_str("{}").unwrap();
         assert_eq!(props.system, None);
-        assert_eq!(props.user_template, None);
+        assert_eq!(props.user_template.as_deref(), Some("{text}"));
         assert_eq!(props.model_profile, "");
         assert_eq!(props.temperature, 0.1);
         assert_eq!(props.max_tokens, 4096);
         assert_eq!(props.output_language, "auto");
         assert!(props.vocab_books.is_empty());
+    }
+
+    #[test]
+    fn llm_props_without_user_template_defaults_to_text_placeholder() {
+        // A from-scratch `llm` widget saved with an untouched template omits
+        // `user_template` from its props JSON; it must still deserialize to a
+        // runnable template rather than `None`.
+        let json = r#"{"system":"You are helpful.","model_profile":""}"#;
+        let props: LlmProps = serde_json::from_str(json).unwrap();
+        assert_eq!(props.user_template.as_deref(), Some("{text}"));
     }
 
     fn base_props() -> LlmProps {

@@ -5,6 +5,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 /* clip-path masks webview background bleed at the rounded corners (see agent-panel.html) */
+html,body{height:100%;margin:0}
 html{background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none;
   -webkit-clip-path:inset(0 round 16px);clip-path:inset(0 round 16px)}
 body{background:transparent;overflow:hidden}
@@ -29,13 +30,18 @@ body{background:transparent;overflow:hidden}
 #sel{padding:6px 12px 0;font-size:9px;color:rgba(255,255,255,.22);line-height:1.4;flex-shrink:0;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
-#bd{flex:1;overflow-y:auto;padding:8px 12px;min-height:0}
+#bd{flex:1;overflow-y:auto;padding:8px 12px;min-height:0;word-break:break-word}
 #tk{display:none;gap:5px;padding:6px 0}
 #tk.on{display:inline-flex}
 .td{width:4px;height:4px;border-radius:50%;background:#fbbf24;animation:pulse 1.2s ease-in-out infinite}
 #rs{display:none;font-size:11.5px;line-height:1.55;color:#fafaf9;white-space:pre-wrap;
   -webkit-user-select:text;user-select:text}
 #rs.on{display:block}
+#rs code{font-family:'SF Mono',ui-monospace,monospace;font-size:10.5px;
+  background:rgba(255,255,255,.08);border-radius:4px;padding:1px 4px}
+#rs strong{font-weight:600;color:#fff}
+#rs ul{margin:2px 0 2px 16px;white-space:normal}
+#rs li{margin:1px 0}
 #er{display:none;font-size:10px;color:rgba(239,68,68,.8);white-space:pre-wrap}
 #er.on{display:block}
 #hint{display:none;font-size:10px;color:rgba(255,255,255,.3);text-align:center;padding:8px 0}
@@ -72,7 +78,7 @@ body{background:transparent;overflow:hidden}
   </div>
 </div>
 <script>
-var R={text:'',entryId:0,app:'',editable:false},hideTimer=null;
+var R={text:'',entryId:0,app:'',editable:false},hideTimer=null,mdOn=false;
 var tk=document.getElementById('tk'),rs=document.getElementById('rs'),
     er=document.getElementById('er'),hint=document.getElementById('hint'),
     ft=document.getElementById('ft'),sel=document.getElementById('sel'),
@@ -82,6 +88,22 @@ var tk=document.getElementById('tk'),rs=document.getElementById('rs'),
 
 function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
 function iv(c,a){var t=$t();return t?t.invoke(c,a||{}):Promise.reject(new Error('no tauri'))}
+
+/* ── Minimal, injection-safe markdown (escape first, then a tiny subset) ──── */
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function md(t){
+  var e=esc(t);
+  e=e.replace(/`([^`]+)`/g,'<code>$1</code>');
+  e=e.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  var lines=e.split('\n'), out=[], inList=false;
+  for(var i=0;i<lines.length;i++){
+    var m=lines[i].match(/^\s*[-*]\s+(.*)$/);
+    if(m){ if(!inList){out.push('<ul>');inList=true;} out.push('<li>'+m[1]+'</li>'); }
+    else { if(inList){out.push('</ul>');inList=false;} out.push(lines[i]); }
+  }
+  if(inList)out.push('</ul>');
+  return out.join('\n');
+}
 
 function reset(){
   if(hideTimer){clearTimeout(hideTimer);hideTimer=null}
@@ -93,8 +115,9 @@ function reset(){
 function hide(){iv('hide_text_action_panel').catch(function(e){console.error(e)})}
 
 /* ── Entry points called from Rust via panel.eval() ─────────────────────── */
-function recvStart(icon,name,selText){
+function recvStart(icon,name,selText,markdown){
   reset();
+  mdOn=!!markdown;
   hI.textContent=icon;hN.textContent=name;sel.textContent=selText;
   tk.classList.add('on');
 }
@@ -103,7 +126,10 @@ function recvResult(text,entryId,app,editable){
   hint.classList.remove('on');
   R={text:text,entryId:entryId,app:app,editable:!!editable};
   tk.classList.remove('on');
-  rs.textContent=text;rs.classList.add('on');
+  // Footer Copy/Insert always act on R.text (the raw string); only the
+  // rendered view is markdown-formatted when the widget opted in.
+  if(mdOn){rs.innerHTML=md(text);}else{rs.textContent=text;}
+  rs.classList.add('on');
   ft.classList.add('on');
   bIns.disabled=!R.editable;
 }

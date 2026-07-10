@@ -156,7 +156,7 @@ select:focus-visible {
 }
 
 .fonos-mic-ambient-live {
-  --mic-light: 244, 138, 52;
+  --mic-light: 255, 96, 74;
 }
 
 /* Idle: the three aura layers render as a STATIC glow — the breathe animations'
@@ -251,31 +251,32 @@ select:focus-visible {
   animation: voice-control-caustic 5.1s cubic-bezier(.45,0,.2,1) infinite;
 }
 
-/* Glyphs are engraved, not stickered-on: tone-on-tone espresso (the amber's own
-   shadow end) with a 1px light bevel below, so the mark reads pressed into the
-   molten surface. The bevel is a static filter, not an animation. */
+/* Glyphs are engraved, not stickered-on: tone-on-tone, cut from the surface's
+   own shadow end (espresso on the gold, deep red-brown on the live red) with a
+   1px light bevel below, so the mark reads pressed into the molten surface.
+   The bevel is a static filter, not an animation. */
 .fonos-voice-glyph {
   filter: drop-shadow(0 1px 0 rgba(255,243,210,0.38));
 }
 
 .fonos-voice-button-live .fonos-voice-glyph {
-  filter: drop-shadow(0 1px 0 rgba(255,226,178,0.28));
+  filter: drop-shadow(0 1px 0 rgba(255,206,196,0.3));
 }
 
 .fonos-voice-button-idle {
-  color: #402e11;
+  color: #45300e;
   background:
-    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,255,255,0.85), rgba(255,255,255,0.3) 55%, transparent 100%),
-    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,250,234,0.5), rgba(255,246,218,0.14) 52%, transparent 74%),
-    radial-gradient(circle at 70% 78%, rgba(128,60,6,0.26), transparent 52%),
-    linear-gradient(148deg, #f6c464 0%, #e0972c 46%, #c26f16 72%, #98500f 100%);
+    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,255,255,0.95), rgba(255,255,255,0.38) 55%, transparent 100%),
+    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,251,236,0.58), rgba(255,247,220,0.18) 52%, transparent 74%),
+    radial-gradient(circle at 70% 78%, rgba(134,64,8,0.22), transparent 52%),
+    linear-gradient(148deg, #ffdd85 0%, #f5b043 46%, #d67e1c 72%, #aa5f12 100%);
   box-shadow:
-    0 16px 32px rgba(150,80,12,0.3),
-    0 5px 12px rgba(7,5,2,0.26),
-    inset 0 1px 0 rgba(255,246,220,0.38),
-    inset 0 0 0 1px rgba(255,255,255,0.1),
-    inset 0 -2px 4px rgba(84,38,4,0.34),
-    inset 0 -8px 14px rgba(92,42,5,0.24);
+    0 16px 32px rgba(168,94,15,0.32),
+    0 5px 12px rgba(7,5,2,0.24),
+    inset 0 1px 0 rgba(255,249,226,0.46),
+    inset 0 0 0 1px rgba(255,255,255,0.12),
+    inset 0 -2px 4px rgba(92,44,6,0.3),
+    inset 0 -8px 14px rgba(101,48,7,0.2);
 }
 
 .fonos-voice-button-idle:hover {
@@ -299,43 +300,44 @@ select:focus-visible {
 @keyframes voice-button-live-pulse {
   0%, 100% {
     box-shadow:
-      0 14px 30px rgba(110,52,6,0.36),
-      0 6px 18px rgba(226,130,32,0.22),
-      inset 0 1px 0 rgba(255,232,190,0.32),
-      inset 0 0 0 1px rgba(255,255,255,0.08),
-      inset 0 -2px 4px rgba(66,28,3,0.4),
-      inset 0 -8px 14px rgba(74,32,4,0.3),
-      0 0 0 0 rgba(255,158,64,0);
+      0 14px 30px rgba(148,22,12,0.38),
+      0 6px 18px rgba(255,84,58,0.26),
+      inset 0 1px 0 rgba(255,216,204,0.36),
+      inset 0 0 0 1px rgba(255,255,255,0.09),
+      inset 0 -2px 4px rgba(96,12,6,0.42),
+      inset 0 -8px 14px rgba(112,18,10,0.3),
+      0 0 0 0 rgba(255,96,70,0);
   }
   50% {
     box-shadow:
-      0 14px 30px rgba(110,52,6,0.36),
-      0 6px 18px rgba(226,130,32,0.22),
-      inset 0 1px 0 rgba(255,232,190,0.32),
-      inset 0 0 0 1px rgba(255,255,255,0.08),
-      inset 0 -2px 4px rgba(66,28,3,0.4),
-      inset 0 -8px 14px rgba(74,32,4,0.3),
-      0 0 16px 4px rgba(255,158,64,0.45);
+      0 14px 30px rgba(148,22,12,0.38),
+      0 6px 18px rgba(255,84,58,0.26),
+      inset 0 1px 0 rgba(255,216,204,0.36),
+      inset 0 0 0 1px rgba(255,255,255,0.09),
+      inset 0 -2px 4px rgba(96,12,6,0.42),
+      inset 0 -8px 14px rgba(112,18,10,0.3),
+      0 0 16px 4px rgba(255,96,70,0.5);
   }
 }
 
-/* Live = ember, not red: the same molten family driven deeper and hotter. The
-   "recording" red signal lives in the status badge/meter, never on the button. */
+/* Live = vivid red, same molten glass: the gold pours into a bright coral-red
+   (anchored above --danger #ef4444) while keeping the identical two-tier
+   specular, caustic and engraved-glyph treatment — hot, luminous, never muddy. */
 .fonos-voice-button-live {
-  --control-caustic: 255, 172, 82;
-  color: #38250b;
+  --control-caustic: 255, 122, 96;
+  color: #4e130c;
   background:
-    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,251,240,0.72), rgba(255,247,228,0.24) 55%, transparent 100%),
-    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,238,204,0.4), rgba(255,228,178,0.11) 52%, transparent 74%),
-    radial-gradient(circle at 70% 78%, rgba(92,40,4,0.42), transparent 54%),
-    linear-gradient(148deg, #ea9c32 0%, #c37113 48%, #9d5410 74%, #7f430e 100%);
+    radial-gradient(ellipse 11% 8% at 28% 13%, rgba(255,249,245,0.82), rgba(255,241,235,0.28) 55%, transparent 100%),
+    radial-gradient(ellipse 30% 21% at 32% 17%, rgba(255,225,213,0.44), rgba(255,214,200,0.13) 52%, transparent 74%),
+    radial-gradient(circle at 70% 78%, rgba(114,16,8,0.38), transparent 54%),
+    linear-gradient(148deg, #ff7a5c 0%, #f4503a 46%, #e0352b 72%, #bd2018 100%);
   box-shadow:
-    0 14px 30px rgba(110,52,6,0.36),
-    0 6px 18px rgba(226,130,32,0.22),
-    inset 0 1px 0 rgba(255,232,190,0.32),
-    inset 0 0 0 1px rgba(255,255,255,0.08),
-    inset 0 -2px 4px rgba(66,28,3,0.4),
-    inset 0 -8px 14px rgba(74,32,4,0.3);
+    0 14px 30px rgba(148,22,12,0.38),
+    0 6px 18px rgba(255,84,58,0.26),
+    inset 0 1px 0 rgba(255,216,204,0.36),
+    inset 0 0 0 1px rgba(255,255,255,0.09),
+    inset 0 -2px 4px rgba(96,12,6,0.42),
+    inset 0 -8px 14px rgba(112,18,10,0.3);
   animation: voice-button-live-pulse 2.1s ease-in-out infinite;
 }
 
@@ -391,8 +393,8 @@ select:focus-visible {
 }
 
 .fonos-call-meter-live {
-  background: rgba(240,113,104,0.8);
-  box-shadow: 0 0 9px rgba(240,113,104,0.15);
+  background: rgba(255,104,84,0.85);
+  box-shadow: 0 0 9px rgba(255,104,84,0.16);
   animation: call-meter-live 0.82s ease-in-out infinite;
 }
 

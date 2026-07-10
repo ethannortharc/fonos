@@ -159,14 +159,81 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
             old_pos.x + (old_size.width as i32 - width as i32) / 2
         };
 
-        if old_size.width != width || old_size.height != height {
+        let size_changed = old_size.width != width || old_size.height != height;
+        let pos_changed = old_pos.x != new_x || old_pos.y != new_y;
+        if size_changed {
             w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
                 .map_err(|e| e.to_string())?;
         }
-        if old_pos.x != new_x || old_pos.y != new_y {
+        if pos_changed {
             w.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(new_x, new_y)))
                 .map_err(|e| e.to_string())?;
         }
+        // The frame change has been applied (sync command on the main thread);
+        // now make the window server drop the old composite — see
+        // refresh_ns_window. Skipped-geometry calls skip this too: no frame
+        // change, nothing new for the window server to go stale on (the
+        // no-resize state transitions are covered by refresh_float_window).
+        #[cfg(target_os = "macos")]
+        if size_changed || pos_changed {
+            refresh_ns_window(&w);
+        }
+    }
+    Ok(())
+}
+
+/// Make the window server drop a transparent window's stale composite:
+/// recompute the NSWindow shadow from current content and force a display pass.
+///
+/// On macOS, a `transparent:true` borderless NSWindow that is programmatically
+/// resized or moved can keep its PREVIOUS backing store / shadow composited on
+/// screen until the window receives a natural display pass — which is why a
+/// click (activation → display) used to repair the float pill's ghost. That
+/// ghost is two superimposed window frames (e.g. the 110px processing frame
+/// under/over the 90px idle frame); no in-webview repaint can fix it because
+/// the stale layer lives below the webview, at the window-server level. The
+/// canonical AppKit remedy is `[window invalidateShadow]` plus forcing a
+/// display pass (`displayIfNeeded`).
+///
+/// NSWindow methods must run on the main thread. Sync Tauri commands already
+/// execute there (and `run_on_main_thread` then runs the closure inline, so
+/// ordering is preserved), but routing through it keeps this helper correct
+/// when called from any other thread.
+#[cfg(target_os = "macos")]
+pub(crate) fn refresh_ns_window(w: &tauri::WebviewWindow) {
+    let win = w.clone();
+    let _ = w.run_on_main_thread(move || {
+        let Ok(ptr) = win.ns_window() else { return };
+        if ptr.is_null() {
+            return;
+        }
+        let ns_window = ptr as *mut objc2::runtime::AnyObject;
+        // SAFETY: `ptr` is the live NSWindow backing `win` (the captured
+        // handle keeps it alive for the closure's duration) and we are on
+        // the main thread. Both selectors take no arguments and return void.
+        unsafe {
+            let _: () = objc2::msg_send![ns_window, invalidateShadow];
+            let _: () = objc2::msg_send![ns_window, displayIfNeeded];
+        }
+    });
+}
+
+/// Fire-and-forget window-server refresh for the float pill.
+///
+/// float.html calls this after its repaint-guard flash settles on every state
+/// transition. It matters for transitions that do NOT change window geometry
+/// (success→idle at equal 90px widths, defensive idle reverts): those skip
+/// `resize_float`'s native call entirely — and with it the shadow invalidation
+/// above — yet the window server may still hold a stale composite from an
+/// earlier frame. Resizing transitions get the invalidation twice (at frame
+/// change and at settle); both are imperceptible no-ops when nothing is stale.
+/// No-op on non-macOS platforms.
+#[tauri::command]
+pub fn refresh_float_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(_w) = app.get_webview_window("float") {
+        #[cfg(target_os = "macos")]
+        refresh_ns_window(&_w);
     }
     Ok(())
 }

@@ -262,7 +262,17 @@ function sz(w,h){
    coalesce via `flashTok`). Chosen over alternatives: toggling a transform on
    <html> churns compositor layer creation (its own flicker risk), and a
    second native resize re-enters the exact resize path being fixed. The guard
-   is pointer-events:none, so clicks and elementFromPoint pass through. */
+   is pointer-events:none, so clicks and elementFromPoint pass through.
+
+   The flash fixes stale pixels INSIDE the webview. The stale layer can also
+   live BELOW it: the window server may keep compositing the transparent
+   NSWindow's previous backing store + shadow (two superimposed pill frames,
+   e.g. 110px processing over 90px idle) until the window gets a display pass
+   — which is why a click used to repair it. So after the OFF-edge repaint has
+   had a frame to commit, ask the native side to invalidateShadow + force a
+   display pass on the NSWindow (refresh_float_window, fire-and-forget).
+   `flashTok` already coalesces bursts — only the last transition's flash
+   reaches its OFF edge, so at most one native call per settled burst. */
 let flashTok=0;
 function flashRepaint(){
   const g=document.getElementById('repaint-guard');
@@ -270,7 +280,19 @@ function flashRepaint(){
   const tok=++flashTok;
   g.style.background='rgba(127,127,127,0.01)';
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    if(tok===flashTok)g.style.background='transparent';
+    if(tok!==flashTok)return;
+    g.style.background='transparent';
+    // One more frame so the OFF-edge full-surface repaint (settled final
+    // state) has been committed, THEN drop the window server's composite —
+    // invalidating before the settled paint would recompute the shadow from
+    // the old content. Same-size transitions skip resize_float entirely, so
+    // this is their ONLY native invalidation; resizing ones get it twice
+    // (frame-change time + here), both imperceptible.
+    requestAnimationFrame(()=>{
+      if(tok!==flashTok)return;
+      if(typeof window.__TAURI_INTERNALS__==='undefined')return;
+      window.__TAURI_INTERNALS__.invoke('refresh_float_window').catch(()=>{});
+    });
   }));
 }
 

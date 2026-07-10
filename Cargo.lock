@@ -1313,6 +1313,7 @@ dependencies = [
  "dirs",
  "fonos-core",
  "libc",
+ "objc2",
  "reqwest 0.12.28",
  "rfd",
  "rodio",

@@ -393,6 +393,7 @@ fn main() {
             commands::voices::record_voice_sample,
             // Window commands
             commands::resize_float,
+            commands::refresh_float_window,
             commands::resize_agent_panel,
             commands::hide_agent_panel,
             commands::hide_note_panel,

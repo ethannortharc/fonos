@@ -99,6 +99,10 @@ fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
         (x * scale) as i32,
         (y * scale) as i32,
     ));
+    // A programmatic move of a transparent NSWindow can leave the window
+    // server compositing the old frame at the old spot until a display pass
+    // happens — same ghost mechanism as resize_float; see refresh_ns_window.
+    super::refresh_ns_window(&float_win);
 }
 
 /// Linux/Windows fallback: center on primary monitor, near bottom.

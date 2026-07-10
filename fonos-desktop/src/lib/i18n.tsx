@@ -155,7 +155,7 @@ const en = {
   // vocabulary tab
   "vocab.title": "Vocabulary books",
   "vocab.desc":
-    "Terms bias speech recognition and guide LLM output; rules are deterministic find → replace corrections applied to every transcript. Mark a book Global to apply it everywhere — or mount it on specific modes from each mode's card in the Dictation tab.",
+    "Terms bias speech recognition and guide LLM output; rules are deterministic find → replace corrections applied to every transcript. Mark a book Global to apply it everywhere — or attach it to a flow's Transcribe / LLM step in Flows.",
   "vocab.terms": "Terms",
   "vocab.terms.hint": "— correct spellings the recognizer should prefer",
   "vocab.terms.placeholder": "Type a term, press Enter — e.g. Kubernetes, OMLX…",
@@ -992,7 +992,7 @@ const zh: Partial<Record<Key, string>> = {
 
   "vocab.title": "词汇本",
   "vocab.desc":
-    "词条用于语音识别偏置和 LLM 术语对齐;规则是应用于每次转写的确定性替换。标记为「全局」处处生效,或在听写页的模式卡片上挂载到特定模式。",
+    "词条用于语音识别偏置和 LLM 术语对齐;规则是应用于每次转写的确定性替换。标记为「全局」处处生效,或在「流程」中点击听写 / 大模型节点挂载到特定流程。",
   "vocab.terms": "词条",
   "vocab.terms.hint": "— 识别时应优先选用的正确写法",
   "vocab.terms.placeholder": "输入词条,回车添加 — 如 Kubernetes、OMLX…",

@@ -48,6 +48,11 @@ body{background:transparent;overflow:hidden}
 #rs ul{margin:2px 0 2px 16px;white-space:normal}
 #rs ol{margin:2px 0 2px 16px;white-space:normal}
 #rs li{margin:1px 0}
+#rs .mdTblWrap{overflow-x:auto;max-width:100%;margin:3px 0;white-space:normal}
+#rs table{border-collapse:collapse;width:auto;font-size:10.5px}
+#rs th,#rs td{border:1px solid rgba(255,255,255,.08);padding:3px 8px;text-align:left;
+  white-space:nowrap;word-break:normal}
+#rs th{color:#fff;font-weight:500;background:rgba(255,255,255,.05)}
 #er{display:none;font-size:10px;color:rgba(239,68,68,.8);white-space:pre-wrap}
 #er.on{display:block}
 #hint{display:none;font-size:10px;color:rgba(255,255,255,.3);text-align:center;padding:8px 0}
@@ -99,6 +104,18 @@ function iv(c,a){var t=$t();return t?t.invoke(c,a||{}):Promise.reject(new Error(
 /* Pass order: escape -> fenced code (placeholdered) -> inline code -> bold ->
    italic -> links -> line pass (headings/ol/ul) -> restore fenced code. */
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+/* GFM pipe-table helpers: split a row into trimmed cells (stripping optional
+   outer pipes) and read an alignment colon pair from a separator cell. */
+function tblCells(line){
+  var s=line.trim();
+  if(s.charAt(0)==='|') s=s.slice(1);
+  if(s.length&&s.charAt(s.length-1)==='|') s=s.slice(0,-1);
+  return s.split('|').map(function(c){return c.trim()});
+}
+function tblAlign(cell){
+  var l=cell.charAt(0)===':', r=cell.length>0&&cell.charAt(cell.length-1)===':';
+  if(l&&r)return 'center'; if(r)return 'right'; if(l)return 'left'; return '';
+}
 function md(t){
   var e=esc(t);
   var fb=[]; // fenced code blocks, restored after line pass so their content
@@ -113,8 +130,38 @@ function md(t){
   e=e.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
   e=e.replace(/\[([^\]]+)\]\([^)]*\)/g,'<em>$1</em>'); // no nav in these panels: text only
   var lines=e.split('\n'), out=[], inUl=false, inOl=false;
+  var sepCellRe=/^:?-+:?$/;
   for(var i=0;i<lines.length;i++){
     var line=lines[i];
+    // Table: a row with >=1 '|' immediately followed by a |---|:---:|---:| style
+    // separator row (same cell count). Lines with '|' but no separator row
+    // underneath (e.g. "a | b" prose) fall through untouched.
+    if(line.indexOf('|')!==-1 && i+1<lines.length){
+      var sepCells=tblCells(lines[i+1]);
+      var isSep=sepCells.length>0 && sepCells.every(function(c){return sepCellRe.test(c);});
+      var headCells=isSep?tblCells(line):null;
+      if(isSep && headCells.length===sepCells.length){
+        var align=sepCells.map(tblAlign);
+        var rows=[], j=i+2;
+        while(j<lines.length && lines[j].trim()!==''&&lines[j].indexOf('|')!==-1){
+          rows.push(tblCells(lines[j])); j++;
+        }
+        if(inUl){out.push('</ul>');inUl=false;}
+        if(inOl){out.push('</ol>');inOl=false;}
+        var thr='<tr>'+headCells.map(function(c,ci){
+          var a=align[ci]; return '<th'+(a?' style="text-align:'+a+'"':'')+'>'+c+'</th>';
+        }).join('')+'</tr>';
+        var tbr=rows.map(function(r){
+          return '<tr>'+headCells.map(function(_,ci){
+            var c=r[ci]!==undefined?r[ci]:''; var a=align[ci];
+            return '<td'+(a?' style="text-align:'+a+'"':'')+'>'+c+'</td>';
+          }).join('')+'</tr>';
+        }).join('');
+        out.push('<div class="mdTblWrap"><table><thead>'+thr+'</thead><tbody>'+tbr+'</tbody></table></div>');
+        i=j-1;
+        continue;
+      }
+    }
     var h=line.match(/^#{1,3}\s+(.*)$/);
     var o=!h&&line.match(/^\s*\d+[.)]\s+(.*)$/);
     var u=!h&&!o&&line.match(/^\s*[-*]\s+(.*)$/);

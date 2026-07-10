@@ -33,6 +33,25 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dark scrollbars — without this WebKit shows its light UA scrollbar, which
+   clashes with the dark surface. color-scheme flips native controls dark;
+   the ::-webkit rules restyle the thumb to match the app. */
+:root { color-scheme: dark; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
 /* In-place panel entrance (WidgetForm mounting under a pipeline node/widget
    card — Flows UI mockup's `.prop { animation: slide .18s ease }`). Same
    fade+rise as agent-panel.html's msgIn. Applied via Tailwind's

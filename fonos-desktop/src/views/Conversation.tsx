@@ -491,22 +491,24 @@ export default function Conversation() {
               : "fonos-voice-button-idle"
           }`}
         >
-          {/* One handset, two orientations: state reads through form, not just
-              color — a slight receiver tilt at idle (primary action: start a
-              call; hold-to-talk stays a secondary gesture), rotated 135° into
-              the hang-up position while in a call. */}
+          {/* One handset, two orientations, phone metaphor: at idle the
+              receiver LIES level in its cradle (hung up, at rest); starting a
+              call rotates it 135° counterclockwise into the lifted, held-to-ear
+              answering pose. The rotation itself is the state transition
+              (motion-reduce snaps it). Soft hand-drawn silhouette: round
+              earpiece/mouthpiece bulbs joined by an arched organic handle. */}
           <svg
-            className={`fonos-voice-glyph relative z-10 transition-transform duration-300 motion-reduce:transition-none ${inCall ? "rotate-[135deg]" : "-rotate-[10deg]"}`}
-            width={24}
-            height={24}
+            className={`fonos-voice-glyph relative z-10 transition-transform duration-300 motion-reduce:transition-none ${red ? "-rotate-[135deg]" : "rotate-0"}`}
+            width={30}
+            height={30}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
-            strokeWidth={1.7}
+            strokeWidth={1.3}
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M21 16.8v2.8a1.9 1.9 0 0 1-2.08 1.9 18.7 18.7 0 0 1-8.15-2.9 18.35 18.35 0 0 1-5.66-5.66 18.7 18.7 0 0 1-2.9-8.2A1.9 1.9 0 0 1 4.1 2.67h2.8a1.9 1.9 0 0 1 1.9 1.63c.12.9.34 1.77.64 2.61a1.9 1.9 0 0 1-.43 2L7.83 10.1a15.2 15.2 0 0 0 6.07 6.07l1.19-1.19a1.9 1.9 0 0 1 2-.43c.84.3 1.71.52 2.61.64A1.9 1.9 0 0 1 21 16.8Z" />
+            <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z" />
           </svg>
         </button>
 
@@ -521,7 +523,7 @@ export default function Conversation() {
             ))}
           </div>
           <div className="flex items-center gap-1.5">
-            <span className={`w-1 h-1 rounded-full ${inCall ? "bg-[#f07168]" : "bg-[var(--accent)]"}`} />
+            <span className={`w-1 h-1 rounded-full ${inCall ? "bg-[#ff6854]" : "bg-[var(--accent)]"}`} />
             <span className="text-[8.5px] leading-3 font-medium tracking-[0.08em] text-[var(--text-faint)]">⌥S</span>
           </div>
         </div>

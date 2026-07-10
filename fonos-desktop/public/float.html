@@ -80,7 +80,15 @@
     backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
     border:1px solid rgba(255,255,255,0.06);border-radius:13px;
     font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
-    transition:all 0.3s ease;cursor:pointer;
+    /* Scoped transition (was `all`): the only properties that ever change
+       between states/hover are background, border-color and opacity, so the
+       aesthetic is identical — but `all` would also animate any future
+       geometry property (width/padding/…) against the INSTANT native window
+       resize, handing the compositor mid-flight frames where the pill is
+       wider than the already-resized window. Geometry changes must be atomic
+       with respect to resize_float; only paint-only properties may tween. */
+    transition:background 0.3s ease,border-color 0.3s ease,opacity 0.3s ease;
+    cursor:pointer;
     padding:0 10px;
     opacity:0.4;
   }
@@ -145,6 +153,14 @@
   @media (prefers-reduced-motion:reduce){
     @keyframes paneIn{from{opacity:0}to{opacity:1}}
   }
+
+  /* ── Repaint guard ── Full-viewport, hit-test-invisible div flashed by
+     flashRepaint() (see JS) to force WebKit to damage the ENTIRE transparent
+     surface after every transition, not just the changed pane's rect.
+     Deliberately plain: no transform / will-change / opacity animation, so
+     WebKit cannot promote it to its own compositing layer — the damage must
+     land on the root layer that owns the stale pixels. */
+  #repaint-guard{position:fixed;inset:0;background:transparent;pointer-events:none;z-index:99}
 </style>
 </head>
 <body>
@@ -171,6 +187,7 @@
     </div>
   </div>
 </div>
+<div id="repaint-guard"></div>
 
 <script>
 /* ── SVG icon mapper (matches main app Icons.tsx) ── */
@@ -209,18 +226,103 @@ let rollerIdx=0; // index into circular list, maps to center slot
 let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
 const S=window.devicePixelRatio||2;
-function sz(w,h){
-  if(typeof window.__TAURI_INTERNALS__==='undefined')return;
-  window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
-}
 const PH=28;
-const ITEM_H=32;
-function idleSz(){sz(90,PH);}
-function recSz(){sz(115,PH);}
-function menuSz(){
-  const dd=document.getElementById('dropdown');
-  requestAnimationFrame(()=>{sz(160,PH+dd.offsetHeight+10);});
+const IDLE_W=90,REC_W=115,PROC_W=110,MENU_W=160;
+
+// Dev-only assertions: the vite dev server / a plain browser load via
+// http(s):, the packaged app via tauri:. Keeps assert noise out of prod logs.
+const DEV=location.protocol==='http:'||location.protocol==='https:';
+
+// Logical size last sent to resize_float — i.e. the REAL window geometry
+// (a superseded queued shrink never updates it). applyVisual compares
+// transition targets against this to decide grow vs shrink.
+let curW=0,curH=0;
+function sz(w,h){
+  // Only applyVisual may call this: every native resize must ride the
+  // protected transition path (paint/resize ordering + full-surface repaint).
+  curW=w;curH=h;
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
+  // resize_float is a sync Tauri command, so it runs on the main thread and
+  // the NSWindow frame change has been applied by the time this resolves.
+  return window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
 }
+
+/* ── Full-surface invalidation (structural fix for the ghost-layer bug) ──
+   WKWebView repaints partial damage rects: a state swap whose animation only
+   touches the small pane region re-rasterizes just that rect, so stale pixels
+   elsewhere in the transparent surface (an old pill outline at a different
+   width, the closed menu's glass) survive until something else — typically
+   the hover transition — happens to damage them. flashRepaint toggles the
+   full-viewport #repaint-guard's background between transparent and a 1%-alpha
+   wash: both edges of the flash mark the whole viewport dirty in the root
+   layer, and the resulting layer-tree commit + composite also re-evaluates the
+   pill/menu backdrop-filter layers, flushing any stale one. The OFF edge is
+   the one that matters — it lands two frames after the LAST transition and
+   repaints the full surface at the settled final state (overlapping flashes
+   coalesce via `flashTok`). Chosen over alternatives: toggling a transform on
+   <html> churns compositor layer creation (its own flicker risk), and a
+   second native resize re-enters the exact resize path being fixed. The guard
+   is pointer-events:none, so clicks and elementFromPoint pass through. */
+let flashTok=0;
+function flashRepaint(){
+  const g=document.getElementById('repaint-guard');
+  if(!g)return;
+  const tok=++flashTok;
+  g.style.background='rgba(127,127,127,0.01)';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(tok===flashTok)g.style.background='transparent';
+  }));
+}
+
+// Dev-only single-state invariant check: after every transition the pill must
+// carry exactly the state class enterState last set — one of the four for
+// active states, none for idle. More than one means panes are stacking again.
+let expectedState=null; // maintained by enterState
+function assertState(){
+  if(!DEV)return;
+  const p=document.getElementById('pill');
+  const have=['recording','processing','success','error'].filter(c=>p.classList.contains(c));
+  console.assert(have.length<=1&&(have[0]||null)===expectedState,
+    '[float] state invariant violated: expected '+(expectedState||'idle')+', got ['+have.join(',')+']');
+}
+
+/* ── Single protected transition path ──
+   EVERY visual transition (state change, menu open/close, revert timers,
+   startup sizing) goes through applyVisual so the paint/resize ordering is
+   encoded once, not per call site:
+   - GROW: resize the native window FIRST (awaiting sz(), i.e. the frame
+     change is applied), then paint the new content — painting wider content
+     into the still-small window would clip it and hand the compositor a
+     mid-transition frame.
+   - SHRINK: paint the new (smaller) content first, wait two rAFs so a frame
+     containing it has actually been committed, then shrink the window —
+     shrinking first would clip the still-wide old content.
+   - SAME SIZE: no native call at all (and Rust-side resize_float also skips
+     no-op geometry as a second line of defense).
+   Every path ends in flashRepaint() so the whole surface is re-rasterized at
+   the final state. `seq` supersedes queued work when a newer transition
+   begins (rapid hotkey sequences): the newest transition always wins and no
+   stale resize can land after it. */
+let seq=0;
+function applyVisual(mutate,w,h){
+  const tok=++seq;
+  const paint=()=>{mutate();assertState();};
+  if(w===curW&&h===curH){
+    paint();flashRepaint();
+  }else if(w>curW||h>curH){
+    sz(w,h).then(()=>{
+      if(tok!==seq)return;
+      paint();flashRepaint();
+    });
+  }else{
+    paint();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      if(tok!==seq)return;
+      sz(w,h).then(()=>{if(tok===seq)flashRepaint();});
+    }));
+  }
+}
+function idleSz(){applyVisual(()=>{enterState(null);},IDLE_W,PH);}
 
 function onPillClick(e){
   // While an error is showing, a click opens the relevant System Settings pane
@@ -242,15 +344,28 @@ function toggleMenu(e){
   else{
     // Reload modes each time menu opens — picks up newly added modes
     loadModes().then(()=>{
+      if(isRec)return; // recording started while modes were loading
       rollerIdx=allModes.findIndex(m=>m.id===currentMode);
       if(rollerIdx<0)rollerIdx=0;
-      renderMenu();dd.classList.add('show');menuSz();
+      renderMenu();
+      // Menu open is a GROW: lay the menu out invisibly (visibility:hidden
+      // computes layout but paints nothing) so its height can be measured
+      // BEFORE the resize, then let applyVisual grow the window first and
+      // reveal the menu only once the frame change has been applied.
+      dd.style.visibility='hidden';
+      dd.classList.add('show');
+      const h=dd.offsetHeight;
+      applyVisual(()=>{dd.style.visibility='';},MENU_W,PH+h+10);
     });
   }
 }
 function closeMenu(){
-  document.getElementById('dropdown').classList.remove('show');
-  idleSz();
+  // No-op when already closed: this is called defensively on every outside
+  // click and on window blur, and must not churn the window geometry (or
+  // clobber a wide error pill) when there is nothing to close.
+  const dd=document.getElementById('dropdown');
+  if(!dd.classList.contains('show'))return;
+  applyVisual(()=>{dd.classList.remove('show');},IDLE_W,PH);
 }
 
 // Get mode at circular index
@@ -358,46 +473,48 @@ function enterState(cls){
   var p=document.getElementById('pill');
   p.classList.remove('recording','processing','success','error');
   if(cls)p.classList.add(cls);
+  expectedState=cls||null;
 }
 function startRec(){
   if(isRec)return;isRec=true;closeMenu();clearErr();
-  enterState('recording');
-  document.getElementById('rec-dur').textContent='0s';
-  let t0=Date.now();
-  if(durTm)clearInterval(durTm);
-  durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
-  if(animId)cancelAnimationFrame(animId);animT=0;drawW();
-  recSz();
+  applyVisual(()=>{
+    enterState('recording');
+    document.getElementById('rec-dur').textContent='0s';
+    const t0=Date.now();
+    if(durTm)clearInterval(durTm);
+    durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
+    if(animId)cancelAnimationFrame(animId);animT=0;drawW();
+  },REC_W,PH);
 }
 function showProcessing(){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  enterState('processing');
-  sz(110,PH);
+  applyVisual(()=>{enterState('processing');},PROC_W,PH);
 }
 function stopRec(text){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  if(text){
-    document.getElementById('result-icon').textContent='\u2713';
-    document.getElementById('result-text').textContent='Done';
-  } else {
-    document.getElementById('result-icon').textContent='\u2717';
-    document.getElementById('result-text').textContent='No speech';
-  }
-  // enterState clears any prior revert timer and every state class (so a
-  // lingering 'error'/'success' from the last cycle can't stack with this
-  // one), then this cycle arms its OWN 1200ms revert to idle.
-  enterState(text?'success':'error');
-  sz(90,PH);
-  var p=document.getElementById('pill');
-  stopTm=setTimeout(()=>{
-    stopTm=null;
-    p.classList.remove('success','error');
-    idleSz();
-  },1200);
+  applyVisual(()=>{
+    if(text){
+      document.getElementById('result-icon').textContent='\u2713';
+      document.getElementById('result-text').textContent='Done';
+    } else {
+      document.getElementById('result-icon').textContent='\u2717';
+      document.getElementById('result-text').textContent='No speech';
+    }
+    // enterState clears any prior revert timer and every state class (so a
+    // lingering 'error'/'success' from the last cycle can't stack with this
+    // one), then this cycle arms its OWN 1200ms revert to idle. The timer is
+    // armed inside the mutation, after enterState, so enterState's timer
+    // sweep can never cancel the revert it belongs to.
+    enterState(text?'success':'error');
+    stopTm=setTimeout(()=>{
+      stopTm=null;
+      idleSz();
+    },1200);
+  },IDLE_W,PH);
 }
 function clearErr(){
   errActive=false;errPane=null;
@@ -414,6 +531,11 @@ function showError(payload){
   isRec=false;
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
+  // Sweep pending reverts NOW (not just in enterState, which may run a tick
+  // later on the grow path): a success revert firing inside that gap would
+  // supersede this transition and strand errActive without an error pane.
+  if(stopTm){clearTimeout(stopTm);stopTm=null;}
+  if(errTimer){clearTimeout(errTimer);errTimer=null;}
 
   var full='',pane=null;
   if(payload){
@@ -429,31 +551,29 @@ function showError(payload){
   var short=full.length>48?full.slice(0,47)+'…':full;
   var disp=pane?short+' — click to open Settings':short;
 
-  document.getElementById('result-icon').textContent='✗';
-  var textEl=document.getElementById('result-text');
-  textEl.textContent=disp;
-  textEl.title=full; // full message on hover
-  // enterState clears any pending stopRec/error revert (so a prior revert
-  // can't cut this error short) and strips every state class before the
-  // error pane is shown.
-  enterState('error');
   console.warn('fonos float error: '+full);
-
   errActive=true;errPane=pane;
 
-  // Size the pill to the displayed text so it never overflows (mirrors the
-  // sz()/recSz() resize pattern): ~5px/char at 9px + icon/padding overhead.
+  // Size the pill to the displayed text so it never overflows:
+  // ~5px/char at 9px + icon/padding overhead.
   var w=Math.max(110,Math.min(440,Math.round(disp.length*5)+44));
-  sz(w,PH);
 
-  // Permission errors linger longer so they can be read and clicked.
-  var p=document.getElementById('pill');
-  var dur=pane?6000:2600;
-  errTimer=setTimeout(function(){
-    p.classList.remove('error');
-    clearErr();
-    idleSz();
-  },dur);
+  applyVisual(function(){
+    document.getElementById('result-icon').textContent='✗';
+    var textEl=document.getElementById('result-text');
+    textEl.textContent=disp;
+    textEl.title=full; // full message on hover
+    // enterState clears any pending stopRec/error revert (so a prior revert
+    // can't cut this error short) and strips every state class before the
+    // error pane is shown. The revert is armed after it, inside the same
+    // mutation, so the sweep can't cancel this cycle's own timer.
+    enterState('error');
+    // Permission errors linger longer so they can be read and clicked.
+    errTimer=setTimeout(function(){
+      clearErr();
+      idleSz();
+    },pane?6000:2600);
+  },w,PH);
 }
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;

@@ -119,6 +119,17 @@ pub fn resize_agent_panel(app: tauri::AppHandle, width: u32, height: u32) -> Res
 /// Resize the float window, keeping it horizontally centered on its current monitor
 /// and pinned to the same bottom edge. Uses absolute monitor center rather than
 /// relative offsets to prevent rounding drift across resize cycles.
+///
+/// No-op geometry is skipped: on a transparent NSWindow every set_size /
+/// set_position forces the window server to re-composite the surface, so
+/// repeated same-geometry calls (idle→idle reverts, defensive re-sizing)
+/// would churn the compositor for nothing — and every such churn is another
+/// chance to interleave a stale frame into the composite.
+///
+/// NOTE: this command must stay synchronous (non-async), so it runs on the
+/// main thread and float.html's `await invoke('resize_float')` is a real
+/// barrier: when the promise resolves, the frame change has been applied.
+/// The front-end's paint/resize ordering relies on that.
 #[tauri::command]
 pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<(), String> {
     use tauri::Manager;
@@ -148,10 +159,14 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
             old_pos.x + (old_size.width as i32 - width as i32) / 2
         };
 
-        w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
-            .map_err(|e| e.to_string())?;
-        w.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(new_x, new_y)))
-            .map_err(|e| e.to_string())?;
+        if old_size.width != width || old_size.height != height {
+            w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
+                .map_err(|e| e.to_string())?;
+        }
+        if old_pos.x != new_x || old_pos.y != new_y {
+            w.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(new_x, new_y)))
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

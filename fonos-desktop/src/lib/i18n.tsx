@@ -34,7 +34,6 @@ function subscribe(fn: () => void) {
 // Keys are dot-scoped by surface. `en` is the source of truth; `zh` overlays.
 const en = {
   // navigation
-  "nav.dictation": "Dictation",
   "nav.history": "History",
   "nav.notes": "Notes",
   "nav.meetings": "Meetings",
@@ -272,22 +271,9 @@ const en = {
   "stats.unknown-model": "(unknown)",
 
   // dictation page
-  "dict.no-modes": "No modes",
   "dict.recorded": "Recorded",
   "dict.notebook": "notebook",
-  "dict.quick-note": "Quick Note",
-  "dict.transcript": "Transcript",
-  "dict.processing": "Processing…",
-  "dict.error": "Error",
-  "dict.no-speech": "No speech detected",
-  "dict.no-mic": "No microphone",
   "dict.noise": "noise",
-  "dict.notes": "Notes",
-  "dict.dictating-to": "Dictating to:",
-  "dict.activity": "Activity",
-  "dict.clear": "Clear",
-  "dict.ready": "Ready",
-  "dict.results-hint": "Results will appear here",
 
   // notes page
   "notes.title": "Notes",
@@ -947,7 +933,6 @@ export type TKey = keyof typeof en;
 type Key = TKey;
 
 const zh: Partial<Record<Key, string>> = {
-  "nav.dictation": "听写",
   "nav.history": "历史",
   "nav.notes": "笔记",
   "nav.meetings": "会议",
@@ -1174,22 +1159,9 @@ const zh: Partial<Record<Key, string>> = {
   "stats.unknown-model": "（未知）",
 
   // dictation page
-  "dict.no-modes": "无模式",
   "dict.recorded": "已录音",
   "dict.notebook": "笔记本",
-  "dict.quick-note": "快速笔记",
-  "dict.transcript": "转写",
-  "dict.processing": "处理中…",
-  "dict.error": "错误",
-  "dict.no-speech": "未检测到语音",
-  "dict.no-mic": "无麦克风",
   "dict.noise": "噪声",
-  "dict.notes": "笔记",
-  "dict.dictating-to": "听写至：",
-  "dict.activity": "活动",
-  "dict.clear": "清除",
-  "dict.ready": "就绪",
-  "dict.results-hint": "结果将显示在这里",
 
   // notes page
   "notes.title": "笔记",

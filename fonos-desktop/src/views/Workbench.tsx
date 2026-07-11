@@ -1,8 +1,7 @@
-// Workbench — the workbench-centered IA's home page (P1 skeleton). Three
-// segments: Recipes (widgets assembled + triggers), Widgets (tuned/named
-// instances of each type), Test Run (staged bench for stepping data through).
-// Recipes (Task 10) and Widgets (Task 9) are wired; Test Run (Task 11) still
-// renders a placeholder body.
+// Workbench — the workbench-centered IA's home page. Three segments: Recipes
+// (widgets assembled + triggers), Widgets (tuned/named instances of each
+// type), Test Run (staged bench for stepping data through). All three are
+// wired: Recipes (Task 10), Widgets (Task 9), Test Run (Task 11).
 
 import { useEffect, useState } from "react";
 import { useT } from "../lib/i18n";
@@ -11,13 +10,14 @@ import { listContainers } from "../lib/storage-api";
 import type { Container } from "../lib/storage-api";
 import WidgetsSection from "./workbench/WidgetsSection";
 import RecipesSection from "./workbench/RecipesSection";
+import TestRunSection from "./workbench/TestRunSection";
 
 export type WorkbenchSeg = "recipes" | "widgets" | "testrun";
 export type BenchTarget = { kind: "recipe" | "widget"; id: string } | null;
 
 export default function Workbench() {
   const t = useT();
-  const { config, save } = useAppConfig();
+  const { config } = useAppConfig();
   const [seg, setSeg] = useState<WorkbenchSeg>("recipes");
   const [benchTarget, setBenchTarget] = useState<BenchTarget>(null);
   const [containers, setContainers] = useState<Container[]>([]);
@@ -34,10 +34,6 @@ export default function Workbench() {
     testrun: t("wb.sub.testrun"),
   };
   if (!config) return null;
-  // Wired to real section props in Tasks 10-11 — placeholder bodies below
-  // don't consume them yet.
-  void save;
-  void benchTarget;
   return (
     <div className="h-full flex flex-col">
       <div className="px-[26px] pt-5 flex-shrink-0">
@@ -74,7 +70,14 @@ export default function Workbench() {
             onTest={(id) => openBench({ kind: "widget", id })}
           />
         )}
-        {seg === "testrun" && <div /* Task 11: <TestRunSection benchTarget={benchTarget} config={config} …/> */ />}
+        {seg === "testrun" && (
+          <TestRunSection
+            config={config}
+            containers={containers}
+            target={benchTarget ?? { kind: "recipe", id: "wf.dictation" }}
+            onTargetChange={setBenchTarget}
+          />
+        )}
       </div>
     </div>
   );

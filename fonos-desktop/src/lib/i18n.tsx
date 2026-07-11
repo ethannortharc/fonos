@@ -926,6 +926,21 @@ const en = {
   "wb.newrecipe.sel-desc": "Starts from selected text. For explain, translate, rewrite.",
   "wb.newrecipe.sel-seed": "selection → floating panel",
   "wb.newrecipe.create": "Create",
+  "wb.bench.loaded": "Loaded:",
+  "wb.bench.group-widgets": "Single widget (test)",
+  "wb.bench.deliver": "Deliver for real",
+  "wb.bench.deliver-tip": "Intercepted by default: outputs preview what would be delivered without touching anything",
+  "wb.bench.run": "▶ Run once",
+  "wb.bench.awaiting": "Not run yet",
+  "wb.bench.intercepted": "Intercepted",
+  "wb.bench.status-idle": "Staged and ready. Outputs are intercepted by default — nothing touches your real apps.",
+  "wb.bench.status-widget": "Single-widget bench: one node — what goes in, what comes out.",
+  "wb.bench.status-running": "Running…",
+  "wb.bench.status-done": "Done · {0} ms total",
+  "wb.bench.status-nospeech": "No speech detected.",
+  "wb.bench.mic-idle": "Mock input · microphone — tap to record and run",
+  "wb.bench.mic-live": "Recording… tap again to stop",
+  "wb.bench.text-hint": "Mock input · text — the bench stages the input for you",
 };
 
 export type TKey = keyof typeof en;
@@ -1796,6 +1811,21 @@ const zh: Partial<Record<Key, string>> = {
   "wb.newrecipe.sel-desc": "从选中的文字开始。适合解释、翻译、改写。",
   "wb.newrecipe.sel-seed": "划词 → 浮动面板",
   "wb.newrecipe.create": "创建",
+  "wb.bench.loaded": "台上：",
+  "wb.bench.group-widgets": "单个组件（测试）",
+  "wb.bench.deliver": "真实投递",
+  "wb.bench.deliver-tip": "默认拦截：输出组件不真实投递，只展示将投递的内容",
+  "wb.bench.run": "▶ 运行一遍",
+  "wb.bench.awaiting": "待运行",
+  "wb.bench.intercepted": "已拦截",
+  "wb.bench.status-idle": "备好条件，随时开跑。输出默认拦截，不会打扰真实环境。",
+  "wb.bench.status-widget": "单组件台架：一个节点，进什么出什么，一目了然。",
+  "wb.bench.status-running": "运行中…",
+  "wb.bench.status-done": "完成 · 共 {0} ms",
+  "wb.bench.status-nospeech": "未检测到语音。",
+  "wb.bench.mic-idle": "模拟输入 · 麦克风 — 点按即录音开跑",
+  "wb.bench.mic-live": "正在录音… 再点一下停止",
+  "wb.bench.text-hint": "模拟输入 · 文本 — 台架替你备好输入",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

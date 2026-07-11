@@ -27,6 +27,17 @@
 //! `config.triggers_migration_done` sentinel. `save_workflow` (desktop) runs
 //! the same hotkey→trigger fold as an ongoing normalization bridge for
 //! post-migration saves.
+//!
+//! [`migrate_primary_hotkey_to_pill`] (Workbench P1, spec §3c) runs after
+//! [`migrate_hotkeys_to_triggers`] — it consumes the `Trigger::Hotkey` chip
+//! that migration creates on `wf.dictation`, moving it onto the pill's own
+//! `config.pill_hotkey` / `pill_hotkey_capture` fields. The floating pill now
+//! owns its global key directly rather than borrowing wf.dictation's; every
+//! `workflow-{id}` hotkey label triggers its own id (the former
+//! `workflow-wf.dictation` → `active_voice_workflow` redirect in
+//! [`crate::workflow::engine::resolve_trigger_target`] is gone — the pill
+//! dispatch arm reads `active_voice_workflow` itself). Guarded by the
+//! separate `config.pill_hotkey_migration_done` sentinel.
 
 use std::collections::BTreeMap;
 
@@ -642,6 +653,36 @@ pub fn migrate_hotkeys_to_triggers(config: &mut AppConfig) -> bool {
         }
     }
     config.triggers_migration_done = true;
+    true
+}
+
+/// Workbench P1 (spec §3c): move wf.dictation's primary hotkey off its
+/// first `Trigger::Hotkey` chip and onto the pill's own `pill_hotkey` /
+/// `pill_hotkey_capture` fields — the floating pill becomes a self-owned
+/// trigger device instead of borrowing the recipe chip's key.
+///
+/// If wf.dictation carries no overlay (no `config.workflows` entry, e.g. a
+/// fresh install) or its overlay has no Hotkey chip, `pill_hotkey` is left
+/// empty and the sentinel is still set (the user can set the pill key from
+/// the overview page).
+///
+/// Idempotent: guarded by `config.pill_hotkey_migration_done` and a no-op
+/// (returning `false`) once that flag is set. Must run AFTER
+/// [`migrate_hotkeys_to_triggers`] (see `main.rs`), which is what creates the
+/// chip this migration consumes.
+pub fn migrate_primary_hotkey_to_pill(config: &mut AppConfig) -> bool {
+    if config.pill_hotkey_migration_done {
+        return false;
+    }
+    if let Some(wf) = config.workflows.iter_mut().find(|w| w.id == "wf.dictation") {
+        if let Some(pos) = wf.triggers.iter().position(|t| matches!(t, Trigger::Hotkey { .. })) {
+            if let Trigger::Hotkey { combo, capture } = wf.triggers.remove(pos) {
+                config.pill_hotkey = combo;
+                config.pill_hotkey_capture = capture.unwrap_or_else(|| "hold".into());
+            }
+        }
+    }
+    config.pill_hotkey_migration_done = true;
     true
 }
 
@@ -1473,15 +1514,121 @@ mod tests {
         );
     }
 
+    // ── migrate_primary_hotkey_to_pill (Workbench P1, spec §3c) ──────────────
+
+    /// wf.dictation's first Hotkey chip (with its capture) is moved onto
+    /// `config.pill_hotkey` / `pill_hotkey_capture`, and removed from the
+    /// chip list — the chip that stays behind (if any) is untouched.
+    #[test]
+    fn primary_hotkey_migrates_off_dictation_chip_onto_pill() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.dictation".into(),
+            name: "听写".into(),
+            icon: "🎤".into(),
+            hotkey: String::new(),
+            triggers: vec![
+                Trigger::Hotkey { combo: "cmd+shift+space".into(), capture: Some("toggle".into()) },
+                Trigger::PillSlot { order: 0 },
+            ],
+            source: "src.mic-hold".into(),
+            processors: vec!["stt.default".into()],
+            outputs: vec!["out.insert".into()],
+            builtin: true,
+        });
+
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg));
+
+        assert_eq!(cfg.pill_hotkey, "cmd+shift+space");
+        assert_eq!(cfg.pill_hotkey_capture, "toggle", "capture carried over from the chip");
+        assert!(cfg.pill_hotkey_migration_done);
+
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.dictation").unwrap();
+        assert!(wf.hotkey_triggers().next().is_none(), "the Hotkey chip is gone");
+        assert_eq!(wf.pill_order(), Some(0), "the PillSlot chip is untouched");
+
+        // 幂等（哨兵）
+        assert!(!migrate_primary_hotkey_to_pill(&mut cfg));
+    }
+
+    /// A Hotkey chip with no explicit `capture` (`None` = "hold") lands on
+    /// the pill as `"hold"`, not an empty string.
+    #[test]
+    fn primary_hotkey_migration_defaults_capture_to_hold() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.dictation".into(),
+            name: "听写".into(),
+            icon: "🎤".into(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::Hotkey { combo: "cmd+shift+space".into(), capture: None }],
+            source: "src.mic-hold".into(),
+            processors: vec!["stt.default".into()],
+            outputs: vec!["out.insert".into()],
+            builtin: true,
+        });
+
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg));
+        assert_eq!(cfg.pill_hotkey, "cmd+shift+space");
+        assert_eq!(cfg.pill_hotkey_capture, "hold");
+    }
+
+    /// No `wf.dictation` overlay at all (fresh install, or a config that
+    /// never customized dictation) — `pill_hotkey` stays empty but the
+    /// sentinel is still set so the migration never re-runs.
+    #[test]
+    fn primary_hotkey_migration_noop_when_no_dictation_overlay() {
+        let mut cfg = AppConfig::default();
+        assert!(cfg.workflows.iter().all(|w| w.id != "wf.dictation"));
+
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg));
+
+        assert_eq!(cfg.pill_hotkey, "");
+        assert_eq!(cfg.pill_hotkey_capture, "hold", "Default impl's capture, untouched");
+        assert!(cfg.pill_hotkey_migration_done);
+    }
+
+    /// A `wf.dictation` overlay with no Hotkey chip (e.g. only a PillSlot) —
+    /// `pill_hotkey` stays empty; the sentinel is still set.
+    #[test]
+    fn primary_hotkey_migration_noop_when_dictation_has_no_hotkey_chip() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.dictation".into(),
+            name: "听写".into(),
+            icon: "🎤".into(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::PillSlot { order: 0 }],
+            source: "src.mic-hold".into(),
+            processors: vec!["stt.default".into()],
+            outputs: vec!["out.insert".into()],
+            builtin: true,
+        });
+
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg));
+
+        assert_eq!(cfg.pill_hotkey, "");
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.dictation").unwrap();
+        assert_eq!(wf.pill_order(), Some(0), "the PillSlot chip is untouched");
+    }
+
+    #[test]
+    fn primary_hotkey_migration_returns_false_when_already_done() {
+        let mut cfg = AppConfig { pill_hotkey_migration_done: true, ..Default::default() };
+        assert!(!migrate_primary_hotkey_to_pill(&mut cfg));
+        assert_eq!(cfg.pill_hotkey, "", "no-op leaves fields untouched");
+    }
+
     // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
     // A regression test for the whole v0.6.x → current pipeline:
     // migrate_transform_to_text_actions → migrate_to_workflows →
     // migrate_settings_into_flow → remap_renamed_builtins →
-    // migrate_hotkeys_to_triggers. Simulates a realistic pre-Workbench-P1
-    // config: legacy dictation/toggle/note/notebook/listen/quick-transform
-    // hotkeys, a non-default STT language, and a pre-existing custom workflow
-    // overlay (as if authored under Workflow P1/P2, before triggers existed)
-    // that still carries its hotkey in the legacy `hotkey` field.
+    // migrate_hotkeys_to_triggers → migrate_primary_hotkey_to_pill. Simulates
+    // a realistic pre-Workbench-P1 config: legacy
+    // dictation/toggle/note/notebook/listen/quick-transform hotkeys, a
+    // non-default STT language, and a pre-existing custom workflow overlay
+    // (as if authored under Workflow P1/P2, before triggers existed) that
+    // still carries its hotkey in the legacy `hotkey` field.
     #[test]
     fn full_chain_v06_config_end_to_end() {
         use crate::config::migrate_transform_to_text_actions;
@@ -1517,9 +1664,12 @@ mod tests {
             builtin: false,
         });
 
-        // Every legacy hotkey combo that enters the chain.
+        // Every legacy hotkey combo that enters the chain and lands in some
+        // workflow's Hotkey chip. The primary dictation combo
+        // ("cmd+shift+space") is deliberately EXCLUDED — Workbench P1's pill
+        // migration moves it off wf.dictation's chip and onto
+        // `config.pill_hotkey` instead (checked separately below).
         let legacy_hotkeys = [
-            "cmd+shift+space", // dictation
             "cmd+shift+d",     // dictation toggle
             "option+shift+n",  // note
             "option+1",        // note-1 (notebook 5)
@@ -1536,16 +1686,31 @@ mod tests {
         assert!(migrate_settings_into_flow(&mut cfg), "settings migration runs");
         remap_renamed_builtins(&mut cfg); // no sentinel; this config carries no stale ids
         assert!(migrate_hotkeys_to_triggers(&mut cfg), "hotkey-to-trigger migration runs");
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg), "pill hotkey migration runs");
 
         // (a) All sentinels set.
         assert!(cfg.workflow_migration_done, "workflow_migration_done set");
         assert!(cfg.settings_inflow_migration_done, "settings_inflow_migration_done set");
         assert!(cfg.triggers_migration_done, "triggers_migration_done set");
+        assert!(cfg.pill_hotkey_migration_done, "pill_hotkey_migration_done set");
+
+        // (a2) The primary dictation hotkey landed on the pill, carrying its
+        // capture ("hold" — wf.dictation's source is src.mic-hold).
+        assert_eq!(cfg.pill_hotkey, "cmd+shift+space", "primary dictation hotkey moved to the pill");
+        assert_eq!(cfg.pill_hotkey_capture, "hold");
 
         let effective = effective_workflows(&cfg);
 
-        // (b) Every legacy hotkey that entered the chain exists afterwards as
-        // some workflow's Hotkey trigger.
+        // (a3) wf.dictation no longer carries a Hotkey chip for the combo —
+        // it left with the pill migration, not merely duplicated.
+        let dictation = effective.iter().find(|wf| wf.id == "wf.dictation").unwrap();
+        assert!(
+            dictation.hotkey_triggers().all(|(_, c, _)| c != "cmd+shift+space"),
+            "wf.dictation must not still carry the primary hotkey as a chip"
+        );
+
+        // (b) Every OTHER legacy hotkey that entered the chain exists
+        // afterwards as some workflow's Hotkey trigger.
         for combo in legacy_hotkeys {
             let found = effective
                 .iter()
@@ -1577,9 +1742,10 @@ mod tests {
         let r3 = migrate_settings_into_flow(&mut cfg);
         let r4 = remap_renamed_builtins(&mut cfg);
         let r5 = migrate_hotkeys_to_triggers(&mut cfg);
+        let r6 = migrate_primary_hotkey_to_pill(&mut cfg);
         assert!(
-            !r1 && !r2 && !r3 && !r4 && !r5,
-            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5})"
+            !r1 && !r2 && !r3 && !r4 && !r5 && !r6,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6})"
         );
         let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
         assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");

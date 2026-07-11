@@ -236,6 +236,10 @@ pub struct AppConfig {
     /// [`crate::workflow::migrate::migrate_settings_into_flow`].
     #[serde(default)]
     pub settings_inflow_migration_done: bool,
+    /// One-shot migration sentinel: legacy per-workflow `hotkey` strings
+    /// converted into `triggers` (Workbench P1).
+    #[serde(default)]
+    pub triggers_migration_done: bool,
     /// Id of the voice (microphone-source) workflow that the primary dictation
     /// hotkey (`workflow-wf.dictation`) triggers. Empty falls back to the
     /// built-in `"wf.dictation"`. Written by the Dictation drum / float pill
@@ -314,6 +318,7 @@ impl Default for AppConfig {
             workflows: Vec::new(),
             workflow_migration_done: false,
             settings_inflow_migration_done: false,
+            triggers_migration_done: false,
             active_voice_workflow: String::new(),
         }
     }

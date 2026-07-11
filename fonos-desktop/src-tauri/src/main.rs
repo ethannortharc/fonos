@@ -238,6 +238,15 @@ fn main() {
             Err(e) => eprintln!("fonos: builtin remap save failed: {e}"),
         }
     }
+    // One-time migration: legacy per-workflow `hotkey` strings → `triggers`
+    // (Workbench P1). Runs LAST so it sees the fully-migrated workflow shape
+    // from the migrations above.
+    if fonos_core::workflow::migrate::migrate_hotkeys_to_triggers(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated workflow hotkeys into triggers"),
+            Err(e) => eprintln!("fonos: hotkey-to-triggers migration save failed: {e}"),
+        }
+    }
     let config = config;
 
     // Initialize SQLite database for stats & history

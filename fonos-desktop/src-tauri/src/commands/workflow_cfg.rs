@@ -106,9 +106,22 @@ pub fn save_widget(
 pub fn save_workflow(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    workflow: WorkflowDef,
+    mut workflow: WorkflowDef,
 ) -> Result<(), String> {
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
+
+    // Transition bridge: an older client or an imported scenario may still
+    // write the legacy `hotkey` field — fold it into `triggers` so a saved
+    // hotkey never silently stops registering.
+    if !workflow.hotkey.is_empty() {
+        let combo = std::mem::take(&mut workflow.hotkey);
+        let dup = workflow.hotkey_triggers().any(|(_, c, _)| c == combo.as_str());
+        if !dup {
+            workflow
+                .triggers
+                .push(fonos_core::workflow::model::Trigger::Hotkey { combo, capture: None });
+        }
+    }
 
     // Validate BEFORE persisting. `effective_widgets` returns an owned Vec, so
     // the immutable borrow of `config` ends before the mutation below.

@@ -55,7 +55,7 @@ pub async fn bench_run_workflow(
     let _guard = super::workflow_exec::InFlightGuard::try_acquire()
         .ok_or_else(|| "a run is already in flight".to_string())?;
     let (wf, widgets, registry) = {
-        let config = state.config.lock().unwrap();
+        let config = state.config.lock().map_err(|e| e.to_string())?;
         let wfs = fonos_core::workflow::engine::effective_workflows(&config);
         let wf = wfs
             .into_iter()
@@ -63,6 +63,13 @@ pub async fn bench_run_workflow(
             .ok_or_else(|| format!("unknown workflow {workflow_id}"))?;
         (wf, fonos_core::workflow::engine::effective_widgets(&config), state.registry.clone())
     };
+    // Structural pre-flight: a chain problem here (dangling id, kind
+    // mismatch, no output) has no `run()` step to attach an error event to,
+    // so without this check the command would return `Ok(())` with no
+    // bench:event at all and the UI would sit "Running…" forever. Rejecting
+    // the invoke() promise here is the only way this class of failure can
+    // reach the frontend.
+    fonos_core::workflow::engine::validate(&registry, &wf, &widgets)?;
     let ctx = RunCtx {
         events: Arc::new(BenchEventSink(app)),
         meta: Mutex::new(serde_json::Map::new()),
@@ -93,7 +100,7 @@ pub async fn bench_run_widget(
     let _guard = super::workflow_exec::InFlightGuard::try_acquire()
         .ok_or_else(|| "a run is already in flight".to_string())?;
     let (def, mic_def, registry) = {
-        let config = state.config.lock().unwrap();
+        let config = state.config.lock().map_err(|e| e.to_string())?;
         let widgets = fonos_core::workflow::engine::effective_widgets(&config);
         let def = widgets
             .iter()
@@ -156,8 +163,10 @@ pub async fn bench_run_widget(
             if deliver {
                 out.deliver(&data, &ctx).await.map(|_| text_preview(&data))
             } else {
-                finished(&def.id, "output", text_preview(&data),
-                         t0.elapsed().as_millis() as u64, None, true);
+                // Intercepted: per engine.rs's dry-run contract, an
+                // intercepted output reports `ms: 0` (no delivery work ran),
+                // not elapsed wall-clock time.
+                finished(&def.id, "output", text_preview(&data), 0, None, true);
                 sink.emit(PipelineEvent::Delivered {
                     raw: String::new(), final_text: text_preview(&data), workflow: None,
                 });

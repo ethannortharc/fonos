@@ -31,6 +31,11 @@ use super::AppState;
 /// from [`save_workflow`] so the fold logic is testable without tauri
 /// plumbing (a `tauri::State`/`tauri::AppHandle` command can't be
 /// constructed in a plain unit test).
+///
+/// `capture: None` is deliberate here, not a placeholder: this bridge has no
+/// widget-source lookup at its call site to derive a capture mode from, so
+/// unlike `migrate_hotkeys_to_triggers` (which resolves the source widget and
+/// carries its capture mode into the chip), this fold always leaves it unset.
 pub(crate) fn fold_legacy_hotkey(workflow: &mut WorkflowDef) {
     if !workflow.hotkey.is_empty() {
         let combo = std::mem::take(&mut workflow.hotkey);

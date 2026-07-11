@@ -223,11 +223,12 @@ pub fn validate(reg: &Registry, wf: &WorkflowDef, widgets: &[WidgetDef]) -> Resu
 /// [`Data::Audio`].
 fn preview_of(d: &Data) -> String {
     match d {
-        Data::Text(t) => {
-            let mut s = t.clone();
-            s.truncate(4000);
-            s
-        }
+        // `String::truncate` takes a *byte* index and panics if that index
+        // isn't a UTF-8 char boundary — a multi-byte string (e.g. CJK text,
+        // 3 bytes/char) longer than ~1334 chars would panic here. Truncate
+        // by chars instead so any valid `String` input is safe regardless of
+        // encoding width.
+        Data::Text(t) => t.chars().take(4000).collect(),
         Data::Audio(_) => "[audio]".to_string(),
     }
 }
@@ -559,6 +560,25 @@ mod tests {
         }
     }
 
+    /// Emits a 5000-char CJK string (3 bytes/char in UTF-8) regardless of
+    /// input, to exercise `preview_of`'s truncation on a multibyte string
+    /// well past the 4000-char cap — a regression guard for the panic fixed
+    /// in Task 6 Fix Round 1 (`String::truncate` takes a byte index and
+    /// isn't char-boundary-safe).
+    struct CjkFlood;
+    #[async_trait::async_trait]
+    impl Processor for CjkFlood {
+        fn input_kind(&self) -> DataKind {
+            DataKind::Text
+        }
+        fn output_kind(&self) -> DataKind {
+            DataKind::Text
+        }
+        async fn process(&self, _i: Data, _: &RunCtx) -> Result<Data, String> {
+            Ok(Data::Text("字".repeat(5000)))
+        }
+    }
+
     /// A fake STT: audio in, fixed transcript out.
     struct Stt;
     #[async_trait::async_trait]
@@ -676,6 +696,10 @@ mod tests {
             Box::new(|_| Ok(Arc::new(FailingSource) as Arc<dyn Source>)),
         );
         reg.register_processor("upper", Box::new(|_| Ok(Arc::new(Upper) as Arc<dyn Processor>)));
+        reg.register_processor(
+            "cjk_flood",
+            Box::new(|_| Ok(Arc::new(CjkFlood) as Arc<dyn Processor>)),
+        );
         reg.register_processor("stt", Box::new(|_| Ok(Arc::new(Stt) as Arc<dyn Processor>)));
         reg.register_processor("fail", Box::new(|_| Ok(Arc::new(Failing) as Arc<dyn Processor>)));
         reg.register_output("sink", Box::new(move |_| Ok(sink.clone() as Arc<dyn Output>)));
@@ -1090,5 +1114,59 @@ mod tests {
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert!(err.contains("mock text"), "expected error mentioning mock text, got: {err}");
+    }
+
+    /// Regression guard for the Task 6 review finding: a processor that
+    /// outputs a 5000-char CJK string (3 bytes/char in UTF-8, so 15000
+    /// bytes — none of the multibyte char boundaries land on the naive
+    /// 4000-*byte* truncation point) must not panic when the engine builds
+    /// its step-trace preview. Before the fix, `preview_of` called
+    /// `String::truncate(4000)`, which truncates by *byte* index and panics
+    /// if that index isn't a UTF-8 char boundary; every step preview on a
+    /// long multibyte transcript (e.g. Chinese dictation) hit this on the
+    /// hot path in `run`. The fix truncates by chars, so the run must
+    /// succeed and every previewed step must cap at exactly 4000 chars.
+    #[tokio::test]
+    async fn run_survives_multibyte_text_past_preview_cap() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.t", WidgetRole::Source, "fixed", serde_json::json!({ "text": "hi" })),
+            widget("p.cjk", WidgetRole::Processor, "cjk_flood", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.t", &["p.cjk"], &["out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: None,
+            dry_run: false,
+        };
+
+        // Would panic inside `run` (via `preview_of`) before the fix.
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(out.final_text.chars().count(), 5000, "full text is carried through untruncated");
+
+        // Every StepFinished preview is capped at exactly 4000 chars, not
+        // bytes — the processor and output steps both saw the 5000-char
+        // CJK string.
+        let previews: Vec<String> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|e| match e {
+                PipelineEvent::StepFinished { preview, error: None, .. } => Some(preview.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(previews.len(), 3, "source, processor, and output steps all finished");
+        assert_eq!(previews[0], "hi", "source preview is short, untruncated");
+        for preview in &previews[1..] {
+            assert_eq!(preview.chars().count(), 4000, "preview must be capped at 4000 chars");
+            assert!(preview.chars().all(|c| c == '字'), "preview content must still be valid CJK text");
+        }
     }
 }

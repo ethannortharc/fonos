@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+/* clip-path masks the webview background bleed at the rounded corners
+   (same trick as dialog-panel.html / agent-panel.html / text-action-panel.html). */
+html,body{height:100%;margin:0}
+html{background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none;
+  -webkit-clip-path:inset(0 round 16px);clip-path:inset(0 round 16px)}
+body{background:transparent;overflow:hidden}
+
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes msgIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:0}
+
+#root{display:flex;flex-direction:column;height:100vh;overflow:hidden;
+  background:rgba(28,27,24,0.92);
+  -webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);
+  border-radius:16px;border:1px solid rgba(255,255,255,.08);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  animation:dropIn .18s cubic-bezier(.23,1,.32,1);
+  font-family:-apple-system,system-ui,sans-serif}
+
+/* ── Header: title row (drag) + status row ── */
+#hdr{display:flex;flex-direction:column;gap:7px;padding:10px 14px 9px;
+  border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;cursor:grab}
+#hdr:active{cursor:grabbing}
+#hTitleRow{display:flex;align-items:center;justify-content:space-between}
+#hTitle{font-size:12px;font-weight:500;color:rgba(255,255,255,.7);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stateRow{display:flex;align-items:center;gap:7px}
+#stateChip{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:500;flex-shrink:0}
+#stateDot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#78716c}
+#stateDot.live{animation:pulse 1.15s ease-in-out infinite}
+#aecChip{font-size:9px;padding:2px 7px;border-radius:8px;font-weight:500;display:none;flex-shrink:0}
+#timer{margin-left:auto;font-size:11px;font-family:'SF Mono',ui-monospace,monospace;
+  color:rgba(255,255,255,.4);display:none;flex-shrink:0}
+
+/* ── Bubble log (same visual language as dialog-panel.html) ── */
+#log{flex:1;overflow-y:auto;padding:12px;min-height:0;
+  display:flex;flex-direction:column;gap:6px}
+#emptyHint{margin:auto;text-align:center;font-size:11px;color:rgba(255,255,255,.2);
+  padding:20px;max-width:220px}
+
+.ru{display:flex;justify-content:flex-end}
+.ra{display:flex;justify-content:flex-start}
+.bu{max-width:82%;border-radius:14px 14px 4px 14px;padding:7px 12px;font-size:11.5px;
+  line-height:1.5;color:#fafaf9;background:rgba(245,158,11,.12);
+  border:1px solid rgba(245,158,11,.08);animation:msgIn .14s ease-out;
+  white-space:pre-wrap;word-break:break-word;-webkit-user-select:text;user-select:text}
+.ba{max-width:84%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11.5px;
+  line-height:1.5;color:rgba(255,255,255,.82);background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.05);animation:msgIn .14s ease-out;
+  white-space:pre-wrap;word-break:break-word;-webkit-user-select:text;user-select:text}
+.be{max-width:88%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11px;
+  color:rgba(239,68,68,.8);background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.08);
+  white-space:pre-wrap;word-break:break-word;margin:0 auto;animation:msgIn .14s ease-out}
+.interrupted-tag{color:rgba(255,255,255,.32);font-style:italic}
+
+/* ── Footer: hang-up (red) + close ── */
+#ftr{display:flex;align-items:center;justify-content:space-between;
+  padding:9px 14px;border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+#hangup{width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;
+  background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 0 10px rgba(239,68,68,.25);
+  display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
+#hangup:hover{box-shadow:0 0 16px rgba(239,68,68,.4);transform:scale(1.05)}
+#hangup:active{transform:scale(.96)}
+#closeBtn{font-size:11px;color:rgba(255,255,255,.28);background:0;border:0;cursor:pointer;
+  padding:5px 8px;font-family:inherit}
+#closeBtn:hover{color:rgba(255,255,255,.6)}
+</style>
+</head>
+<body>
+<div id="root">
+  <!-- Title bar is a drag region (move the floating window). -->
+  <div id="hdr" data-tauri-drag-region>
+    <div id="hTitleRow" data-tauri-drag-region>
+      <span id="hTitle" data-tauri-drag-region></span>
+    </div>
+    <div id="stateRow" data-tauri-drag-region>
+      <span id="stateChip"><span id="stateDot"></span><span id="stateLabel"></span></span>
+      <span id="aecChip"></span>
+      <span id="timer">00:00</span>
+    </div>
+  </div>
+  <div id="log"><div id="emptyHint"></div></div>
+  <div id="ftr">
+    <button id="hangup" onclick="iv('call_stop')">
+      <!-- Same handset glyph as Conversation.tsx's voice button, rotated to the
+           "held to ear" / live pose — recognizable "in a call, tap to hang up". -->
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(135deg)">
+        <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z"/>
+      </svg>
+    </button>
+    <button id="closeBtn" onclick="closePanel()">&#10005;</button>
+  </div>
+</div>
+<script>
+/* ── Tiny inline i18n (float.html pattern) ── The main app owns the full
+   dictionary (lib/i18n); this panel mirrors just the Conversation page's
+   conv.state.*/conv.call.* strings so the two surfaces read identically.
+   Locale follows config.ui_language ("auto"/"en"/"zh"), resolved the same way
+   as float.html (auto → system language), and live-updates on `config:saved`
+   without waiting for a restart. */
+var STR={
+  en:{
+    title:'Call',
+    idle:'Ready', listening:'Listening…', thinking:'Thinking…', speaking:'Speaking…',
+    aec:'AEC', noaec:'no AEC',
+    aecTitle:'Echo cancellation is active — the mic stays open while the assistant speaks',
+    noaecTitle:'No echo cancellation — barge-in falls back to envelope gating and may be less reliable',
+    interrupted:' · interrupted',
+    timeout:'Call ended — no speech for a while',
+    hangupTitle:'Hang up',
+    empty:'No active call',
+  },
+  zh:{
+    title:'通话',
+    idle:'就绪', listening:'聆听中…', thinking:'思考中…', speaking:'播报中…',
+    aec:'回声消除', noaec:'无回声消除',
+    aecTitle:'回声消除已启用 — 助手说话时麦克风保持开启',
+    noaecTitle:'无回声消除 — 打断功能改用包络门控,可能不太可靠',
+    interrupted:' · 已打断',
+    timeout:'通话已结束 — 一段时间没有说话',
+    hangupTitle:'挂断',
+    empty:'暂无通话',
+  },
+};
+var LOCALE='en';
+function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
+// Mirrors lib/i18n.resolveLocale: explicit "en"/"zh" win, "auto"/undefined
+// follows navigator.language.
+function resolveLocale(setting){
+  if(setting==='en'||setting==='zh')return setting;
+  return (navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en';
+}
+function applyLocale(setting){
+  LOCALE=resolveLocale(setting);
+  renderStaticLabels();
+}
+function renderStaticLabels(){
+  hTitle.textContent=L('title');
+  stateLabel.textContent=L(turnState);
+  hangup.title=L('hangupTitle');
+  emptyHint.textContent=L('empty');
+  renderAecChip();
+}
+
+/* ── State ── */
+var turnState='idle';   // idle | listening | thinking | speaking
+var inCall=false;
+var audioPath=null;     // null | "aec" | "ec" | "fallback"
+var timerInterval=null, callStartTs=0;
+var STATE_COLORS={idle:'#78716c',listening:'#f87171',thinking:'#fbbf24',speaking:'#4ade80'};
+
+/* ── Element refs ── */
+var log=document.getElementById('log');
+var emptyHint=document.getElementById('emptyHint');
+var hTitle=document.getElementById('hTitle');
+var stateDot=document.getElementById('stateDot');
+var stateLabel=document.getElementById('stateLabel');
+var aecChip=document.getElementById('aecChip');
+var timer=document.getElementById('timer');
+var hangup=document.getElementById('hangup');
+
+/* ── Tauri IPC helpers (same pattern as dialog-panel/meeting-panel) ── */
+function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
+function iv(c,a){var t=$t();return t?t.invoke(c,a||{}):Promise.reject(new Error('no tauri'))}
+
+/* ── Turn-state chip ── */
+function setState(s){
+  turnState=s;
+  stateLabel.textContent=L(s);
+  var c=STATE_COLORS[s]||STATE_COLORS.idle;
+  stateDot.style.background=c;
+  stateLabel.style.color=c;
+  stateDot.classList.toggle('live', s!=='idle');
+}
+
+/* ── AEC truth chip (mirrors Conversation.tsx's audioPath chip) ── */
+function renderAecChip(){
+  if(!inCall || !audioPath){ aecChip.style.display='none'; return; }
+  var ok = audioPath==='aec' || audioPath==='ec';
+  aecChip.style.display='inline-block';
+  aecChip.textContent = ok ? L('aec') : L('noaec');
+  aecChip.title = ok ? L('aecTitle') : L('noaecTitle');
+  aecChip.style.background = ok ? 'rgba(74,222,128,.12)' : 'rgba(251,191,36,.12)';
+  aecChip.style.color = ok ? '#4ade80' : '#fbbf24';
+}
+
+/* ── Call timer (mm:ss), starts on call_started ── */
+function fmtTimer(totalSec){
+  var m=Math.floor(totalSec/60), s=totalSec%60;
+  return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+}
+function startTimer(){
+  stopTimer();
+  callStartTs=Date.now();
+  timer.style.display='inline';
+  timer.textContent='00:00';
+  timerInterval=setInterval(function(){
+    timer.textContent=fmtTimer(Math.floor((Date.now()-callStartTs)/1000));
+  },1000);
+}
+function stopTimer(){
+  if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+  timer.style.display='none';
+  timer.textContent='00:00';
+}
+
+/* ── Bubbles ── */
+function clearEmptyHint(){ emptyHint.style.display='none'; }
+function bubble(role,text){
+  clearEmptyHint();
+  var row=document.createElement('div');
+  var b=document.createElement('div');
+  if(role==='user'){ row.className='ru'; b.className='bu'; b.textContent=text; }
+  else if(role==='error'){ row.className='ra'; b.className='be'; b.textContent=text; }
+  else { row.className='ra'; b.className='ba'; b.textContent=text; }
+  row.appendChild(b); log.appendChild(row);
+  log.scrollTop=log.scrollHeight;
+  return b;
+}
+// Tag the most recent assistant bubble "interrupted" (idempotent — a second
+// barge on the same still-untagged bubble is a no-op, mirrors Conversation.tsx).
+function tagLastAssistantInterrupted(){
+  var bubbles=log.querySelectorAll('.ba');
+  if(!bubbles.length) return;
+  var last=bubbles[bubbles.length-1];
+  if(last.dataset.interrupted==='1') return;
+  last.dataset.interrupted='1';
+  var tag=document.createElement('span');
+  tag.className='interrupted-tag';
+  tag.textContent=L('interrupted');
+  last.appendChild(tag);
+}
+
+/* ── Close: hang up first if a call is active, then hide the window ── */
+function closePanel(){
+  if(inCall){ iv('call_stop').catch(function(e){console.error(e);}); }
+  iv('hide_call_panel').catch(function(e){console.error(e);});
+}
+window.addEventListener('keydown',function(e){ if(e.key==='Escape') closePanel(); });
+
+/* ── config:saved / initial config load ── */
+function loadCfg(){
+  iv('get_config').then(function(c){ if(c) applyLocale(c.ui_language); }).catch(function(){});
+}
+
+/* ── sts:event: the full contract this panel consumes unchanged
+   (adapters.rs's TurnEventBridge + call.rs's emit_call*). ── */
+function handleStsEvent(payload){
+  var p=payload||{};
+  var kind=p.kind, text=p.text||'', audio=p.audio;
+  switch(kind){
+    case 'transcript':
+      bubble('user', text);
+      setState('thinking');
+      break;
+    case 'reply':
+      bubble('assistant', text);
+      break;
+    case 'speaking_started':
+      setState('speaking');
+      break;
+    case 'barge':
+      // User talked over the reply: jump back to listening and tag the
+      // truncated assistant bubble as interrupted.
+      setState('listening');
+      tagLastAssistantInterrupted();
+      break;
+    case 'speaking_done':
+    case 'turn_done':
+      setState('idle');
+      break;
+    case 'call_started':
+      inCall=true;
+      clearEmptyHint();
+      if(audio==='aec'||audio==='ec'||audio==='fallback'){ audioPath=audio; }
+      renderAecChip();
+      startTimer();
+      break;
+    case 'call_listening':
+      inCall=true;
+      clearEmptyHint();
+      setState('listening');
+      break;
+    case 'call_ended':
+      inCall=false;
+      audioPath=null;
+      renderAecChip();
+      stopTimer();
+      setState('idle');
+      if(text==='timeout'){ bubble('error', L('timeout')); }
+      break;
+    case 'error':
+      bubble('error', text);
+      // In a call the loop keeps listening after a transient error; only drop
+      // out of the transient thinking/speaking chip otherwise.
+      setState(inCall ? 'listening' : 'idle');
+      break;
+  }
+}
+
+/* ── Event bridge (float.html / meeting-panel.html pattern) ── */
+function setup(){
+  var t=$t(); if(!t){setTimeout(setup,100);return;}
+  var tr=t.transformCallback;
+  function on(ev,fn){
+    t.invoke('plugin:event|listen',{event:ev,target:{kind:'Any'},handler:tr(fn)}).catch(function(e){console.error('listen:'+ev,e);});
+  }
+  on('sts:event', function(e){ handleStsEvent(e&&e.payload); });
+  // Settings changed (not a call-lifecycle event): live-update the language.
+  on('config:saved', function(e){
+    var p=e&&e.payload; if(!p) return;
+    applyLocale(p.ui_language);
+  });
+  loadCfg();
+}
+
+/* Render once synchronously with the default locale so the header isn't
+   blank while Tauri internals / config load resolve. */
+setState('idle');
+applyLocale('auto');
+
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(setup,40);});
+}else{
+  setTimeout(setup,40);
+}
+</script>
+</body>
+</html>

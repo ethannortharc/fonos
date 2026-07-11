@@ -242,6 +242,22 @@ pub async fn call_stop(state: tauri::State<'_, AppState>) -> Result<(), String> 
     Ok(())
 }
 
+/// Hide the call panel window (mirrors [`super::dialog::hide_dialog_panel`]).
+///
+/// Does NOT hang up — the panel's own close button hangs up first (calling
+/// `call_stop`, which is safe in any phase) when it knows a call is active,
+/// then calls this. Kept as a plain hide here rather than folded into
+/// `call_stop` so a future non-UI caller of `call_stop` (e.g. the call
+/// composite widget's own lifecycle, Task 9) doesn't also hide a window it
+/// never showed.
+#[tauri::command(rename_all = "snake_case")]
+pub fn hide_call_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("call-panel") {
+        let _ = w.hide();
+    }
+    Ok(())
+}
+
 /// The audio source the call loop drains chunks from.
 ///
 /// With barge-in enabled we prefer *system echo cancellation* so the mic can

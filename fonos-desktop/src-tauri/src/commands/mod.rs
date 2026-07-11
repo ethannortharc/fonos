@@ -351,6 +351,49 @@ pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32
     ));
 }
 
+/// Position the call panel near the mouse cursor, parameterized on the
+/// window's actual `(w, h)` — same below-right-then-flip logic as
+/// [`move_dialog_panel_to_cursor`], for the `"call-panel"` label. A call
+/// panel is anchored to the cursor (like Dialog) rather than a fixed corner
+/// (like Meeting): it's a peer to the Dialog panel's session-type surface,
+/// not a background recording indicator.
+///
+/// Unused until Workbench P2 Task 9 wires the call composite widget's
+/// `deliver()` to call this before showing the panel (this task only ships
+/// the panel HTML + window registration; the widget's own `run_call_loop`
+/// already emits `call_started`/`call_listening`/etc. via the unchanged
+/// `sts:event` contract, but nothing shows the window yet).
+#[allow(dead_code)]
+#[cfg(target_os = "macos")]
+pub(crate) fn move_call_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("call-panel") else { return };
+    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
+
+    let scale = target.scale_factor();
+    let (panel_w, panel_h) = (w as f64, h as f64);
+    let offset = 12.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+    let mon_h = target.size().height as f64 / scale;
+
+    // Below-right of the cursor; flip to the opposite side at monitor edges.
+    let mut x = cursor.x + offset;
+    let mut y = cursor.y + offset;
+    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
+    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
+    // Never leave the monitor; keep clear of the macOS menu bar.
+    x = x.max(mon_x);
+    y = y.max(mon_y + 28.0);
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
 /// Position the agent-panel window centered horizontally near the cursor,
 /// slightly above the vertical center of the screen. Unlike
 /// [`move_dialog_panel_to_cursor`]/[`move_text_action_panel_to_cursor`] this

@@ -463,6 +463,7 @@ fn main() {
             commands::sts::get_sts_history,
             commands::call::call_start,
             commands::call::call_stop,
+            commands::call::hide_call_panel,
             commands::tts::list_model_voices,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,

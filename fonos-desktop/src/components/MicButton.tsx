@@ -1,10 +1,10 @@
 // MicButton — the fonos mic/stop button shell (glyphs + aura), extracted
-// verbatim from Dictation.tsx (MicIcon/StopIcon/VoiceAura + the
+// verbatim from the former Dictation.tsx (MicIcon/StopIcon/VoiceAura + the
 // fonos-voice-button classNames) so the Test Run bench (Task 11) can drive
-// mock microphone input with the same recording affordance, without
-// depending on the (soon to be deleted, Task 12) Dictation view. CSS lives
-// in index.css — this component only supplies the class contract
-// (fonos-voice-button/-live/-idle, fonos-voice-glyph, fonos-mic-ambient*).
+// mock microphone input with the same recording affordance. Dictation.tsx
+// itself has since been deleted (Task 12) — this component no longer depends
+// on it. CSS lives in index.css — this component only supplies the class
+// contract (fonos-voice-button/-live/-idle, fonos-voice-glyph, fonos-mic-ambient*).
 
 function MicIcon() {
   return (

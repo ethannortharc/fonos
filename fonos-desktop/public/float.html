@@ -559,18 +559,20 @@ function loadCfg(){
 }
 function loadModes(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
-  // Voice workflows only: filter list_workflows to microphone-source rows.
+  // Pill-roller workflows only: filter list_workflows to rows carrying a
+  // pill_slot trigger (the roller shows one entry per such workflow,
+  // ordered by its slot's `order`) — not to a widget's source type_tag.
   return window.__TAURI_INTERNALS__.invoke('list_workflows').then(rows=>{
     if(Array.isArray(rows)){
       var pillOrder=function(w){
         var t=(w.triggers||[]).find(function(x){return x&&x.kind==='pill_slot';});
         return t&&typeof t.order==='number'?t.order:0;
       };
-      var mic=rows.filter(function(w){
+      var pill=rows.filter(function(w){
         return w&&Array.isArray(w.triggers)&&w.triggers.some(function(t){return t&&t.kind==='pill_slot';});
       });
-      mic.sort(function(a,b){return pillOrder(a)-pillOrder(b);});
-      if(mic.length>0){ allModes=mic.map(function(w){return {id:w.id,icon:w.icon||'⚙',name:w.name};}); }
+      pill.sort(function(a,b){return pillOrder(a)-pillOrder(b);});
+      if(pill.length>0){ allModes=pill.map(function(w){return {id:w.id,icon:w.icon||'⚙',name:w.name};}); }
     }
   }).catch(()=>{});
 }

@@ -1,5 +1,5 @@
 // typeMeta.ts — the widget type vocabulary shared by the Workbench Widgets
-// section and FlowsTab's slot pickers: which type_tags each role can
+// section and RecipesSection's slot pickers: which type_tags each role can
 // instantiate, the three role sections in display order, and each type_tag's
 // localized name/description keys. Moved here (unchanged) from the retired
 // BuildingBlocks.tsx catalog (Task 9) — this is now the single source of
@@ -10,7 +10,7 @@ import type { WidgetRole } from "../../types";
 
 // The type_tags each role can instantiate — mirrors the desktop registry
 // (workflow_widgets.rs build_registry). v1 hardcoded map, ported from
-// WidgetsTab.tsx. Exported so other WidgetForm callers (e.g. FlowsTab's
+// WidgetsTab.tsx. Exported so other WidgetForm callers (e.g. RecipesSection's
 // in-place node editor, the Workbench Widgets section) can share one source
 // of truth for the allowed-types picker instead of duplicating this map.
 export const TYPE_TAGS: Record<WidgetRole, string[]> = {

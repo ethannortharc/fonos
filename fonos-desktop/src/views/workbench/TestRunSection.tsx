@@ -59,6 +59,14 @@ export default function TestRunSection({
   widgetsRef.current = widgets;
   const runningRef = useRef(false);
   runningRef.current = running;
+  const recordingRef = useRef(false);
+  recordingRef.current = recording;
+  // Unmount-only release: a live mic recording (segment/nav switch away
+  // mid-record) must not survive the component going away. MicSource::acquire
+  // blocks on the backend until finish_capture arrives, holding the
+  // InFlightGuard the whole time — without this, switching away with the mic
+  // hot would leave it recording and the guard held forever.
+  useEffect(() => () => { if (recordingRef.current) { void finishCapture(); } }, []);
 
   // Stable string key for the loaded target — a *value*, so the fallback
   // `benchTarget ?? { kind: "recipe", ... }` object Workbench.tsx re-creates
@@ -308,7 +316,9 @@ export default function TestRunSection({
 
         {editNode && wById(editNode) && (
           <div className="mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
-            <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
+            {usageCount(editNode, rows) > 0 && (
+              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
+            )}
             <WidgetForm
               value={widgetToForm(wById(editNode)!)}
               config={config}

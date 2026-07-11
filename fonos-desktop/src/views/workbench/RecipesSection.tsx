@@ -166,6 +166,10 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
   const [picker, setPicker] = useState<Picker | null>(null);
   const [error, setError] = useState<string>("");
   const [showNew, setShowNew] = useState(false);
+  // createRecipe's failure, shown inline inside NewRecipeModal — `error`
+  // above renders behind the modal backdrop while the modal is open, so it's
+  // invisible right when it matters most.
+  const [modalError, setModalError] = useState<string | null>(null);
   const [showOverview, setShowOverview] = useState(false);
   // In-flight guard for trigger-chip saves: holds the id of the workflow
   // currently persisting a chip edit, so a second rapid edit on the same
@@ -346,7 +350,7 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
    *  panel). Ids match the built-in widgets (fonos-core builtin.rs) so the
    *  chain type-checks immediately. */
   const createRecipe = async (name: string, src: "mic" | "sel") => {
-    setError(""); setActiveNodeId(null); setPicker(null);
+    setError(""); setModalError(null); setActiveNodeId(null); setPicker(null);
     const id = `wf.custom-${Date.now()}`;
     try {
       await saveWorkflow({
@@ -363,7 +367,7 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
       await load();
       setExpandedId(id);
     } catch (e) {
-      setError(msg(e));
+      setModalError(msg(e));
     }
   };
 
@@ -674,7 +678,7 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
         )}
         {customs.map(renderCard)}
         <button
-          onClick={() => setShowNew(true)}
+          onClick={() => { setModalError(null); setShowNew(true); }}
           className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(242,184,75,0.14)] text-[rgba(242,184,75,0.65)] text-[11px] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -682,7 +686,12 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
         </button>
       </div>
 
-      <NewRecipeModal open={showNew} onClose={() => setShowNew(false)} onCreate={createRecipe} />
+      <NewRecipeModal
+        open={showNew}
+        onClose={() => { setShowNew(false); setModalError(null); }}
+        onCreate={createRecipe}
+        errorText={modalError}
+      />
     </div>
   );
 }

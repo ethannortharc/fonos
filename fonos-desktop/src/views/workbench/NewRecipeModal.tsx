@@ -3,11 +3,15 @@ import { useEffect, useState } from "react";
 import { t, useT } from "../../lib/i18n";
 
 export default function NewRecipeModal({
-  open, onClose, onCreate,
+  open, onClose, onCreate, errorText,
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (name: string, src: "mic" | "sel") => void;
+  /** createRecipe failure, owned by the caller — rendered inline above the
+   *  actions so it's visible over the modal (a sibling banner below the
+   *  backdrop is invisible while this is open). */
+  errorText?: string | null;
 }) {
   useT();
   const [name, setName] = useState("");
@@ -63,6 +67,9 @@ export default function NewRecipeModal({
           {opt("mic", t("wb.newrecipe.mic"), t("wb.newrecipe.mic-desc"), t("wb.newrecipe.mic-seed"))}
           {opt("sel", t("wb.newrecipe.sel"), t("wb.newrecipe.sel-desc"), t("wb.newrecipe.sel-seed"))}
         </div>
+        {errorText && (
+          <div className="mt-3 text-[11px] text-[#ef4444] leading-relaxed">{errorText}</div>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose}
             className="rounded-[8px] border border-[rgba(255,255,255,0.075)] px-3 py-[5px] text-[11px] text-[rgba(255,255,255,0.62)]">

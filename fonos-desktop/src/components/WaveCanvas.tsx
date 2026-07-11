@@ -1,8 +1,8 @@
 // WaveCanvas — the jumping-color-blocks recording waveform, extracted
-// verbatim (renamed from JumpingBlocks) from Dictation.tsx so the Test Run
-// bench (Task 11) can render the same live-mic feedback for mock audio
-// input without depending on the (soon to be deleted, Task 12) Dictation
-// view.
+// verbatim (renamed from JumpingBlocks) from the former Dictation.tsx so the
+// Test Run bench (Task 11) can render the same live-mic feedback for mock
+// audio input. Dictation.tsx itself has since been deleted (Task 12) — this
+// component no longer depends on it.
 
 import { useEffect, useRef } from "react";
 

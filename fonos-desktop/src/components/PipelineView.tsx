@@ -9,8 +9,8 @@
 //    (add the first processor), between two processors, and after the last
 //    processor (before the outputs). `onAddStep(insertIndex)` receives the
 //    processor-array index to splice at (0 = before the first processor,
-//    processors.length = after the last), so FlowsTab can insert without
-//    re-deriving positions. Outputs are added through a separate affordance
+//    processors.length = after the last), so RecipesSection can insert
+//    without re-deriving positions. Outputs are added through a separate affordance
 //    in the caller (they are a multi-select set, not an ordered chain).
 
 import { t, useT } from "../lib/i18n";
@@ -28,7 +28,7 @@ export interface PipeNode {
 
 function Arrow() {
   // Color matches the mockup's --faint (rgba(255,255,255,0.32)) — same muted
-  // tone as FlowsTab's Chevron, so connectors read consistently across the tab.
+  // tone as RecipesSection's Chevron, so connectors read consistently across the tab.
   return (
     <svg width="18" height="14" viewBox="0 0 18 14" className="flex-shrink-0" style={{ color: "rgba(255,255,255,0.32)" }}>
       <line x1="0" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="1.5" />

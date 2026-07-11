@@ -47,8 +47,12 @@ export default function WidgetsSection({
   const [creating, setCreating] = useState<string | null>(null); // type_tag
   const [deleteError, setDeleteError] = useState<string>("");
   const load = useCallback(async () => {
-    setWidgets(await listWidgets());
-    setRows(await listWorkflows());
+    try {
+      setWidgets(await listWidgets());
+      setRows(await listWorkflows());
+    } catch (e) {
+      console.error("list_widgets/list_workflows:", e);
+    }
   }, []);
   useEffect(() => {
     void load();
@@ -105,7 +109,7 @@ export default function WidgetsSection({
                   {creating === tag && (
                     <div className="mb-2.5">
                       <WidgetForm
-                        value={{ id: "", role, type_tag: tag, name: "", icon: "", props: {}, builtin: false, isNew: true }}
+                        value={{ id: `${tag}.custom-${Date.now()}`, role, type_tag: tag, name: "", icon: "", props: {}, builtin: false, isNew: true }}
                         config={config}
                         containers={containers}
                         typeTags={[tag]}
@@ -143,9 +147,11 @@ export default function WidgetsSection({
                           </div>
                           {open && (
                             <div className="mt-2.5">
-                              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">
-                                {t("wb.widgets.share-warn").replace("{0}", String(used))}
-                              </div>
+                              {used > 0 && (
+                                <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">
+                                  {t("wb.widgets.share-warn").replace("{0}", String(used))}
+                                </div>
+                              )}
                               <WidgetForm
                                 value={widgetToForm(w)}
                                 config={config}

@@ -1,6 +1,6 @@
 // Reusable per-type_tag widget property form (Flows UI redesign, Task 2) —
 // extracted verbatim from WidgetsTab.tsx's PropsForm/ModelSelector/VocabChips
-// so BuildingBlocks.tsx and FlowsTab.tsx can both reuse it: once for the
+// so BuildingBlocks.tsx and RecipesSection.tsx can both reuse it: once for the
 // widget-library editor, once for in-place pipeline-node editing.
 //
 // WidgetForm owns its own editable copy of `value` (reset whenever the
@@ -44,7 +44,7 @@ const headingClass =
   "text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)] font-semibold";
 
 // ─── Props accessors (props is an untyped JSON object) ────────────────────────
-// Exported so BuildingBlocks/FlowsTab can read widget props the same way.
+// Exported so BuildingBlocks/RecipesSection can read widget props the same way.
 
 export type Props = Record<string, unknown>;
 export const pStr = (p: Props, k: string, d = ""): string => (typeof p[k] === "string" ? (p[k] as string) : d);
@@ -398,7 +398,7 @@ export default function WidgetForm({
   typeTags?: string[];
   /** Optional so read-only callers (the Building Blocks catalog) can omit it —
    *  the Save button is never rendered when `readOnly`, so persistence is moot
-   *  there. Interactive callers (FlowsTab) always pass it. */
+   *  there. Interactive callers (RecipesSection) always pass it. */
   onSave?: (w: WidgetDef) => Promise<void> | void;
   onCancel: () => void;
   onDelete?: () => void;
@@ -410,7 +410,7 @@ export default function WidgetForm({
   /** Read-only detail view (Building Blocks catalog): every field is disabled
    *  (via a wrapping disabled <fieldset>) and the footer shows only a Close
    *  button wired to onCancel. Never combined with isNew. Default false keeps
-   *  every existing caller (FlowsTab) visually and behaviourally unchanged. */
+   *  every existing caller (RecipesSection) visually and behaviourally unchanged. */
   readOnly?: boolean;
 }) {
   useT();
@@ -435,7 +435,7 @@ export default function WidgetForm({
   // The id is also regenerated to keep its `<type>.custom-…` prefix in sync
   // with the new type — but ONLY while the id is still the untouched
   // auto-generated value (matches `^[a-z]+\.custom-\d+$`, the pattern the
-  // BuildingBlocks/FlowsTab "New" affordances mint). A hand-edited id is
+  // BuildingBlocks/RecipesSection "New" affordances mint). A hand-edited id is
   // never clobbered.
   const changeType = (type_tag: string) => {
     const isAutoId = /^[a-z]+\.custom-\d+$/.test(form.id);

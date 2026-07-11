@@ -53,6 +53,18 @@ export default function TestRunSection({
   const [text, setText] = useState("");
   const nodesRef = useRef<BenchNode[]>([]);
   nodesRef.current = nodes;
+  const rowsRef = useRef<WorkflowRow[]>([]);
+  rowsRef.current = rows;
+  const widgetsRef = useRef<WidgetDef[]>([]);
+  widgetsRef.current = widgets;
+  const runningRef = useRef(false);
+  runningRef.current = running;
+
+  // Stable string key for the loaded target — a *value*, so the fallback
+  // `benchTarget ?? { kind: "recipe", ... }` object Workbench.tsx re-creates
+  // on every one of its own renders doesn't look like a "target switch"
+  // here (its object identity changes; this string doesn't).
+  const targetKey = target ? `${target.kind}:${target.id}` : "";
 
   useEffect(() => {
     void (async () => {
@@ -79,12 +91,24 @@ export default function TestRunSection({
     return false;
   }, [recipe, widget]);
 
+  // Effect A — full reset + node rebuild. Fires ONLY on a genuine target
+  // switch (targetKey, not `target` itself — see note above). Reads
+  // CURRENT rows/widgets via refs rather than the `recipe`/`widget` consts
+  // above, so this can't be dragged into re-running (and wiping a live
+  // run's `running`/`recording`/`status`) by a mid-run data refetch, e.g.
+  // the node editor's own `setWidgets(await listWidgets())` after a save
+  // (Task 11 review finding).
   useEffect(() => {
-    if (recipe) {
-      const chain = [recipe.source, ...(recipe.processors ?? []), ...recipe.outputs];
-      setNodes(chain.map((id) => nodeOf(wById(id), id)));
-    } else if (widget) {
-      setNodes([nodeOf(widget, widget.id)]);
+    const curRows = rowsRef.current;
+    const curWidgets = widgetsRef.current;
+    const findWidget = (id: string) => curWidgets.find((w) => w.id === id);
+    const curRecipe = target?.kind === "recipe" ? curRows.find((r) => r.id === target.id) : undefined;
+    const curWidget = target?.kind === "widget" ? findWidget(target.id) : undefined;
+    if (curRecipe) {
+      const chain = [curRecipe.source, ...(curRecipe.processors ?? []), ...curRecipe.outputs];
+      setNodes(chain.map((id) => nodeOf(findWidget(id), id)));
+    } else if (curWidget) {
+      setNodes([nodeOf(curWidget, curWidget.id)]);
     } else {
       setNodes([]);
     }
@@ -92,8 +116,33 @@ export default function TestRunSection({
     setEditNode(null);
     setRunning(false);
     setRecording(false);
+    // `target`/rows/widgets intentionally omitted: keyed on targetKey alone;
+    // current rows/widgets are read via the refs above instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, rows, widgets]);
+  }, [targetKey]);
+
+  // Effect B — data-refresh rebuild. Rows/widgets refetch (e.g. after a
+  // widget save) should refresh the idle node list's labels/roles, but must
+  // NOT touch running/recording/status, and must NOT do anything at all
+  // while a run is in flight — checked via runningRef (not a dep) so this
+  // effect doesn't need `running` in its array. Losing a finished run's
+  // payloads after a post-run data refresh is acceptable.
+  useEffect(() => {
+    if (runningRef.current) return;
+    const curRecipe = target?.kind === "recipe" ? rows.find((r) => r.id === target.id) : undefined;
+    const curWidget = target?.kind === "widget" ? wById(target.id) : undefined;
+    if (curRecipe) {
+      const chain = [curRecipe.source, ...(curRecipe.processors ?? []), ...curRecipe.outputs];
+      setNodes(chain.map((id) => nodeOf(wById(id), id)));
+    } else if (curWidget) {
+      setNodes([nodeOf(curWidget, curWidget.id)]);
+    } else {
+      setNodes([]);
+    }
+    // `target` intentionally omitted: this effect only reacts to data
+    // refetches — Effect A above owns target switches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, widgets]);
 
   // bench:event 订阅（StrictMode 双挂载安全：disposed 守卫丢弃迟到的 listen()）
   useEffect(() => {
@@ -183,18 +232,18 @@ export default function TestRunSection({
     }
   };
 
-  const selectValue = target ? `${target.kind}:${target.id}` : "";
   return (
     <div>
       <div className="mb-3.5 flex items-center gap-2.5">
         <label className="text-[11px] text-[rgba(255,255,255,0.43)]">{t("wb.bench.loaded")}</label>
         <select
-          value={selectValue}
+          value={targetKey}
+          disabled={running}
           onChange={(e) => {
             const [kind, ...rest] = e.target.value.split(":");
             onTargetChange({ kind: kind as "recipe" | "widget", id: rest.join(":") });
           }}
-          className="rounded-[8px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.04)] px-2.5 py-[5px] text-[11.5px]"
+          className="rounded-[8px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.04)] px-2.5 py-[5px] text-[11.5px] disabled:opacity-50"
         >
           <optgroup label={t("wb.seg.recipes")}>
             {rows.map((r) => <option key={r.id} value={`recipe:${r.id}`}>{workflowLabel(r)}</option>)}
@@ -211,9 +260,10 @@ export default function TestRunSection({
           <button
             role="switch"
             aria-checked={deliver}
+            disabled={running}
             onClick={() => setDeliver((v) => !v)}
             className={[
-              "relative h-[17px] w-[30px] rounded-[9px] border transition-colors",
+              "relative h-[17px] w-[30px] rounded-[9px] border transition-colors disabled:opacity-50",
               deliver ? "border-[rgba(244,80,58,0.4)] bg-[rgba(244,80,58,0.35)]" : "border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.05)]",
             ].join(" ")}
           >
@@ -251,7 +301,10 @@ export default function TestRunSection({
           )}
         </div>
 
-        <BenchGraph nodes={nodes} onNodeClick={(id) => setEditNode((cur) => (cur === id ? null : id))} />
+        <BenchGraph
+          nodes={nodes}
+          onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
+        />
 
         {editNode && wById(editNode) && (
           <div className="mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">

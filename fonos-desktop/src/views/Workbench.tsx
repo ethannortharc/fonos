@@ -3,9 +3,12 @@
 // instances of each type), Test Run (staged bench for stepping data through).
 // This task renders placeholder segment bodies; Tasks 9-11 fill them in.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "../lib/i18n";
 import { useAppConfig } from "../lib/useAppConfig";
+import { listContainers } from "../lib/storage-api";
+import type { Container } from "../lib/storage-api";
+import WidgetsSection from "./workbench/WidgetsSection";
 
 export type WorkbenchSeg = "recipes" | "widgets" | "testrun";
 export type BenchTarget = { kind: "recipe" | "widget"; id: string } | null;
@@ -15,6 +18,10 @@ export default function Workbench() {
   const { config, save } = useAppConfig();
   const [seg, setSeg] = useState<WorkbenchSeg>("recipes");
   const [benchTarget, setBenchTarget] = useState<BenchTarget>(null);
+  const [containers, setContainers] = useState<Container[]>([]);
+  useEffect(() => {
+    listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
+  }, []);
   const openBench = (target: BenchTarget) => {
     setBenchTarget(target);
     setSeg("testrun");
@@ -25,11 +32,10 @@ export default function Workbench() {
     testrun: t("wb.sub.testrun"),
   };
   if (!config) return null;
-  // Wired to real section props in Tasks 9-11 — placeholder bodies below
+  // Wired to real section props in Tasks 10-11 — placeholder bodies below
   // don't consume them yet.
   void save;
   void benchTarget;
-  void openBench;
   return (
     <div className="h-full flex flex-col">
       <div className="px-[26px] pt-5 flex-shrink-0">
@@ -57,7 +63,13 @@ export default function Workbench() {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-[26px] py-4">
         {seg === "recipes" && <div /* Task 10: <RecipesSection config={config} onSave={save} onOpenBench={openBench} …/> */ />}
-        {seg === "widgets" && <div /* Task 9: <WidgetsSection config={config} onSave={save} onOpenBench={openBench} …/> */ />}
+        {seg === "widgets" && (
+          <WidgetsSection
+            config={config}
+            containers={containers}
+            onTest={(id) => openBench({ kind: "widget", id })}
+          />
+        )}
         {seg === "testrun" && <div /* Task 11: <TestRunSection benchTarget={benchTarget} config={config} …/> */ />}
       </div>
     </div>

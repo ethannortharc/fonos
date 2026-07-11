@@ -898,6 +898,11 @@ const en = {
   "wb.sub.recipes": "Widgets assemble into recipes; triggers live on the recipe — the recipe is the product",
   "wb.sub.widgets": "Types are the shelves; widgets are tuned, named instances — each can be tested on its own",
   "wb.sub.testrun": "Everything staged and ready — watch data flow through, step by step",
+  "wb.widgets.new": "＋ New widget",
+  "wb.widgets.test": "Test ▶",
+  "wb.widgets.used-by": "Used by {0} recipes",
+  "wb.widgets.share-warn": "Shared widget — saving updates the {0} recipes that reference it",
+  "wb.widgets.empty": "No instances yet",
 };
 
 export type TKey = keyof typeof en;
@@ -1740,6 +1745,11 @@ const zh: Partial<Record<Key, string>> = {
   "wb.sub.recipes": "组件装成配方；触发器挂在配方上，功能即产品",
   "wb.sub.widgets": "类型是货架，组件是调好参数的实例——每个都能单独测试",
   "wb.sub.testrun": "备好一切条件的台架——看数据一步步流过去",
+  "wb.widgets.new": "＋ 新建组件",
+  "wb.widgets.test": "测试 ▶",
+  "wb.widgets.used-by": "被 {0} 个配方使用",
+  "wb.widgets.share-warn": "共享组件 — 保存会同步到引用它的 {0} 个配方",
+  "wb.widgets.empty": "尚无实例",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

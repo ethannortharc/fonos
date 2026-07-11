@@ -40,6 +40,7 @@ import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import PipelineView from "../../components/PipelineView";
 import type { PipeNode } from "../../components/PipelineView";
 import TriggerChips from "../../components/TriggerChips";
+import type { FocusRecipe } from "../Workbench";
 import { TYPE_TAGS } from "./typeMeta";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
 import type { WidgetFormValue } from "../settings/WidgetForm";
@@ -161,7 +162,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
   /** Jump-to-recipe intent from the Overview page's trigger cheat-sheet.
    *  `nonce` (not just recipeId) so re-clicking the same row re-triggers the
    *  effect even when the id is unchanged. */
-  focusRecipe?: { recipeId: string; nonce: number } | null;
+  focusRecipe?: FocusRecipe;
 }) {
   useT();
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);

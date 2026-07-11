@@ -6,11 +6,12 @@ import { pillWorkflows } from "../../lib/triggers";
 import type { AppConfig, WorkflowRow } from "../../types";
 
 export default function UsageOverview({
-  rows, config, onJump,
+  rows, config, onJump, showTitle = true,
 }: {
   rows: WorkflowRow[];
   config: AppConfig;
   onJump: (id: string) => void;
+  showTitle?: boolean;
 }) {
   useT();
   const kbd = "font-mono text-[10.5px] text-[var(--text-primary,#f5f3ef)] bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.075)] rounded-[5px] px-1.5 py-px";
@@ -29,7 +30,7 @@ export default function UsageOverview({
   ].filter((x) => !!x.combo);
   return (
     <div className="mb-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-4">
-      <div className="text-[12px] font-semibold">{t("wb.overview.title")}</div>
+      {showTitle && <div className="text-[12px] font-semibold">{t("wb.overview.title")}</div>}
       <div className="text-[10.5px] text-[rgba(255,255,255,0.28)] mb-2.5">{t("wb.overview.note")}</div>
       <table className="w-full border-collapse text-[11px]">
         <tbody>

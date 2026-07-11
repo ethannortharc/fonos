@@ -5,7 +5,7 @@ import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
 import Scenarios, { isSttConfigured } from "./views/Scenarios";
-import Workbench from "./views/Workbench";
+import Workbench, { type FocusRecipe } from "./views/Workbench";
 import OverviewPage from "./views/OverviewPage";
 import ModelsPage from "./views/ModelsPage";
 import VocabPage from "./views/VocabPage";
@@ -120,7 +120,7 @@ export default function App() {
   // Jump-to-recipe intent from the Overview page's trigger cheat-sheet: nonce
   // (not just recipeId) so re-clicking the same row re-triggers the effect
   // chain in Workbench/RecipesSection even when the id hasn't changed.
-  const [wbFocus, setWbFocus] = useState<{ recipeId: string; nonce: number } | null>(null);
+  const [wbFocus, setWbFocus] = useState<FocusRecipe>(null);
   // Don't paint the shell until the gate is decided — otherwise a genuine
   // first run flashes the full app for a frame before the wizard mounts.
   const [gateReady, setGateReady] = useState(false);

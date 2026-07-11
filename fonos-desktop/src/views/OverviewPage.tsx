@@ -74,7 +74,7 @@ export default function OverviewPage({ onJumpToRecipe }: { onJumpToRecipe: (id: 
         </div>
 
         {/* Trigger cheat-sheet */}
-        <UsageOverview rows={rows} config={config} onJump={onJumpToRecipe} />
+        <UsageOverview rows={rows} config={config} onJump={onJumpToRecipe} showTitle={false} />
       </div>
     </div>
   );

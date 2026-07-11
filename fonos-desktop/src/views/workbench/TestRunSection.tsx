@@ -293,14 +293,29 @@ export default function TestRunSection({
       </div>
 
       <div className="fonos-surface rounded-[12px] px-[22px] py-5">
-        {/* MicButton's VoiceAura extends well beyond the 88px mic wrap (blur +
-            breathing animation while recording), but MicButton's own root div
-            now carries `isolate` + a negative z-index on the aura container,
-            so the glow is contained to that component's stacking context and
-            can never paint above the graph/editor/run-row below — no extra
-            z-index bookkeeping needed at this level. Aura layers are already
-            pointer-events-none. */}
-        <div className="mb-5 flex items-center gap-[18px]">
+        {/* MicButton's own `isolate` + negative z-index only contains the aura
+            WITHIN MicButton's subtree (aura vs. its sibling <button>) — it does
+            NOT stop the MicButton root div itself from escaping. That root div
+            is `position: relative` (needed as the aura's containing block)
+            with z-index: auto, so it paints in the "z-index: 0" bucket, which
+            ALWAYS paints after in-flow non-positioned content of its nearest
+            ancestor stacking context, regardless of DOM order — without a
+            container of its own, this row (and MicButton's aura/blur/breathing
+            overflow along with it) would paint over the graph/editor/run-row
+            below despite coming first in the markup.
+            Empirically verified (real-browser Playwright repro, see P2 Task 1
+            fix-round-1 report): giving this row `isolate` alone does NOT fix
+            it — an isolated-but-unpositioned-z-index row is itself just
+            another auto-z-index escapee one level up, confirmed identical to
+            the unfixed baseline via both elementFromPoint and rendered-pixel
+            sampling. What DOES work (kept from Task 11): `relative z-0` here
+            + `relative z-[1]` on every sibling below (BenchGraph, the node
+            editor panel, the run row) pulls all of them out of the ambiguous
+            "positioned vs. non-positioned" comparison entirely and sorts them
+            by explicit z-index instead, so 0 always paints under 1 — this
+            pairing is the load-bearing containment, not `isolate`. Aura layers
+            are already pointer-events-none regardless. */}
+        <div className="relative z-0 mb-5 flex items-center gap-[18px]">
           {audioInput ? (
             <>
               <div className="relative h-[88px] w-[88px] flex-shrink-0 flex items-center justify-center">
@@ -325,13 +340,15 @@ export default function TestRunSection({
           )}
         </div>
 
-        <BenchGraph
-          nodes={nodes}
-          onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
-        />
+        <div className="relative z-[1]">
+          <BenchGraph
+            nodes={nodes}
+            onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
+          />
+        </div>
 
         {editNode && wById(editNode) && (
-          <div className="mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
+          <div className="relative z-[1] mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
             {usageCount(editNode, rows) > 0 && (
               <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
             )}
@@ -349,7 +366,7 @@ export default function TestRunSection({
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-3">
+        <div className="relative z-[1] mt-4 flex items-center gap-3">
           {!audioInput && (
             <button
               onClick={run}

@@ -99,6 +99,30 @@ pub struct WidgetDef {
     pub builtin: bool,
 }
 
+/// A usage-side entry point attached to a workflow. Tagged enum (`kind`)
+/// so new trigger kinds (e.g. a selection popup menu) can be added
+/// without a schema break.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Trigger {
+    /// Global hotkey. `capture` is only meaningful for microphone-source
+    /// workflows: "hold" (key-down starts, key-up finishes) or "toggle"
+    /// (press starts, press again finishes). None means "hold".
+    Hotkey {
+        /// The key combo, e.g. `"cmd+shift+e"`.
+        combo: String,
+        /// `"hold"` or `"toggle"`; `None` means "hold". See variant docs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        capture: Option<String>,
+    },
+    /// A slot in the float pill's roller (microphone workflows only).
+    PillSlot {
+        /// Position in the roller, ascending.
+        #[serde(default)]
+        order: i64,
+    },
+}
+
 /// A configured workflow: a source, an ordered chain of processors, and one
 /// or more outputs, referenced by widget id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -114,6 +138,11 @@ pub struct WorkflowDef {
     /// Hotkey tag that triggers this workflow. Empty means no trigger.
     #[serde(default)]
     pub hotkey: String,
+    /// Usage-side triggers. Replaces the legacy `hotkey` field, which is
+    /// kept only for config back-compat (consumed by
+    /// migrate::migrate_hotkeys_to_triggers and normalized by save_workflow).
+    #[serde(default)]
+    pub triggers: Vec<Trigger>,
     /// Id of the [`WidgetDef`] used as this workflow's source.
     pub source: String,
     /// Ids of the [`WidgetDef`]s used as this workflow's processors, in
@@ -126,6 +155,26 @@ pub struct WorkflowDef {
     /// Whether this workflow ships with the app (builtins cannot be deleted).
     #[serde(default)]
     pub builtin: bool,
+}
+
+impl WorkflowDef {
+    /// (index-in-triggers, combo, capture-with-default) for every Hotkey chip.
+    pub fn hotkey_triggers(&self) -> impl Iterator<Item = (usize, &str, &str)> {
+        self.triggers.iter().enumerate().filter_map(|(i, t)| match t {
+            Trigger::Hotkey { combo, capture } => {
+                Some((i, combo.as_str(), capture.as_deref().unwrap_or("hold")))
+            }
+            _ => None,
+        })
+    }
+
+    /// The pill-roller slot order, if this workflow carries a PillSlot chip.
+    pub fn pill_order(&self) -> Option<i64> {
+        self.triggers.iter().find_map(|t| match t {
+            Trigger::PillSlot { order } => Some(*order),
+            _ => None,
+        })
+    }
 }
 
 /// Fixed pixel dimensions for a floating panel window (e.g. a Dialog output).
@@ -192,5 +241,38 @@ mod tests {
         let json = r#"{"id":"wf.x","name":"X","source":"src.selection","outputs":["out.insert"]}"#;
         let wf: WorkflowDef = serde_json::from_str(json).unwrap();
         assert!(wf.hotkey.is_empty() && wf.processors.is_empty() && !wf.builtin);
+    }
+
+    #[test]
+    fn trigger_serde_tagged() {
+        let t: Trigger = serde_json::from_str(r#"{"kind":"hotkey","combo":"cmd+shift+e"}"#).unwrap();
+        assert_eq!(t, Trigger::Hotkey { combo: "cmd+shift+e".into(), capture: None });
+        let t2: Trigger =
+            serde_json::from_str(r#"{"kind":"hotkey","combo":"cmd+shift+space","capture":"toggle"}"#)
+                .unwrap();
+        assert_eq!(t2, Trigger::Hotkey { combo: "cmd+shift+space".into(), capture: Some("toggle".into()) });
+        let p: Trigger = serde_json::from_str(r#"{"kind":"pill_slot"}"#).unwrap();
+        assert_eq!(p, Trigger::PillSlot { order: 0 });
+        // 序列化不携带空 capture
+        assert_eq!(serde_json::to_string(&t).unwrap(), r#"{"kind":"hotkey","combo":"cmd+shift+e"}"#);
+    }
+
+    #[test]
+    fn workflow_def_triggers_default_and_helpers() {
+        // 旧配置（无 triggers 字段）必须能解析为 triggers=[]
+        let json = r#"{"id":"wf.x","name":"X","source":"src.selection","outputs":["out.insert"]}"#;
+        let wf: WorkflowDef = serde_json::from_str(json).unwrap();
+        assert!(wf.triggers.is_empty());
+        let wf2 = WorkflowDef {
+            triggers: vec![
+                Trigger::PillSlot { order: 10 },
+                Trigger::Hotkey { combo: "cmd+shift+e".into(), capture: None },
+                Trigger::Hotkey { combo: "cmd+shift+t".into(), capture: Some("toggle".into()) },
+            ],
+            ..wf
+        };
+        let hks: Vec<_> = wf2.hotkey_triggers().collect();
+        assert_eq!(hks, vec![(1, "cmd+shift+e", "hold"), (2, "cmd+shift+t", "toggle")]);
+        assert_eq!(wf2.pill_order(), Some(10));
     }
 }

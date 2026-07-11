@@ -327,6 +327,16 @@ export interface WidgetDef {
   builtin?: boolean;
 }
 
+/** Usage-side trigger chip attached to a workflow. */
+export type Trigger =
+  | {
+      kind: "hotkey";
+      combo: string;
+      /** Only meaningful for microphone-source workflows. Absent = "hold". */
+      capture?: "hold" | "toggle";
+    }
+  | { kind: "pill_slot"; order?: number };
+
 /** A configured workflow: a source, an ordered processor chain, and one or
  *  more outputs, referenced by widget id — mirrors
  *  fonos_core::workflow::model::WorkflowDef. */
@@ -336,8 +346,10 @@ export interface WorkflowDef {
   id: string;
   name: string;
   icon?: string;
-  /** Hotkey tag that triggers this workflow; empty/absent = no trigger. */
+  /** DEPRECATED — legacy single hotkey; superseded by triggers. */
   hotkey?: string;
+  /** Usage-side triggers. Replaces the legacy `hotkey` field. */
+  triggers?: Trigger[];
   /** Id of the WidgetDef used as this workflow's source. */
   source: string;
   /** Ids of the WidgetDefs used as this workflow's processors, in order. */

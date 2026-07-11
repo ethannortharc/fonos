@@ -111,6 +111,7 @@ async fn uppercase_processor_runs_end_to_end_through_the_real_engine() {
         name: "t".into(),
         icon: String::new(),
         hotkey: String::new(),
+        triggers: Vec::new(),
         source: "src.t".into(),
         processors: vec!["p.uppercase".into()],
         outputs: vec!["out.sink".into()],

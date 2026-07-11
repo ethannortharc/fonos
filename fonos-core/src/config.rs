@@ -87,7 +87,15 @@ pub struct AppConfig {
     /// Which model profile ID to use for agent LLM calls (independent from `llm_profile`).
     /// Empty string means "fall back to `llm_profile`".
     pub agent_llm_profile: String,
-    /// System prompt injected into every agent LLM request.
+    /// DEPRECATED: system prompt formerly injected into every agent LLM
+    /// request. Superseded by the per-widget `AgentProps::system` fallback
+    /// (Workbench P2 Task 6 Fix Round 1 — mirrors `DialogProps`'s inline
+    /// `system` field): `migrate_legacy_agent_triggers` copies a non-empty
+    /// value here into the `agent.default` widget's `props.system` once,
+    /// after which the agent exchange's resolution path never reads this
+    /// field again. Kept only for that one-time migration read and for
+    /// deserializing configs saved before this change; do not add new
+    /// readers.
     pub agent_system_prompt: String,
     /// Extra commands to allow beyond the built-in safety allowlist.
     pub agent_safety_allowlist: Vec<String>,

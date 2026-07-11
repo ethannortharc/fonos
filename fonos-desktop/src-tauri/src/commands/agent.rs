@@ -143,11 +143,20 @@ pub(crate) fn resolve_agent_llm_service(
 /// `Some` — Workbench P2 Task 6's per-widget `AgentProps::timeout_secs`;
 /// `None` keeps using the shared state's own value, which is exactly
 /// [`agent_process`]'s prior (pre-extraction) behavior.
+///
+/// `system_override` replaces `agent.system_prompt` for this call only when
+/// `Some` (Fix Round 1's `AgentProps::system` inline fallback, resolved by
+/// `commands::agent_widget::run_agent_exchange`); `None` keeps using the
+/// shared state's own value — [`agent_process`]'s only caller passes `None`,
+/// so its behavior (still sourced from the now-deprecated
+/// `config.agent_system_prompt`, cached in `agent.system_prompt` at startup)
+/// is unchanged by this parameter's addition.
 pub(crate) async fn run_agent_processor(
     state: &State<'_, AppState>,
     text: &str,
     llm_service: ServiceConfig,
     timeout_override: Option<u64>,
+    system_override: Option<String>,
 ) -> Result<AgentResult, String> {
     // Lock the agent state (tokio mutex — safe to hold across .await).
     let mut agent = state.agent.lock().await;
@@ -162,7 +171,7 @@ pub(crate) async fn run_agent_processor(
     let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
     let context = std::mem::replace(&mut agent.context, context_placeholder);
     let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
-    let system_prompt = agent.system_prompt.clone();
+    let system_prompt = system_override.unwrap_or_else(|| agent.system_prompt.clone());
 
     let mut processor = AgentProcessor::<HttpLlmCaller>::new(
         registry,
@@ -216,7 +225,7 @@ pub async fn agent_process(
         resolve_agent_llm_service(&config, &profile_id)?
     };
 
-    run_agent_processor(&state, &text, llm_service, None).await
+    run_agent_processor(&state, &text, llm_service, None, None).await
 }
 
 /// Reset the agent's conversation context.

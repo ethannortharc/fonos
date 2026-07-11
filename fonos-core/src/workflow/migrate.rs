@@ -39,14 +39,18 @@
 //! dispatch arm reads `active_voice_workflow` itself). Guarded by the
 //! separate `config.pill_hotkey_migration_done` sentinel.
 //!
-//! [`migrate_legacy_agent_triggers`] (Workbench P2 Task 6) runs after
-//! [`migrate_primary_hotkey_to_pill`] in `main.rs`: it folds the legacy
-//! standalone `hotkey_agent`/`hotkey_agent_panel` fields into `Trigger::Hotkey`
-//! chips on the new `wf.agent-voice`/`wf.agent` composite recipes (generating
-//! a fresh overlay from their built-in shape if none exists yet — unlike
-//! [`migrate_hotkeys_to_triggers`], these ids never had an overlay before this
-//! task). Guarded by the separate `config.agent_triggers_migration_done`
-//! sentinel.
+//! [`migrate_legacy_agent_triggers`] (Workbench P2 Task 6, extended in Fix
+//! Round 1) runs after [`migrate_primary_hotkey_to_pill`] in `main.rs`: it
+//! folds the legacy standalone `hotkey_agent`/`hotkey_agent_panel` fields into
+//! `Trigger::Hotkey` chips on the new `wf.agent-voice`/`wf.agent` composite
+//! recipes (generating a fresh overlay from their built-in shape if none
+//! exists yet — unlike [`migrate_hotkeys_to_triggers`], these ids never had an
+//! overlay before this task). It also copies a non-empty legacy
+//! `config.agent_system_prompt` into the `agent.default` widget overlay's
+//! `props.system` (same generate-fresh-or-reuse pattern, applied to the
+//! widget instead of the two workflows) — the config field is now DEPRECATED
+//! and this is its only remaining reader. Guarded by the separate
+//! `config.agent_triggers_migration_done` sentinel.
 
 use std::collections::BTreeMap;
 
@@ -695,12 +699,14 @@ pub fn migrate_primary_hotkey_to_pill(config: &mut AppConfig) -> bool {
     true
 }
 
-/// Workbench P2 Task 6: fold the legacy standalone Agent hotkeys
-/// (`hotkey_agent` — hold-to-talk voice, `hotkey_agent_panel` — blank-open
-/// panel toggle) into `Trigger::Hotkey` chips on the new agent composite
-/// recipes this task ships (`wf.agent-voice` / `wf.agent`), then clear the
-/// legacy fields (mirrors [`migrate_to_workflows`]'s rule-6 note/listen
-/// clearing).
+/// Workbench P2 Task 6 (extended in Fix Round 1): fold the legacy standalone
+/// Agent hotkeys (`hotkey_agent` — hold-to-talk voice, `hotkey_agent_panel` —
+/// blank-open panel toggle) into `Trigger::Hotkey` chips on the new agent
+/// composite recipes this task ships (`wf.agent-voice` / `wf.agent`), then
+/// clear the legacy fields (mirrors [`migrate_to_workflows`]'s rule-6
+/// note/listen clearing). Also copies a non-empty legacy
+/// `config.agent_system_prompt` into the `agent.default` widget overlay's
+/// `props.system` — see the third block below.
 ///
 /// Unlike [`migrate_hotkeys_to_triggers`] — which only folds a hotkey
 /// already sitting on an EXISTING `config.workflows` overlay — `wf.agent`/
@@ -726,6 +732,22 @@ pub fn migrate_primary_hotkey_to_pill(config: &mut AppConfig) -> bool {
 /// hand-edited config, or a re-run after a bypassed sentinel), the chip is
 /// appended to it in place instead of regenerating one from scratch, and a
 /// combo already present as a chip is not duplicated.
+///
+/// A third, independent block seeds the agent's persona: a non-empty legacy
+/// `config.agent_system_prompt` (DEPRECATED — see its doc comment) is copied
+/// into the `agent.default` widget overlay's `props.system`
+/// (`AgentProps::system`, Fix Round 1's inline fallback, mirroring
+/// `DialogProps`'s own inline `system` field). This runs regardless of
+/// whether either hotkey fired above — the two legacy hotkey fields and the
+/// legacy system-prompt field are independent user customizations. Same
+/// generate-fresh-or-reuse-existing-overlay approach as the hotkey chips
+/// above, applied to a widget overlay instead of a workflow one; an existing
+/// `agent.default` override's other props (e.g. a user-picked `llm_widget`)
+/// are preserved, only `system` is written. `config.agent_system_prompt`
+/// itself is intentionally left untouched (unlike the hotkey fields, it is
+/// not cleared) — nothing still reads it, so there is no hygiene need, and
+/// leaving it lets a hand-inspected config still show where the value came
+/// from.
 ///
 /// Idempotent: guarded by `config.agent_triggers_migration_done` and a no-op
 /// (returning `false`) once that flag is set. Wired into `main.rs` after
@@ -754,6 +776,22 @@ pub fn migrate_legacy_agent_triggers(config: &mut AppConfig) -> bool {
             .or_else(|| base_workflow(wf_id))
     }
 
+    /// Take the existing overlay for `widget_id` out of `config.widgets`, or
+    /// fall back to a fresh copy of its built-in shape — the widget-level
+    /// mirror of `take_or_seed_workflow` above.
+    fn take_or_seed_widget(config: &mut AppConfig, widget_id: &str) -> Option<WidgetDef> {
+        config
+            .widgets
+            .iter()
+            .position(|w| w.id == widget_id)
+            .map(|i| config.widgets.remove(i))
+            .or_else(|| {
+                crate::workflow::builtin::built_in_widgets()
+                    .into_iter()
+                    .find(|w| w.id == widget_id)
+            })
+    }
+
     let hotkey_agent = std::mem::take(&mut config.hotkey_agent);
     if !hotkey_agent.is_empty() {
         if let Some(mut wf) = take_or_seed_workflow(config, "wf.agent-voice") {
@@ -774,6 +812,19 @@ pub fn migrate_legacy_agent_triggers(config: &mut AppConfig) -> bool {
                 wf.triggers.push(Trigger::Hotkey { combo: hotkey_agent_panel, capture: None });
             }
             upsert_workflow(config, wf);
+        }
+    }
+
+    // Persona seed: copy a non-empty legacy system prompt onto the agent
+    // composite's own props, replacing the deprecated config-global source
+    // (see `AppConfig::agent_system_prompt`'s doc comment).
+    let legacy_system_prompt = config.agent_system_prompt.clone();
+    if !legacy_system_prompt.is_empty() {
+        if let Some(mut w) = take_or_seed_widget(config, "agent.default") {
+            if let Some(obj) = w.props.as_object_mut() {
+                obj.insert("system".to_string(), serde_json::Value::String(legacy_system_prompt));
+            }
+            upsert_widget(config, w);
         }
     }
 
@@ -1741,12 +1792,28 @@ mod tests {
         // Mic-sourced builtin shape still carries its seeded PillSlot chip too.
         assert!(voice.pill_order().is_some());
 
-        // wf.agent: toggle-open chip (no capture — src.instant isn't a mic).
+        // wf.agent: toggle-open chip. Its Trigger::Hotkey really carries
+        // `capture: None` (src.instant isn't a mic, so nothing ever reads
+        // it) — checked directly against the enum, NOT via
+        // `hotkey_triggers()`, whose iterator surfaces `unwrap_or("hold")`
+        // as a *display* default for any `None` capture. Asserting through
+        // that helper here would read as if this chip specifies hold-to-talk,
+        // which it does not.
         let panel = cfg.workflows.iter().find(|w| w.id == "wf.agent").expect("wf.agent overlay");
         assert_eq!(panel.source, "src.instant");
         assert_eq!(panel.outputs, vec!["agent.default".to_string()]);
-        assert!(panel.hotkey_triggers().any(|(_, c, cap)| c == "cmd+shift+g" && cap == "hold"));
+        assert!(panel.triggers.iter().any(|t| matches!(
+            t,
+            Trigger::Hotkey { combo, capture } if combo == "cmd+shift+g" && capture.is_none()
+        )));
         assert!(panel.pill_order().is_none(), "src.instant is not a mic source");
+
+        // Persona seed: the default config's non-empty (deprecated)
+        // `agent_system_prompt` is copied onto a fresh agent.default widget
+        // overlay's `props.system` too — this fires unconditionally
+        // alongside the hotkey chips, not gated on them.
+        let agent_widget = cfg.widgets.iter().find(|w| w.id == "agent.default").expect("agent.default overlay");
+        assert_eq!(agent_widget.props["system"], cfg.agent_system_prompt);
     }
 
     #[test]
@@ -1754,9 +1821,11 @@ mod tests {
         let mut cfg = AppConfig::default();
         assert!(migrate_legacy_agent_triggers(&mut cfg));
         let workflows_after_first = cfg.workflows.clone();
+        let widgets_after_first = cfg.widgets.clone();
 
         assert!(!migrate_legacy_agent_triggers(&mut cfg), "second call reports no change");
         assert_eq!(cfg.workflows, workflows_after_first, "workflows unchanged");
+        assert_eq!(cfg.widgets, widgets_after_first, "widgets (incl. agent.default's seeded system) unchanged");
         assert!(cfg.agent_triggers_migration_done);
     }
 
@@ -1805,6 +1874,53 @@ mod tests {
         );
     }
 
+    // ── Persona seed: config.agent_system_prompt → agent.default's props.system ──
+
+    /// An empty (user-cleared) legacy system prompt seeds no widget override
+    /// at all — mirrors the hotkeys' "nothing to migrate" behavior above.
+    #[test]
+    fn agent_triggers_migration_empty_system_prompt_seeds_no_widget_override() {
+        let mut cfg = AppConfig { agent_system_prompt: String::new(), ..Default::default() };
+        assert!(migrate_legacy_agent_triggers(&mut cfg));
+        assert!(
+            !cfg.widgets.iter().any(|w| w.id == "agent.default"),
+            "no override should be created when there's nothing to seed"
+        );
+    }
+
+    /// A pre-existing `agent.default` override (e.g. the user already picked
+    /// a tuned `llm_widget` via the settings UI) is mutated in place: only
+    /// `system` is written, every other prop the user configured survives.
+    #[test]
+    fn agent_triggers_migration_preserves_existing_agent_default_overlay_props() {
+        let mut cfg = AppConfig::default();
+        cfg.widgets.push(WidgetDef {
+            id: "agent.default".to_string(),
+            role: WidgetRole::Output,
+            type_tag: "agent".to_string(),
+            name: "My Agent".to_string(),
+            icon: "🤖".to_string(),
+            props: serde_json::json!({
+                "llm_widget": "llm.tuned",
+                "system": "",
+                "tts_enabled": true,
+                "voice_profile": "",
+                "voice": "default",
+                "timeout_secs": 30,
+                "max_turns": 20,
+            }),
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_agent_triggers(&mut cfg));
+
+        let w = cfg.widgets.iter().find(|w| w.id == "agent.default").unwrap();
+        assert_eq!(w.name, "My Agent", "existing overlay's name preserved");
+        assert_eq!(w.props["llm_widget"], "llm.tuned", "existing llm_widget ref preserved");
+        assert_eq!(w.props["tts_enabled"], true, "existing tts_enabled preserved");
+        assert_eq!(w.props["system"], cfg.agent_system_prompt, "system seeded from the legacy field");
+    }
+
     // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
     // A regression test for the whole v0.6.x → current pipeline:
     // migrate_transform_to_text_actions → migrate_to_workflows →
@@ -1835,6 +1951,10 @@ mod tests {
         // folds them into a text_actions binding, which migrate_to_workflows
         // then turns into wf.ta-0.
         cfg.stt_language = "Chinese".to_string();
+        // A customized (non-default) legacy agent system prompt — Fix Round
+        // 1's migrate_legacy_agent_triggers should seed this onto
+        // agent.default's props.system, checked at (f) below.
+        cfg.agent_system_prompt = "You are Rex, a custom test agent.".to_string();
 
         // A custom workflow overlay pre-dating Workbench P1: it already lives
         // in `config.workflows` (as Workflow P1/P2 would have written it) but
@@ -1925,6 +2045,13 @@ mod tests {
         for wf in &effective {
             assert!(wf.hotkey.is_empty(), "{}: legacy hotkey field not cleared", wf.id);
         }
+
+        // (f) The customized legacy system prompt landed on agent.default's
+        // props.system (Fix Round 1) — the config field itself is left
+        // untouched (deprecated, not cleared; see its doc comment).
+        let agent_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "agent.default").expect("agent.default");
+        assert_eq!(agent_default.props["system"], cfg.agent_system_prompt);
+        assert_eq!(cfg.agent_system_prompt, "You are Rex, a custom test agent.");
 
         // (e) Running the whole chain a second time changes nothing.
         let json_before = serde_json::to_string(&cfg).expect("serialize before second pass");

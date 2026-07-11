@@ -273,9 +273,12 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
         ),
         // Session composite (Workbench P2 Task 6): a skill-wielding chat
         // assistant. `llm_widget` empty ⇒ the legacy `agent_llm_profile`→
-        // `llm_profile` config fallback chain (unchanged); the safety
-        // allow/blocklist and system prompt stay global config, not props —
-        // see `commands::agent_widget::AgentProps`.
+        // `llm_profile` config fallback chain (unchanged). `system` empty ⇒
+        // no system prompt at all (Fix Round 1: `migrate_legacy_agent_triggers`
+        // seeds this from the now-deprecated `config.agent_system_prompt` on
+        // upgrade, so a fresh builtin copy legitimately starts blank); the
+        // safety allow/blocklist stays global config, not props — see
+        // `commands::agent_widget::AgentProps`.
         widget(
             "agent.default",
             Output,
@@ -284,6 +287,7 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "🤖",
             serde_json::json!({
                 "llm_widget": "",
+                "system": "",
                 "tts_enabled": false,
                 "voice_profile": "",
                 "voice": "default",
@@ -610,6 +614,7 @@ mod tests {
         assert_eq!(a.role, WidgetRole::Output);
         assert_eq!(a.type_tag, "agent");
         assert_eq!(a.props["llm_widget"], "");
+        assert_eq!(a.props["system"], "");
         assert_eq!(a.props["tts_enabled"], false);
         assert_eq!(a.props["timeout_secs"], 30);
         assert_eq!(a.props["max_turns"], 20);

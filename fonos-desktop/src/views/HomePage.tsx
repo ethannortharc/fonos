@@ -96,8 +96,13 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   const presets = rows.filter((w) => w.builtin);
   const customs = rows.filter((w) => !w.builtin);
   const pill = pillWorkflows(rows);
+  // Agent's legacy row was removed here (Fix Round 1): config.hotkey_agent is
+  // now always empty post-migration (migrate_legacy_agent_triggers folds it
+  // into a wf.agent-voice/wf.agent Hotkey chip and clears the field), so this
+  // row would never render anyway — the filter below just made it silently
+  // vanish instead of being obviously dead code. Meeting/STS stay legacy
+  // until T7/T9 give them their own composite recipes.
   const legacy: { combo?: string; label: string }[] = [
-    { combo: config.hotkey_agent, label: "Agent" },
     { combo: config.hotkey_meeting, label: "Meeting" },
     { combo: config.hotkey_sts, label: "STS" },
   ].filter((x) => !!x.combo);

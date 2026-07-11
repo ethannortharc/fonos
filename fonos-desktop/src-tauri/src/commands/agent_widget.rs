@@ -17,12 +17,16 @@
 //! LLM resolution: [`AgentProps::llm_widget`] — Task 4's ref-resolution
 //! template, copied verbatim (resolved synchronously inside a scoped
 //! config-lock block, dropped before any await; a dangling ref or a
-//! type_tag mismatch is a hard `Err`) — wins when non-empty, taking only the
-//! referenced `llm` widget's `model_profile` (unlike Dialog, which also takes
-//! `system`: the agent's system prompt is the separate, global
-//! `agent_system_prompt` config field, never sourced from a widget). Empty
-//! `llm_widget` falls back to the pre-existing `agent_llm_profile` →
-//! `llm_profile` config chain, unchanged from `commands::agent::agent_process`.
+//! type_tag mismatch is a hard `Err`) — wins when non-empty, now taking BOTH
+//! the referenced `llm` widget's `model_profile` AND its `system` (Fix Round
+//! 1 — mirrors Dialog's own ref resolution, `workflow::dialog::resolve_llm_engine`).
+//! Empty `llm_widget` falls back to the pre-existing `agent_llm_profile` →
+//! `llm_profile` config chain for the model, unchanged from
+//! `commands::agent::agent_process`, paired with [`AgentProps::system`] for
+//! the persona (empty ⇒ no system prompt at all). The formerly-global
+//! `config.agent_system_prompt` fallback is GONE from this path entirely —
+//! see that field's now-DEPRECATED doc comment; `migrate_legacy_agent_triggers`
+//! seeds `AgentProps::system` from it once, so it has no live readers left.
 //!
 //! Selection-prefix parity: the legacy arm grabbed the frontmost selection
 //! BEFORE showing the panel (so showing/focusing the panel never raced the
@@ -57,17 +61,29 @@ use super::AppState;
 /// filter stay global config, shared by every agent entry point — this
 /// composite AND the legacy panel typing/mic commands alike).
 ///
-/// Safety allow/blocklist and the agent's system prompt are deliberately NOT
-/// here: they are security policy / persona, not per-instance behavior — see
-/// the brief's "safety 列表留 config 全局" note.
+/// Safety allow/blocklist are deliberately NOT here: they are security
+/// policy, not per-instance behavior — see the brief's "safety 列表留 config
+/// 全局" note. The persona (`system`), by contrast, now DOES live here (Fix
+/// Round 1) — it's the same per-instance concern `DialogProps::engine.system`
+/// already covers for Dialog; see [`resolve_agent_llm_widget_ref`] and
+/// `run_agent_exchange`'s resolution order.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgentProps {
     /// Id of a tuned `llm` widget this agent should resolve its model profile
-    /// from instead of the global `agent_llm_profile`→`llm_profile` fallback
-    /// chain (Workbench P2 Task 6, additive — mirrors `DialogProps::llm_widget`;
-    /// see [`resolve_agent_llm_widget_ref`]).
+    /// (and persona — see `system` below) from instead of the global
+    /// `agent_llm_profile`→`llm_profile` fallback chain (Workbench P2 Task 6,
+    /// additive — mirrors `DialogProps::llm_widget`; see
+    /// [`resolve_agent_llm_widget_ref`]).
     #[serde(default)]
     pub llm_widget: String,
+    /// Inline system prompt used when `llm_widget` is empty (Fix Round 1 —
+    /// mirrors `DialogProps::engine`'s inline `system` field). Empty means no
+    /// system prompt at all. Superseded by the referenced widget's own
+    /// `system` when `llm_widget` is non-empty. Seeded from the now-deprecated
+    /// `config.agent_system_prompt` by `migrate_legacy_agent_triggers` for
+    /// upgrading users; a brand-new agent widget starts with this blank.
+    #[serde(default)]
+    pub system: String,
     /// Speak the response aloud via TTS after delivering it (mirrors the
     /// legacy `agent_tts_enabled` config default: off).
     #[serde(default)]
@@ -108,18 +124,19 @@ fn default_max_turns() -> usize {
 /// Resolve [`AgentProps::llm_widget`] — Task 4's ref-resolution template
 /// applied to the agent composite: a non-empty ref is looked up in
 /// `widgets`, erroring on a dangling ref or a `type_tag` other than `"llm"`;
-/// on success only its `model_profile` is returned (its `system`/
-/// `user_template` are irrelevant here — see the module docs on why the
-/// agent's system prompt never comes from a widget). An empty ref returns
-/// `Ok(None)`, telling the caller to fall back to the legacy
-/// `agent_llm_profile`→`llm_profile` config chain — unlike
-/// `dialog::resolve_llm_engine`, that fallback needs `AppConfig`, which this
-/// pure function deliberately does not take, keeping it unit-testable
-/// without a `State`.
+/// on success its `(model_profile, system)` pair is returned (its
+/// `user_template` is irrelevant here, exactly like `dialog::resolve_llm_engine`
+/// ignores it — an agent exchange's user turn is free-form chat, never
+/// templated). An empty ref returns `Ok(None)`, telling the caller to fall
+/// back to the legacy `agent_llm_profile`→`llm_profile` config chain for the
+/// model, paired with [`AgentProps::system`] for the persona (Fix Round 1) —
+/// unlike `dialog::resolve_llm_engine`, that model fallback needs
+/// `AppConfig`, which this pure function deliberately does not take, keeping
+/// it unit-testable without a `State`.
 pub(crate) fn resolve_agent_llm_widget_ref(
     props: &AgentProps,
     widgets: &[WidgetDef],
-) -> Result<Option<String>, String> {
+) -> Result<Option<(String, Option<String>)>, String> {
     if props.llm_widget.is_empty() {
         return Ok(None);
     }
@@ -136,7 +153,7 @@ pub(crate) fn resolve_agent_llm_widget_ref(
     let llm_props: fonos_core::workflow::llm_step::LlmProps =
         serde_json::from_value(widget.props.clone())
             .map_err(|e| format!("agent: llm_widget '{}' props: {e}", props.llm_widget))?;
-    Ok(Some(llm_props.model_profile))
+    Ok(Some((llm_props.model_profile, llm_props.system)))
 }
 
 // ─── agent-panel JS bridge ──────────────────────────────────────────────────────
@@ -245,26 +262,31 @@ pub(crate) async fn run_agent_exchange(
     agent_js(app, &format!("recvUserMessage({tx_j})"));
     agent_js(app, "recvThinking()");
 
-    // Resolve the LLM service: llm_widget ref wins (Task 4's template, type
-    // check included); empty ref falls back to the legacy
-    // agent_llm_profile→llm_profile chain, unchanged from `agent_process`.
-    // Config lock scoped and dropped before any await below.
-    let llm_service = {
+    // Resolve the LLM service AND the system prompt together: llm_widget ref
+    // wins (Task 4's template, type check included) — its widget's
+    // model_profile AND system both apply; empty ref falls back to the
+    // legacy agent_llm_profile→llm_profile chain for the model (unchanged
+    // from `agent_process`) paired with `props.system` for the persona (Fix
+    // Round 1 — replaces the old `config.agent_system_prompt` read entirely;
+    // see the module docs). Config lock scoped and dropped before any await
+    // below.
+    let (llm_service, system_prompt) = {
         let state: tauri::State<'_, AppState> = app.state();
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let widgets = fonos_core::workflow::engine::effective_widgets(&config);
-        let profile_id = match resolve_agent_llm_widget_ref(props, &widgets)? {
-            Some(id) => id,
+        let (profile_id, system_prompt) = match resolve_agent_llm_widget_ref(props, &widgets)? {
+            Some((id, system)) => (id, system.unwrap_or_default()),
             None => {
-                if !config.agent_llm_profile.is_empty() {
+                let id = if !config.agent_llm_profile.is_empty() {
                     config.agent_llm_profile.clone()
                 } else {
                     config.llm_profile.clone()
-                }
+                };
+                (id, props.system.clone())
             }
         };
         match super::agent::resolve_agent_llm_service(&config, &profile_id) {
-            Ok(svc) => svc,
+            Ok(svc) => (svc, system_prompt),
             Err(e) => {
                 let esc = e.replace('\\', "\\\\").replace('\'', "\\'");
                 agent_js(app, &format!("recvError('{esc}')"));
@@ -275,7 +297,14 @@ pub(crate) async fn run_agent_exchange(
 
     let agent_result = {
         let state: tauri::State<'_, AppState> = app.state();
-        super::agent::run_agent_processor(&state, &agent_prompt, llm_service, Some(props.timeout_secs)).await
+        super::agent::run_agent_processor(
+            &state,
+            &agent_prompt,
+            llm_service,
+            Some(props.timeout_secs),
+            Some(system_prompt),
+        )
+        .await
     };
 
     let result = match agent_result {
@@ -406,14 +435,21 @@ mod tests {
         serde_json::from_value(serde_json::json!({})).unwrap()
     }
 
+    /// A tuned `llm` widget with no `system` set (`None` after deserializing).
     fn llm_widget_def(id: &str, model_profile: &str) -> WidgetDef {
+        llm_widget_def_with_system(id, model_profile, None)
+    }
+
+    /// A tuned `llm` widget def, optionally carrying a `system` prompt —
+    /// mirrors `dialog.rs`'s test helper of the same shape.
+    fn llm_widget_def_with_system(id: &str, model_profile: &str, system: Option<&str>) -> WidgetDef {
         WidgetDef {
             id: id.to_string(),
             role: WidgetRole::Processor,
             type_tag: "llm".to_string(),
             name: id.to_string(),
             icon: String::new(),
-            props: serde_json::json!({ "model_profile": model_profile }),
+            props: serde_json::json!({ "model_profile": model_profile, "system": system }),
             builtin: false,
         }
     }
@@ -424,6 +460,7 @@ mod tests {
     fn agent_props_defaults_from_empty_json_mirror_config_defaults() {
         let props: AgentProps = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(props.llm_widget, "");
+        assert_eq!(props.system, "");
         assert!(!props.tts_enabled);
         assert_eq!(props.voice_profile, "");
         assert_eq!(props.voice, "default");
@@ -438,6 +475,7 @@ mod tests {
         let json = r#"{"llm_widget": "llm.tuned"}"#;
         let props: AgentProps = serde_json::from_str(json).unwrap();
         assert_eq!(props.llm_widget, "llm.tuned");
+        assert_eq!(props.system, "");
         assert_eq!(props.voice, "default");
         assert_eq!(props.timeout_secs, 30);
         assert_eq!(props.max_turns, 20);
@@ -447,6 +485,7 @@ mod tests {
     fn agent_props_roundtrip_preserves_custom_values() {
         let props = AgentProps {
             llm_widget: "llm.tuned".into(),
+            system: "You are a pirate.".into(),
             tts_enabled: true,
             voice_profile: "tts.custom".into(),
             voice: "am_echo".into(),
@@ -458,7 +497,8 @@ mod tests {
         assert_eq!(back, props);
     }
 
-    // ── resolve_agent_llm_widget_ref (Task 4 template, copied) ───────────────
+    // ── resolve_agent_llm_widget_ref (Task 4 template, copied; Fix Round 1 ──
+    // extends it to also resolve `system`, mirroring `dialog::resolve_llm_engine`)
 
     #[test]
     fn resolve_agent_llm_widget_ref_empty_returns_none() {
@@ -473,7 +513,22 @@ mod tests {
         let widgets = vec![llm_widget_def("llm.tuned", "tuned-profile")];
         assert_eq!(
             resolve_agent_llm_widget_ref(&props, &widgets).unwrap(),
-            Some("tuned-profile".to_string())
+            Some(("tuned-profile".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_resolves_system_too() {
+        // Fix Round 1: a non-empty llm_widget ref's `system` wins over
+        // `AgentProps::system` entirely (the ref replaces the whole persona,
+        // not just the model) — mirrors Dialog's ref resolution.
+        let mut props = base_props();
+        props.llm_widget = "llm.tuned".into();
+        props.system = "ignored — the ref wins".into();
+        let widgets = vec![llm_widget_def_with_system("llm.tuned", "tuned-profile", Some("You are Rex."))];
+        assert_eq!(
+            resolve_agent_llm_widget_ref(&props, &widgets).unwrap(),
+            Some(("tuned-profile".to_string(), Some("You are Rex.".to_string())))
         );
     }
 

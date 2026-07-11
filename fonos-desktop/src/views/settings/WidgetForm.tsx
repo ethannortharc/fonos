@@ -454,6 +454,20 @@ function PropsForm({
           <Field label={t("widgets.field.agent.llm_widget")}>
             <WidgetRefSelector wantTag="llm" value={llmWidget} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
           </Field>
+          {/* system (persona) — inline fallback, mirrors the "dialog" case's
+              hide-on-ref pattern above: a non-empty llm_widget ref supplies
+              its own system prompt, so the inline field (and its now-stale
+              value, if any) is hidden behind the same shared hint rather than
+              shown-but-inert. Fix Round 1. */}
+          {llmWidget ? (
+            <div className="text-[11px] text-[rgba(255,255,255,0.35)] italic">
+              {t("widgets.field.dialog.provided-by-widget")}
+            </div>
+          ) : (
+            <Field label={t("widgets.field.agent.system")}>
+              <textarea value={pStr(p, "system")} onChange={(e) => set("system", e.target.value)} rows={3} className={textareaClass} />
+            </Field>
+          )}
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
             <input type="checkbox" checked={pBool(p, "tts_enabled")} onChange={(e) => set("tts_enabled", e.target.checked)} className="accent-[var(--accent)]" />
             {t("widgets.field.agent.tts_enabled")}
@@ -464,22 +478,13 @@ function PropsForm({
           <Field label={t("widgets.field.voice")}>
             <input type="text" value={pStr(p, "voice", "default")} onChange={(e) => set("voice", e.target.value)} className={inputClass} />
           </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={t("widgets.field.agent.timeout_secs")}>
-              <input
-                type="number" min={5} max={120} value={pNum(p, "timeout_secs", 30)}
-                onChange={(e) => set("timeout_secs", parseInt(e.target.value) || 30)}
-                className={inputClass}
-              />
-            </Field>
-            <Field label={t("widgets.field.agent.max_turns")}>
-              <input
-                type="number" min={1} max={100} value={pNum(p, "max_turns", 20)}
-                onChange={(e) => set("max_turns", parseInt(e.target.value) || 20)}
-                className={inputClass}
-              />
-            </Field>
-          </div>
+          <Field label={t("widgets.field.agent.timeout_secs")}>
+            <input
+              type="number" min={5} max={120} value={pNum(p, "timeout_secs", 30)}
+              onChange={(e) => set("timeout_secs", parseInt(e.target.value) || 30)}
+              className={inputClass}
+            />
+          </Field>
           <AgentSkillsSection />
         </div>
       );

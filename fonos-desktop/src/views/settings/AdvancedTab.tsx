@@ -11,11 +11,12 @@
 //
 // The Agent segment (AgentTab + SkillsTab + the hotkey_agent/_panel rows) was
 // retired by Workbench P2 Task 6: agent settings now live on the
-// `agent.default` widget's own WidgetForm PropsForm case (llm_widget ref, TTS
-// toggle, voice fields, timeout/max_turns — safety allow/blocklist and the
-// system prompt stay global, still config-backed but with no settings-tab
-// home of their own right now), and its two standalone hotkeys were folded
-// into `wf.agent-voice`/`wf.agent`'s own Hotkey chips by
+// `agent.default` widget's own WidgetForm PropsForm case (llm_widget ref,
+// inline system-prompt fallback, TTS toggle, voice fields, timeout — Fix
+// Round 1 moved the system prompt here too and dropped the inert max_turns
+// input; only the safety allow/blocklist stays global, config-backed with no
+// settings-tab home of its own right now), and its two standalone hotkeys
+// were folded into `wf.agent-voice`/`wf.agent`'s own Hotkey chips by
 // `migrate_legacy_agent_triggers`.
 
 import { useState } from "react";

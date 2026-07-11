@@ -20,8 +20,10 @@
 //   • Reorder / remove processors and remove extra outputs from the node panel.
 //
 // Every card also carries a trigger row (TriggerChips, Task 10) — hotkey and
-// pill-roller chips, replacing the old single `hotkey` field — and a "test
-// run" button that jumps to the Workbench's Test Run bench (`onBench`).
+// pill-roller chips — and a "test run" button that jumps to the Workbench's
+// Test Run bench (`onBench`). Since Task 16, the chips render read-only here:
+// the Home page is the single place trigger edits are made and saved; this
+// row is a reminder of what's wired, with a hint pointing to Home.
 //
 // Structural workflow edits (name, source/processor/output membership and
 // order, triggers) auto-save immediately via save_workflow — the backend
@@ -66,8 +68,10 @@ const cancelBtnClass =
 const NEW = "__new__";
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** Strip the WorkflowRow-only `source_type_tag` before save_workflow. */
-function rowToDef(w: WorkflowRow): WorkflowDef {
+/** Strip the WorkflowRow-only `source_type_tag` before save_workflow.
+ *  Exported: HomePage (Task 16) reuses this to persist trigger edits, since
+ *  trigger editing now lives there instead of on the recipe card. */
+export function rowToDef(w: WorkflowRow): WorkflowDef {
   const { source_type_tag: _drop, ...def } = w;
   return def;
 }
@@ -159,7 +163,7 @@ function NameField({ initial, onCommit }: { initial: string; onCommit: (v: strin
 export default function RecipesSection({ config, onBench, focusRecipe }: {
   config: AppConfig;
   onBench: (recipeId: string) => void;
-  /** Jump-to-recipe intent from the Overview page's trigger cheat-sheet.
+  /** Jump-to-recipe intent from the Home page's trigger table.
    *  `nonce` (not just recipeId) so re-clicking the same row re-triggers the
    *  effect even when the id is unchanged. */
   focusRecipe?: FocusRecipe;
@@ -177,11 +181,6 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
   // above renders behind the modal backdrop while the modal is open, so it's
   // invisible right when it matters most.
   const [modalError, setModalError] = useState<string | null>(null);
-  // In-flight guard for trigger-chip saves: holds the id of the workflow
-  // currently persisting a chip edit, so a second rapid edit on the same
-  // card can't fire before the first save's reload lands (which would
-  // otherwise compute its patch from stale wf.triggers).
-  const [chipsSaving, setChipsSaving] = useState<string | null>(null);
   // Root of the currently-expanded flow card — used by the outside-click
   // listener below to tell inside-the-editor clicks from page-background ones.
   const expandedCardRef = useRef<HTMLDivElement>(null);
@@ -201,7 +200,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
 
-  // Jump-to-recipe intent from the Overview page: expand the target card and
+  // Jump-to-recipe intent from the Home page: expand the target card and
   // scroll to it. Guarded by a handled-nonce ref (not just the nonce itself)
   // since `workflows` is a dependency too — a jump arriving before the
   // initial listWorkflows() resolves finds no `recipe-card-{id}` element yet,
@@ -226,12 +225,6 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
     role === "source" ? sourceWidgets : role === "processor" ? processorWidgets : outputWidgets;
   const roleLabel = (role: WidgetRole): string =>
     role === "source" ? t("wf.field.source") : role === "processor" ? t("wf.field.processors") : t("wf.field.outputs");
-
-  // Next `order` for a manually-added pill-slot chip: past the highest pill
-  // order across ALL workflows (not just the card being edited), so a new
-  // pill chip never ties with another workflow's migration-assigned slot.
-  const nextPillOrder =
-    Math.max(999, ...workflows.flatMap((w) => (w.triggers ?? []).flatMap((tr) => (tr.kind === "pill_slot" ? [tr.order ?? 0] : [])))) + 10;
 
   /** source → processors → outputs, mapped to PipeNodes (label via
    *  widgetLabel; typeTag/role for icon + color). Dangling ids show the raw id. */
@@ -580,23 +573,16 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
           <Chevron expanded={expanded} />
         </div>
 
-        {/* Trigger row — shown collapsed and expanded, inside the card root. */}
-        <div
-          className={
-            "px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)]" +
-            (chipsSaving === wf.id ? " opacity-60 pointer-events-none" : "")
-          }
-        >
-          <TriggerChips
-            wf={wf}
-            isMic={wf.source_type_tag === "microphone"}
-            nextPillOrder={nextPillOrder}
-            onChange={async (triggers) => {
-              if (chipsSaving) return;
-              setChipsSaving(wf.id);
-              try { await saveFlow(wf, { triggers }); } finally { setChipsSaving(null); }
-            }}
-          />
+        {/* Trigger row — read-only (Task 16): editing moved to the Home page,
+            "the workbench builds what, Home pulls the trigger." No chips at
+            all shows just the hint (no bare "Triggers:" label). */}
+        <div className="px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)] flex items-center gap-2 flex-wrap">
+          {(wf.triggers ?? []).length > 0 && (
+            <TriggerChips wf={wf} isMic={wf.source_type_tag === "microphone"} readOnly />
+          )}
+          <span className="ml-auto text-[10px] text-[rgba(255,255,255,0.28)] italic flex-shrink-0">
+            {t("wb.recipes.triggers-hint")}
+          </span>
         </div>
 
         {expanded ? (

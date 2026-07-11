@@ -874,7 +874,7 @@ const en = {
   "builtin.out.quicknote": "Quick note",
 
   // Workbench IA (P1)
-  "nav.overview": "Overview",
+  "nav.home": "Home",
   "nav.workbench": "Workbench",
   "nav.models": "Models",
   "nav.vocab": "Vocabulary",
@@ -894,19 +894,19 @@ const en = {
   "wb.triggers.add": "＋ Trigger",
   "wb.triggers.remove": "Remove trigger",
   "wb.triggers.pill": "Pill slot",
-  "wb.triggers.pill-roller": "Pill roller",
   "wb.triggers.selection": "selection",
   "wb.triggers.press-keys": "Press keys…",
   "wb.recipes.bench": "Test run ▶",
   "wb.recipes.new": "＋ New recipe",
-  "wb.overview.title": "Overview",
-  "wb.overview.note": "Auto-generated — everything this machine can do right now. Click a recipe to jump to its card.",
+  "wb.recipes.triggers-hint": "Configure on Home",
   "wb.overview.legacy": "legacy · absorbed in phase 2",
 
-  // Overview top-level page (P1 Task 15)
+  // Home top-level page (P1 Task 15/16)
   "ov.pill.title": "Floating pill",
   "ov.pill.hint": "One global key — runs whatever the pill roller has selected.",
   "ov.pill.follows": "Follows the roller · now: {0}",
+  "home.note": "Everything this machine can do — and the keys that fire it. Click a recipe to open it in the Workbench.",
+  "home.pill.roller": "Roller",
 
   "wb.newrecipe.title": "New recipe",
   "wb.newrecipe.note": "The source decides the recipe's shape — pick where it starts.",
@@ -1752,7 +1752,7 @@ const zh: Partial<Record<Key, string>> = {
   "builtin.out.quicknote": "快速笔记",
 
   // Workbench IA (P1)
-  "nav.overview": "总览",
+  "nav.home": "主页",
   "nav.workbench": "工作台",
   "nav.models": "模型",
   "nav.vocab": "单词本",
@@ -1772,19 +1772,19 @@ const zh: Partial<Record<Key, string>> = {
   "wb.triggers.add": "＋ 触发器",
   "wb.triggers.remove": "移除触发器",
   "wb.triggers.pill": "pill 滚轮位",
-  "wb.triggers.pill-roller": "pill 滚轮",
   "wb.triggers.selection": "划词",
   "wb.triggers.press-keys": "按下按键…",
   "wb.recipes.bench": "试运行 ▶",
   "wb.recipes.new": "＋ 新建配方",
-  "wb.overview.title": "使用总览",
-  "wb.overview.note": "自动生成 · 这台机器现在装了哪些功能。点配方名可跳转对应卡片。",
+  "wb.recipes.triggers-hint": "在主页配置",
   "wb.overview.legacy": "遗留 · 期二收编",
 
-  // 总览顶层页（P1 Task 15）
+  // 主页顶层页（P1 Task 15/16）
   "ov.pill.title": "悬浮胶囊",
   "ov.pill.hint": "一把全局键——跑滚轮当前选中的配方。",
   "ov.pill.follows": "跟随滚轮 · 当前：{0}",
+  "home.note": "这台机器装了什么、什么键扣响它。点配方名去工作台编辑。",
+  "home.pill.roller": "滚轮内容",
 
   "wb.newrecipe.title": "新建配方",
   "wb.newrecipe.note": "来源决定配方的形态——先选它从哪里开始。",

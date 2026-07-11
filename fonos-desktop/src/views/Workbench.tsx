@@ -1,7 +1,7 @@
-// Workbench — the workbench-centered IA's home page. Three segments: Recipes
-// (widgets assembled + triggers), Widgets (tuned/named instances of each
-// type), Test Run (staged bench for stepping data through). All three are
-// wired: Recipes (Task 10), Widgets (Task 9), Test Run (Task 11).
+// Workbench — where recipes get built. Three segments: Recipes (widgets
+// assembled + triggers), Widgets (tuned/named instances of each type), Test
+// Run (staged bench for stepping data through). All three are wired: Recipes
+// (Task 10), Widgets (Task 9), Test Run (Task 11).
 
 import { useEffect, useState } from "react";
 import { useT } from "../lib/i18n";
@@ -25,7 +25,7 @@ export default function Workbench({ focus }: { focus?: FocusRecipe } = {}) {
   useEffect(() => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
-  // Jump-to-recipe intent from the Overview page: land on the Recipes
+  // Jump-to-recipe intent from the Home page: land on the Recipes
   // segment so RecipesSection's own effect (keyed on the same nonce) can
   // expand + scroll to the target card.
   useEffect(() => {

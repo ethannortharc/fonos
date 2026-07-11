@@ -6,19 +6,19 @@ import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
 import Scenarios, { isSttConfigured } from "./views/Scenarios";
 import Workbench, { type FocusRecipe } from "./views/Workbench";
-import OverviewPage from "./views/OverviewPage";
+import HomePage from "./views/HomePage";
 import ModelsPage from "./views/ModelsPage";
 import VocabPage from "./views/VocabPage";
 import { FonosMark } from "./components/Icons";
 import { getConfig } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
-type Tab = "overview" | "workbench" | "models" | "vocab" | "history" | "voice" | "stats" | "settings";
+type Tab = "home" | "workbench" | "models" | "vocab" | "history" | "voice" | "stats" | "settings";
 
 const NAV_ITEMS: { id: Tab; label: TKey; icon: React.ReactNode }[] = [
   {
-    id: "overview",
-    label: "nav.overview",
+    id: "home",
+    label: "nav.home",
     icon: (
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -110,14 +110,14 @@ const SIDEBAR_ICON = (
 
 export default function App() {
   const t = useT();
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("home");
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
   // environments (where getConfig throws) so the shell renders unchanged.
   const [showSetup, setShowSetup] = useState(false);
   const [historyPreset, setHistoryPreset] = useState<{ filter: HistoryFilter; nonce: number }>();
-  // Jump-to-recipe intent from the Overview page's trigger cheat-sheet: nonce
+  // Jump-to-recipe intent from the Home page's trigger table: nonce
   // (not just recipeId) so re-clicking the same row re-triggers the effect
   // chain in Workbench/RecipesSection even when the id hasn't changed.
   const [wbFocus, setWbFocus] = useState<FocusRecipe>(null);
@@ -160,7 +160,11 @@ export default function App() {
             setActiveTab("history");
           } else if (raw === "dictation") {
             setActiveTab("workbench");
-          } else if (["overview", "voice", "stats", "settings"].includes(raw)) {
+          } else if (raw === "overview" || raw === "home") {
+            // "overview" is the pre-rename tab name — float pill / tray may
+            // still emit it; both map to the same tab.
+            setActiveTab("home");
+          } else if (["voice", "stats", "settings"].includes(raw)) {
             setActiveTab(raw as Tab);
           }
         }));
@@ -276,8 +280,8 @@ export default function App() {
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden bg-[var(--bg)]">
-          {activeTab === "overview" && (
-            <OverviewPage
+          {activeTab === "home" && (
+            <HomePage
               onJumpToRecipe={(id) => {
                 setWbFocus({ recipeId: id, nonce: Date.now() });
                 setActiveTab("workbench");

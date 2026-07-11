@@ -303,7 +303,7 @@ export default function TestRunSection({
             sibling below contains the aura's paint layer to this row alone,
             without clipping it (no overflow:hidden) or touching the
             animation. Aura layers are already pointer-events-none. */}
-        <div className="relative z-0 mb-5 flex items-center gap-[18px]">
+        <div className={`relative z-0 ${audioInput ? "mb-10" : "mb-5"} flex items-center gap-[18px]`}>
           {audioInput ? (
             <>
               <div className="relative h-[88px] w-[88px] flex-shrink-0 flex items-center justify-center">

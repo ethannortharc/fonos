@@ -1472,4 +1472,116 @@ mod tests {
             "empty hotkey + non-mic source produces zero trigger chips"
         );
     }
+
+    // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
+    // A regression test for the whole v0.6.x → current pipeline:
+    // migrate_transform_to_text_actions → migrate_to_workflows →
+    // migrate_settings_into_flow → remap_renamed_builtins →
+    // migrate_hotkeys_to_triggers. Simulates a realistic pre-Workbench-P1
+    // config: legacy dictation/toggle/note/notebook/listen/quick-transform
+    // hotkeys, a non-default STT language, and a pre-existing custom workflow
+    // overlay (as if authored under Workflow P1/P2, before triggers existed)
+    // that still carries its hotkey in the legacy `hotkey` field.
+    #[test]
+    fn full_chain_v06_config_end_to_end() {
+        use crate::config::migrate_transform_to_text_actions;
+        use crate::workflow::engine::{effective_widgets, effective_workflows};
+
+        let mut cfg = AppConfig::default();
+
+        // ── Legacy v0.6.x-style user customizations ──────────────────────
+        cfg.hotkey_dictation = "cmd+shift+space".to_string();
+        cfg.hotkey_dictation_toggle = "cmd+shift+d".to_string(); // → wf.dictation-toggle (mic-toggle)
+        cfg.hotkey_note = "option+shift+n".to_string();
+        cfg.notebook_hotkey_1 = 5;
+        cfg.hotkey_note_1 = "option+1".to_string(); // → wf.note-1 (mic-hold)
+        cfg.hotkey_listen = "option+shift+l".to_string();
+        // hotkey_transform / transform_mode are already at their v0.6.x
+        // defaults ("cmd+shift+t" / "polish"); migrate_transform_to_text_actions
+        // folds them into a text_actions binding, which migrate_to_workflows
+        // then turns into wf.ta-0.
+        cfg.stt_language = "Chinese".to_string();
+
+        // A custom workflow overlay pre-dating Workbench P1: it already lives
+        // in `config.workflows` (as Workflow P1/P2 would have written it) but
+        // still carries its hotkey in the legacy field, not `triggers`.
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.custom-1".to_string(),
+            name: "My Recipe".to_string(),
+            icon: "✨".to_string(),
+            hotkey: "cmd+shift+9".to_string(),
+            triggers: Vec::new(),
+            source: "src.selection".to_string(),
+            processors: vec![],
+            outputs: vec!["out.panel".to_string()],
+            builtin: false,
+        });
+
+        // Every legacy hotkey combo that enters the chain.
+        let legacy_hotkeys = [
+            "cmd+shift+space", // dictation
+            "cmd+shift+d",     // dictation toggle
+            "option+shift+n",  // note
+            "option+1",        // note-1 (notebook 5)
+            "option+shift+l",  // listen
+            "cmd+shift+t",     // quick-transform → text action
+            "cmd+shift+9",     // pre-existing custom workflow
+        ];
+
+        let custom_modes = BTreeMap::new();
+
+        // ── Run the full chain, in main.rs's exact order ─────────────────
+        assert!(migrate_transform_to_text_actions(&mut cfg), "transform migration runs");
+        assert!(migrate_to_workflows(&mut cfg, &custom_modes), "workflow migration runs");
+        assert!(migrate_settings_into_flow(&mut cfg), "settings migration runs");
+        remap_renamed_builtins(&mut cfg); // no sentinel; this config carries no stale ids
+        assert!(migrate_hotkeys_to_triggers(&mut cfg), "hotkey-to-trigger migration runs");
+
+        // (a) All sentinels set.
+        assert!(cfg.workflow_migration_done, "workflow_migration_done set");
+        assert!(cfg.settings_inflow_migration_done, "settings_inflow_migration_done set");
+        assert!(cfg.triggers_migration_done, "triggers_migration_done set");
+
+        let effective = effective_workflows(&cfg);
+
+        // (b) Every legacy hotkey that entered the chain exists afterwards as
+        // some workflow's Hotkey trigger.
+        for combo in legacy_hotkeys {
+            let found = effective
+                .iter()
+                .any(|wf| wf.hotkey_triggers().any(|(_, c, _)| c == combo));
+            assert!(found, "legacy hotkey '{combo}' missing from effective workflows after full chain");
+        }
+
+        // (c) Every microphone-sourced effective workflow has a pill_order().
+        let mic_widget_ids: std::collections::HashSet<String> = effective_widgets(&cfg)
+            .into_iter()
+            .filter(|w| w.type_tag == "microphone")
+            .map(|w| w.id)
+            .collect();
+        for wf in &effective {
+            if mic_widget_ids.contains(&wf.source) {
+                assert!(wf.pill_order().is_some(), "{}: mic-sourced workflow missing pill_order", wf.id);
+            }
+        }
+
+        // (d) No workflow has a non-empty legacy `hotkey` field.
+        for wf in &effective {
+            assert!(wf.hotkey.is_empty(), "{}: legacy hotkey field not cleared", wf.id);
+        }
+
+        // (e) Running the whole chain a second time changes nothing.
+        let json_before = serde_json::to_string(&cfg).expect("serialize before second pass");
+        let r1 = migrate_transform_to_text_actions(&mut cfg);
+        let r2 = migrate_to_workflows(&mut cfg, &custom_modes);
+        let r3 = migrate_settings_into_flow(&mut cfg);
+        let r4 = remap_renamed_builtins(&mut cfg);
+        let r5 = migrate_hotkeys_to_triggers(&mut cfg);
+        assert!(
+            !r1 && !r2 && !r3 && !r4 && !r5,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5})"
+        );
+        let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
+        assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");
+    }
 }

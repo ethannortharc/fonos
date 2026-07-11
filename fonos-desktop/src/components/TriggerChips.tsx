@@ -9,10 +9,16 @@ export default function TriggerChips({
   wf,
   isMic,
   onChange,
+  nextPillOrder = 1000,
 }: {
   wf: WorkflowRow;
   isMic: boolean;
   onChange: (triggers: Trigger[]) => void;
+  /** `order` to assign a newly-added pill-slot chip. Callers with visibility
+   *  across workflows should pass a value past the highest existing pill
+   *  `order` (cross-workflow collisions are otherwise possible since this
+   *  component only sees its own workflow's triggers); defaults to 1000. */
+  nextPillOrder?: number;
 }) {
   useT();
   const [adding, setAdding] = useState(false);
@@ -64,7 +70,7 @@ export default function TriggerChips({
           />
           {isMic && !hasPill && (
             <button
-              onClick={() => { onChange([...triggers, { kind: "pill_slot", order: 1000 }]); setAdding(false); }}
+              onClick={() => { onChange([...triggers, { kind: "pill_slot", order: nextPillOrder }]); setAdding(false); }}
               className="rounded-[7px] border border-[rgba(240,173,50,0.2)] px-2 py-[3px] text-[10.5px] text-[rgba(242,184,75,0.85)]"
             >
               ◉ {t("wb.triggers.pill")}

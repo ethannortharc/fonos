@@ -1,5 +1,5 @@
 // 新建配方弹窗：名称 + 来源二选一（来源决定配方形态），选项内嵌种子链预览。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { t, useT } from "../../lib/i18n";
 
 export default function NewRecipeModal({
@@ -12,6 +12,22 @@ export default function NewRecipeModal({
   useT();
   const [name, setName] = useState("");
   const [src, setSrc] = useState<"mic" | "sel">("mic");
+
+  // While open: reset the form to a clean slate, and let Escape close the
+  // modal (document-level listener — the modal has no single focused root to
+  // attach a key handler to). Cleaned up on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    setName("");
+    setSrc("mic");
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
   const opt = (k: "mic" | "sel", title: string, desc: string, seed: string) => (
     <button

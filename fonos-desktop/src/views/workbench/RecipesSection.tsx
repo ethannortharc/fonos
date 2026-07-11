@@ -167,6 +167,11 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
   const [error, setError] = useState<string>("");
   const [showNew, setShowNew] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
+  // In-flight guard for trigger-chip saves: holds the id of the workflow
+  // currently persisting a chip edit, so a second rapid edit on the same
+  // card can't fire before the first save's reload lands (which would
+  // otherwise compute its patch from stale wf.triggers).
+  const [chipsSaving, setChipsSaving] = useState<string | null>(null);
   // Root of the currently-expanded flow card — used by the outside-click
   // listener below to tell inside-the-editor clicks from page-background ones.
   const expandedCardRef = useRef<HTMLDivElement>(null);
@@ -194,6 +199,12 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
     role === "source" ? sourceWidgets : role === "processor" ? processorWidgets : outputWidgets;
   const roleLabel = (role: WidgetRole): string =>
     role === "source" ? t("wf.field.source") : role === "processor" ? t("wf.field.processors") : t("wf.field.outputs");
+
+  // Next `order` for a manually-added pill-slot chip: past the highest pill
+  // order across ALL workflows (not just the card being edited), so a new
+  // pill chip never ties with another workflow's migration-assigned slot.
+  const nextPillOrder =
+    Math.max(999, ...workflows.flatMap((w) => (w.triggers ?? []).flatMap((tr) => (tr.kind === "pill_slot" ? [tr.order ?? 0] : [])))) + 10;
 
   /** source → processors → outputs, mapped to PipeNodes (label via
    *  widgetLabel; typeTag/role for icon + color). Dangling ids show the raw id. */
@@ -543,12 +554,21 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
         </div>
 
         {/* Trigger row — shown collapsed and expanded, inside the card root. */}
-        <div className="px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)]"
-             onClick={(e) => e.stopPropagation()}>
+        <div
+          className={
+            "px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)]" +
+            (chipsSaving === wf.id ? " opacity-60 pointer-events-none" : "")
+          }
+        >
           <TriggerChips
             wf={wf}
             isMic={wf.source_type_tag === "microphone"}
-            onChange={(triggers) => saveFlow(wf, { triggers })}
+            nextPillOrder={nextPillOrder}
+            onChange={async (triggers) => {
+              if (chipsSaving) return;
+              setChipsSaving(wf.id);
+              try { await saveFlow(wf, { triggers }); } finally { setChipsSaving(null); }
+            }}
           />
         </div>
 

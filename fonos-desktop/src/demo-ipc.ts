@@ -94,7 +94,6 @@ const config = {
   notebook_hotkey_3: 3,
   meeting_stt_profile: "openrouter-gemini",
   meeting_llm_profile: "openrouter-gemini",
-  meeting_audio_source: "mic+system",
   // Demo mode is already "set up" — never trigger the first-run wizard.
   has_completed_onboarding: true,
   vocab_books: [

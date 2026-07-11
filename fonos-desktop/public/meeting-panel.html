@@ -365,6 +365,7 @@ function resetState(){
   toRemove.forEach(function(el){el.parentNode.removeChild(el);});
   emptyEl.style.display='';
   statusEl.style.display='none';
+  statusEl.style.color=''; /* clear any error-red left from a prior session */
   scrollHintEl.style.display='none';
   timerEl.textContent='00:00';
 }
@@ -407,6 +408,25 @@ function recvSummary(text){
   statusEl.textContent=text||'';
   statusEl.style.color='rgba(255,255,255,.6)';
   setTimeout(function(){recvHide();},3000);
+}
+
+/* Meeting-capture-init failure (e.g. no mic/system-audio permission) —
+   previously a dead eval (`meeting-panel.html` had no such function; see
+   commands/meeting_widget.rs's module docs), fixed by Workbench P2 Task 7.
+   Deliberately its own handler rather than routed through recvStop/recvSummary:
+   an init failure is a different state from "stopped, summarizing" or "done",
+   and reusing either would either misrepresent the error as a normal stop or
+   force the panel to guess what an empty/error string means. No auto-hide —
+   stays visible until the user dismisses it (next recvStart resets it). */
+function recvMeetingError(msg){
+  stopTimer();
+  var toRemove=bodyEl.querySelectorAll('.tr-line');
+  toRemove.forEach(function(el){el.parentNode.removeChild(el);});
+  emptyEl.style.display='none';
+  statusEl.style.display='block';
+  statusEl.style.color='rgba(239,68,68,.75)';
+  statusEl.textContent='Error: '+(msg||'unknown error');
+  scrollHintEl.style.display='none';
 }
 
 function recvHide(){

@@ -224,7 +224,6 @@ const en = {
   "hotkeys.dictationtoggle.hint": "(press to start/stop)",
   "hotkeys.agentspeak": "Agent speak",
   "hotkeys.agentpanel": "Agent panel",
-  "hotkeys.toggle": "(toggle)",
   "hotkeys.section.notes": "Notes",
   "hotkeys.notepanel": "Note panel",
   "hotkeys.notebookhint": "Notebook shortcuts — bind a hotkey to directly record into a specific notebook",
@@ -355,19 +354,9 @@ const en = {
 
   // notes settings tab
 
-  // meeting settings tab
-  "mtab.audio-source": "Audio Source",
-  "mtab.audio-auto": "Auto (ScreenCaptureKit + mic)",
-  "mtab.audio-mic": "Mic only",
-  "mtab.audio-hint": "\"Auto\" captures system audio + microphone via ScreenCaptureKit (macOS 13+).",
-  "mtab.stt-model": "STT Model",
-  "mtab.stt-default": "Default (global STT profile)",
-  "mtab.stt-hint": "STT model for transcribing meeting audio. Defaults to global STT profile if not set.",
-  "mtab.llm-model": "LLM Model for Summary",
-  "mtab.llm-none": "— none (no summary) —",
-  "mtab.llm-hint": "LLM used to generate meeting summaries. OpenRouter models work well for long contexts.",
-  "mtab.summary-prompt": "Summary Prompt",
-  "mtab.summary-hint": "System prompt sent to the LLM when generating a meeting summary. Use \"- [ ] task\" format to create action items.",
+  // meeting settings tab: retired (Workbench P2 Task 7) — meeting settings
+  // now live on the meeting.default widget's own WidgetForm PropsForm case
+  // (widgets.field.meeting.* below); MeetingTab.tsx deleted.
 
   // onboarding wizard
   "onboard.step.perms": "Permissions",
@@ -847,6 +836,9 @@ const en = {
   "widgets.field.agent.tts_enabled": "Speak responses via TTS",
   "widgets.field.agent.timeout_secs": "Timeout (s)",
   "widgets.field.agent.skills": "Skills (global)",
+  "widgets.field.meeting.stt_widget": "STT widget",
+  "widgets.field.meeting.llm_widget": "LLM widget",
+  "widgets.field.meeting.summary_prompt": "Summary prompt",
   "widgets.error": "Error:",
   "widgets.err.name-required": "Name is required",
   "widgets.err.type-required": "Choose a type",
@@ -872,6 +864,7 @@ const en = {
   "builtin.wf.note": "Note",
   "builtin.wf.agent": "Agent",
   "builtin.wf.agent-voice": "Voice agent",
+  "builtin.wf.meeting": "Meeting",
   "builtin.src.selection": "Selection",
   "builtin.src.mic-hold": "Mic · hold",
   "builtin.src.mic-toggle": "Mic · toggle",
@@ -891,6 +884,7 @@ const en = {
   "builtin.out.speak": "Speak",
   "builtin.out.quicknote": "Quick note",
   "builtin.agent.default": "Agent",
+  "builtin.meeting.default": "Meeting",
 
   // Workbench IA (P1)
   "nav.home": "Home",
@@ -1138,7 +1132,6 @@ const zh: Partial<Record<Key, string>> = {
   "hotkeys.dictationtoggle.hint": "(按一下开始/停止)",
   "hotkeys.agentspeak": "助手对话",
   "hotkeys.agentpanel": "助手面板",
-  "hotkeys.toggle": "(开/关)",
   "hotkeys.section.notes": "笔记",
   "hotkeys.notepanel": "笔记面板",
   "hotkeys.notebookhint": "笔记本快捷键 — 绑定快捷键,直接录入指定笔记本",
@@ -1269,19 +1262,8 @@ const zh: Partial<Record<Key, string>> = {
 
   // notes settings tab
 
-  // meeting settings tab
-  "mtab.audio-source": "音频源",
-  "mtab.audio-auto": "自动(ScreenCaptureKit + 麦克风)",
-  "mtab.audio-mic": "仅麦克风",
-  "mtab.audio-hint": "「自动」通过 ScreenCaptureKit 采集系统音频 + 麦克风(macOS 13+)。",
-  "mtab.stt-model": "STT 模型",
-  "mtab.stt-default": "默认(全局 STT 配置)",
-  "mtab.stt-hint": "用于转录会议音频的 STT 模型。未设置时使用全局 STT 配置。",
-  "mtab.llm-model": "摘要用 LLM 模型",
-  "mtab.llm-none": "— 无(不生成摘要)—",
-  "mtab.llm-hint": "用于生成会议摘要的 LLM。OpenRouter 模型适合长上下文。",
-  "mtab.summary-prompt": "摘要提示词",
-  "mtab.summary-hint": "生成会议摘要时发送给 LLM 的系统提示词。用「- [ ] 任务」格式创建待办项。",
+  // meeting settings tab: retired (Workbench P2 Task 7) — see the English
+  // dict's comment.
 
   // onboarding wizard
   "onboard.step.perms": "权限",
@@ -1743,6 +1725,9 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.field.agent.tts_enabled": "通过 TTS 朗读回复",
   "widgets.field.agent.timeout_secs": "超时（秒）",
   "widgets.field.agent.skills": "技能（全局）",
+  "widgets.field.meeting.stt_widget": "STT 组件",
+  "widgets.field.meeting.llm_widget": "LLM 组件",
+  "widgets.field.meeting.summary_prompt": "摘要提示词",
   "widgets.error": "错误：",
   "widgets.err.name-required": "名称为必填项",
   "widgets.err.type-required": "请选择类型",
@@ -1768,6 +1753,7 @@ const zh: Partial<Record<Key, string>> = {
   "builtin.wf.note": "记笔记",
   "builtin.wf.agent": "智能体",
   "builtin.wf.agent-voice": "语音智能体",
+  "builtin.wf.meeting": "会议",
   "builtin.src.selection": "选区",
   "builtin.src.mic-hold": "麦克风·按住",
   "builtin.src.mic-toggle": "麦克风·切换",
@@ -1787,6 +1773,7 @@ const zh: Partial<Record<Key, string>> = {
   "builtin.out.speak": "朗读",
   "builtin.out.quicknote": "快速笔记",
   "builtin.agent.default": "智能体",
+  "builtin.meeting.default": "会议",
 
   // Workbench IA (P1)
   "nav.home": "主页",

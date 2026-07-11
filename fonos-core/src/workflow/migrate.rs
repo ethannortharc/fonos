@@ -51,6 +51,19 @@
 //! widget instead of the two workflows) — the config field is now DEPRECATED
 //! and this is its only remaining reader. Guarded by the separate
 //! `config.agent_triggers_migration_done` sentinel.
+//!
+//! [`migrate_legacy_meeting_triggers`] (Workbench P2 Task 7) runs after
+//! [`migrate_legacy_agent_triggers`]: it folds the legacy standalone
+//! `hotkey_meeting` toggle into a `Trigger::Hotkey` chip on the new
+//! `wf.meeting` composite recipe, and copies a non-empty legacy
+//! `config.meeting_summary_prompt` into the `meeting.default` widget
+//! overlay's `props.summary_prompt` (that field is now DEPRECATED and this is
+//! its only remaining reader). Unlike the summary prompt,
+//! `meeting_stt_profile`/`meeting_llm_profile` are deliberately NOT migrated
+//! — they name model profiles, not widgets, so there is no ref they can
+//! become; both stay live-read as a resolve-time fallback (see their doc
+//! comments). Guarded by the separate `config.meeting_triggers_migration_done`
+//! sentinel.
 
 use std::collections::BTreeMap;
 
@@ -474,6 +487,49 @@ fn upsert_workflow(config: &mut AppConfig, workflow: WorkflowDef) {
     }
 }
 
+/// A built-in [`WorkflowDef`]'s fresh (un-overlaid) shape, by id — the
+/// generate-from-scratch half of [`take_or_seed_workflow`]'s fallback.
+fn base_workflow(id: &str) -> Option<WorkflowDef> {
+    crate::workflow::builtin::built_in_workflows().into_iter().find(|w| w.id == id)
+}
+
+/// Take the existing overlay for `wf_id` out of `config.workflows` (so it can
+/// be mutated and re-upserted), or fall back to a fresh copy of its built-in
+/// shape ([`base_workflow`]). Shared by [`migrate_legacy_agent_triggers`] and
+/// [`migrate_legacy_meeting_triggers`] (hoisted to module level in Task 7 —
+/// originally a private helper nested inside the agent migration): both need
+/// to land a `Trigger::Hotkey` chip on a composite recipe (`wf.agent`/
+/// `wf.agent-voice`/`wf.meeting`) that may never have had a `config.workflows`
+/// overlay before, unlike [`migrate_hotkeys_to_triggers`]'s narrower
+/// "fold onto an existing overlay only" contract.
+fn take_or_seed_workflow(config: &mut AppConfig, wf_id: &str) -> Option<WorkflowDef> {
+    config
+        .workflows
+        .iter()
+        .position(|w| w.id == wf_id)
+        .map(|i| config.workflows.remove(i))
+        .or_else(|| base_workflow(wf_id))
+}
+
+/// Take the existing overlay for `widget_id` out of `config.widgets`, or fall
+/// back to a fresh copy of its built-in shape — the widget-level mirror of
+/// [`take_or_seed_workflow`] above. Shared the same way (hoisted to module
+/// level in Task 7): [`migrate_legacy_agent_triggers`] uses it to seed
+/// `agent.default`'s `props.system`, [`migrate_legacy_meeting_triggers`] to
+/// seed `meeting.default`'s `props.summary_prompt`.
+fn take_or_seed_widget(config: &mut AppConfig, widget_id: &str) -> Option<WidgetDef> {
+    config
+        .widgets
+        .iter()
+        .position(|w| w.id == widget_id)
+        .map(|i| config.widgets.remove(i))
+        .or_else(|| {
+            crate::workflow::builtin::built_in_widgets()
+                .into_iter()
+                .find(|w| w.id == widget_id)
+        })
+}
+
 /// One-shot (idempotent) relocation of three formerly-global settings onto
 /// widget props: STT language, insert strategy, and the translate target
 /// (baked into the translate prompt). Custom widgets are patched in place;
@@ -760,38 +816,6 @@ pub fn migrate_legacy_agent_triggers(config: &mut AppConfig) -> bool {
         return false;
     }
 
-    fn base_workflow(id: &str) -> Option<WorkflowDef> {
-        crate::workflow::builtin::built_in_workflows().into_iter().find(|w| w.id == id)
-    }
-
-    /// Take the existing overlay for `wf_id` out of `config.workflows` (so it
-    /// can be mutated and re-upserted), or fall back to a fresh copy of its
-    /// built-in shape.
-    fn take_or_seed_workflow(config: &mut AppConfig, wf_id: &str) -> Option<WorkflowDef> {
-        config
-            .workflows
-            .iter()
-            .position(|w| w.id == wf_id)
-            .map(|i| config.workflows.remove(i))
-            .or_else(|| base_workflow(wf_id))
-    }
-
-    /// Take the existing overlay for `widget_id` out of `config.widgets`, or
-    /// fall back to a fresh copy of its built-in shape — the widget-level
-    /// mirror of `take_or_seed_workflow` above.
-    fn take_or_seed_widget(config: &mut AppConfig, widget_id: &str) -> Option<WidgetDef> {
-        config
-            .widgets
-            .iter()
-            .position(|w| w.id == widget_id)
-            .map(|i| config.widgets.remove(i))
-            .or_else(|| {
-                crate::workflow::builtin::built_in_widgets()
-                    .into_iter()
-                    .find(|w| w.id == widget_id)
-            })
-    }
-
     let hotkey_agent = std::mem::take(&mut config.hotkey_agent);
     if !hotkey_agent.is_empty() {
         if let Some(mut wf) = take_or_seed_workflow(config, "wf.agent-voice") {
@@ -829,6 +853,85 @@ pub fn migrate_legacy_agent_triggers(config: &mut AppConfig) -> bool {
     }
 
     config.agent_triggers_migration_done = true;
+    true
+}
+
+/// Workbench P2 Task 7: fold the legacy standalone `hotkey_meeting` toggle
+/// into a `Trigger::Hotkey` chip on the new `wf.meeting` composite recipe
+/// (same generate-fresh-or-reuse-existing-overlay approach as
+/// [`migrate_legacy_agent_triggers`], via the now-module-level
+/// [`take_or_seed_workflow`]/[`take_or_seed_widget`] — hoisted out of that
+/// function this task so both migrations share them), then clears the
+/// field. Also copies a non-empty legacy `config.meeting_summary_prompt`
+/// into the `meeting.default` widget overlay's `props.summary_prompt` — see
+/// the second block below.
+///
+/// `hotkey_meeting`'s toggle gesture (start when not recording, stop when
+/// recording — the branch lives inside `MeetingOutput::deliver` itself, not
+/// in two separate recipes the way agent's hold-to-talk/panel-toggle split
+/// across `wf.agent-voice`/`wf.agent`) becomes a plain Hotkey chip
+/// (`capture: None`) on `wf.meeting`; its `src.instant` source never
+/// consults `capture` (it isn't a microphone), so every key-down just
+/// re-invokes the composite, which reads the live recording state itself —
+/// the same "every key-down toggles" reading the legacy arm's key-down-only
+/// dispatch used. The field defaults to a non-empty combo (`"option+m"`), so
+/// this runs — and generates a chip — on a fresh install too, matching every
+/// other hotkey fold in this module.
+///
+/// A second, independent block seeds the summary prompt: a non-empty legacy
+/// `config.meeting_summary_prompt` (DEPRECATED — see its doc comment) is
+/// copied into the `meeting.default` widget overlay's `props.summary_prompt`
+/// (`MeetingProps::summary_prompt`, mirroring the agent persona seed above).
+/// This runs regardless of whether the hotkey fired — the two legacy fields
+/// are independent user customizations. An existing `meeting.default`
+/// override's other props (e.g. a user-picked `stt_widget`/`llm_widget`) are
+/// preserved, only `summary_prompt` is written.
+///
+/// Deliberately NOT migrated here: `meeting_stt_profile`/`meeting_llm_profile`.
+/// Both are model-profile ids, not widget ids, so — unlike the free-text
+/// `summary_prompt` — there is no faithful rewrite into `meeting.default`'s
+/// `stt_widget`/`llm_widget` ref props (that would require minting a new
+/// custom `stt`/`llm` widget wrapping the profile, a heavier change judged
+/// not worth it here). Both fields are therefore left in place and stay
+/// live-read at resolve time (`commands::meeting_widget`'s ref-then-field-
+/// then-global fallback chain) — a documented deviation from the "no readers
+/// after migration" ideal, the same id-space mismatch P1 hit with mode model
+/// overrides. See both fields' doc comments in `AppConfig`.
+///
+/// Idempotent: guarded by `config.meeting_triggers_migration_done` and a
+/// no-op (returning `false`) once that flag is set. Wired into `main.rs`
+/// after [`migrate_legacy_agent_triggers`] (order doesn't matter
+/// functionally — this migration reads its own raw legacy fields directly —
+/// but keeps "newest migration runs last" for the whole chain).
+pub fn migrate_legacy_meeting_triggers(config: &mut AppConfig) -> bool {
+    if config.meeting_triggers_migration_done {
+        return false;
+    }
+
+    let hotkey_meeting = std::mem::take(&mut config.hotkey_meeting);
+    if !hotkey_meeting.is_empty() {
+        if let Some(mut wf) = take_or_seed_workflow(config, "wf.meeting") {
+            if !wf.hotkey_triggers().any(|(_, c, _)| c == hotkey_meeting.as_str()) {
+                wf.triggers.push(Trigger::Hotkey { combo: hotkey_meeting, capture: None });
+            }
+            upsert_workflow(config, wf);
+        }
+    }
+
+    // Summary-prompt seed: copy a non-empty legacy prompt onto the meeting
+    // composite's own props, replacing the deprecated config-global source
+    // (see `AppConfig::meeting_summary_prompt`'s doc comment).
+    let legacy_summary_prompt = config.meeting_summary_prompt.clone();
+    if !legacy_summary_prompt.is_empty() {
+        if let Some(mut w) = take_or_seed_widget(config, "meeting.default") {
+            if let Some(obj) = w.props.as_object_mut() {
+                obj.insert("summary_prompt".to_string(), serde_json::Value::String(legacy_summary_prompt));
+            }
+            upsert_widget(config, w);
+        }
+    }
+
+    config.meeting_triggers_migration_done = true;
     true
 }
 
@@ -1921,12 +2024,156 @@ mod tests {
         assert_eq!(w.props["system"], cfg.agent_system_prompt, "system seeded from the legacy field");
     }
 
+    // ── migrate_legacy_meeting_triggers (Workbench P2 Task 7) ────────────────
+
+    /// A fresh config (legacy meeting hotkey at its non-empty default) still
+    /// produces a chip — the defaults-preserved intent, mirrors the agent
+    /// hotkeys' own test.
+    #[test]
+    fn meeting_triggers_migration_default_config_creates_chip() {
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.hotkey_meeting, "option+m");
+
+        assert!(migrate_legacy_meeting_triggers(&mut cfg), "first run reports a change");
+        assert!(cfg.meeting_triggers_migration_done);
+
+        // Legacy field cleared (rule-6-style hygiene).
+        assert!(cfg.hotkey_meeting.is_empty());
+
+        // wf.meeting: toggle chip, generated fresh from the built-in shape
+        // (src.instant source, meeting.default output). Its Trigger::Hotkey
+        // really carries `capture: None` (src.instant isn't a mic, so nothing
+        // ever reads it) — checked directly against the enum, mirroring
+        // wf.agent's own test.
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.meeting").expect("wf.meeting overlay");
+        assert_eq!(wf.source, "src.instant");
+        assert_eq!(wf.outputs, vec!["meeting.default".to_string()]);
+        assert!(wf.triggers.iter().any(|t| matches!(
+            t,
+            Trigger::Hotkey { combo, capture } if combo == "option+m" && capture.is_none()
+        )));
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
+
+        // Summary-prompt seed: the default config's non-empty (deprecated)
+        // `meeting_summary_prompt` is copied onto a fresh meeting.default
+        // widget overlay's `props.summary_prompt` too — this fires
+        // unconditionally alongside the hotkey chip, not gated on it. The
+        // default config's `meeting_summary_prompt` is empty, though, so no
+        // override is created (covered by the next test); this test only
+        // needs the hotkey chip.
+        assert!(cfg.meeting_summary_prompt.is_empty(), "default config has no custom summary prompt");
+        assert!(!cfg.widgets.iter().any(|w| w.id == "meeting.default"), "nothing to seed by default");
+    }
+
+    #[test]
+    fn meeting_triggers_migration_is_idempotent() {
+        let mut cfg = AppConfig { meeting_summary_prompt: "Custom.".to_string(), ..Default::default() };
+        assert!(migrate_legacy_meeting_triggers(&mut cfg));
+        let workflows_after_first = cfg.workflows.clone();
+        let widgets_after_first = cfg.widgets.clone();
+
+        assert!(!migrate_legacy_meeting_triggers(&mut cfg), "second call reports no change");
+        assert_eq!(cfg.workflows, workflows_after_first, "workflows unchanged");
+        assert_eq!(cfg.widgets, widgets_after_first, "widgets (incl. meeting.default's seeded prompt) unchanged");
+        assert!(cfg.meeting_triggers_migration_done);
+    }
+
+    #[test]
+    fn meeting_triggers_migration_returns_false_when_already_done() {
+        let mut cfg = AppConfig { meeting_triggers_migration_done: true, ..Default::default() };
+        assert!(!migrate_legacy_meeting_triggers(&mut cfg));
+        assert_eq!(cfg.hotkey_meeting, "option+m", "no-op leaves the legacy field untouched");
+    }
+
+    /// A user-cleared legacy hotkey generates no overlay at all — mirrors
+    /// every other hotkey fold's "nothing to migrate" behavior.
+    #[test]
+    fn meeting_triggers_migration_empty_legacy_hotkey_creates_no_overlay() {
+        let mut cfg = AppConfig { hotkey_meeting: String::new(), ..Default::default() };
+        assert!(migrate_legacy_meeting_triggers(&mut cfg));
+        assert!(!cfg.workflows.iter().any(|w| w.id == "wf.meeting"));
+    }
+
+    /// A pre-existing overlay (hand-edited config, or a re-run after a
+    /// bypassed sentinel) is mutated in place — its other fields survive and
+    /// the combo isn't duplicated if already present as a chip.
+    #[test]
+    fn meeting_triggers_migration_preserves_existing_overlay() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.meeting".to_string(),
+            name: "我的会议".to_string(),
+            icon: "🗓".to_string(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::Hotkey { combo: "option+m".into(), capture: None }],
+            source: "src.instant".to_string(),
+            processors: vec![],
+            outputs: vec!["meeting.default".to_string()],
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_meeting_triggers(&mut cfg));
+
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.meeting").unwrap();
+        assert_eq!(wf.name, "我的会议", "existing overlay's name preserved");
+        assert_eq!(
+            wf.hotkey_triggers().filter(|(_, c, _)| *c == "option+m").count(),
+            1,
+            "combo not duplicated when already present as a chip"
+        );
+    }
+
+    // ── Summary-prompt seed: config.meeting_summary_prompt → meeting.default's props.summary_prompt ──
+
+    /// An empty (default/user-cleared) legacy summary prompt seeds no widget
+    /// override at all — mirrors the agent persona seed's own test.
+    #[test]
+    fn meeting_triggers_migration_empty_summary_prompt_seeds_no_widget_override() {
+        let mut cfg = AppConfig { meeting_summary_prompt: String::new(), ..Default::default() };
+        assert!(migrate_legacy_meeting_triggers(&mut cfg));
+        assert!(
+            !cfg.widgets.iter().any(|w| w.id == "meeting.default"),
+            "no override should be created when there's nothing to seed"
+        );
+    }
+
+    /// A pre-existing `meeting.default` override (e.g. the user already
+    /// picked a tuned `stt_widget`/`llm_widget` via the settings UI) is
+    /// mutated in place: only `summary_prompt` is written, every other prop
+    /// the user configured survives.
+    #[test]
+    fn meeting_triggers_migration_preserves_existing_meeting_default_overlay_props() {
+        let mut cfg = AppConfig { meeting_summary_prompt: "Focus on decisions.".to_string(), ..Default::default() };
+        cfg.widgets.push(WidgetDef {
+            id: "meeting.default".to_string(),
+            role: WidgetRole::Output,
+            type_tag: "meeting".to_string(),
+            name: "My Meeting".to_string(),
+            icon: "🗓".to_string(),
+            props: serde_json::json!({
+                "stt_widget": "stt.tuned",
+                "llm_widget": "llm.tuned",
+                "summary_prompt": "",
+            }),
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_meeting_triggers(&mut cfg));
+
+        let w = cfg.widgets.iter().find(|w| w.id == "meeting.default").unwrap();
+        assert_eq!(w.name, "My Meeting", "existing overlay's name preserved");
+        assert_eq!(w.props["stt_widget"], "stt.tuned", "existing stt_widget ref preserved");
+        assert_eq!(w.props["llm_widget"], "llm.tuned", "existing llm_widget ref preserved");
+        assert_eq!(w.props["summary_prompt"], cfg.meeting_summary_prompt, "summary_prompt seeded from the legacy field");
+    }
+
     // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
     // A regression test for the whole v0.6.x → current pipeline:
     // migrate_transform_to_text_actions → migrate_to_workflows →
     // migrate_settings_into_flow → remap_renamed_builtins →
     // migrate_hotkeys_to_triggers → migrate_primary_hotkey_to_pill →
-    // migrate_legacy_agent_triggers. Simulates
+    // migrate_legacy_agent_triggers → migrate_legacy_meeting_triggers.
+    // Simulates
     // a realistic pre-Workbench-P1 config: legacy
     // dictation/toggle/note/notebook/listen/quick-transform hotkeys, a
     // non-default STT language, and a pre-existing custom workflow overlay
@@ -1955,6 +2202,10 @@ mod tests {
         // 1's migrate_legacy_agent_triggers should seed this onto
         // agent.default's props.system, checked at (f) below.
         cfg.agent_system_prompt = "You are Rex, a custom test agent.".to_string();
+        // A customized (non-default) legacy meeting summary prompt — Task 7's
+        // migrate_legacy_meeting_triggers should seed this onto
+        // meeting.default's props.summary_prompt, checked at (g) below.
+        cfg.meeting_summary_prompt = "Summarize action items only.".to_string();
 
         // A custom workflow overlay pre-dating Workbench P1: it already lives
         // in `config.workflows` (as Workflow P1/P2 would have written it) but
@@ -1985,6 +2236,7 @@ mod tests {
             "cmd+shift+9",     // pre-existing custom workflow
             "cmd+shift+a",     // agent (left at its default) → wf.agent-voice
             "cmd+shift+g",     // agent panel (left at its default) → wf.agent
+            "option+m",        // meeting (left at its default) → wf.meeting
         ];
 
         let custom_modes = BTreeMap::new();
@@ -1997,6 +2249,7 @@ mod tests {
         assert!(migrate_hotkeys_to_triggers(&mut cfg), "hotkey-to-trigger migration runs");
         assert!(migrate_primary_hotkey_to_pill(&mut cfg), "pill hotkey migration runs");
         assert!(migrate_legacy_agent_triggers(&mut cfg), "agent-triggers migration runs");
+        assert!(migrate_legacy_meeting_triggers(&mut cfg), "meeting-triggers migration runs");
 
         // (a) All sentinels set.
         assert!(cfg.workflow_migration_done, "workflow_migration_done set");
@@ -2004,6 +2257,7 @@ mod tests {
         assert!(cfg.triggers_migration_done, "triggers_migration_done set");
         assert!(cfg.pill_hotkey_migration_done, "pill_hotkey_migration_done set");
         assert!(cfg.agent_triggers_migration_done, "agent_triggers_migration_done set");
+        assert!(cfg.meeting_triggers_migration_done, "meeting_triggers_migration_done set");
 
         // (a2) The primary dictation hotkey landed on the pill, carrying its
         // capture ("hold" — wf.dictation's source is src.mic-hold).
@@ -2053,6 +2307,15 @@ mod tests {
         assert_eq!(agent_default.props["system"], cfg.agent_system_prompt);
         assert_eq!(cfg.agent_system_prompt, "You are Rex, a custom test agent.");
 
+        // (g) The customized legacy summary prompt landed on meeting.default's
+        // props.summary_prompt (Task 7) — the config field itself is left
+        // untouched (deprecated, not cleared; see its doc comment). The
+        // meeting hotkey chip landed on wf.meeting too (already checked at
+        // (b) above via `legacy_hotkeys`).
+        let meeting_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "meeting.default").expect("meeting.default");
+        assert_eq!(meeting_default.props["summary_prompt"], cfg.meeting_summary_prompt);
+        assert_eq!(cfg.meeting_summary_prompt, "Summarize action items only.");
+
         // (e) Running the whole chain a second time changes nothing.
         let json_before = serde_json::to_string(&cfg).expect("serialize before second pass");
         let r1 = migrate_transform_to_text_actions(&mut cfg);
@@ -2062,9 +2325,10 @@ mod tests {
         let r5 = migrate_hotkeys_to_triggers(&mut cfg);
         let r6 = migrate_primary_hotkey_to_pill(&mut cfg);
         let r7 = migrate_legacy_agent_triggers(&mut cfg);
+        let r8 = migrate_legacy_meeting_triggers(&mut cfg);
         assert!(
-            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7,
-            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7})"
+            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7 && !r8,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7} r8={r8})"
         );
         let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
         assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");

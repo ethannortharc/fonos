@@ -68,11 +68,14 @@ export interface AppConfig {
   notebook_hotkey_1?: number;
   notebook_hotkey_2?: number;
   notebook_hotkey_3?: number;
-  // Meeting fields
+  // Meeting fields. meeting_audio_source was never a real Rust config field
+  // (dead — MeetingTab.tsx wrote it but nothing read it back); removed
+  // alongside MeetingTab.tsx's deletion (Workbench P2 Task 7). The other
+  // three remain real (if no longer settings-tab-editable) config fields —
+  // see their doc comments in fonos-core's AppConfig.
   meeting_stt_profile?: string;
   meeting_llm_profile?: string;
   meeting_summary_prompt?: string;
-  meeting_audio_source?: string;
   hotkey_meeting?: string;
   // Quick transform
   hotkey_transform?: string;

@@ -45,32 +45,6 @@ fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
-/// Position the meeting-panel window in the bottom-right corner of the active monitor,
-/// above the Dock — a fixed corner so it doesn't obscure the meeting app window.
-#[cfg(target_os = "macos")]
-fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("meeting-panel") else { return };
-    let Some((target, _cursor)) = commands::monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let panel_w = 520.0_f64;
-    let top_margin = 80.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-
-    // Right edge of panel flush with right edge of screen, near the top
-    let x = mon_x + mon_w - panel_w;
-    let y = mon_y + top_margin;
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
 /// Stop dictation, run LLM if needed, inject text at cursor, emit float:stop.
 /// Re-centers the float pill after completion.
 ///
@@ -163,8 +137,10 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     // Non-workflow triggers keep their dedicated labels + dispatch arms.
     // (Agent's former standalone "agent"/"agent-panel" labels are gone —
     // Workbench P2 Task 6 folded them into wf.agent-voice/wf.agent's own
-    // Hotkey chips, handled by the `starts_with("workflow-")` arm below.)
-    try_add(&config.hotkey_meeting, "meeting");
+    // Hotkey chips, handled by the `starts_with("workflow-")` arm below.
+    // Meeting's former standalone "meeting" label is gone the same way —
+    // Workbench P2 Task 7 folded hotkey_meeting into wf.meeting's own Hotkey
+    // chip.)
     try_add(&config.hotkey_sts, "sts");
     // Dictation / note / listen / text-actions are unified onto the workflow
     // engine (Workflow P1): every Hotkey chip on a workflow registers its own
@@ -331,6 +307,18 @@ fn main() {
         match config.save() {
             Ok(()) => eprintln!("fonos: migrated legacy agent hotkeys to recipe triggers"),
             Err(e) => eprintln!("fonos: agent-triggers migration save failed: {e}"),
+        }
+    }
+    // One-time migration: the legacy standalone `hotkey_meeting` toggle →
+    // a Trigger::Hotkey chip on the new `wf.meeting` composite recipe, plus a
+    // non-empty legacy `meeting_summary_prompt` → the `meeting.default`
+    // widget's `props.summary_prompt` (Workbench P2 Task 7). Runs after the
+    // agent-triggers migration above (order doesn't matter functionally —
+    // see the function doc — but keeps "newest migration last").
+    if fonos_core::workflow::migrate::migrate_legacy_meeting_triggers(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated legacy meeting hotkey to recipe trigger"),
+            Err(e) => eprintln!("fonos: meeting-triggers migration save failed: {e}"),
         }
     }
     let config = config;
@@ -668,52 +656,13 @@ fn main() {
                     let label = label.to_string();
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
-                            "meeting" => {
-                                // Toggle meeting mode on key down only
-                                if !is_down { return; }
-                                use tauri::Manager;
-
-                                let state: tauri::State<'_, AppState> = handle.state();
-                                let is_recording = state.meeting.lock().await.recording;
-
-                                if !is_recording {
-                                    // Start meeting: position panel, show, start recording
-                                    move_meeting_panel_to_cursor(&handle);
-                                    if let Some(panel) = handle.get_webview_window("meeting-panel") {
-                                        let _ = panel.show();
-                                        let _ = panel.set_focus();
-                                        let _ = panel.eval("recvMeetingShow()");
-                                    }
-                                    let state2: tauri::State<'_, AppState> = handle.state();
-                                    match commands::meeting::start_meeting(handle.clone(), state2).await {
-                                        Ok(cid) => {
-                                            eprintln!("fonos: meeting started via hotkey, container={}", cid);
-                                        }
-                                        Err(e) => {
-                                            eprintln!("fonos: meeting start error: {e}");
-                                        }
-                                    }
-                                } else {
-                                    // Stop meeting: stop recording, hide panel after summary
-                                    let state2: tauri::State<'_, AppState> = handle.state();
-                                    match commands::meeting::stop_meeting(handle.clone(), state2).await {
-                                        Ok(_summary) => {
-                                            eprintln!("fonos: meeting stopped via hotkey");
-                                        }
-                                        Err(e) => {
-                                            eprintln!("fonos: meeting stop error: {e}");
-                                        }
-                                    }
-                                    // Hide panel after a brief delay to show summary
-                                    let handle2 = handle.clone();
-                                    tokio::spawn(async move {
-                                        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                        if let Some(panel) = handle2.get_webview_window("meeting-panel") {
-                                            let _ = panel.hide();
-                                        }
-                                    });
-                                }
-                            }
+                            // Meeting's former standalone "meeting" toggle arm is
+                            // gone (Workbench P2 Task 7) — folded into
+                            // `wf.meeting`'s own Hotkey chip, handled by the
+                            // `starts_with("workflow-")` arm below;
+                            // `commands::meeting_widget::MeetingOutput` reads the
+                            // live recording state itself to decide start vs stop,
+                            // the same toggle dance this arm used to do inline.
 
                             "sts" => {
                                 // Hold-to-talk conversation turn (issue #24):

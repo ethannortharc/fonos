@@ -134,9 +134,8 @@ export function ModelSelector({
  *  "stt"/"llm" widget it delegates to). Modeled on ModelSelector above:
  *  filtered to widgets of `wantTag`, empty value = "use default" (reuses
  *  modes.use-default — same copy, same "no override" meaning as
- *  ModelSelector's empty option). No PropsForm case renders this yet; it's
- *  exported now so those tasks can wire it in without re-deriving the
- *  filter/empty-option shape. */
+ *  ModelSelector's empty option). The "dialog"/"agent"/"meeting" PropsForm
+ *  cases below render it; "call" (T9) is the one remaining consumer. */
 export function WidgetRefSelector({
   wantTag, value, widgets, onChange,
 }: {
@@ -278,7 +277,8 @@ function PropsForm({
   containers: Container[];
   /** Loaded widget instances, for composite cases' WidgetRefSelector
    *  (stt_widget/llm_widget dropdowns). Threaded through from WidgetForm;
-   *  the "dialog" case (Task 4) is the first consumer — T6/T7/T9 add more. */
+   *  "dialog" (Task 4), "agent" (Task 6), and "meeting" (Task 7) consume
+   *  it — "call" (T9) still pending. */
   widgets: WidgetDef[];
   onProps: (props: Props) => void;
 }) {
@@ -490,6 +490,22 @@ function PropsForm({
       );
     }
 
+    case "meeting": {
+      return (
+        <div className="flex flex-col gap-2.5">
+          <Field label={t("widgets.field.meeting.stt_widget")}>
+            <WidgetRefSelector wantTag="stt" value={pStr(p, "stt_widget")} widgets={widgets} onChange={(v) => set("stt_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.meeting.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={pStr(p, "llm_widget")} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.meeting.summary_prompt")}>
+            <textarea value={pStr(p, "summary_prompt")} onChange={(e) => set("summary_prompt", e.target.value)} rows={4} className={textareaClass} />
+          </Field>
+        </div>
+      );
+    }
+
     // selection / replace / clipboard — no configurable props.
     case "uppercase":
     default:
@@ -511,8 +527,8 @@ export default function WidgetForm({
   containers: Container[];
   /** Every loaded widget instance — threaded down to PropsForm for composite
    *  cases' WidgetRefSelector (stt_widget/llm_widget dropdowns filtered by
-   *  type_tag). Dialog (T6/T7/T9) now consumes it; remaining composite
-   *  cases (call/agent/meeting refs) add their own in future tasks. */
+   *  type_tag). Dialog (Task 4), agent (Task 6), and meeting (Task 7) now
+   *  consume it; call (T9) still pending. */
   widgets: WidgetDef[];
   /** Allowed type_tags for a NEW widget of value.role (e.g. BuildingBlocks'
    *  TYPE_TAGS[role]) — populates the isNew type_tag <select> below.

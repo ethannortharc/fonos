@@ -11,6 +11,7 @@ pub mod doctor;
 pub mod listen;
 pub mod llm;
 pub mod meeting;
+pub mod meeting_widget;
 pub mod permissions;
 pub mod scenarios;
 pub mod selection;
@@ -380,6 +381,40 @@ pub(crate) fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
     // Top-center: drops down from the menu bar area like a water drop
     let x = mon_x + (mon_w - panel_w) / 2.0;
     let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
+/// Position the meeting-panel window in the bottom-right corner of the active
+/// monitor, above the Dock — a fixed corner so it doesn't obscure the meeting
+/// app window.
+///
+/// Moved here from `main.rs` (Workbench P2 Task 7, retiring the legacy
+/// meeting hotkey arm) for the same reason [`move_agent_panel_to_cursor`]
+/// lives here rather than in `main.rs`: `commands::meeting_widget::MeetingOutput`
+/// needs to call it, and only items under `commands/` are reachable from both
+/// the `main.rs` binary root and the `lib.rs` library root (see
+/// [`monitor_under_cursor`]'s doc comment).
+#[cfg(target_os = "macos")]
+pub(crate) fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("meeting-panel") else { return };
+    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
+
+    let scale = target.scale_factor();
+    let panel_w = 520.0_f64;
+    let top_margin = 80.0_f64;
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+
+    // Right edge of panel flush with right edge of screen, near the top
+    let x = mon_x + mon_w - panel_w;
+    let y = mon_y + top_margin;
 
     let _ = panel.set_position(tauri::PhysicalPosition::new(
         (x * scale) as i32,

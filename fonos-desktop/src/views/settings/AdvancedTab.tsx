@@ -1,5 +1,5 @@
 // AdvancedTab.tsx — the Advanced page (Flows UI redesign, Task 5). Absorbs the
-// Speech / Meeting settings tabs plus their non-workflow hotkeys behind
+// Speech / Insertion settings tabs plus their non-workflow hotkeys behind
 // a segmented control, retiring the standalone Hotkeys tab (workflow trigger
 // keys already live per-recipe in the Workbench's Recipes segment — see
 // RecipesSection).
@@ -18,16 +18,23 @@
 // settings-tab home of its own right now), and its two standalone hotkeys
 // were folded into `wf.agent-voice`/`wf.agent`'s own Hotkey chips by
 // `migrate_legacy_agent_triggers`.
+//
+// The Meeting segment (MeetingTab + the hotkey_meeting row) was retired the
+// same way by Workbench P2 Task 7: meeting settings now live on the
+// `meeting.default` widget's own WidgetForm PropsForm case (stt_widget +
+// llm_widget refs, summary_prompt textarea — the dead `meeting_audio_source`
+// field, never a real Rust config field, is simply gone), and its standalone
+// hotkey was folded into `wf.meeting`'s own Hotkey chip by
+// `migrate_legacy_meeting_triggers`.
 
 import { useState } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModeEntry } from "../../types";
 import { HotkeyRow } from "../../components/HotkeyInput";
 import SpeechTab from "./SpeechTab";
-import MeetingTab from "./MeetingTab";
 import InsertionTab from "./InsertionTab";
 
-type Sub = "speech" | "meeting" | "insertion";
+type Sub = "speech" | "insertion";
 
 // ─── Segmented control — same markup/classes as Workbench.tsx's top segment
 //     switcher (container + active-state pill), inlined here as its own
@@ -57,10 +64,9 @@ export default function AdvancedTab({ config, modes, onSave }: {
 
   return (
     <div className="flex flex-col">
-      {/* Segmented control [Speech] [Meeting] [Insertion] */}
+      {/* Segmented control [Speech] [Insertion] */}
       <div className="inline-flex self-start bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-[9px] p-[3px] gap-[3px] mb-[18px]">
         <SegButton active={sub === "speech"} onClick={() => setSub("speech")}><span>{t("tab.speech")}</span></SegButton>
-        <SegButton active={sub === "meeting"} onClick={() => setSub("meeting")}><span>{t("tab.meeting")}</span></SegButton>
         <SegButton active={sub === "insertion"} onClick={() => setSub("insertion")}><span>{t("tab.insertion")}</span></SegButton>
       </div>
 
@@ -73,19 +79,6 @@ export default function AdvancedTab({ config, modes, onSave }: {
             onChange={(v) => onSave({ hotkey_tts: v })}
           />
           <SpeechTab config={config} modes={modes} onSave={onSave} />
-        </div>
-      )}
-
-      {/* ────────────── Meeting sub — hotkey_meeting + MeetingTab ────────────── */}
-      {sub === "meeting" && (
-        <div className="flex flex-col gap-4">
-          <HotkeyRow
-            label={t("hotkeys.meeting")}
-            hint={t("hotkeys.toggle")}
-            value={config.hotkey_meeting ?? ""}
-            onChange={(v) => onSave({ hotkey_meeting: v })}
-          />
-          <MeetingTab config={config} onSave={onSave} />
         </div>
       )}
 

@@ -100,10 +100,12 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   // now always empty post-migration (migrate_legacy_agent_triggers folds it
   // into a wf.agent-voice/wf.agent Hotkey chip and clears the field), so this
   // row would never render anyway — the filter below just made it silently
-  // vanish instead of being obviously dead code. Meeting/STS stay legacy
-  // until T7/T9 give them their own composite recipes.
+  // vanish instead of being obviously dead code. Meeting's legacy row was
+  // removed the same way by Task 7 (config.hotkey_meeting is now always
+  // empty post-migration too — migrate_legacy_meeting_triggers folds it into
+  // wf.meeting's own Hotkey chip). STS stays legacy until T9 gives it its
+  // own composite recipe.
   const legacy: { combo?: string; label: string }[] = [
-    { combo: config.hotkey_meeting, label: "Meeting" },
     { combo: config.hotkey_sts, label: "STS" },
   ].filter((x) => !!x.combo);
 

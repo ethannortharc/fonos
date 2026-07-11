@@ -4,11 +4,27 @@
 //! is available, mic-only otherwise), transcribes each chunk via the configured
 //! STT engine, streams results to the meeting-panel webview, and generates an
 //! AI summary when the meeting ends.
+//!
+//! Workbench P2 Task 7 split each command's guts into a `pub(crate)` `*_with`
+//! function taking already-resolved parameters (an STT [`ServiceConfig`] for
+//! start, an LLM model-profile id + summary-prompt override for stop), so
+//! [`super::meeting_widget::MeetingOutput`] (the `meeting` composite output)
+//! can drive the exact same logic with its own `stt_widget`/`llm_widget`-ref
+//! resolution instead of this module's global-only fallback. The thin
+//! `#[tauri::command]` shells stay registered (the `meeting-panel.html` panel
+//! still invokes `stop_meeting` directly via `iv('stop_meeting')`) and keep
+//! their original global-fallback behavior for any other caller. This also
+//! fixes a pre-existing bug: `start_meeting` used to read the global `"stt"`
+//! profile unconditionally, silently ignoring `config.meeting_stt_profile` —
+//! see `meeting_widget::MeetingOutput`'s STT resolution for the fix (a
+//! `stt_widget` ref wins, then this now-consulted field, then the global
+//! profile).
 
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::Manager;
 
+use fonos_core::llm::ServiceConfig;
 use fonos_core::storage::{
     Container, ContainerType, Entry, EntryRole, SourceType,
 };
@@ -57,7 +73,7 @@ pub struct MeetingDetail {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Escape a string for safe interpolation inside a JS single-quoted string.
-fn js_escape(s: &str) -> String {
+pub(crate) fn js_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\\'")
         .replace('\n', "\\n")
@@ -65,7 +81,14 @@ fn js_escape(s: &str) -> String {
 }
 
 /// Helper: evaluate JS in the meeting-panel webview.
-fn meeting_js(app: &tauri::AppHandle, js: &str) {
+///
+/// Security note (mirrors `agent_widget::agent_js`'s doc comment):
+/// `WebviewWindow::eval` injects JS into an app-owned Tauri webview (the
+/// bundled `meeting-panel.html`), not a general code-exec sink for untrusted
+/// input. Every value interpolated into `js` by callers is pre-escaped via
+/// [`js_escape`] (single-quoted `recv*('...')` calls) or `serde_json::to_string`
+/// (double-quoted JSON args) before reaching this function.
+pub(crate) fn meeting_js(app: &tauri::AppHandle, js: &str) {
     if let Some(panel) = app.get_webview_window("meeting-panel") {
         if let Err(e) = panel.eval(js) {
             eprintln!("fonos: meeting-panel JS eval error: {e}");
@@ -73,8 +96,42 @@ fn meeting_js(app: &tauri::AppHandle, js: &str) {
     }
 }
 
+/// The default meeting title: `"Meeting {yyyy-MM-dd HH:mm}"`, derived from the
+/// current time. `pub(crate)` (not just used by `start_meeting_with` below)
+/// so [`super::meeting_widget::MeetingOutput`] can compute it BEFORE calling
+/// `start_meeting_with` — it needs the title immediately, for its own
+/// `recvStart` panel eval, rather than waiting on `start_meeting_with`'s
+/// return.
+pub(crate) fn default_meeting_title() -> String {
+    let now = now_iso8601();
+    let ts = now[..16].replace('T', " ");
+    format!("Meeting {}", ts)
+}
+
+/// The built-in meeting-summary instructions, used when no custom prompt
+/// (component prop or, pre-Task-7, the deprecated `meeting_summary_prompt`
+/// config field) is set. Extracted to a constant so [`build_summary_prompt`]
+/// can substitute a custom prompt in its place while still appending the same
+/// transcript tail.
+const BUILTIN_SUMMARY_INSTRUCTIONS: &str = concat!(
+    "You are a meeting assistant. Given the following transcript, generate:\n",
+    "1. A concise meeting summary (3-5 sentences)\n",
+    "2. Key discussion points (bullet list grouped by topic)\n",
+    "3. Action items (who does what, by when)\n",
+    "4. Decisions made during the meeting\n\n",
+    "Output in clean Markdown. Do not wrap in a code block.",
+);
+
 /// Build the AI summary prompt from a list of transcript entries.
-pub fn build_summary_prompt(entries: &[Entry]) -> String {
+///
+/// `custom_instructions` replaces [`BUILTIN_SUMMARY_INSTRUCTIONS`] when
+/// non-empty (`MeetingProps::summary_prompt`'s component-prop-first
+/// resolution — Workbench P2 Task 7); empty falls back to the built-in
+/// literal, so this is a pure superset of the pre-Task-7 always-literal
+/// behavior. Either way, an empty transcript still short-circuits to an empty
+/// prompt (regardless of `custom_instructions`) — an empty entries list means
+/// there's nothing to summarize.
+pub fn build_summary_prompt(entries: &[Entry], custom_instructions: &str) -> String {
     let transcript = entries
         .iter()
         .enumerate()
@@ -99,20 +156,40 @@ pub fn build_summary_prompt(entries: &[Entry]) -> String {
         return String::new();
     }
 
-    format!(
-        "You are a meeting assistant. Given the following transcript, generate:\n\
-         1. A concise meeting summary (3-5 sentences)\n\
-         2. Key discussion points (bullet list grouped by topic)\n\
-         3. Action items (who does what, by when)\n\
-         4. Decisions made during the meeting\n\n\
-         Output in clean Markdown. Do not wrap in a code block.\n\n\
-         TRANSCRIPT:\n{transcript}"
-    )
+    let instructions = if custom_instructions.is_empty() {
+        BUILTIN_SUMMARY_INSTRUCTIONS
+    } else {
+        custom_instructions
+    };
+    format!("{instructions}\n\nTRANSCRIPT:\n{transcript}")
 }
 
-/// Call an LLM with a raw prompt string using the meeting or fallback LLM profile.
-/// Returns the generated text or an error string.
-async fn call_llm_raw(state: &AppState, prompt: &str) -> Result<String, String> {
+/// Resolve `profile_id` into connection info for the meeting summary LLM call
+/// — pure (no lock/await), so callers resolve it inside a scoped
+/// config-lock block and drop the guard before their subsequent `.await`
+/// (same lock discipline as `commands::agent::resolve_agent_llm_service`,
+/// which this mirrors almost verbatim). An empty or unknown `profile_id` is a
+/// hard error, matching the original `call_llm_raw`'s inline behavior.
+fn resolve_llm_profile_service(
+    config: &fonos_core::config::AppConfig,
+    profile_id: &str,
+) -> Result<ServiceConfig, String> {
+    if profile_id.is_empty() {
+        return Err("No LLM profile configured. Please add one in Settings > Model Registry.".into());
+    }
+    let profile = config
+        .model_profiles
+        .iter()
+        .find(|p| p["id"].as_str() == Some(profile_id))
+        .ok_or_else(|| format!("LLM profile '{}' not found", profile_id))?;
+    Ok(super::config_from_profile(profile))
+}
+
+/// Call an LLM with a raw prompt string via an already-resolved service — no
+/// config/state access at all, so it never holds a lock across this `.await`.
+/// Returns the generated text or an error string. `profile_id` is only used
+/// for the log line (the connection info itself is all in `svc`).
+async fn call_llm_raw(svc: &ServiceConfig, profile_id: &str, prompt: &str) -> Result<String, String> {
     use fonos_core::llm::call_openai_compatible;
     use fonos_core::llm::call_anthropic;
 
@@ -120,60 +197,89 @@ async fn call_llm_raw(state: &AppState, prompt: &str) -> Result<String, String> 
         return Ok(String::new());
     }
 
-    let (profile_id, model, api_key, base_url, provider) = {
-        let config = state.config.lock().map_err(|e| e.to_string())?;
-        // Prefer meeting_llm_profile; fall back to llm_profile
-        let pid = if !config.meeting_llm_profile.is_empty() {
-            config.meeting_llm_profile.clone()
-        } else {
-            config.llm_profile.clone()
-        };
-        if pid.is_empty() {
-            return Err("No LLM profile configured. Please add one in Settings > Model Registry.".into());
-        }
-        let profile = config
-            .model_profiles
-            .iter()
-            .find(|p| p["id"].as_str() == Some(&pid))
-            .ok_or_else(|| format!("LLM profile '{}' not found", pid))?
-            .clone();
-        (
-            pid,
-            profile["model"].as_str().unwrap_or("gpt-4o").to_string(),
-            profile["api_key"].as_str().unwrap_or("").to_string(),
-            profile["base_url"].as_str().unwrap_or("").to_string(),
-            profile["provider"].as_str().unwrap_or("openai").to_string(),
-        )
-    };
-
-    eprintln!("fonos: meeting summary LLM profile={} provider={} model={}", profile_id, provider, model);
+    eprintln!(
+        "fonos: meeting summary LLM profile={} provider={} model={}",
+        profile_id, svc.provider, svc.model
+    );
 
     let messages = vec![
         serde_json::json!({"role": "user", "content": prompt}),
     ];
 
-    let resp = if provider == "anthropic" {
-        call_anthropic(&api_key, &model, &messages, 0.3, 2048).await
+    let resp = if svc.provider == "anthropic" {
+        call_anthropic(&svc.api_key, &svc.model, &messages, 0.3, 2048).await
     } else {
-        call_openai_compatible(&api_key, &model, &base_url, &messages, 0.3, 2048, &provider).await
+        call_openai_compatible(&svc.api_key, &svc.model, &svc.base_url, &messages, 0.3, 2048, &svc.provider).await
     };
 
     resp.map(|r| r.text).map_err(|e| e.to_string())
 }
 
+/// Schedule hiding the meeting-panel window after a brief delay — moved here
+/// (Workbench P2 Task 7) from the retired `main.rs` "meeting" hotkey arm,
+/// which ran this unconditionally right after `stop_meeting` resolved
+/// (Ok or Err alike). Called from [`stop_meeting_with`] once the recording
+/// has genuinely stopped, so both the composite (`MeetingOutput`) and the
+/// plain `stop_meeting` command shell (the panel's own stop button) get the
+/// same auto-hide — previously only the hotkey-toggle path did. Harmless if
+/// the panel is already hidden by the time this fires (e.g. by the panel's
+/// own `recvSummary`-driven 3s auto-hide in `meeting-panel.html`, which this
+/// duplicates as a longer-delay backstop, exactly as it did before this
+/// task).
+fn schedule_delayed_hide(app: tauri::AppHandle) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if let Some(panel) = app.get_webview_window("meeting-panel") {
+            let _ = panel.hide();
+        }
+    });
+}
+
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
-/// Start a new meeting session.
-///
-/// Creates a `meeting_session` container, sets up dual-channel capture, and
-/// spawns a background task that transcribes audio chunks and streams results
-/// to the `meeting-panel` webview.
+/// Start a new meeting session using the global `"stt"` service profile —
+/// the plain command-shell's fallback (no widget-ref awareness; see the
+/// module docs). The panel no longer invokes this directly (only
+/// `stop_meeting`, via its stop button) and neither does the retired
+/// `main.rs` hotkey arm (folded into the `meeting` composite — see
+/// `meeting_widget::MeetingOutput`, which calls [`start_meeting_with`]
+/// directly with its own resolved STT service instead); this command shell
+/// stays registered for IPC/API compat (`lib/meeting-api.ts`'s
+/// `startMeeting()` binding).
 ///
 /// Returns the container ID of the new meeting session.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn start_meeting(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+) -> Result<i64, String> {
+    let stt_svc = super::get_service_config(&state, "stt");
+    let title = default_meeting_title();
+    start_meeting_with(&app, &state, stt_svc, title).await
+}
+
+/// Create a `meeting_session` container, set up dual-channel capture, and
+/// spawn a background task that transcribes audio chunks and streams results
+/// to the `meeting-panel` webview — the parameterized guts shared by the
+/// plain `start_meeting` command (global-only fallback) and
+/// `meeting_widget::MeetingOutput` (resolves `stt_svc` from its own
+/// `stt_widget` ref, falling back to the legacy `meeting_stt_profile` field —
+/// **the BUG 1 fix**: this function itself no longer reads config, so it
+/// can't silently ignore that field the way the old unparameterized
+/// `start_meeting` did).
+///
+/// `title` is the caller's already-decided meeting title (rather than
+/// generated here) so `MeetingOutput` can compute it once and reuse it for
+/// its own immediate `recvStart` panel eval before this function's spawned
+/// capture loop reaches its own (later, capture-outcome-accurate) `recvStart`
+/// call — see [`default_meeting_title`].
+///
+/// Returns the container ID of the new meeting session.
+pub(crate) async fn start_meeting_with(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    stt_svc: ServiceConfig,
+    title: String,
 ) -> Result<i64, String> {
     // Guard against double-start
     {
@@ -185,10 +291,6 @@ pub async fn start_meeting(
 
     // 1. Create meeting_session container
     let now = now_iso8601();
-    let title = {
-        let ts = &now[..16].replace('T', " ");
-        format!("Meeting {}", ts)
-    };
 
     let container = Container {
         id: None,
@@ -221,11 +323,10 @@ pub async fn start_meeting(
         ms.start_time = Some(std::time::Instant::now());
     }
 
-    // 3. Read STT config
-    let (stt_base_url, stt_api_key, stt_model) = {
-        let svc = super::get_service_config(&state, "stt");
-        (svc.base_url, svc.api_key, if svc.model.is_empty() { "fast".to_string() } else { svc.model })
-    };
+    // 3. STT config — resolved by the caller (see this function's doc comment).
+    let stt_base_url = stt_svc.base_url;
+    let stt_api_key = stt_svc.api_key;
+    let stt_model = if stt_svc.model.is_empty() { "fast".to_string() } else { stt_svc.model };
 
     // 4. Spawn the chunk-transcription loop
     let app_handle = app.clone();
@@ -236,7 +337,6 @@ pub async fn start_meeting(
         use crate::audio::dual_capture::DualCapture;
         use fonos_core::audio::write_wav;
         use crate::commands::dictation::transcribe_http;
-        use super::ServiceConfig;
 
         // Log system audio availability before attempting dual capture
         {
@@ -448,16 +548,51 @@ pub async fn start_meeting(
     Ok(container_id)
 }
 
-/// Stop an active meeting session.
-///
-/// Halts the capture loop, computes total duration, generates an AI summary,
-/// inserts it as a system entry, and sends it to the panel.
+/// Stop an active meeting session using the legacy `meeting_llm_profile`→
+/// `llm_profile` config fallback chain and no custom summary prompt override
+/// — the plain command-shell's fallback (no widget-ref awareness; see the
+/// module docs). Still invoked directly by `meeting-panel.html`'s stop
+/// button (`iv('stop_meeting')`), so this stays registered and behaviorally
+/// unchanged from before this task for that caller.
 ///
 /// Returns the generated summary text.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn stop_meeting(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let llm_profile_id = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        if !config.meeting_llm_profile.is_empty() {
+            config.meeting_llm_profile.clone()
+        } else {
+            config.llm_profile.clone()
+        }
+    };
+    stop_meeting_with(&app, &state, llm_profile_id, String::new()).await
+}
+
+/// Halt the capture loop, compute total duration, generate an AI summary,
+/// insert it as a system entry, and send it to the panel — the parameterized
+/// guts shared by the plain `stop_meeting` command (legacy fallback chain,
+/// builtin summary prompt) and `meeting_widget::MeetingOutput` (resolves
+/// `llm_profile_id` from its own `llm_widget` ref, falling back to the same
+/// `meeting_llm_profile`→`llm_profile` chain, and passes its own
+/// `summary_prompt` prop as `summary_prompt_override`).
+///
+/// `summary_prompt_override` empty ⇒ [`build_summary_prompt`]'s built-in
+/// literal (unchanged pre-Task-7 behavior); non-empty replaces it.
+///
+/// Also schedules the meeting-panel's delayed hide (moved here from the
+/// retired `main.rs` hotkey arm — see [`schedule_delayed_hide`]) once the
+/// recording has genuinely stopped, regardless of what happens afterward.
+///
+/// Returns the generated summary text.
+pub(crate) async fn stop_meeting_with(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    llm_profile_id: String,
+    summary_prompt_override: String,
 ) -> Result<String, String> {
     let (container_id, start_time) = {
         let mut ms = state.meeting.lock().await;
@@ -467,6 +602,11 @@ pub async fn stop_meeting(
         ms.recording = false;
         (ms.container_id.take(), ms.start_time.take())
     };
+
+    // From here on the recording has genuinely stopped — schedule the
+    // panel's delayed hide unconditionally, mirroring the legacy hotkey arm's
+    // "hide after a beat" which ran regardless of what follows below.
+    schedule_delayed_hide(app.clone());
 
     let Some(cid) = container_id else {
         return Ok(String::new());
@@ -501,17 +641,34 @@ pub async fn stop_meeting(
     };
 
     if entries.is_empty() {
-        meeting_js(&app, "recvSummary('')");
+        meeting_js(app, "recvSummary('')");
         return Ok(String::new());
     }
 
-    // Build summary and call LLM
-    let prompt = build_summary_prompt(&entries);
-    let summary_text = match call_llm_raw(&state, &prompt).await {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("fonos: meeting summary LLM error: {e}");
-            format!("[Summary generation failed: {}]", e)
+    // Build summary and call LLM. The empty-prompt short-circuit happens
+    // BEFORE profile resolution (matching the original `call_llm_raw`'s
+    // ordering) so a meeting with no real transcript content never errors on
+    // a missing LLM profile.
+    let prompt = build_summary_prompt(&entries, &summary_prompt_override);
+    let summary_text = if prompt.is_empty() {
+        String::new()
+    } else {
+        let svc_result = {
+            let config = state.config.lock().map_err(|e| e.to_string())?;
+            resolve_llm_profile_service(&config, &llm_profile_id)
+        };
+        match svc_result {
+            Ok(svc) => match call_llm_raw(&svc, &llm_profile_id, &prompt).await {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("fonos: meeting summary LLM error: {e}");
+                    format!("[Summary generation failed: {}]", e)
+                }
+            },
+            Err(e) => {
+                eprintln!("fonos: meeting summary LLM error: {e}");
+                format!("[Summary generation failed: {}]", e)
+            }
         }
     };
 
@@ -552,7 +709,7 @@ pub async fn stop_meeting(
     }
 
     let esc = js_escape(&summary_text);
-    meeting_js(&app, &format!("recvSummary('{}')", esc));
+    meeting_js(app, &format!("recvSummary('{}')", esc));
 
     Ok(summary_text)
 }
@@ -645,4 +802,82 @@ pub fn export_meeting_json(
     let result = fonos_core::storage::export_notebook_json(&db, container_id, &dir)
         .map_err(|e| e.to_string())?;
     Ok(result.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(text: &str) -> Entry {
+        Entry {
+            id: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            source_type: SourceType::Meeting,
+            role: EntryRole::User,
+            mode: "meeting".to_string(),
+            raw_text: text.to_string(),
+            processed_text: None,
+            container_id: Some(1),
+            audio_ref: None,
+            metadata: serde_json::json!({ "speaker_hint": "me", "timestamp_in_session": "00:00:01" }),
+        }
+    }
+
+    #[test]
+    fn build_summary_prompt_empty_entries_yields_empty_prompt() {
+        assert_eq!(build_summary_prompt(&[], ""), "");
+        // Even a non-empty custom prompt doesn't matter — no transcript means
+        // nothing to summarize.
+        assert_eq!(build_summary_prompt(&[], "Custom instructions."), "");
+    }
+
+    #[test]
+    fn build_summary_prompt_empty_custom_instructions_uses_builtin_literal() {
+        let entries = vec![entry("hello")];
+        let prompt = build_summary_prompt(&entries, "");
+        assert!(prompt.starts_with(BUILTIN_SUMMARY_INSTRUCTIONS));
+        assert!(prompt.contains("TRANSCRIPT:"));
+        assert!(prompt.contains("hello"));
+    }
+
+    #[test]
+    fn build_summary_prompt_custom_instructions_replace_builtin_literal() {
+        let entries = vec![entry("hello")];
+        let prompt = build_summary_prompt(&entries, "Summarize action items only.");
+        assert!(prompt.starts_with("Summarize action items only."));
+        assert!(!prompt.contains(BUILTIN_SUMMARY_INSTRUCTIONS));
+        assert!(prompt.contains("TRANSCRIPT:"));
+        assert!(prompt.contains("hello"));
+    }
+
+    #[test]
+    fn default_meeting_title_starts_with_meeting_prefix() {
+        assert!(default_meeting_title().starts_with("Meeting "));
+    }
+
+    #[test]
+    fn resolve_llm_profile_service_empty_profile_id_errors() {
+        let config = fonos_core::config::AppConfig::default();
+        let err = resolve_llm_profile_service(&config, "").unwrap_err();
+        assert!(err.contains("No LLM profile configured"));
+    }
+
+    #[test]
+    fn resolve_llm_profile_service_unknown_profile_id_errors() {
+        let config = fonos_core::config::AppConfig::default();
+        let err = resolve_llm_profile_service(&config, "does-not-exist").unwrap_err();
+        assert!(err.contains("does-not-exist"));
+    }
+
+    #[test]
+    fn resolve_llm_profile_service_known_profile_resolves() {
+        let mut config = fonos_core::config::AppConfig::default();
+        config.model_profiles.push(serde_json::json!({
+            "id": "p1", "provider": "openai", "model": "gpt-4o", "api_key": "k", "base_url": "",
+        }));
+        let svc = resolve_llm_profile_service(&config, "p1").expect("known profile resolves");
+        assert_eq!(svc.provider, "openai");
+        assert_eq!(svc.model, "gpt-4o");
+        assert_eq!(svc.api_key, "k");
+    }
 }

@@ -128,16 +128,44 @@ pub struct AppConfig {
 
     // ── Meeting settings ──────────────────────────────────────────────────
 
-    /// Global hotkey combo for toggling meeting mode (Option+M).
+    /// Global hotkey combo for toggling meeting mode (Option+M). Folded into a
+    /// `Trigger::Hotkey` chip on the `wf.meeting` composite recipe by
+    /// [`crate::workflow::migrate::migrate_legacy_meeting_triggers`]
+    /// (Workbench P2 Task 7), which clears this field afterward — mirrors
+    /// `hotkey_agent`/`hotkey_agent_panel`'s own fold-then-clear treatment.
     pub hotkey_meeting: String,
     /// Which model profile ID to use for meeting AI summary generation.
     /// Empty string means "fall back to `llm_profile`".
+    ///
+    /// NOT fully superseded by `meeting.default`'s `llm_widget` ref (Workbench
+    /// P2 Task 7): a model-profile id and a widget id live in different id
+    /// spaces, so migration can't rewrite this into a ref the way it moved
+    /// `agent_system_prompt` into `AgentProps::system` — see
+    /// `commands::meeting_widget`'s resolve order (`llm_widget` ref →
+    /// this field → `llm_profile`). Still read live at resolve time (a
+    /// deliberate, documented deviation from the "no readers after migration"
+    /// ideal — same id-space mismatch P1 hit with mode model overrides).
     pub meeting_llm_profile: String,
     /// Which model profile ID to use for meeting speech-to-text.
-    /// Empty string means "fall back to `stt_profile`".
+    /// Empty string means "fall back to the global `stt` profile".
+    ///
+    /// Same id-space caveat as `meeting_llm_profile` above: `meeting.default`'s
+    /// `stt_widget` ref wins when set, this field is the next fallback, and
+    /// the global `stt` profile is last (`commands::meeting_widget`'s STT
+    /// resolution) — Workbench P2 Task 7's fix for the bug where
+    /// `start_meeting` used to read the global `stt` profile unconditionally,
+    /// silently ignoring this field entirely.
     pub meeting_stt_profile: String,
-    /// Custom system prompt for meeting summary generation.
-    /// Empty string uses the built-in default meeting summary prompt.
+    /// DEPRECATED: custom system prompt for meeting summary generation,
+    /// formerly read directly by `commands::meeting::build_summary_prompt`.
+    /// Superseded by the per-widget `MeetingProps::summary_prompt` (Workbench
+    /// P2 Task 7 — mirrors `agent_system_prompt`'s retirement in Task 6):
+    /// `migrate_legacy_meeting_triggers` copies a non-empty value here into
+    /// the `meeting.default` widget's `props.summary_prompt` once, after
+    /// which the meeting composite's summary-prompt resolution never reads
+    /// this field again (empty prop ⇒ the built-in literal, not this field).
+    /// Kept only for that one-time migration read and for deserializing
+    /// configs saved before this change; do not add new readers.
     pub meeting_summary_prompt: String,
 
     // ── Quick transform settings ─────────────────────────────────────────
@@ -277,6 +305,13 @@ pub struct AppConfig {
     /// See [`crate::workflow::migrate::migrate_legacy_agent_triggers`].
     #[serde(default)]
     pub agent_triggers_migration_done: bool,
+    /// One-shot migration sentinel: the legacy standalone `hotkey_meeting`
+    /// folded into a `Trigger::Hotkey` chip on the `wf.meeting` recipe, and a
+    /// non-empty legacy `meeting_summary_prompt` copied into the
+    /// `meeting.default` widget's `props.summary_prompt` (Workbench P2 Task 7).
+    /// See [`crate::workflow::migrate::migrate_legacy_meeting_triggers`].
+    #[serde(default)]
+    pub meeting_triggers_migration_done: bool,
 }
 
 fn default_pill_hotkey_capture() -> String {
@@ -359,6 +394,7 @@ impl Default for AppConfig {
             pill_hotkey_capture: default_pill_hotkey_capture(),
             pill_hotkey_migration_done: false,
             agent_triggers_migration_done: false,
+            meeting_triggers_migration_done: false,
         }
     }
 }

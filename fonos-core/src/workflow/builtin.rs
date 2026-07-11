@@ -108,10 +108,9 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             serde_json::json!({ "capture": "toggle" }),
         ),
         // `src.instant` has no acquisition step at all — it produces empty
-        // text immediately (see `InstantSource::allows_empty`) and exists to
-        // seed "blank-open" session-composite recipes (call/agent/meeting)
-        // built in later Workbench tasks; no built-in workflow references it
-        // yet.
+        // text immediately (see `InstantSource::allows_empty`) and seeds
+        // "blank-open" session-composite recipes: `wf.agent` (Task 6) and
+        // `wf.meeting` (Task 7) so far; `call` (Task 9) still pending.
         widget("src.instant", Source, "instant", "即刻", "⚡", serde_json::json!({})),
         // ── Processors ───────────────────────────────────────────────────
         widget(
@@ -295,6 +294,25 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
                 "max_turns": 20,
             }),
         ),
+        // Session composite (Workbench P2 Task 7): continuous meeting capture
+        // + AI summary. `stt_widget`/`llm_widget` empty ⇒ the legacy
+        // `meeting_stt_profile`/`meeting_llm_profile`→`llm_profile` config
+        // fallback chains (still live-read — see those fields' doc comments
+        // for why they can't be folded into refs the way `agent_system_prompt`
+        // was); `summary_prompt` empty ⇒ the built-in summary instructions
+        // literal — see `commands::meeting_widget::MeetingProps`.
+        widget(
+            "meeting.default",
+            Output,
+            "meeting",
+            "会议",
+            "🗓",
+            serde_json::json!({
+                "stt_widget": "",
+                "llm_widget": "",
+                "summary_prompt": "",
+            }),
+        ),
     ]
 }
 
@@ -345,6 +363,17 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
             &["stt.default"],
             &["agent.default"],
         ),
+        // Session composite (Workbench P2 Task 7): blank-open toggle front for
+        // the meeting.default output — a single recipe covers both halves of
+        // the legacy hotkey_meeting toggle (start when not recording, stop
+        // when recording), the branch living inside `MeetingOutput::deliver`
+        // itself rather than in two separate recipes (unlike
+        // wf.agent/wf.agent-voice, which are genuinely different source
+        // shapes). src.instant never records a top-level history entry (see
+        // engine::run's empty-final-text skip) — the meeting composite
+        // records its own meeting_session container/entries instead, exactly
+        // as the legacy hotkey_meeting arm's start_meeting/stop_meeting did.
+        workflow("wf.meeting", "会议", "🗓", "src.instant", &[], &["meeting.default"]),
     ];
 
     // Workbench P1: every microphone-sourced builtin gets a pill-roller
@@ -631,5 +660,25 @@ mod tests {
         assert_eq!(voice.processors, vec!["stt.default".to_string()]);
         assert_eq!(voice.outputs, vec!["agent.default".to_string()]);
         assert!(voice.pill_order().is_some(), "mic-sourced builtin must carry a PillSlot");
+    }
+
+    /// Task 7: the meeting composite builtin + its blank-open toggle recipe
+    /// ship with the expected shape (mirrors `agent_builtins_present_and_wired`).
+    #[test]
+    fn meeting_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let m = widgets.iter().find(|w| w.id == "meeting.default").expect("meeting.default");
+        assert_eq!(m.role, WidgetRole::Output);
+        assert_eq!(m.type_tag, "meeting");
+        assert_eq!(m.props["stt_widget"], "");
+        assert_eq!(m.props["llm_widget"], "");
+        assert_eq!(m.props["summary_prompt"], "");
+
+        let workflows = built_in_workflows();
+        let wf = workflows.iter().find(|w| w.id == "wf.meeting").expect("wf.meeting");
+        assert_eq!(wf.source, "src.instant");
+        assert!(wf.processors.is_empty());
+        assert_eq!(wf.outputs, vec!["meeting.default".to_string()]);
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
     }
 }

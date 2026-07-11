@@ -44,7 +44,6 @@ import { TYPE_TAGS } from "./typeMeta";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
 import type { WidgetFormValue } from "../settings/WidgetForm";
 import { inputClass, selectClass } from "../settings/constants";
-import UsageOverview from "./UsageOverview";
 import NewRecipeModal from "./NewRecipeModal";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetForm) ──────────
@@ -156,7 +155,14 @@ function NameField({ initial, onCommit }: { initial: string; onCommit: (v: strin
 
 // ─── Main RecipesSection ────────────────────────────────────────────────────
 
-export default function RecipesSection({ config, onBench }: { config: AppConfig; onBench: (recipeId: string) => void }) {
+export default function RecipesSection({ config, onBench, focusRecipe }: {
+  config: AppConfig;
+  onBench: (recipeId: string) => void;
+  /** Jump-to-recipe intent from the Overview page's trigger cheat-sheet.
+   *  `nonce` (not just recipeId) so re-clicking the same row re-triggers the
+   *  effect even when the id is unchanged. */
+  focusRecipe?: { recipeId: string; nonce: number } | null;
+}) {
   useT();
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
@@ -170,7 +176,6 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
   // above renders behind the modal backdrop while the modal is open, so it's
   // invisible right when it matters most.
   const [modalError, setModalError] = useState<string | null>(null);
-  const [showOverview, setShowOverview] = useState(false);
   // In-flight guard for trigger-chip saves: holds the id of the workflow
   // currently persisting a chip edit, so a second rapid edit on the same
   // card can't fire before the first save's reload lands (which would
@@ -194,6 +199,23 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
   useEffect(() => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
+
+  // Jump-to-recipe intent from the Overview page: expand the target card and
+  // scroll to it. Guarded by a handled-nonce ref (not just the nonce itself)
+  // since `workflows` is a dependency too — a jump arriving before the
+  // initial listWorkflows() resolves finds no `recipe-card-{id}` element yet,
+  // so this no-ops and retries on the next `workflows` update (post-load)
+  // instead of firing on every later, unrelated reload.
+  const handledFocusNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusRecipe?.nonce || handledFocusNonce.current === focusRecipe.nonce) return;
+    const el = document.getElementById(`recipe-card-${focusRecipe.recipeId}`);
+    if (!el) return;
+    handledFocusNonce.current = focusRecipe.nonce;
+    setError(""); setActiveNodeId(null); setPicker(null);
+    setExpandedId(focusRecipe.recipeId);
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusRecipe?.nonce, focusRecipe?.recipeId, workflows]);
 
   const widgetById = (id: string): WidgetDef | undefined => widgets.find((w) => w.id === id);
   const sourceWidgets = widgets.filter((w) => w.role === "source");
@@ -635,27 +657,6 @@ export default function RecipesSection({ config, onBench }: { config: AppConfig;
     <div className="flex flex-col gap-5">
       {error && expandedId === null && (
         <div className="text-[11px] text-[#ef4444] leading-relaxed">{error}</div>
-      )}
-
-      {/* Toolbar — usage overview toggle */}
-      <div className="flex items-center justify-end">
-        <button
-          onClick={() => setShowOverview((v) => !v)}
-          className="flex-shrink-0 rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.025)] px-3 py-[5px] text-[11px] text-[rgba(255,255,255,0.43)] hover:border-[rgba(255,255,255,0.16)] hover:text-[rgba(255,255,255,0.7)] transition-colors"
-        >
-          ☰ {t("wb.overview.title")}
-        </button>
-      </div>
-      {showOverview && (
-        <UsageOverview
-          rows={workflows}
-          config={config}
-          onJump={(id) => {
-            setShowOverview(false);
-            setExpandedId(id);
-            document.getElementById(`recipe-card-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }}
-        />
       )}
 
       {/* Preset */}

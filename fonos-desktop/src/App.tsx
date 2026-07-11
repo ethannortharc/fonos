@@ -6,15 +6,28 @@ import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
 import Scenarios, { isSttConfigured } from "./views/Scenarios";
 import Workbench from "./views/Workbench";
+import OverviewPage from "./views/OverviewPage";
 import ModelsPage from "./views/ModelsPage";
 import VocabPage from "./views/VocabPage";
 import { FonosMark } from "./components/Icons";
 import { getConfig } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
-type Tab = "workbench" | "models" | "vocab" | "history" | "voice" | "stats" | "settings";
+type Tab = "overview" | "workbench" | "models" | "vocab" | "history" | "voice" | "stats" | "settings";
 
 const NAV_ITEMS: { id: Tab; label: TKey; icon: React.ReactNode }[] = [
+  {
+    id: "overview",
+    label: "nav.overview",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    ),
+  },
   {
     id: "workbench",
     label: "nav.workbench",
@@ -97,13 +110,17 @@ const SIDEBAR_ICON = (
 
 export default function App() {
   const t = useT();
-  const [activeTab, setActiveTab] = useState<Tab>("workbench");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
   // environments (where getConfig throws) so the shell renders unchanged.
   const [showSetup, setShowSetup] = useState(false);
   const [historyPreset, setHistoryPreset] = useState<{ filter: HistoryFilter; nonce: number }>();
+  // Jump-to-recipe intent from the Overview page's trigger cheat-sheet: nonce
+  // (not just recipeId) so re-clicking the same row re-triggers the effect
+  // chain in Workbench/RecipesSection even when the id hasn't changed.
+  const [wbFocus, setWbFocus] = useState<{ recipeId: string; nonce: number } | null>(null);
   // Don't paint the shell until the gate is decided — otherwise a genuine
   // first run flashes the full app for a frame before the wizard mounts.
   const [gateReady, setGateReady] = useState(false);
@@ -143,7 +160,7 @@ export default function App() {
             setActiveTab("history");
           } else if (raw === "dictation") {
             setActiveTab("workbench");
-          } else if (["voice", "stats", "settings"].includes(raw)) {
+          } else if (["overview", "voice", "stats", "settings"].includes(raw)) {
             setActiveTab(raw as Tab);
           }
         }));
@@ -259,7 +276,15 @@ export default function App() {
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden bg-[var(--bg)]">
-          {activeTab === "workbench" && <Workbench />}
+          {activeTab === "overview" && (
+            <OverviewPage
+              onJumpToRecipe={(id) => {
+                setWbFocus({ recipeId: id, nonce: Date.now() });
+                setActiveTab("workbench");
+              }}
+            />
+          )}
+          {activeTab === "workbench" && <Workbench focus={wbFocus} />}
           {activeTab === "models" && <ModelsPage />}
           {activeTab === "vocab" && <VocabPage />}
           {activeTab === "voice" && <Conversation />}

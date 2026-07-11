@@ -14,8 +14,9 @@ import TestRunSection from "./workbench/TestRunSection";
 
 export type WorkbenchSeg = "recipes" | "widgets" | "testrun";
 export type BenchTarget = { kind: "recipe" | "widget"; id: string } | null;
+export type FocusRecipe = { recipeId: string; nonce: number } | null;
 
-export default function Workbench() {
+export default function Workbench({ focus }: { focus?: FocusRecipe } = {}) {
   const t = useT();
   const { config } = useAppConfig();
   const [seg, setSeg] = useState<WorkbenchSeg>("recipes");
@@ -24,6 +25,12 @@ export default function Workbench() {
   useEffect(() => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
+  // Jump-to-recipe intent from the Overview page: land on the Recipes
+  // segment so RecipesSection's own effect (keyed on the same nonce) can
+  // expand + scroll to the target card.
+  useEffect(() => {
+    if (focus?.nonce) setSeg("recipes");
+  }, [focus?.nonce]);
   const openBench = (target: BenchTarget) => {
     setBenchTarget(target);
     setSeg("testrun");
@@ -61,7 +68,11 @@ export default function Workbench() {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-[26px] py-4">
         {seg === "recipes" && (
-          <RecipesSection config={config} onBench={(id) => openBench({ kind: "recipe", id })} />
+          <RecipesSection
+            config={config}
+            onBench={(id) => openBench({ kind: "recipe", id })}
+            focusRecipe={focus}
+          />
         )}
         {seg === "widgets" && (
           <WidgetsSection

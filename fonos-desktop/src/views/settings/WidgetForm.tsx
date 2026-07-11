@@ -443,9 +443,8 @@ export default function WidgetForm({
   containers: Container[];
   /** Every loaded widget instance — threaded down to PropsForm for composite
    *  cases' WidgetRefSelector (stt_widget/llm_widget dropdowns filtered by
-   *  type_tag). No current PropsForm case uses it yet (T4/T6/T7/T9 add
-   *  those); every caller still passes its own loaded widgets list so the
-   *  plumbing is ready when they do. */
+   *  type_tag). Dialog (T6/T7/T9) now consumes it; remaining composite
+   *  cases (call/agent/meeting refs) add their own in future tasks. */
   widgets: WidgetDef[];
   /** Allowed type_tags for a NEW widget of value.role (e.g. BuildingBlocks'
    *  TYPE_TAGS[role]) — populates the isNew type_tag <select> below.

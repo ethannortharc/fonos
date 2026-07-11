@@ -102,6 +102,15 @@ pub fn resolve_llm_engine(
             .iter()
             .find(|w| w.id == props.llm_widget)
             .ok_or_else(|| format!("dialog: llm_widget '{}' not found", props.llm_widget))?;
+        // Type check: reject refs pointing at non-llm widgets (this pattern must be
+        // copied by call/agent/meeting resolvers when they implement their own
+        // ref resolution: stt_widget→"stt", agent_widget→"agent", etc.)
+        if widget.type_tag != "llm" {
+            return Err(format!(
+                "dialog llm_widget '{}' is a '{}' widget, expected 'llm'",
+                props.llm_widget, widget.type_tag
+            ));
+        }
         let llm_props: LlmProps = serde_json::from_value(widget.props.clone())
             .map_err(|e| format!("dialog: llm_widget '{}' props: {e}", props.llm_widget))?;
         return Ok((llm_props.model_profile, llm_props.system));
@@ -363,6 +372,25 @@ mod tests {
         props.engine = DialogEngine::Agent {};
         let err = resolve_llm_engine(&props, &[]).unwrap_err();
         assert!(err.contains("not implemented"));
+    }
+
+    #[test]
+    fn resolve_llm_engine_type_mismatch_errors() {
+        // Type check: ref pointing at an existing widget of the WRONG type
+        // should error, not silently deserialize with defaults.
+        let mut props = base_dialog_props();
+        props.llm_widget = "speak.x".into();
+        let wrong_type_widget = WidgetDef {
+            id: "speak.x".to_string(),
+            role: crate::workflow::model::WidgetRole::Processor,
+            type_tag: "speak".to_string(),
+            name: "speak.x".to_string(),
+            icon: String::new(),
+            props: json!({}),
+            builtin: false,
+        };
+        let err = resolve_llm_engine(&props, &[wrong_type_widget]).unwrap_err();
+        assert!(err.contains("expected 'llm'"), "error should mention type mismatch, got: {err}");
     }
 
     #[test]

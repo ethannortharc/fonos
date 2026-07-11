@@ -56,6 +56,8 @@ pub fn save_config(
                 || k == "text_actions"
                 || k.starts_with("notebook_hotkey_")
                 || k == "workflows"
+                || k == "pill_hotkey"
+                || k == "pill_hotkey_capture"
         })
     });
 

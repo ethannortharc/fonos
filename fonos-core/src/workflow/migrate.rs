@@ -1346,7 +1346,8 @@ mod tests {
     #[test]
     fn hotkeys_migrate_to_triggers_with_capture() {
         let mut cfg = AppConfig::default();
-        // 覆盖一条内建麦克风配方（整体 overlay，模拟用户改过快捷键）
+        // 覆盖一条内建麦克风配方（整体 overlay，模拟用户改过快捷键）——source
+        // 是 src.mic-hold（capture "hold"）。
         let mut mic_wf = crate::workflow::builtin::built_in_workflows()
             .into_iter()
             .find(|w| {
@@ -1355,10 +1356,11 @@ mod tests {
                     .any(|wd| wd.id == w.source && wd.type_tag == "microphone")
             })
             .unwrap();
+        assert_eq!(mic_wf.source, "src.mic-hold", "sanity: this fixture's source is the hold mic");
         mic_wf.hotkey = "cmd+shift+space".into();
         mic_wf.triggers.clear(); // overlay 整体替换后 seeds 丢失的情形
         cfg.workflows.push(mic_wf.clone());
-        // 一条自定义划词配方
+        // 一条自定义划词配方（非麦克风 source）。
         cfg.workflows.push(WorkflowDef {
             id: "wf.custom-1".into(),
             name: "T".into(),
@@ -1370,6 +1372,23 @@ mod tests {
             builtin: false,
             triggers: vec![],
         });
+        // 一条 overlay/custom 配方，source 是 src.mic-toggle（capture
+        // "toggle"）—— 用来区分"capture 真的从 source 传播"和"helper 默认值
+        // 恒为 hold"这两种情况：如果实现有 bug 总是写 capture: None，这条
+        // fixture 的 hotkey_triggers() 会读回 "hold" 而不是 "toggle"，从而
+        // 被下面的断言抓到（第一条 mic-hold fixture 无法区分这两种情况，因为
+        // None 和 "hold" 读回来一样）。
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.custom-toggle".into(),
+            name: "Toggle".into(),
+            icon: String::new(),
+            hotkey: "cmd+shift+g".into(),
+            source: "src.mic-toggle".into(),
+            processors: vec![],
+            outputs: vec!["out.insert".into()],
+            builtin: false,
+            triggers: vec![],
+        });
 
         assert!(migrate_hotkeys_to_triggers(&mut cfg));
 
@@ -1378,8 +1397,10 @@ mod tests {
         let hk: Vec<_> = m.hotkey_triggers().collect();
         assert_eq!(hk.len(), 1);
         assert_eq!(hk[0].1, "cmd+shift+space");
-        // capture 从源组件 prop 带走（内建 mic 组件 props 里有 "capture"）
-        assert!(m.pill_order().is_some(), "mic overlay regains a PillSlot");
+        assert_eq!(hk[0].2, "hold", "capture propagated from src.mic-hold's capture prop");
+        // Finding 4: the first backfilled PillSlot lands at order 1000 (after
+        // the builtin seeds' 0/10/20…).
+        assert_eq!(m.pill_order(), Some(1000), "first backfilled mic overlay gets order 1000");
 
         let c = &cfg.workflows[1];
         assert!(c.hotkey.is_empty());
@@ -1387,7 +1408,68 @@ mod tests {
         assert_eq!(c.hotkey_triggers().next().unwrap().2, "hold"); // 非 mic 无 capture
         assert!(c.pill_order().is_none());
 
+        let g = &cfg.workflows[2];
+        assert!(g.hotkey.is_empty());
+        let hk_g: Vec<_> = g.hotkey_triggers().collect();
+        assert_eq!(hk_g.len(), 1);
+        assert_eq!(hk_g[0].1, "cmd+shift+g");
+        assert_eq!(hk_g[0].2, "toggle", "capture propagated from src.mic-toggle's capture prop");
+        // Finding 4: the second backfilled PillSlot lands at 1000+10.
+        assert_eq!(g.pill_order(), Some(1010), "second backfilled mic overlay gets order 1010");
+
         // 幂等（哨兵）
         assert!(!migrate_hotkeys_to_triggers(&mut cfg));
+    }
+
+    // ── Finding 2: an already-present Hotkey chip for the same combo as the
+    // legacy `hotkey` field must not be duplicated. ─────────────────────────
+    #[test]
+    fn hotkeys_migrate_skips_duplicate_combo_already_present() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.custom-dup".into(),
+            name: "Dup".into(),
+            icon: String::new(),
+            hotkey: "cmd+shift+x".into(),
+            source: "src.selection".into(),
+            processors: vec![],
+            outputs: vec!["out.panel".into()],
+            builtin: false,
+            triggers: vec![Trigger::Hotkey { combo: "cmd+shift+x".into(), capture: None }],
+        });
+
+        assert!(migrate_hotkeys_to_triggers(&mut cfg));
+
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.custom-dup").unwrap();
+        assert!(wf.hotkey.is_empty(), "legacy hotkey field is always cleared");
+        let matching: Vec<_> =
+            wf.hotkey_triggers().filter(|(_, c, _)| *c == "cmd+shift+x").collect();
+        assert_eq!(matching.len(), 1, "exactly one hotkey chip for the combo — no duplicate");
+    }
+
+    // ── Finding 3: an empty legacy hotkey on a non-microphone source produces
+    // no trigger chips at all (no Hotkey, no PillSlot). ─────────────────────
+    #[test]
+    fn hotkeys_migrate_empty_hotkey_nonmic_source_yields_no_triggers() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.custom-empty".into(),
+            name: "Empty".into(),
+            icon: String::new(),
+            hotkey: String::new(),
+            source: "src.selection".into(),
+            processors: vec![],
+            outputs: vec!["out.panel".into()],
+            builtin: false,
+            triggers: vec![],
+        });
+
+        assert!(migrate_hotkeys_to_triggers(&mut cfg));
+
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.custom-empty").unwrap();
+        assert!(
+            wf.triggers.is_empty(),
+            "empty hotkey + non-mic source produces zero trigger chips"
+        );
     }
 }

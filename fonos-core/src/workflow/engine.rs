@@ -1222,4 +1222,65 @@ mod tests {
             assert!(preview.chars().all(|c| c == '字'), "preview content must still be valid CJK text");
         }
     }
+
+    #[tokio::test]
+    async fn silent_dictation_take_records_nothing() {
+        // Product decision (P2): empty transcripts are non-events everywhere (agent/call/meeting precedent) — History gets no empty rows.
+        /// A processor that returns empty text from audio input.
+        struct EmptyTextFromAudio;
+        #[async_trait::async_trait]
+        impl Processor for EmptyTextFromAudio {
+            fn input_kind(&self) -> DataKind {
+                DataKind::Audio
+            }
+            fn output_kind(&self) -> DataKind {
+                DataKind::Text
+            }
+            async fn process(&self, i: Data, _: &RunCtx) -> Result<Data, String> {
+                i.into_audio()?;
+                Ok(Data::Text(String::new()))
+            }
+        }
+
+        // Set up: audio source → empty-text processor → output sink, with recorder
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let mut reg = registry(sink.clone());
+        reg.register_processor(
+            "empty_text",
+            Box::new(|_| Ok(Arc::new(EmptyTextFromAudio) as Arc<dyn Processor>)),
+        );
+
+        let widgets = vec![
+            widget("src.audio", WidgetRole::Source, "audio", serde_json::Value::Null),
+            widget("p.empty", WidgetRole::Processor, "empty_text", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.audio", &["p.empty"], &["out.sink"]);
+
+        let rec = Arc::new(Rec(Mutex::new(vec![])));
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: Some(rec.clone()),
+            mock_text: None,
+            dry_run: false,
+        };
+
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+
+        // Assert: recorder was NOT invoked
+        assert!(rec.0.lock().unwrap().is_empty(), "silent take should not invoke recorder");
+        // Assert: Delivered event was emitted with empty final_text
+        let ev = cap.0.lock().unwrap();
+        assert!(
+            ev.iter().any(|e| matches!(
+                e,
+                PipelineEvent::Delivered { raw: _, final_text, workflow }
+                    if final_text.is_empty()
+            )),
+            "should emit Delivered with empty final_text"
+        );
+        assert_eq!(out.entry_id, None, "no recorder invocation, so no entry_id");
+    }
 }

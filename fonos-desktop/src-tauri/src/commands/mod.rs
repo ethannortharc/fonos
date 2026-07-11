@@ -1,6 +1,7 @@
 //! Tauri command handlers exposed to the frontend via invoke().
 
 pub mod agent;
+pub mod bench;
 pub mod call;
 pub mod config;
 pub mod dialog;

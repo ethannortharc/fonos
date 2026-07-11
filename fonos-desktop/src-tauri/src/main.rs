@@ -483,6 +483,9 @@ fn main() {
             // Workflow execution (frontend entry points to the engine)
             commands::workflow_exec::run_workflow_by_id,
             commands::workflow_widgets::finish_capture,
+            // Test Run bench (settings-only; step-traced, intercepted runs)
+            commands::bench::bench_run_workflow,
+            commands::bench::bench_run_widget,
         ])
         .setup(move |app| {
             // Assemble and manage the shared AppState first — the rest of setup

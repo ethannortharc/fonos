@@ -69,6 +69,13 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
     //    trigger is logged and dropped.
     if IN_FLIGHT.swap(true, Ordering::SeqCst) {
         eprintln!("fonos: workflow already running — ignoring re-entrant trigger");
+        // Review Fix Round 1 (Important item 3): the drop used to be silent
+        // from the user's perspective (eprintln! only) — surface it on the
+        // float pill, same emission path as the "workflow not found" case
+        // just below.
+        PillEventSink(handle.clone()).emit(PipelineEvent::Failed(classify_error(
+            "Busy — previous run still in flight / 上一个任务还在进行中",
+        )));
         return;
     }
     let _guard = InFlightGuard;

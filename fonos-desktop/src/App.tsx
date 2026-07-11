@@ -1,26 +1,46 @@
 import { useState, useEffect } from "react";
-import Dictation from "./views/Dictation";
 import Conversation from "./views/Conversation";
 import Stats from "./views/Stats";
 import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
 import Scenarios, { isSttConfigured } from "./views/Scenarios";
+import Workbench from "./views/Workbench";
+import ModelsPage from "./views/ModelsPage";
+import VocabPage from "./views/VocabPage";
 import { FonosMark } from "./components/Icons";
 import { getConfig } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
-type Tab = "dictation" | "voice" | "history" | "stats" | "settings";
+type Tab = "workbench" | "models" | "vocab" | "history" | "voice" | "stats" | "settings";
 
 const NAV_ITEMS: { id: Tab; label: TKey; icon: React.ReactNode }[] = [
   {
-    id: "dictation",
-    label: "nav.dictation",
+    id: "workbench",
+    label: "nav.workbench",
     icon: (
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-        <line x1="12" y1="19" x2="12" y2="23" />
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      </svg>
+    ),
+  },
+  {
+    id: "models",
+    label: "nav.models",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="6" y="6" width="12" height="12" rx="1.5" />
+        <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" />
+      </svg>
+    ),
+  },
+  {
+    id: "vocab",
+    label: "nav.vocab",
+    icon: (
+      <svg width={18} height={18} viewBox="0 0 24 24" fill="none" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
       </svg>
     ),
   },
@@ -77,7 +97,7 @@ const SIDEBAR_ICON = (
 
 export default function App() {
   const t = useT();
-  const [activeTab, setActiveTab] = useState<Tab>("dictation");
+  const [activeTab, setActiveTab] = useState<Tab>("workbench");
   const [collapsed, setCollapsed] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   // First-run wizard gate. Stays false while loading and in non-Tauri/demo
@@ -121,7 +141,9 @@ export default function App() {
           if (raw in historyMap) {
             setHistoryPreset({ filter: historyMap[raw], nonce: Date.now() });
             setActiveTab("history");
-          } else if (["dictation", "voice", "stats", "settings"].includes(raw)) {
+          } else if (raw === "dictation") {
+            setActiveTab("workbench");
+          } else if (["voice", "stats", "settings"].includes(raw)) {
             setActiveTab(raw as Tab);
           }
         }));
@@ -237,7 +259,9 @@ export default function App() {
 
         {/* Content area */}
         <div className="flex-1 overflow-hidden bg-[var(--bg)]">
-          {activeTab === "dictation" && <Dictation />}
+          {activeTab === "workbench" && <Workbench />}
+          {activeTab === "models" && <ModelsPage />}
+          {activeTab === "vocab" && <VocabPage />}
           {activeTab === "voice" && <Conversation />}
           {activeTab === "stats" && <Stats />}
           {activeTab === "settings" && <Settings />}

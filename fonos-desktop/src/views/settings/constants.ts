@@ -1,14 +1,11 @@
 // Settings view constants and form types.
 
-export type SettingsTab = "general" | "flows" | "models" | "vocab" | "advanced" | "scenarios";
+export type SettingsTab = "general" | "advanced" | "scenarios";
 
 import type { TKey } from "../../lib/i18n";
 
 export const TABS: { key: SettingsTab; label: TKey }[] = [
   { key: "general", label: "tab.general" },
-  { key: "flows", label: "tab.flows" },
-  { key: "models", label: "tab.models" },
-  { key: "vocab", label: "tab.vocab" },
   { key: "advanced", label: "tab.advanced" },
   { key: "scenarios", label: "tab.scenarios" },
 ];

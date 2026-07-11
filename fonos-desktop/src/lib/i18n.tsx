@@ -886,6 +886,18 @@ const en = {
   "builtin.out.dialog": "Dialog",
   "builtin.out.speak": "Speak",
   "builtin.out.quicknote": "Quick note",
+
+  // Workbench IA (P1)
+  "nav.workbench": "Workbench",
+  "nav.models": "Models",
+  "nav.vocab": "Vocabulary",
+  "wb.title": "Workbench",
+  "wb.seg.recipes": "Recipes",
+  "wb.seg.widgets": "Widgets",
+  "wb.seg.testrun": "Test Run",
+  "wb.sub.recipes": "Widgets assemble into recipes; triggers live on the recipe — the recipe is the product",
+  "wb.sub.widgets": "Types are the shelves; widgets are tuned, named instances — each can be tested on its own",
+  "wb.sub.testrun": "Everything staged and ready — watch data flow through, step by step",
 };
 
 export type TKey = keyof typeof en;
@@ -1716,6 +1728,18 @@ const zh: Partial<Record<Key, string>> = {
   "builtin.out.dialog": "对话框",
   "builtin.out.speak": "朗读",
   "builtin.out.quicknote": "快速笔记",
+
+  // Workbench IA (P1)
+  "nav.workbench": "工作台",
+  "nav.models": "模型",
+  "nav.vocab": "单词本",
+  "wb.title": "工作台",
+  "wb.seg.recipes": "配方",
+  "wb.seg.widgets": "组件",
+  "wb.seg.testrun": "试运行",
+  "wb.sub.recipes": "组件装成配方；触发器挂在配方上，功能即产品",
+  "wb.sub.widgets": "类型是货架，组件是调好参数的实例——每个都能单独测试",
+  "wb.sub.testrun": "备好一切条件的台架——看数据一步步流过去",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

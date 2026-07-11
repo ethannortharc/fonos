@@ -1,8 +1,9 @@
 // Settings view — shell that manages state and renders tab components.
-// Tabbed layout: General | Flows | Models | Vocab | Advanced | Scenarios (see
-// TABS in settings/constants.ts, the canonical source of truth for the tab
-// set). Advanced absorbs Speech/Agent/Meeting + their hotkeys; Flows absorbs
-// Widgets (building blocks) + Workflows + workflow hotkeys.
+// Tabbed layout: General | Advanced | Scenarios (see TABS in
+// settings/constants.ts, the canonical source of truth for the tab set).
+// Advanced absorbs Speech/Agent/Meeting + their hotkeys. Models, Vocabulary,
+// and Flows (widgets/recipes) have been promoted to top-level pages under the
+// Workbench-centered IA (see App.tsx NAV_ITEMS + views/Workbench.tsx).
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -15,10 +16,7 @@ import { t, useT } from "../lib/i18n";
 import { TABS } from "./settings/constants";
 import type { SettingsTab } from "./settings/constants";
 import GeneralTab from "./settings/GeneralTab";
-import ModelsTab from "./settings/ModelsTab";
 import ScenariosTab from "./settings/ScenariosTab";
-import VocabTab from "./settings/VocabTab";
-import FlowsTab from "./settings/FlowsTab";
 import AdvancedTab from "./settings/AdvancedTab";
 
 export default function Settings() {
@@ -29,7 +27,7 @@ export default function Settings() {
   const [error, setError] = useState<string>("");
 
   // Tab state
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("flows");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
 
   const loadAll = useCallback(async () => {
     try {
@@ -124,25 +122,6 @@ export default function Settings() {
         {/* ────────────── General tab ────────────── */}
         {settingsTab === "general" && (
           <GeneralTab config={config} onSave={handleSave} />
-        )}
-
-        {/* ────────────── Flows tab (Flows UI redesign) ────────────── */}
-        {settingsTab === "flows" && (
-          <FlowsTab config={config} />
-        )}
-
-        {/* ────────────── Models tab ────────────── */}
-        {settingsTab === "models" && (
-          <ModelsTab
-            config={config}
-            onSave={handleSave}
-            setError={setError}
-          />
-        )}
-
-        {/* ────────────── Vocabulary tab ────────────── */}
-        {settingsTab === "vocab" && (
-          <VocabTab config={config} onSave={handleSave} />
         )}
 
         {/* ────────────── Advanced tab (Speech + Agent + Meeting, Flows UI redesign) ────────────── */}

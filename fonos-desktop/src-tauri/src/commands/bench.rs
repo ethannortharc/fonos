@@ -1,7 +1,9 @@
 //! Test Run (试运行) bench commands: run a recipe or a single widget with
 //! per-step trace events on `bench:event`, outputs intercepted unless
-//! `deliver` is true. Never records to history, never lights the pill
-//! (BenchEventSink does not emit float:*).
+//! `deliver` is true. Never records to history and never drives the float
+//! pill's normal progress lifecycle (BenchEventSink does not emit
+//! `float:processing`/`float:stop`/`float:error`) — EXCEPT for the one
+//! `float:reset` nudge on a terminal event, see below.
 
 use std::sync::{Arc, Mutex};
 
@@ -13,13 +15,33 @@ use tauri::Emitter;
 
 /// Bench-only [`EventSink`]: maps every [`PipelineEvent`] to a single
 /// `bench:event` payload and nothing else. Unlike [`crate::adapters::PillEventSink`]
-/// it never emits `float:*` / `workflow:done` — `Delivered.workflow` is always
-/// `None` from bench call sites, so even if it weren't, this sink ignores the
-/// field entirely and only ever emits on the one `bench:event` channel.
+/// it never emits the pill's normal progress events (`float:processing` /
+/// `float:stop` / `float:error`) — `Delivered.workflow` is always `None` from
+/// bench call sites, so even if it weren't, this sink ignores the field
+/// entirely and only ever emits on the one `bench:event` channel.
+///
+/// One exception: a bench mic run has `MicSource::acquire` (via
+/// `dictation::start_recording`) emit `float:start` directly, bypassing this
+/// sink entirely — so the pill correctly shows "recording" during capture.
+/// But that means once the run reaches a terminal state (`Delivered` /
+/// `NoSpeech` / `Failed`), nothing would ever tell the pill to leave that
+/// state — it would sit showing "recording" forever. So every terminal event
+/// here also emits `float:reset`, a dedicated float.html handler that does a
+/// silent `enterState(null)` (no result flash). `float:stop("")` was
+/// considered and rejected: float.html's `stopRec` treats an empty payload as
+/// "no speech" and flashes the red-cross "No speech" pane for ~1.2s — wrong
+/// for a successful `Delivered` bench run (and just noise for `Failed`, which
+/// isn't a real dictation failure). `float:reset` is a no-op when the pill is
+/// already idle (non-mic bench runs), so it never causes visible pill
+/// activity for those.
 pub struct BenchEventSink(pub tauri::AppHandle);
 
 impl EventSink for BenchEventSink {
     fn emit(&self, event: PipelineEvent) {
+        let is_terminal = matches!(
+            event,
+            PipelineEvent::NoSpeech | PipelineEvent::Delivered { .. } | PipelineEvent::Failed(_)
+        );
         let payload = match event {
             PipelineEvent::StepStarted { workflow, step_id, index, role } =>
                 json!({"type":"step_started","workflow":workflow,"step_id":step_id,"index":index,"role":role}),
@@ -33,6 +55,9 @@ impl EventSink for BenchEventSink {
             PipelineEvent::Failed(surfaced) => json!({"type":"failed","message":surfaced.message}),
         };
         let _ = self.0.emit("bench:event", payload);
+        if is_terminal {
+            let _ = self.0.emit("float:reset", ());
+        }
     }
 }
 

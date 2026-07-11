@@ -9,9 +9,9 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getConfig,
   saveConfig,
-  listModes,
+  listWorkflows,
 } from "../lib/api";
-import type { AppConfig, ModeEntry } from "../types";
+import type { AppConfig, WorkflowRow } from "../types";
 import { t, useT } from "../lib/i18n";
 import { TABS } from "./settings/constants";
 import type { SettingsTab } from "./settings/constants";
@@ -22,7 +22,7 @@ import AdvancedTab from "./settings/AdvancedTab";
 export default function Settings() {
   const tr = useT();
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [modes, setModes] = useState<ModeEntry[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
 
@@ -31,9 +31,9 @@ export default function Settings() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [cfg, modeList] = await Promise.all([getConfig(), listModes()]);
+      const [cfg, workflowList] = await Promise.all([getConfig(), listWorkflows()]);
       setConfig(cfg);
-      setModes(modeList);
+      setWorkflows(workflowList);
     } catch (e: unknown) {
       // Fall back to defaults so the UI still renders without a Tauri backend
       setConfig((prev) => prev ?? {
@@ -133,7 +133,7 @@ export default function Settings() {
         {settingsTab === "scenarios" && (
           <ScenariosTab
             config={config}
-            modes={modes}
+            workflows={workflows}
             onReload={loadAll}
             setError={setError}
           />

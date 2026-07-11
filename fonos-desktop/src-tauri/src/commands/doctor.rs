@@ -286,9 +286,8 @@ pub async fn run_doctor(state: tauri::State<'_, AppState>) -> Result<Vec<Finding
         let guard = state.config.lock().map_err(|e| e.to_string())?;
         guard.clone()
     };
-    let modes = fonos_core::modes::all_modes();
 
-    let lint = fonos_core::doctor::lint_config(&config, &modes);
+    let lint = fonos_core::doctor::lint_config(&config);
     let (endpoints, rtf) =
         tokio::join!(check_endpoints(&config), check_conversation_rtf(&config));
     let permissions = check_permissions();
@@ -304,19 +303,15 @@ pub async fn run_doctor(state: tauri::State<'_, AppState>) -> Result<Vec<Finding
 /// Apply one Setup Doctor [`FixAction`], persisting the result.
 ///
 /// Config-only fixes mutate `AppState.config` (via [`fonos_core::doctor::apply_config_fix`])
-/// and save; `PointModeModelToDefault` edits `modes.json`; `OpenSettingsPane`
-/// deep-links to System Settings. The frontend re-runs `run_doctor` afterward.
+/// and save; `OpenSettingsPane` deep-links to System Settings. The frontend
+/// re-runs `run_doctor` afterward.
+///
+/// `PointModeModelToDefault` (which used to edit `modes.json` here) was
+/// retired in Workbench P2 Task 11 along with the `mode_model_missing` check
+/// that produced it — `lint_config` no longer knows about `modes.json` at all.
 #[tauri::command]
 pub fn apply_doctor_fix(state: tauri::State<'_, AppState>, fix: FixAction) -> Result<(), String> {
     match &fix {
-        FixAction::PointModeModelToDefault { mode_id } => {
-            let mut modes = fonos_core::modes::load_custom_modes();
-            if let Some(m) = modes.get_mut(mode_id) {
-                m.model.clear();
-                fonos_core::modes::save_custom_modes(&modes).map_err(|e| e.to_string())?;
-            }
-            Ok(())
-        }
         FixAction::OpenSettingsPane { pane } => {
             super::permissions::open_settings_pane(pane.clone())
         }

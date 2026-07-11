@@ -202,24 +202,37 @@ export interface ModelsSection {
   assignments: ScenarioAssignments;
 }
 
-/** The dictation section — user-modes map (modes.json) + config fields. */
+/** The dictation section — workflow/widget overlays + config fields (Workbench
+ *  P2 Task 11: superseded the modes.json-shaped snapshot; the engine world
+ *  has been the source of truth since Workflow P1). */
 export interface DictationSection {
-  /** id → Mode, exactly as persisted in modes.json. */
-  user_modes: Record<string, Mode>;
+  /** DEPRECATED: id → Mode, exactly as persisted in the legacy modes.json.
+   *  `null` on every snapshot from this task onward — present only for
+   *  reading a pre-Task-11 scenario file, which the backend converts into
+   *  `llm.*` processor widgets on apply rather than writing it back. */
+  user_modes: Record<string, Mode> | null;
+  /** User workflow overlays (config.workflows verbatim). */
+  user_workflows: WorkflowDef[];
+  /** User widget overlays (config.widgets verbatim). */
+  user_widgets: WidgetDef[];
   dictation_mode: string;
   translate_target: string;
 }
 
-/** The speech section — Listen + STS conversation configuration. */
+/** The speech section — Listen + the still-live-read STS/call fields.
+ *  Audited for Workbench P2 Task 11: `listen_mode`, `sts_persona`, and
+ *  `sts_max_turns` were dropped — no reader anywhere in the app. The other
+ *  three stay: `listen_voice_profile`/`listen_voice` (Listen synthesis) and
+ *  `sts_voice_profile`/`sts_voice`/`sts_llm_profile` (still read by
+ *  `call.default`'s fallback chain and the Setup Doctor's conversation RTF
+ *  probe, respectively — dropping them would silently break restoring those
+ *  inputs via a scenario). */
 export interface SpeechSection {
-  listen_mode: string;
   listen_voice_profile: string;
   listen_voice: string;
-  sts_persona: string;
   sts_llm_profile: string;
   sts_voice_profile: string;
   sts_voice: string;
-  sts_max_turns: number;
 }
 
 /** The vocab section — custom vocabulary books + globally-applied book ids. */
@@ -228,13 +241,19 @@ export interface VocabSection {
   global_vocab_books: string[];
 }
 
-/** The hotkeys section — every global + notebook hotkey binding. */
+/** The hotkeys section — every global + notebook hotkey binding.
+ *
+ *  Audited for Workbench P2 Task 11 (the "T6 mandate": old scenarios must not
+ *  write back dead hotkey fields): `hotkey_agent`/`hotkey_agent_panel`
+ *  (Task 6), `hotkey_meeting` (Task 7), and `hotkey_sts` (Task 9) are each
+ *  one-time-folded into a Hotkey trigger chip on the matching recipe and then
+ *  cleared, with no reader left anywhere — dropped from the section entirely.
+ *  `hotkey_transform` stays: it still drives a real reconciliation with
+ *  `text_actions` on every apply. */
 export interface HotkeysSection {
   hotkey_dictation: string;
   hotkey_dictation_toggle: string;
   hotkey_tts: string;
-  hotkey_agent: string;
-  hotkey_agent_panel: string;
   hotkey_note: string;
   hotkey_note_1: string;
   hotkey_note_2: string;
@@ -242,10 +261,8 @@ export interface HotkeysSection {
   notebook_hotkey_1: number;
   notebook_hotkey_2: number;
   notebook_hotkey_3: number;
-  hotkey_meeting: string;
   hotkey_transform: string;
   hotkey_listen: string;
-  hotkey_sts: string;
   /** `undefined`/`null` = scenario predates text actions (apply leaves current
    *  bindings untouched); present (even `[]`) = apply verbatim. */
   text_actions?: TextActionBinding[] | null;
@@ -271,12 +288,12 @@ export interface SavedScenario {
 /** Severity of a doctor Finding — mirrors fonos_core::doctor::Severity. */
 export type DoctorSeverity = "pass" | "warn" | "advise";
 
-/** A typed one-click fix — mirrors fonos_core::doctor::FixAction (tag: "kind"). */
+/** A typed one-click fix — mirrors fonos_core::doctor::FixAction (tag: "kind").
+ *  `reset_listen_mode`/`point_mode_model_to_default` were retired in
+ *  Workbench P2 Task 11 along with the mode-system checks that produced them. */
 export type DoctorFix =
   | { kind: "attach_book_global"; book_id: string }
   | { kind: "clear_profile_ref"; field: string }
-  | { kind: "reset_listen_mode" }
-  | { kind: "point_mode_model_to_default"; mode_id: string }
   | { kind: "switch_tts_model"; profile_id: string; model: string }
   | { kind: "open_settings_pane"; pane: string };
 

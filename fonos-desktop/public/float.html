@@ -562,10 +562,15 @@ function loadModes(){
   // Voice workflows only: filter list_workflows to microphone-source rows.
   return window.__TAURI_INTERNALS__.invoke('list_workflows').then(rows=>{
     if(Array.isArray(rows)){
-      var mic=rows.filter(w=>w&&w.source_type_tag==='microphone');
-      if(mic.length>0){
-        allModes=mic.map(w=>({id:w.id,icon:w.icon||'⚙',name:w.name}));
-      }
+      var pillOrder=function(w){
+        var t=(w.triggers||[]).find(function(x){return x&&x.kind==='pill_slot';});
+        return t&&typeof t.order==='number'?t.order:0;
+      };
+      var mic=rows.filter(function(w){
+        return w&&Array.isArray(w.triggers)&&w.triggers.some(function(t){return t&&t.kind==='pill_slot';});
+      });
+      mic.sort(function(a,b){return pillOrder(a)-pillOrder(b);});
+      if(mic.length>0){ allModes=mic.map(function(w){return {id:w.id,icon:w.icon||'⚙',name:w.name};}); }
     }
   }).catch(()=>{});
 }

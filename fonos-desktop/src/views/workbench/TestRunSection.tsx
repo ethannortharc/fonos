@@ -293,17 +293,14 @@ export default function TestRunSection({
       </div>
 
       <div className="fonos-surface rounded-[12px] px-[22px] py-5">
-        {/* Own (lower) stacking context: MicButton's VoiceAura extends well
-            beyond the 88px mic wrap (blur + breathing animation while
-            recording) — as a position:absolute, z-index:auto descendant with
-            no bounding stacking context, it would otherwise paint above the
-            graph/editor/run-row below it (positioned elements paint after
-            in-flow non-positioned content within their stacking context,
-            regardless of DOM order). `relative z-0` here + `z-[1]` on every
-            sibling below contains the aura's paint layer to this row alone,
-            without clipping it (no overflow:hidden) or touching the
-            animation. Aura layers are already pointer-events-none. */}
-        <div className={`relative z-0 ${audioInput ? "mb-10" : "mb-5"} flex items-center gap-[18px]`}>
+        {/* MicButton's VoiceAura extends well beyond the 88px mic wrap (blur +
+            breathing animation while recording), but MicButton's own root div
+            now carries `isolate` + a negative z-index on the aura container,
+            so the glow is contained to that component's stacking context and
+            can never paint above the graph/editor/run-row below — no extra
+            z-index bookkeeping needed at this level. Aura layers are already
+            pointer-events-none. */}
+        <div className="mb-5 flex items-center gap-[18px]">
           {audioInput ? (
             <>
               <div className="relative h-[88px] w-[88px] flex-shrink-0 flex items-center justify-center">
@@ -328,15 +325,13 @@ export default function TestRunSection({
           )}
         </div>
 
-        <div className="relative z-[1]">
-          <BenchGraph
-            nodes={nodes}
-            onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
-          />
-        </div>
+        <BenchGraph
+          nodes={nodes}
+          onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
+        />
 
         {editNode && wById(editNode) && (
-          <div className="relative z-[1] mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
+          <div className="mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
             {usageCount(editNode, rows) > 0 && (
               <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
             )}
@@ -354,7 +349,7 @@ export default function TestRunSection({
           </div>
         )}
 
-        <div className="relative z-[1] mt-4 flex items-center gap-3">
+        <div className="mt-4 flex items-center gap-3">
           {!audioInput && (
             <button
               onClick={run}

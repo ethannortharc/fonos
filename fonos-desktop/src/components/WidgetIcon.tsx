@@ -29,6 +29,13 @@ const ICONS: Record<string, React.ReactNode> = {
   speak: <><path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" /></>,
   panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /></>,
   dialog: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>,
+  // Reuses the hand-drawn handset silhouette from the call button
+  // (views/Conversation.tsx's "fonos-voice-glyph") — same viewBox and organic
+  // arched-handle shape, just picking up this set's shared 1.8 stroke width
+  // instead of that button's local 1.3.
+  call: <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z" />,
+  agent: <><rect x="5" y="8" width="14" height="11" rx="3" /><line x1="12" y1="8" x2="12" y2="4" /><circle cx="12" cy="3" r="1" /><circle cx="9.5" cy="13.5" r="1.1" /><circle cx="14.5" cy="13.5" r="1.1" /><line x1="8" y1="19" x2="8" y2="21" /><line x1="16" y1="19" x2="16" y2="21" /></>,
+  meeting: <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 20c0-3.4 2.5-6 5.5-6s5.5 2.6 5.5 6" /><circle cx="17.5" cy="8.6" r="2.4" /><path d="M15.2 14.3c2.6.4 4.5 2.7 4.5 5.7" /></>,
 };
 
 export function WidgetIcon({ typeTag, size = 14, className }: { typeTag: string; size?: number; className?: string }) {

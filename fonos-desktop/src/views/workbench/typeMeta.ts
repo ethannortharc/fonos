@@ -1,6 +1,6 @@
 // typeMeta.ts — the widget type vocabulary shared by the Workbench Widgets
 // section and RecipesSection's slot pickers: which type_tags each role can
-// instantiate, the three role sections in display order, and each type_tag's
+// instantiate, the shelf groups in display order, and each type_tag's
 // localized name/description keys. Moved here (unchanged) from the retired
 // BuildingBlocks.tsx catalog (Task 9) — this is now the single source of
 // truth for the component vocabulary of the workflow engine.
@@ -13,10 +13,22 @@ import type { WidgetRole } from "../../types";
 // WidgetsTab.tsx. Exported so other WidgetForm callers (e.g. RecipesSection's
 // in-place node editor, the Workbench Widgets section) can share one source
 // of truth for the allowed-types picker instead of duplicating this map.
+//
+// Workbench P2 (Task 5): the "output" role now spans two presentation
+// shelves — delivery (insert/replace/clipboard/notebook/speak/panel) and
+// sessions (dialog/call/agent/meeting) — see GROUPS below. TYPE_TAGS stays
+// role-keyed (not shelf-keyed) because it's the semantic source consumed by
+// pickers/validation (RecipesSection's new-widget picker, WidgetForm's
+// isNew type_tag <select>): those only ever need to know "what can this
+// role instantiate", never which shelf a tag renders on. call/agent/meeting
+// are listed here even though their backend factories don't land until
+// T6/T7/T9 — save_widget's known_type_tags check (workflow_cfg.rs) rejects
+// an attempt to create one with a clear "not a registered Output widget"
+// error in the meantime, which is an acceptable interim per the P2 plan.
 export const TYPE_TAGS: Record<WidgetRole, string[]> = {
   source: ["microphone", "selection", "instant"],
   processor: ["stt", "llm"],
-  output: ["insert", "replace", "clipboard", "notebook", "speak", "panel", "dialog"],
+  output: ["insert", "replace", "clipboard", "notebook", "speak", "panel", "dialog", "call", "agent", "meeting"],
 };
 
 // Props that hold references to other widget instances, per type_tag —
@@ -27,10 +39,12 @@ export const TYPE_TAGS: Record<WidgetRole, string[]> = {
 // names the "stt"-type widget it delegates to. usageCount (lib/triggers.ts)
 // reads this table to count a widget still embedded inside a composite as
 // "in use", even though no workflow's source/processors/outputs names it
-// directly (pierced usage). None of dialog/call/agent/meeting is in
-// TYPE_TAGS yet — no widget of these types can be created via the form until
-// their PropsForm cases land — so this table currently has no effect on the
-// running app; it exists now so the two sides (Rust/TS) can't drift once
+// directly (pierced usage). "dialog" is creatable today (T4's PropsForm
+// case + registered factory); call/agent/meeting are now in TYPE_TAGS (Task
+// 5) but have no PropsForm case or registered factory until T6/T7/T9 — the
+// backend's known_type_tags check rejects a creation attempt for those three
+// with a clear error in the meantime, so this table has no runtime effect
+// for them yet; it exists now so the two sides (Rust/TS) can't drift once
 // they do.
 export const WIDGET_REF_PROPS: Record<string, string[]> = {
   dialog: ["llm_widget"],
@@ -39,10 +53,20 @@ export const WIDGET_REF_PROPS: Record<string, string[]> = {
   meeting: ["stt_widget", "llm_widget"],
 };
 
-export const ROLES: { role: WidgetRole; label: TKey }[] = [
-  { role: "source", label: "widgets.section.sources" },
-  { role: "processor", label: "widgets.section.processors" },
-  { role: "output", label: "widgets.section.outputs" },
+// The four widget shelves, in display order. Splits the "output" role into
+// two presentation groups (delivery/sessions) while keeping `role` alongside
+// each group — WidgetsSection still needs `role` for tinting (roleColor) and
+// for the type_tag it hands new widgets (a "call" widget is still, at the
+// model layer, an Output). `tags` here is a display-order slice of
+// TYPE_TAGS[role] (sessions cherry-picks dialog/call/agent/meeting out of
+// output's full list; delivery gets the rest) rather than a derived
+// computation, so shelf order can diverge from TYPE_TAGS's role-internal
+// order without the two fighting each other.
+export const GROUPS: { key: "sources" | "processors" | "delivery" | "sessions"; role: WidgetRole; label: TKey; tags: string[] }[] = [
+  { key: "sources", role: "source", label: "widgets.section.sources", tags: ["microphone", "selection", "instant"] },
+  { key: "processors", role: "processor", label: "widgets.section.processors", tags: ["stt", "llm"] },
+  { key: "delivery", role: "output", label: "widgets.section.delivery", tags: ["insert", "replace", "clipboard", "notebook", "speak", "panel"] },
+  { key: "sessions", role: "output", label: "widgets.section.sessions", tags: ["dialog", "call", "agent", "meeting"] },
 ];
 
 // type_tag → its localized name/description i18n keys. A static typed map (no
@@ -61,4 +85,7 @@ export const TYPE_META: Record<string, { name: TKey; desc: TKey }> = {
   speak: { name: "widgets.type.speak.name", desc: "widgets.type.speak.desc" },
   panel: { name: "widgets.type.panel.name", desc: "widgets.type.panel.desc" },
   dialog: { name: "widgets.type.dialog.name", desc: "widgets.type.dialog.desc" },
+  call: { name: "widgets.type.call.name", desc: "widgets.type.call.desc" },
+  agent: { name: "widgets.type.agent.name", desc: "widgets.type.agent.desc" },
+  meeting: { name: "widgets.type.meeting.name", desc: "widgets.type.meeting.desc" },
 };

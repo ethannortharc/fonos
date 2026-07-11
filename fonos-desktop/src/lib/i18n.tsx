@@ -766,10 +766,12 @@ const en = {
   "flows.dangling": "This building block no longer exists — pick another.",
   "flows.new-name": "New flow",
 
-  // ── Widgets tab (Workflow P1) — sources/processors/outputs list + editor ──
+  // ── Widgets tab (Workflow P1; delivery/sessions split Workbench P2) —
+  // sources/processors/delivery/sessions list + editor ──
   "widgets.section.sources": "Sources",
   "widgets.section.processors": "Processors",
-  "widgets.section.outputs": "Outputs",
+  "widgets.section.delivery": "Delivery",
+  "widgets.section.sessions": "Sessions",
   // Components catalog — one descriptive card per widget type_tag
   "widgets.type.microphone.name": "Microphone",
   "widgets.type.microphone.desc": "Captures speech from your microphone (hold or toggle).",
@@ -795,6 +797,12 @@ const en = {
   "widgets.type.panel.desc": "Shows the result in a floating panel near the cursor.",
   "widgets.type.dialog.name": "Dialog",
   "widgets.type.dialog.desc": "Opens a chat window seeded with the result — type follow-up questions.",
+  "widgets.type.call.name": "Call",
+  "widgets.type.call.desc": "Opens a live voice call — recognition, persona and voice tuned inside one appliance.",
+  "widgets.type.agent.name": "Agent",
+  "widgets.type.agent.desc": "A skill-wielding assistant — takes text, takes action.",
+  "widgets.type.meeting.name": "Meeting",
+  "widgets.type.meeting.desc": "Records the room, delivers the minutes.",
   "widgets.empty.custom": "No custom widgets yet.",
   "widgets.new": "+ Create Widget",
   "widgets.editor.new": "New Widget",
@@ -1649,10 +1657,11 @@ const zh: Partial<Record<Key, string>> = {
   "flows.dangling": "该构建块已不存在 —— 请另选一个。",
   "flows.new-name": "新工作流",
 
-  // ── 部件页 (Workflow P1) ────────────────────────────────────────────────
+  // ── 部件页 (Workflow P1；投递/会话分组 Workbench P2) ─────────────────────
   "widgets.section.sources": "来源",
   "widgets.section.processors": "处理器",
-  "widgets.section.outputs": "输出",
+  "widgets.section.delivery": "投递",
+  "widgets.section.sessions": "会话",
   // Components catalog — one descriptive card per widget type_tag
   "widgets.type.microphone.name": "麦克风",
   "widgets.type.microphone.desc": "从麦克风采集语音（按住说话或点按切换）。",
@@ -1678,6 +1687,12 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.type.panel.desc": "在光标旁的悬浮面板中显示结果。",
   "widgets.type.dialog.name": "对话框",
   "widgets.type.dialog.desc": "以结果为开场打开对话窗口，可继续追问。",
+  "widgets.type.call.name": "通话",
+  "widgets.type.call.desc": "接通即聊——一体机内配好识别、人格与嗓音。",
+  "widgets.type.agent.name": "智能体",
+  "widgets.type.agent.desc": "会执行技能的对话助手，收文字、给结果。",
+  "widgets.type.meeting.name": "会议",
+  "widgets.type.meeting.desc": "开会即录，散会出纪要。",
   "widgets.empty.custom": "还没有自定义部件。",
   "widgets.new": "+ 新建部件",
   "widgets.editor.new": "新建部件",

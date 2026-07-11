@@ -1,7 +1,10 @@
 // WidgetsSection.tsx — the Workbench's 组件 (Widgets) segment: type shelves
-// (Sources/Processors/Outputs, each broken into its type_tags) with instance
-// cards per configured widget (props summary + used-by-N-recipes count +
-// Test ▶ jump + expand-to-edit via WidgetForm). Types are the shelves;
+// (Sources/Processors/Delivery/Sessions — GROUPS in typeMeta.ts, each broken
+// into its type_tags) with instance cards per configured widget (props
+// summary + used-by-N-recipes count + Test ▶ jump + expand-to-edit via
+// WidgetForm). Delivery/Sessions are both role "output" at the model layer
+// (see typeMeta.ts's GROUPS comment) — the split is presentation-only, so
+// tinting/creation still key off `role`, not `key`. Types are the shelves;
 // widgets are the tuned, named instances that sit on them — each instance
 // can be edited or test-run on its own. Supersedes BuildingBlocks.tsx's
 // read-only type catalog (Task 9): shelves are now the SAME surface where
@@ -14,7 +17,7 @@ import { widgetLabel } from "../../lib/builtinLabels";
 import { usageCount } from "../../lib/triggers";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
-import { ROLES, TYPE_TAGS, TYPE_META } from "./typeMeta";
+import { GROUPS, TYPE_META } from "./typeMeta";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig, WidgetDef, WorkflowRow } from "../../types";
 
@@ -78,11 +81,10 @@ export default function WidgetsSection({
 
   return (
     <div>
-      {ROLES.map(({ role, label }) => {
-        const tags = TYPE_TAGS[role];
+      {GROUPS.map(({ key, role, label, tags }) => {
         const rc = roleColor(role);
         return (
-          <div key={role} className="mb-[22px]">
+          <div key={key} className="mb-[22px]">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: `rgba(${rc.rgb},0.75)` }}>
                 {t(label)}

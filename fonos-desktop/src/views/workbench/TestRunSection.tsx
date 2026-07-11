@@ -20,7 +20,7 @@ import BenchGraph, { type BenchNode } from "../../components/BenchGraph";
 import MicButton from "../../components/MicButton";
 import WaveCanvas from "../../components/WaveCanvas";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
-import { ROLES, TYPE_TAGS, TYPE_META } from "./typeMeta";
+import { GROUPS, TYPE_META } from "./typeMeta";
 import type { BenchTarget } from "../Workbench";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig, WidgetDef, WorkflowRow } from "../../types";
@@ -257,7 +257,7 @@ export default function TestRunSection({
           <optgroup label={t("wb.seg.recipes")}>
             {rows.map((r) => <option key={r.id} value={`recipe:${r.id}`}>{workflowLabel(r)}</option>)}
           </optgroup>
-          {ROLES.flatMap(({ role }) => TYPE_TAGS[role])
+          {GROUPS.flatMap(({ tags }) => tags)
             .filter((tag) => tag !== "selection")
             .map((tag) => {
               const matches = widgets.filter((w) => w.type_tag === tag);

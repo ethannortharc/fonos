@@ -2,7 +2,8 @@
 
 use crate::agent::context::ConversationContext;
 use crate::llm::ServiceConfig;
-use crate::workflow::model::PanelSize;
+use crate::workflow::llm_step::LlmProps;
+use crate::workflow::model::{PanelSize, WidgetDef};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -57,6 +58,60 @@ pub struct DialogProps {
     /// Which backend answers follow-up turns.
     #[serde(default)]
     pub engine: DialogEngine,
+    /// Id of a tuned `llm` widget this dialog should defer to instead of
+    /// `engine`'s own inline fields (Workbench P2 Task 4, additive — no
+    /// migration). Stored as a **top-level** prop (a sibling of `engine`,
+    /// not nested inside `DialogEngine::Llm`) because
+    /// [`crate::workflow::model::widget_ref_props`] and the desktop's
+    /// pierced usage/delete-guard scanning
+    /// (`crate::workflow::engine::widget_referenced_by`) both read ref props
+    /// off the top level of a widget's `props` JSON — nesting it under
+    /// `engine` would make this dialog's reference invisible to that
+    /// scanning. Empty ⇒ use `engine` exactly as before this field existed;
+    /// non-empty ⇒ [`resolve_llm_engine`] looks up that widget's
+    /// `model_profile`/`system` (its `user_template` is ignored — a Dialog
+    /// session's turns are free-form chat, never templated). Validated at
+    /// save time by the desktop's `validate_composite_refs` (must be empty
+    /// or name an existing, non-composite `"llm"` widget).
+    #[serde(default)]
+    pub llm_widget: String,
+}
+
+/// Resolve the `(model_profile, system)` pair a Dialog's engine should use
+/// for follow-up turns, applying [`DialogProps::llm_widget`]'s additive
+/// precedence: non-empty wins — look up that widget in `widgets` and use
+/// ITS `model_profile`/`system` (its `user_template` is irrelevant here,
+/// unlike an `llm` processor step: a Dialog session's turns are free-form
+/// chat, never templated). Empty `llm_widget` falls back to `props.engine`'s
+/// own inline fields, exactly as `DialogOutput::deliver` resolved them
+/// before this function existed — every dialog widget saved before Task 4
+/// takes this path automatically (no migration).
+///
+/// Errors when `llm_widget` is non-empty but doesn't resolve to any widget
+/// in `widgets` (a dangling ref — shouldn't arise through the settings UI,
+/// which validates this at save time via `validate_composite_refs`, but
+/// checked defensively here too since config can be hand-edited), or when
+/// there's no ref to fall back on and `engine` is one of the P2 placeholder
+/// variants (`Agent`/`Sts`/`Workflow` — not implemented yet).
+pub fn resolve_llm_engine(
+    props: &DialogProps,
+    widgets: &[WidgetDef],
+) -> Result<(String, Option<String>), String> {
+    if !props.llm_widget.is_empty() {
+        let widget = widgets
+            .iter()
+            .find(|w| w.id == props.llm_widget)
+            .ok_or_else(|| format!("dialog: llm_widget '{}' not found", props.llm_widget))?;
+        let llm_props: LlmProps = serde_json::from_value(widget.props.clone())
+            .map_err(|e| format!("dialog: llm_widget '{}' props: {e}", props.llm_widget))?;
+        return Ok((llm_props.model_profile, llm_props.system));
+    }
+    match &props.engine {
+        DialogEngine::Llm { model_profile, system } => Ok((model_profile.clone(), system.clone())),
+        DialogEngine::Agent {} | DialogEngine::Sts {} | DialogEngine::Workflow { .. } => {
+            Err("dialog engine not implemented in P2".to_string())
+        }
+    }
 }
 
 /// Build the OpenAI-style messages array for one turn: optional system,
@@ -201,6 +256,7 @@ mod tests {
         assert!(!props.voice_input);
         assert_eq!(props.size.width, 420);
         assert_eq!(props.size.height, 320);
+        assert_eq!(props.llm_widget, "");
     }
 
     #[test]
@@ -211,6 +267,102 @@ mod tests {
         assert!(!props.voice_input);
         assert_eq!(props.size.width, 420);
         assert_eq!(props.size.height, 320);
+        assert_eq!(props.llm_widget, "");
+    }
+
+    /// Serde back-compat (Task 4): props JSON persisted before `llm_widget`
+    /// existed — no such key at all, e.g. a real `out.dialog`-derived widget
+    /// saved under P2's earlier tasks — still parses, defaulting the new
+    /// field to empty (⇒ the inline `engine` path, unchanged behavior).
+    #[test]
+    fn dialog_props_old_json_without_llm_widget_parses_with_empty_default() {
+        let json = r#"{
+            "markdown": true,
+            "size": { "width": 420, "height": 320 },
+            "voice_input": false,
+            "engine": { "kind": "llm", "model_profile": "p1", "system": "sys" }
+        }"#;
+        let props: DialogProps = serde_json::from_str(json).unwrap();
+        assert_eq!(props.llm_widget, "");
+        assert_eq!(
+            props.engine,
+            DialogEngine::Llm { model_profile: "p1".into(), system: Some("sys".into()) }
+        );
+    }
+
+    // ── resolve_llm_engine (Task 4: additive ref resolution) ────────────────
+
+    /// Baseline `DialogProps` (all-defaults, same as an empty-JSON parse) for
+    /// tests that only need to twiddle `engine`/`llm_widget`. `DialogProps`
+    /// derives no `Default` impl of its own (its `size` field's default
+    /// isn't `#[derive(Default)]`-friendly to hand-construct field-by-field
+    /// here), so this reuses the serde default path instead.
+    fn base_dialog_props() -> DialogProps {
+        serde_json::from_value(json!({})).unwrap()
+    }
+
+    fn llm_widget_def(id: &str, model_profile: &str, system: Option<&str>) -> WidgetDef {
+        WidgetDef {
+            id: id.to_string(),
+            role: crate::workflow::model::WidgetRole::Processor,
+            type_tag: "llm".to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            props: json!({
+                "model_profile": model_profile,
+                "system": system,
+                "user_template": "IGNORED — dialog turns are never templated",
+            }),
+            builtin: false,
+        }
+    }
+
+    #[test]
+    fn resolve_llm_engine_ref_wins_over_inline() {
+        let mut props = base_dialog_props();
+        props.engine = DialogEngine::Llm {
+            model_profile: "inline-profile".into(),
+            system: Some("inline system".into()),
+        };
+        props.llm_widget = "llm.tuned".into();
+        let widgets = vec![llm_widget_def("llm.tuned", "tuned-profile", Some("tuned system"))];
+
+        let (model_profile, system) = resolve_llm_engine(&props, &widgets).unwrap();
+        assert_eq!(model_profile, "tuned-profile");
+        assert_eq!(system.as_deref(), Some("tuned system"));
+    }
+
+    #[test]
+    fn resolve_llm_engine_empty_ref_falls_back_to_inline() {
+        let mut props = base_dialog_props();
+        props.engine = DialogEngine::Llm {
+            model_profile: "inline-profile".into(),
+            system: Some("inline system".into()),
+        };
+        assert_eq!(props.llm_widget, "");
+
+        let (model_profile, system) = resolve_llm_engine(&props, &[]).unwrap();
+        assert_eq!(model_profile, "inline-profile");
+        assert_eq!(system.as_deref(), Some("inline system"));
+    }
+
+    #[test]
+    fn resolve_llm_engine_dangling_ref_errors() {
+        let mut props = base_dialog_props();
+        props.llm_widget = "llm.missing".into();
+        let err = resolve_llm_engine(&props, &[]).unwrap_err();
+        assert!(err.contains("llm.missing"), "error should name the missing id, got: {err}");
+    }
+
+    #[test]
+    fn resolve_llm_engine_placeholder_without_ref_still_errors() {
+        // Unchanged pre-Task-4 behavior: an empty `llm_widget` with a
+        // placeholder engine (Agent/Sts/Workflow) errors exactly as
+        // `DialogOutput::deliver` did before this function was extracted.
+        let mut props = base_dialog_props();
+        props.engine = DialogEngine::Agent {};
+        let err = resolve_llm_engine(&props, &[]).unwrap_err();
+        assert!(err.contains("not implemented"));
     }
 
     #[test]

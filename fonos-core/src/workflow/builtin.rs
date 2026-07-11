@@ -248,7 +248,11 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
                 "markdown": true,
                 "size": { "width": 420, "height": 320 },
                 "voice_input": false,
-                "engine": { "kind": "llm", "model_profile": "", "system": null }
+                "engine": { "kind": "llm", "model_profile": "", "system": null },
+                // Empty ⇒ inline `engine` fields above (unchanged default
+                // path). Workbench P2 Task 4, additive — see
+                // `workflow::dialog::DialogProps::llm_widget`.
+                "llm_widget": ""
             }),
         ),
         widget(
@@ -516,6 +520,8 @@ mod tests {
             serde_json::from_value(d.props.clone()).expect("out.dialog props are DialogProps");
         assert!(dp.markdown);
         assert!(matches!(dp.engine, crate::workflow::dialog::DialogEngine::Llm { .. }));
+        // Task 4: default (no override) is the inline `engine` path above.
+        assert_eq!(dp.llm_widget, "");
         assert!(built_in_workflows().iter().any(|w| w.id == "wf.explain"));
 
         // Chain type-check: src.selection (Text) → llm.explain (Text→Text) →

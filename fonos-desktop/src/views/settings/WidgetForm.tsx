@@ -246,15 +246,14 @@ function SizeControl({
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
-  form, config, containers, onProps,
+  form, config, containers, widgets, onProps,
 }: {
   form: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
   /** Loaded widget instances, for composite cases' WidgetRefSelector
-   *  (stt_widget/llm_widget dropdowns). Threaded through from WidgetForm now
-   *  so T4/T6/T7/T9 can add composite cases without a signature change here;
-   *  no current case destructures it (none renders WidgetRefSelector yet). */
+   *  (stt_widget/llm_widget dropdowns). Threaded through from WidgetForm;
+   *  the "dialog" case (Task 4) is the first consumer — T6/T7/T9 add more. */
   widgets: WidgetDef[];
   onProps: (props: Props) => void;
 }) {
@@ -384,6 +383,14 @@ function PropsForm({
       const engine = (p.engine as { kind?: string; model_profile?: string; system?: string | null }) ?? {};
       const setEngine = (patch: Partial<{ model_profile: string; system: string }>) =>
         set("engine", { kind: "llm", model_profile: engine.model_profile ?? "", system: engine.system ?? "", ...patch });
+      // Task 4 (additive ref): a non-empty `llm_widget` top-level prop wins
+      // over the inline engine fields below — the desktop's DialogOutput
+      // resolves it the same way (fonos_core::workflow::dialog::
+      // resolve_llm_engine). Hides the inline model/system fields in favor
+      // of a hint, rather than disabling them, so their stale values (if
+      // any, from before a ref was chosen) aren't visually implied to still
+      // matter.
+      const llmWidget = pStr(p, "llm_widget");
       return (
         <div className="flex flex-col gap-2.5">
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
@@ -394,12 +401,23 @@ function PropsForm({
             <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
           </Field>
           <div className={headingClass}>{t("widgets.field.engine")}</div>
-          <Field label={t("widgets.field.model")}>
-            <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+          <Field label={t("widgets.field.dialog.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={llmWidget} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
           </Field>
-          <Field label={t("widgets.field.dialog.system")}>
-            <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
-          </Field>
+          {llmWidget ? (
+            <div className="text-[11px] text-[rgba(255,255,255,0.35)] italic">
+              {t("widgets.field.dialog.provided-by-widget")}
+            </div>
+          ) : (
+            <>
+              <Field label={t("widgets.field.model")}>
+                <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+              </Field>
+              <Field label={t("widgets.field.dialog.system")}>
+                <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
+              </Field>
+            </>
+          )}
         </div>
       );
     }

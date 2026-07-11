@@ -18,7 +18,7 @@
 use tauri::Manager;
 
 use fonos_core::storage::{Container, ContainerType, Entry, EntryRole, SourceType};
-use fonos_core::workflow::dialog::{DialogEngine, DialogProps, DialogSession};
+use fonos_core::workflow::dialog::{DialogProps, DialogSession};
 use fonos_core::workflow::model::{Data, DataKind};
 use fonos_core::workflow::registry::{Output, RunCtx};
 
@@ -103,12 +103,20 @@ impl Output for DialogOutput {
     }
 
     async fn deliver(&self, result: &Data, ctx: &RunCtx) -> Result<(), String> {
-        // P2 only wires the plain-LLM engine; the placeholders open no window.
-        let (model_profile, system) = match &self.props.engine {
-            DialogEngine::Llm { model_profile, system } => (model_profile.clone(), system.clone()),
-            DialogEngine::Agent {} | DialogEngine::Sts {} | DialogEngine::Workflow { .. } => {
-                return Err("dialog engine not implemented in P2".to_string());
-            }
+        // Resolve which (model_profile, system) pair drives follow-up turns.
+        // Workbench P2 Task 4 (additive): `self.props.llm_widget` wins when
+        // non-empty — resolved against the effective widget set inside a
+        // scoped config lock, dropped before any await below (the registry
+        // factory that built `self.props` only ever receives raw props, not
+        // the widget list, so this can't be resolved any earlier than here).
+        // Empty `llm_widget` falls back to the inline `engine` fields exactly
+        // as before Task 4; P2's non-`Llm` engine placeholders still error
+        // when there's no ref to fall back on instead.
+        let (model_profile, system) = {
+            let state = self.app.state::<AppState>();
+            let config = state.config.lock().map_err(|e| e.to_string())?;
+            let widgets = fonos_core::workflow::engine::effective_widgets(&config);
+            fonos_core::workflow::dialog::resolve_llm_engine(&self.props, &widgets)?
         };
 
         let final_text = match result {

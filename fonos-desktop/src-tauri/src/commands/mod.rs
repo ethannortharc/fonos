@@ -1,6 +1,7 @@
 //! Tauri command handlers exposed to the frontend via invoke().
 
 pub mod agent;
+pub mod agent_widget;
 pub mod bench;
 pub mod call;
 pub mod config;
@@ -349,6 +350,43 @@ pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32
     ));
 }
 
+/// Position the agent-panel window centered horizontally near the cursor,
+/// slightly above the vertical center of the screen. Unlike
+/// [`move_dialog_panel_to_cursor`]/[`move_text_action_panel_to_cursor`] this
+/// doesn't offset from the cursor's exact position — it only uses
+/// [`monitor_under_cursor`] to pick which monitor, then centers at a fixed
+/// top-of-screen position (below the macOS menu bar), matching the agent
+/// panel's original placement.
+///
+/// Moved here from `main.rs` (Workbench P2 Task 6, retiring the legacy agent
+/// hotkey arms) for the same reason [`move_dialog_panel_to_cursor`] lives
+/// here rather than in `main.rs`: `commands::agent_widget::run_agent_exchange`
+/// needs to call it, and only items under `commands/` are reachable from both
+/// the `main.rs` binary root and the `lib.rs` library root (see
+/// [`monitor_under_cursor`]'s doc comment).
+#[cfg(target_os = "macos")]
+pub(crate) fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(panel) = app.get_webview_window("agent-panel") else { return };
+    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
+
+    let scale = target.scale_factor();
+    let panel_w = 340.0; // logical pixels — matches tauri.conf.json width
+
+    let mon_x = target.position().x as f64 / scale;
+    let mon_y = target.position().y as f64 / scale;
+    let mon_w = target.size().width as f64 / scale;
+
+    // Top-center: drops down from the menu bar area like a water drop
+    let x = mon_x + (mon_w - panel_w) / 2.0;
+    let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
+
+    let _ = panel.set_position(tauri::PhysicalPosition::new(
+        (x * scale) as i32,
+        (y * scale) as i32,
+    ));
+}
+
 // Service resolution moved to fonos-core (issue #21); the unified
 // ServiceConfig lives in fonos_core::llm. These wrappers only add the
 // AppState config-lock handling.
@@ -387,8 +425,6 @@ pub struct AppState {
     /// Target notebook for note mode. Set by the note panel when user selects a notebook.
     /// None = Quick Note (no container). Some(id) = specific notebook.
     pub note_target: Arc<Mutex<Option<i64>>>,
-    /// Stashed selection context grabbed on agent hotkey key-down, consumed on key-up.
-    pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
     /// STS conversation memory (issue #24), reset when the app restarts.
     pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
     /// Active Dialog follow-up session (session-type output). Set by

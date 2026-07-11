@@ -271,6 +271,26 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "📓",
             serde_json::json!({ "container_id": 0 }),
         ),
+        // Session composite (Workbench P2 Task 6): a skill-wielding chat
+        // assistant. `llm_widget` empty ⇒ the legacy `agent_llm_profile`→
+        // `llm_profile` config fallback chain (unchanged); the safety
+        // allow/blocklist and system prompt stay global config, not props —
+        // see `commands::agent_widget::AgentProps`.
+        widget(
+            "agent.default",
+            Output,
+            "agent",
+            "智能体",
+            "🤖",
+            serde_json::json!({
+                "llm_widget": "",
+                "tts_enabled": false,
+                "voice_profile": "",
+                "voice": "default",
+                "timeout_secs": 30,
+                "max_turns": 20,
+            }),
+        ),
     ]
 }
 
@@ -306,6 +326,21 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
         ),
         workflow("wf.listen", "朗读", "🎧", "src.selection", &["llm.summarize"], &["out.speak"]),
         workflow("wf.note", "记笔记", "📓", "src.mic-hold", &["stt.default"], &["out.quicknote"]),
+        // Session composites (Workbench P2 Task 6): "press to open" and
+        // "hold to speak" fronts for the agent.default output. `wf.agent`'s
+        // blank-open src.instant source never records a history entry (see
+        // engine::run's empty-final-text skip); `wf.agent-voice`'s STT
+        // transcript IS recorded like any other mic-sourced recipe, exactly
+        // as the legacy hotkey_agent arm's dictation half was.
+        workflow("wf.agent", "智能体", "🤖", "src.instant", &[], &["agent.default"]),
+        workflow(
+            "wf.agent-voice",
+            "语音智能体",
+            "🤖",
+            "src.mic-hold",
+            &["stt.default"],
+            &["agent.default"],
+        ),
     ];
 
     // Workbench P1: every microphone-sourced builtin gets a pill-roller
@@ -564,5 +599,32 @@ mod tests {
         let mut sorted = orders.clone();
         sorted.sort();
         assert_eq!(orders, sorted, "pill orders follow list order");
+    }
+
+    /// Task 6: the agent composite builtin + its two "press to open" /
+    /// "hold to speak" recipes ship with the expected shape.
+    #[test]
+    fn agent_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let a = widgets.iter().find(|w| w.id == "agent.default").expect("agent.default");
+        assert_eq!(a.role, WidgetRole::Output);
+        assert_eq!(a.type_tag, "agent");
+        assert_eq!(a.props["llm_widget"], "");
+        assert_eq!(a.props["tts_enabled"], false);
+        assert_eq!(a.props["timeout_secs"], 30);
+        assert_eq!(a.props["max_turns"], 20);
+
+        let workflows = built_in_workflows();
+        let blank_open = workflows.iter().find(|w| w.id == "wf.agent").expect("wf.agent");
+        assert_eq!(blank_open.source, "src.instant");
+        assert!(blank_open.processors.is_empty());
+        assert_eq!(blank_open.outputs, vec!["agent.default".to_string()]);
+        assert!(blank_open.pill_order().is_none(), "src.instant is not a mic source");
+
+        let voice = workflows.iter().find(|w| w.id == "wf.agent-voice").expect("wf.agent-voice");
+        assert_eq!(voice.source, "src.mic-hold");
+        assert_eq!(voice.processors, vec!["stt.default".to_string()]);
+        assert_eq!(voice.outputs, vec!["agent.default".to_string()]);
+        assert!(voice.pill_order().is_some(), "mic-sourced builtin must carry a PillSlot");
     }
 }

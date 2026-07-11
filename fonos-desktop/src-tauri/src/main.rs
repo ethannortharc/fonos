@@ -16,31 +16,6 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 
-/// Position the agent-panel window centered horizontally near the cursor,
-/// slightly above the vertical center of the screen.
-#[cfg(target_os = "macos")]
-fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("agent-panel") else { return };
-    let Some((target, _cursor)) = commands::monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let panel_w = 340.0; // logical pixels — matches tauri.conf.json width
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-
-    // Top-center: drops down from the menu bar area like a water drop
-    let x = mon_x + (mon_w - panel_w) / 2.0;
-    let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
 /// Position the note-panel window centered horizontally near the cursor,
 /// slightly below the macOS menu bar — mirrors agent panel placement.
 ///
@@ -186,8 +161,9 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
         }
     };
     // Non-workflow triggers keep their dedicated labels + dispatch arms.
-    try_add(&config.hotkey_agent, "agent");
-    try_add(&config.hotkey_agent_panel, "agent-panel");
+    // (Agent's former standalone "agent"/"agent-panel" labels are gone —
+    // Workbench P2 Task 6 folded them into wf.agent-voice/wf.agent's own
+    // Hotkey chips, handled by the `starts_with("workflow-")` arm below.)
     try_add(&config.hotkey_meeting, "meeting");
     try_add(&config.hotkey_sts, "sts");
     // Dictation / note / listen / text-actions are unified onto the workflow
@@ -344,6 +320,17 @@ fn main() {
         match config.save() {
             Ok(()) => eprintln!("fonos: migrated primary dictation hotkey to the pill"),
             Err(e) => eprintln!("fonos: pill-hotkey migration save failed: {e}"),
+        }
+    }
+    // One-time migration: the legacy standalone Agent hotkeys
+    // (hotkey_agent/hotkey_agent_panel) → Trigger::Hotkey chips on the new
+    // agent composite recipes (Workbench P2 Task 6). Runs after the pill
+    // migration above (order doesn't matter functionally — see the function
+    // doc — but keeps "newest migration last").
+    if fonos_core::workflow::migrate::migrate_legacy_agent_triggers(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated legacy agent hotkeys to recipe triggers"),
+            Err(e) => eprintln!("fonos: agent-triggers migration save failed: {e}"),
         }
     }
     let config = config;
@@ -597,7 +584,6 @@ fn main() {
                 agent: Arc::new(tokio::sync::Mutex::new(agent_state)),
                 meeting: Arc::new(tokio::sync::Mutex::new(meeting_state)),
                 note_target: Arc::new(Mutex::new(None)),
-                agent_selection: Arc::new(tokio::sync::Mutex::new(None)),
                 sts_session: Arc::new(tokio::sync::Mutex::new(fonos_core::sts::StsSession::default())),
                 dialog_session: Arc::new(tokio::sync::Mutex::new(None)),
                 call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -682,197 +668,6 @@ fn main() {
                     let label = label.to_string();
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
-                            "agent" => {
-                                // Press-and-hold: key down starts recording, key up stops and processes.
-                                // Uses Tauri WebviewWindow::eval() to call JS functions directly in
-                                // the panel — bypasses the event system which doesn't reliably
-                                // reach webviews that were created as hidden.
-                                use tauri::Manager;
-
-                                // Helper: run JS in the agent-panel webview via Tauri's eval() API.
-                                // Strings passed to recvXxx() functions are pre-escaped by callers.
-                                fn agent_js(h: &tauri::AppHandle, js: &str) {
-                                    if let Some(panel) = h.get_webview_window("agent-panel") {
-                                        if let Err(e) = panel.eval(js) {
-                                            eprintln!("fonos: agent panel JS: {e}");
-                                        }
-                                    }
-                                }
-
-                                if is_down {
-                                    // ── Grab selected text BEFORE showing panel (original app still focused) ──
-                                    let sel = commands::selection::grab_selection().await.ok();
-                                    let sel_store = {
-                                        let state: tauri::State<'_, AppState> = handle.state();
-                                        Arc::clone(&state.agent_selection)
-                                    };
-                                    *sel_store.lock().await = sel;
-
-                                    // Stop any TTS still playing from previous interaction
-                                    {
-                                        let state: tauri::State<'_, AppState> = handle.state();
-                                        let _ = commands::tts::stop_playback(state);
-                                    }
-
-                                    move_agent_panel_to_cursor(&handle);
-                                    if let Some(panel) = handle.get_webview_window("agent-panel") {
-                                        let _ = panel.show();
-                                        let _ = panel.set_focus();
-                                    }
-                                    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                                    // Reset persistent mode (hides header + mic footer if leftover from Hotkey 2)
-                                    agent_js(&handle, "recvShow(false)");
-                                    agent_js(&handle, "recvRecording()");
-
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, Some(true)).await {
-                                        eprintln!("fonos: agent hotkey start error: {e}");
-                                        agent_js(&handle, "recvDismiss()");
-                                    }
-                                } else {
-                                    agent_js(&handle, "recvRecordingStop()");
-
-                                    // Retrieve the selection context stashed on key-down
-                                    let sel_load = {
-                                        let state: tauri::State<'_, AppState> = handle.state();
-                                        Arc::clone(&state.agent_selection)
-                                    };
-                                    let sel = sel_load.lock().await.take();
-
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    match commands::dictation::stop_recording(handle.clone(), state, Some("agent".to_string())).await {
-                                        Ok(result) => {
-                                            let transcript = result.text;
-                                            if transcript.is_empty() {
-                                                agent_js(&handle, "recvDismiss()");
-                                                return;
-                                            }
-
-                                            // Build agent prompt: prepend selection context if any
-                                            let has_selection = sel.as_ref().map(|s| !s.text.is_empty()).unwrap_or(false);
-                                            let agent_prompt = if let Some(ref s) = sel {
-                                                if !s.text.is_empty() {
-                                                    format!(
-                                                        "[Selected text from {}]:\n\"\"\"\n{}\n\"\"\"\n\nUser instruction: {}",
-                                                        s.app_name, s.text, transcript
-                                                    )
-                                                } else {
-                                                    transcript.clone()
-                                                }
-                                            } else {
-                                                transcript.clone()
-                                            };
-
-                                            // Show the user message (just the spoken part).
-                                            // Use serde_json to produce safe JS string literals
-                                            // (handles quotes, backslashes, newlines, unicode).
-                                            eprintln!("fonos: agent user-message: {}", &transcript);
-                                            if has_selection {
-                                                let sel_ref = sel.as_ref().unwrap();
-                                                let preview: String = sel_ref.text.chars().take(120).collect();
-                                                let sel_j = serde_json::to_string(&preview).unwrap_or_default();
-                                                let app_j = serde_json::to_string(&sel_ref.app_name).unwrap_or_default();
-                                                agent_js(&handle, &format!(
-                                                    "recvSelection({}, {})",
-                                                    sel_j, app_j
-                                                ));
-                                            }
-                                            let tx_j = serde_json::to_string(&transcript).unwrap_or_default();
-                                            agent_js(&handle, &format!("recvUserMessage({})", tx_j));
-                                            agent_js(&handle, "recvThinking()");
-
-                                            let state2: tauri::State<'_, AppState> = handle.state();
-                                            match commands::agent::agent_process(state2, agent_prompt).await {
-                                                Ok(agent_result) => {
-                                                    for exec in &agent_result.skill_executions {
-                                                        let p_j = serde_json::to_string(&exec.params).unwrap_or("\"\"".into());
-                                                        let n_j = serde_json::to_string(&exec.skill_name).unwrap_or_default();
-                                                        agent_js(&handle, &format!(
-                                                            "recvSkillExec({},{},{},{})",
-                                                            n_j, p_j, exec.latency_ms, exec.blocked
-                                                        ));
-                                                    }
-                                                    let r_j = serde_json::to_string(&agent_result.response_text).unwrap_or_default();
-                                                    agent_js(&handle, &format!("recvResponse({})", r_j));
-
-                                                    // Auto-replace: switch focus back to the original app
-                                                    // and paste the result. Cmd+V silently fails if the
-                                                    // target isn't an editable field.
-                                                    if has_selection && !agent_result.response_text.is_empty() {
-                                                        let replace_text = agent_result.response_text.clone();
-                                                        let target_app = sel.as_ref().map(|s| s.app_name.clone());
-                                                        let _ = commands::selection::replace_selection(replace_text, target_app).await;
-                                                        eprintln!("fonos: auto-replaced selection in {:?}", sel.as_ref().map(|s| &s.app_name));
-                                                    }
-
-                                                    let (tts_enabled, tts_voice, tts_speed) = {
-                                                        let state3: tauri::State<'_, AppState> = handle.state();
-                                                        let cfg = state3.config.lock().unwrap();
-                                                        (cfg.agent_tts_enabled, cfg.default_voice.clone(), cfg.tts_speed)
-                                                    };
-                                                    // Track audio duration so we dismiss AFTER playback finishes
-                                                    let mut audio_dur = 0.0_f64;
-                                                    if tts_enabled && !agent_result.response_text.is_empty() {
-                                                        // Truncate to first 3 sentences for TTS — keep it brief
-                                                        let tts_text = {
-                                                            let mut count = 0;
-                                                            let mut end = agent_result.response_text.len();
-                                                            for (i, c) in agent_result.response_text.char_indices() {
-                                                                if c == '.' || c == '!' || c == '?' || c == '。' || c == '！' || c == '？' {
-                                                                    count += 1;
-                                                                    if count >= 3 { end = i + c.len_utf8(); break; }
-                                                                }
-                                                            }
-                                                            agent_result.response_text[..end].to_string()
-                                                        };
-                                                        let state3: tauri::State<'_, AppState> = handle.state();
-                                                        if let Ok(tts_result) = commands::tts::generate_and_play(
-                                                            state3, tts_text, tts_voice, tts_speed
-                                                        ).await {
-                                                            audio_dur = tts_result.duration_secs;
-                                                        }
-                                                    }
-
-                                                    // Auto-dismiss: wait for audio to finish + 2s buffer
-                                                    let handle2 = handle.clone();
-                                                    tokio::spawn(async move {
-                                                        let wait = audio_dur + 2.0;
-                                                        tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
-                                                        agent_js(&handle2, "recvDismiss()");
-                                                    });
-                                                }
-                                                Err(e) => {
-                                                    eprintln!("fonos: agent process error: {e}");
-                                                    let esc = e.replace('\\', "\\\\").replace('\'', "\\'");
-                                                    agent_js(&handle, &format!("recvError('{}')", esc));
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("fonos: agent stop error: {e}");
-                                            agent_js(&handle, "recvDismiss()");
-                                        }
-                                    }
-                                }
-                            }
-
-                            "agent-panel" => {
-                                // Toggle: key down only (not hold)
-                                if !is_down { return; }
-                                use tauri::Manager;
-                                if let Some(panel) = handle.get_webview_window("agent-panel") {
-                                    let visible = panel.is_visible().unwrap_or(false);
-                                    if visible {
-                                        let _ = panel.hide();
-                                    } else {
-                                        move_agent_panel_to_cursor(&handle);
-                                        let _ = panel.show();
-                                        let _ = panel.set_focus();
-                                        let _ = panel.eval("recvShow(true)");
-                                    }
-                                }
-                            }
-
                             "meeting" => {
                                 // Toggle meeting mode on key down only
                                 if !is_down { return; }

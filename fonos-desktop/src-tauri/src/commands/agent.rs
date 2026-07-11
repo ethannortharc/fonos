@@ -105,10 +105,85 @@ impl AgentState {
     }
 }
 
-// commands::ServiceConfig and llm::ServiceConfig are the same type now
-// (unified in fonos-core, issue #21) — the old conversion is a clone.
-fn to_llm_service(sc: &super::ServiceConfig) -> ServiceConfig {
-    sc.clone()
+// ─── Shared helpers (also used by commands::agent_widget's composite path) ────
+
+/// Resolve `profile_id` into a concrete LLM [`ServiceConfig`], with the
+/// agent's own user-facing error copy for the two ways this can fail: no
+/// profile configured at all, or a configured id that no longer exists among
+/// `config.model_profiles`. Shared by [`agent_process`]'s config-only
+/// resolution (`agent_llm_profile`→`llm_profile`) and
+/// `commands::agent_widget::run_agent_exchange`'s ref-or-fallback resolution
+/// (Workbench P2 Task 6), so both paths report the same two failure modes
+/// identically.
+pub(crate) fn resolve_agent_llm_service(
+    config: &fonos_core::config::AppConfig,
+    profile_id: &str,
+) -> Result<ServiceConfig, String> {
+    if profile_id.is_empty() {
+        return Err(
+            "No LLM profile configured for the agent. Go to Settings > Agent to select a model."
+                .to_string(),
+        );
+    }
+    let profile = config
+        .model_profiles
+        .iter()
+        .find(|p| p["id"].as_str() == Some(profile_id))
+        .ok_or_else(|| format!("Agent LLM profile '{}' not found", profile_id))?
+        .clone();
+    Ok(super::config_from_profile(&profile))
+}
+
+/// Run the agent's skill loop over `text` using `llm_service`, swapping the
+/// shared [`AgentState`]'s registry/context/fast_path out for the duration of
+/// the call and back in afterward (so `processor` can own them mutably), then
+/// returning the result.
+///
+/// `timeout_override` replaces `agent.timeout_secs` for this call only when
+/// `Some` — Workbench P2 Task 6's per-widget `AgentProps::timeout_secs`;
+/// `None` keeps using the shared state's own value, which is exactly
+/// [`agent_process`]'s prior (pre-extraction) behavior.
+pub(crate) async fn run_agent_processor(
+    state: &State<'_, AppState>,
+    text: &str,
+    llm_service: ServiceConfig,
+    timeout_override: Option<u64>,
+) -> Result<AgentResult, String> {
+    // Lock the agent state (tokio mutex — safe to hold across .await).
+    let mut agent = state.agent.lock().await;
+
+    let timeout_secs = timeout_override.unwrap_or(agent.timeout_secs);
+
+    // Extract the components we need to build the processor.
+    // We swap out the registry, context, and fast_path so that `processor`
+    // owns them, then swap them back after the call completes.
+    let registry = std::mem::replace(&mut agent.registry, SkillRegistry::new());
+    // Read timeout_secs before the second replace to avoid borrow conflict.
+    let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
+    let context = std::mem::replace(&mut agent.context, context_placeholder);
+    let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
+    let system_prompt = agent.system_prompt.clone();
+
+    let mut processor = AgentProcessor::<HttpLlmCaller>::new(
+        registry,
+        context,
+        fast_path,
+        system_prompt,
+        timeout_secs,
+    );
+
+    let result = processor
+        .process(text, &llm_service)
+        .await
+        .map_err(|e| e.to_string());
+
+    // Move the (potentially mutated) components back into the state.
+    let (registry_back, context_back, fast_path_back) = processor.into_parts();
+    agent.registry = registry_back;
+    agent.context = context_back;
+    agent.fast_path = fast_path_back;
+
+    result
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────
@@ -138,60 +213,10 @@ pub async fn agent_process(
         } else {
             config.llm_profile.clone()
         };
-        if profile_id.is_empty() {
-            return Err(
-                "No LLM profile configured for the agent. Go to Settings > Agent to select a model."
-                    .to_string(),
-            );
-        }
-        let profile = config
-            .model_profiles
-            .iter()
-            .find(|p| p["id"].as_str() == Some(&profile_id))
-            .ok_or_else(|| format!("Agent LLM profile '{}' not found", profile_id))?
-            .clone();
-        super::config_from_profile(&profile)
+        resolve_agent_llm_service(&config, &profile_id)?
     };
 
-    let llm_service_core = to_llm_service(&llm_service);
-
-    // Lock the agent state (tokio mutex — safe to hold across .await).
-    let mut agent = state.agent.lock().await;
-
-    // Extract the components we need to build the processor.
-    // We swap out the registry, context, and fast_path so that `processor`
-    // owns them, then swap them back after the call completes.
-    let timeout_secs = agent.timeout_secs;
-    let max_turns = timeout_secs as usize; // reuse timeout_secs as placeholder size
-    let _ = max_turns; // suppress unused warning
-
-    let registry = std::mem::replace(&mut agent.registry, SkillRegistry::new());
-    // Read timeout_secs before the second replace to avoid borrow conflict.
-    let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
-    let context = std::mem::replace(&mut agent.context, context_placeholder);
-    let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
-    let system_prompt = agent.system_prompt.clone();
-
-    let mut processor = AgentProcessor::<HttpLlmCaller>::new(
-        registry,
-        context,
-        fast_path,
-        system_prompt,
-        timeout_secs,
-    );
-
-    let result = processor
-        .process(&text, &llm_service_core)
-        .await
-        .map_err(|e| e.to_string());
-
-    // Move the (potentially mutated) components back into the state.
-    let (registry_back, context_back, fast_path_back) = processor.into_parts();
-    agent.registry = registry_back;
-    agent.context = context_back;
-    agent.fast_path = fast_path_back;
-
-    result
+    run_agent_processor(&state, &text, llm_service, None).await
 }
 
 /// Reset the agent's conversation context.

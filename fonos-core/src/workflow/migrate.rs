@@ -38,6 +38,15 @@
 //! [`crate::workflow::engine::resolve_trigger_target`] is gone — the pill
 //! dispatch arm reads `active_voice_workflow` itself). Guarded by the
 //! separate `config.pill_hotkey_migration_done` sentinel.
+//!
+//! [`migrate_legacy_agent_triggers`] (Workbench P2 Task 6) runs after
+//! [`migrate_primary_hotkey_to_pill`] in `main.rs`: it folds the legacy
+//! standalone `hotkey_agent`/`hotkey_agent_panel` fields into `Trigger::Hotkey`
+//! chips on the new `wf.agent-voice`/`wf.agent` composite recipes (generating
+//! a fresh overlay from their built-in shape if none exists yet — unlike
+//! [`migrate_hotkeys_to_triggers`], these ids never had an overlay before this
+//! task). Guarded by the separate `config.agent_triggers_migration_done`
+//! sentinel.
 
 use std::collections::BTreeMap;
 
@@ -683,6 +692,92 @@ pub fn migrate_primary_hotkey_to_pill(config: &mut AppConfig) -> bool {
         }
     }
     config.pill_hotkey_migration_done = true;
+    true
+}
+
+/// Workbench P2 Task 6: fold the legacy standalone Agent hotkeys
+/// (`hotkey_agent` — hold-to-talk voice, `hotkey_agent_panel` — blank-open
+/// panel toggle) into `Trigger::Hotkey` chips on the new agent composite
+/// recipes this task ships (`wf.agent-voice` / `wf.agent`), then clear the
+/// legacy fields (mirrors [`migrate_to_workflows`]'s rule-6 note/listen
+/// clearing).
+///
+/// Unlike [`migrate_hotkeys_to_triggers`] — which only folds a hotkey
+/// already sitting on an EXISTING `config.workflows` overlay — `wf.agent`/
+/// `wf.agent-voice` never had an overlay before this task (they didn't
+/// exist), so a chip can only land on one by generating a fresh overlay from
+/// [`crate::workflow::builtin::built_in_workflows`]'s shape (mirrors
+/// [`migrate_settings_into_flow`]'s `builtin(id)` widget-fetch helper,
+/// applied to workflows instead) and upserting it. Both legacy fields
+/// default to a non-empty combo (`"cmd+shift+a"` / `"cmd+shift+g"`), so this
+/// runs — and generates chips — on a fresh install too: the intent is that
+/// the default keys are preserved as chips, not silently dropped, exactly
+/// like every other hotkey fold in this module.
+///
+/// `hotkey_agent`'s hold-to-talk gesture becomes a `capture: "hold"` chip on
+/// `wf.agent-voice` (its mic source reads `capture` the same way any other
+/// mic-sourced recipe's Hotkey chip does). `hotkey_agent_panel`'s toggle-open
+/// gesture becomes a plain Hotkey chip (`capture: None`) on `wf.agent`;
+/// `wf.agent`'s `src.instant` source never consults `capture` (it isn't a
+/// microphone), so every key-down simply reopens the panel — the same
+/// "press to open" reading the legacy toggle arm's key-down-only branch used.
+///
+/// If an overlay for either id already exists in `config.workflows` (e.g.
+/// hand-edited config, or a re-run after a bypassed sentinel), the chip is
+/// appended to it in place instead of regenerating one from scratch, and a
+/// combo already present as a chip is not duplicated.
+///
+/// Idempotent: guarded by `config.agent_triggers_migration_done` and a no-op
+/// (returning `false`) once that flag is set. Wired into `main.rs` after
+/// [`migrate_primary_hotkey_to_pill`] (order doesn't matter functionally —
+/// this migration reads the raw legacy fields directly, not any chip another
+/// migration creates — but keeping it last matches "newest migration runs
+/// last" for the whole chain).
+pub fn migrate_legacy_agent_triggers(config: &mut AppConfig) -> bool {
+    if config.agent_triggers_migration_done {
+        return false;
+    }
+
+    fn base_workflow(id: &str) -> Option<WorkflowDef> {
+        crate::workflow::builtin::built_in_workflows().into_iter().find(|w| w.id == id)
+    }
+
+    /// Take the existing overlay for `wf_id` out of `config.workflows` (so it
+    /// can be mutated and re-upserted), or fall back to a fresh copy of its
+    /// built-in shape.
+    fn take_or_seed_workflow(config: &mut AppConfig, wf_id: &str) -> Option<WorkflowDef> {
+        config
+            .workflows
+            .iter()
+            .position(|w| w.id == wf_id)
+            .map(|i| config.workflows.remove(i))
+            .or_else(|| base_workflow(wf_id))
+    }
+
+    let hotkey_agent = std::mem::take(&mut config.hotkey_agent);
+    if !hotkey_agent.is_empty() {
+        if let Some(mut wf) = take_or_seed_workflow(config, "wf.agent-voice") {
+            if !wf.hotkey_triggers().any(|(_, c, _)| c == hotkey_agent.as_str()) {
+                wf.triggers.push(Trigger::Hotkey {
+                    combo: hotkey_agent,
+                    capture: Some("hold".to_string()),
+                });
+            }
+            upsert_workflow(config, wf);
+        }
+    }
+
+    let hotkey_agent_panel = std::mem::take(&mut config.hotkey_agent_panel);
+    if !hotkey_agent_panel.is_empty() {
+        if let Some(mut wf) = take_or_seed_workflow(config, "wf.agent") {
+            if !wf.hotkey_triggers().any(|(_, c, _)| c == hotkey_agent_panel.as_str()) {
+                wf.triggers.push(Trigger::Hotkey { combo: hotkey_agent_panel, capture: None });
+            }
+            upsert_workflow(config, wf);
+        }
+    }
+
+    config.agent_triggers_migration_done = true;
     true
 }
 
@@ -1619,11 +1714,103 @@ mod tests {
         assert_eq!(cfg.pill_hotkey, "", "no-op leaves fields untouched");
     }
 
+    // ── migrate_legacy_agent_triggers (Workbench P2 Task 6) ─────────────────
+
+    /// A fresh config (both legacy agent hotkeys at their non-empty
+    /// defaults) still produces chips — the defaults-preserved intent.
+    #[test]
+    fn agent_triggers_migration_default_config_creates_both_chips() {
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.hotkey_agent, "cmd+shift+a");
+        assert_eq!(cfg.hotkey_agent_panel, "cmd+shift+g");
+
+        assert!(migrate_legacy_agent_triggers(&mut cfg), "first run reports a change");
+        assert!(cfg.agent_triggers_migration_done);
+
+        // Legacy fields cleared (rule-6-style hygiene).
+        assert!(cfg.hotkey_agent.is_empty());
+        assert!(cfg.hotkey_agent_panel.is_empty());
+
+        // wf.agent-voice: hold-to-talk chip, generated fresh from the built-in
+        // shape (mic-hold source, stt.default processor, agent.default output).
+        let voice = cfg.workflows.iter().find(|w| w.id == "wf.agent-voice").expect("wf.agent-voice overlay");
+        assert_eq!(voice.source, "src.mic-hold");
+        assert_eq!(voice.processors, vec!["stt.default".to_string()]);
+        assert_eq!(voice.outputs, vec!["agent.default".to_string()]);
+        assert!(voice.hotkey_triggers().any(|(_, c, cap)| c == "cmd+shift+a" && cap == "hold"));
+        // Mic-sourced builtin shape still carries its seeded PillSlot chip too.
+        assert!(voice.pill_order().is_some());
+
+        // wf.agent: toggle-open chip (no capture — src.instant isn't a mic).
+        let panel = cfg.workflows.iter().find(|w| w.id == "wf.agent").expect("wf.agent overlay");
+        assert_eq!(panel.source, "src.instant");
+        assert_eq!(panel.outputs, vec!["agent.default".to_string()]);
+        assert!(panel.hotkey_triggers().any(|(_, c, cap)| c == "cmd+shift+g" && cap == "hold"));
+        assert!(panel.pill_order().is_none(), "src.instant is not a mic source");
+    }
+
+    #[test]
+    fn agent_triggers_migration_is_idempotent() {
+        let mut cfg = AppConfig::default();
+        assert!(migrate_legacy_agent_triggers(&mut cfg));
+        let workflows_after_first = cfg.workflows.clone();
+
+        assert!(!migrate_legacy_agent_triggers(&mut cfg), "second call reports no change");
+        assert_eq!(cfg.workflows, workflows_after_first, "workflows unchanged");
+        assert!(cfg.agent_triggers_migration_done);
+    }
+
+    #[test]
+    fn agent_triggers_migration_returns_false_when_already_done() {
+        let mut cfg = AppConfig { agent_triggers_migration_done: true, ..Default::default() };
+        assert!(!migrate_legacy_agent_triggers(&mut cfg));
+        assert_eq!(cfg.hotkey_agent, "cmd+shift+a", "no-op leaves legacy fields untouched");
+    }
+
+    /// User-cleared legacy hotkeys (both empty) generate no overlay at all —
+    /// mirrors every other hotkey fold's "nothing to migrate" behavior.
+    #[test]
+    fn agent_triggers_migration_empty_legacy_hotkeys_create_no_overlay() {
+        let mut cfg = AppConfig { hotkey_agent: String::new(), hotkey_agent_panel: String::new(), ..Default::default() };
+        assert!(migrate_legacy_agent_triggers(&mut cfg));
+        assert!(!cfg.workflows.iter().any(|w| w.id == "wf.agent" || w.id == "wf.agent-voice"));
+    }
+
+    /// A pre-existing overlay (hand-edited config, or a re-run after a
+    /// bypassed sentinel) is mutated in place — its other fields survive and
+    /// the combo isn't duplicated if already present as a chip.
+    #[test]
+    fn agent_triggers_migration_preserves_existing_overlay() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.agent-voice".to_string(),
+            name: "我的语音智能体".to_string(),
+            icon: "🎙".to_string(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::Hotkey { combo: "cmd+shift+a".into(), capture: Some("hold".into()) }],
+            source: "src.mic-hold".to_string(),
+            processors: vec!["stt.default".to_string()],
+            outputs: vec!["agent.default".to_string()],
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_agent_triggers(&mut cfg));
+
+        let voice = cfg.workflows.iter().find(|w| w.id == "wf.agent-voice").unwrap();
+        assert_eq!(voice.name, "我的语音智能体", "existing overlay's name preserved");
+        assert_eq!(
+            voice.hotkey_triggers().filter(|(_, c, _)| *c == "cmd+shift+a").count(),
+            1,
+            "combo not duplicated when already present as a chip"
+        );
+    }
+
     // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
     // A regression test for the whole v0.6.x → current pipeline:
     // migrate_transform_to_text_actions → migrate_to_workflows →
     // migrate_settings_into_flow → remap_renamed_builtins →
-    // migrate_hotkeys_to_triggers → migrate_primary_hotkey_to_pill. Simulates
+    // migrate_hotkeys_to_triggers → migrate_primary_hotkey_to_pill →
+    // migrate_legacy_agent_triggers. Simulates
     // a realistic pre-Workbench-P1 config: legacy
     // dictation/toggle/note/notebook/listen/quick-transform hotkeys, a
     // non-default STT language, and a pre-existing custom workflow overlay
@@ -1676,6 +1863,8 @@ mod tests {
             "option+shift+l",  // listen
             "cmd+shift+t",     // quick-transform → text action
             "cmd+shift+9",     // pre-existing custom workflow
+            "cmd+shift+a",     // agent (left at its default) → wf.agent-voice
+            "cmd+shift+g",     // agent panel (left at its default) → wf.agent
         ];
 
         let custom_modes = BTreeMap::new();
@@ -1687,12 +1876,14 @@ mod tests {
         remap_renamed_builtins(&mut cfg); // no sentinel; this config carries no stale ids
         assert!(migrate_hotkeys_to_triggers(&mut cfg), "hotkey-to-trigger migration runs");
         assert!(migrate_primary_hotkey_to_pill(&mut cfg), "pill hotkey migration runs");
+        assert!(migrate_legacy_agent_triggers(&mut cfg), "agent-triggers migration runs");
 
         // (a) All sentinels set.
         assert!(cfg.workflow_migration_done, "workflow_migration_done set");
         assert!(cfg.settings_inflow_migration_done, "settings_inflow_migration_done set");
         assert!(cfg.triggers_migration_done, "triggers_migration_done set");
         assert!(cfg.pill_hotkey_migration_done, "pill_hotkey_migration_done set");
+        assert!(cfg.agent_triggers_migration_done, "agent_triggers_migration_done set");
 
         // (a2) The primary dictation hotkey landed on the pill, carrying its
         // capture ("hold" — wf.dictation's source is src.mic-hold).
@@ -1743,9 +1934,10 @@ mod tests {
         let r4 = remap_renamed_builtins(&mut cfg);
         let r5 = migrate_hotkeys_to_triggers(&mut cfg);
         let r6 = migrate_primary_hotkey_to_pill(&mut cfg);
+        let r7 = migrate_legacy_agent_triggers(&mut cfg);
         assert!(
-            !r1 && !r2 && !r3 && !r4 && !r5 && !r6,
-            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6})"
+            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7})"
         );
         let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
         assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");

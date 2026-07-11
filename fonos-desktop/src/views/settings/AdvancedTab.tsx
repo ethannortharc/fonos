@@ -1,5 +1,5 @@
 // AdvancedTab.tsx — the Advanced page (Flows UI redesign, Task 5). Absorbs the
-// Speech / Agent / Meeting settings tabs plus their non-workflow hotkeys behind
+// Speech / Meeting settings tabs plus their non-workflow hotkeys behind
 // a segmented control, retiring the standalone Hotkeys tab (workflow trigger
 // keys already live per-recipe in the Workbench's Recipes segment — see
 // RecipesSection).
@@ -8,18 +8,25 @@
 // its hotkey row(s) relocated verbatim from HotkeysTab above it: same config
 // field names, same i18n label/hint keys and defaults, so nothing user-facing
 // is lost when HotkeysTab.tsx is deleted.
+//
+// The Agent segment (AgentTab + SkillsTab + the hotkey_agent/_panel rows) was
+// retired by Workbench P2 Task 6: agent settings now live on the
+// `agent.default` widget's own WidgetForm PropsForm case (llm_widget ref, TTS
+// toggle, voice fields, timeout/max_turns — safety allow/blocklist and the
+// system prompt stay global, still config-backed but with no settings-tab
+// home of their own right now), and its two standalone hotkeys were folded
+// into `wf.agent-voice`/`wf.agent`'s own Hotkey chips by
+// `migrate_legacy_agent_triggers`.
 
 import { useState } from "react";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModeEntry } from "../../types";
 import { HotkeyRow } from "../../components/HotkeyInput";
 import SpeechTab from "./SpeechTab";
-import AgentTab from "./AgentTab";
-import SkillsTab from "./SkillsTab";
 import MeetingTab from "./MeetingTab";
 import InsertionTab from "./InsertionTab";
 
-type Sub = "speech" | "agent" | "meeting" | "insertion";
+type Sub = "speech" | "meeting" | "insertion";
 
 // ─── Segmented control — same markup/classes as Workbench.tsx's top segment
 //     switcher (container + active-state pill), inlined here as its own
@@ -49,10 +56,9 @@ export default function AdvancedTab({ config, modes, onSave }: {
 
   return (
     <div className="flex flex-col">
-      {/* Segmented control [Speech] [Agent] [Meeting] [Insertion] */}
+      {/* Segmented control [Speech] [Meeting] [Insertion] */}
       <div className="inline-flex self-start bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-[9px] p-[3px] gap-[3px] mb-[18px]">
         <SegButton active={sub === "speech"} onClick={() => setSub("speech")}><span>{t("tab.speech")}</span></SegButton>
-        <SegButton active={sub === "agent"} onClick={() => setSub("agent")}><span>{t("tab.agent")}</span></SegButton>
         <SegButton active={sub === "meeting"} onClick={() => setSub("meeting")}><span>{t("tab.meeting")}</span></SegButton>
         <SegButton active={sub === "insertion"} onClick={() => setSub("insertion")}><span>{t("tab.insertion")}</span></SegButton>
       </div>
@@ -66,29 +72,6 @@ export default function AdvancedTab({ config, modes, onSave }: {
             onChange={(v) => onSave({ hotkey_tts: v })}
           />
           <SpeechTab config={config} modes={modes} onSave={onSave} />
-        </div>
-      )}
-
-      {/* ────────────── Agent sub — hotkey_agent/_panel + AgentTab + SkillsTab ── */}
-      {sub === "agent" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2.5">
-            <HotkeyRow
-              label={t("hotkeys.agentspeak")}
-              hint={t("hotkeys.holdtotalk")}
-              value={config.hotkey_agent ?? "cmd+shift+a"}
-              onChange={(v) => onSave({ hotkey_agent: v })}
-            />
-            <HotkeyRow
-              label={t("hotkeys.agentpanel")}
-              hint={t("hotkeys.toggle")}
-              value={config.hotkey_agent_panel ?? "cmd+shift+g"}
-              onChange={(v) => onSave({ hotkey_agent_panel: v })}
-            />
-          </div>
-          <AgentTab config={config} onSave={onSave} />
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", marginTop: 16, paddingTop: 8 }} />
-          <SkillsTab />
         </div>
       )}
 

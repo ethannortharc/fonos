@@ -35,6 +35,7 @@ import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import { LANGUAGES, inputClass, selectClass } from "./constants";
+import SkillsPanel from "../workbench/SkillsPanel";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
@@ -243,6 +244,30 @@ function SizeControl({
   );
 }
 
+/** Collapsed "Skills (global)" section rendered under the "agent" PropsForm
+ *  case. Skills are a global registry (not per-widget-instance config — see
+ *  `SkillsPanel`'s own header comment), so this just embeds the panel behind
+ *  a disclosure toggle rather than exposing any of its own props. A separate
+ *  component (not inlined in the "agent" case body) so its `useState` toggle
+ *  is never called conditionally: `PropsForm`'s switch can re-render a
+ *  different `case` across renders (the isNew type picker lets a user change
+ *  `form.type_tag`), which would violate the rules of hooks if the toggle
+ *  lived directly in that case's branch. */
+function AgentSkillsSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="self-start text-[10px] text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.55)] transition-colors"
+      >
+        {open ? "▾" : "▸"} {t("widgets.field.agent.skills")}
+      </button>
+      {open && <SkillsPanel />}
+    </div>
+  );
+}
+
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
@@ -418,6 +443,44 @@ function PropsForm({
               </Field>
             </>
           )}
+        </div>
+      );
+    }
+
+    case "agent": {
+      const llmWidget = pStr(p, "llm_widget");
+      return (
+        <div className="flex flex-col gap-2.5">
+          <Field label={t("widgets.field.agent.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={llmWidget} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
+          </Field>
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "tts_enabled")} onChange={(e) => set("tts_enabled", e.target.checked)} className="accent-[var(--accent)]" />
+            {t("widgets.field.agent.tts_enabled")}
+          </label>
+          <Field label={t("widgets.field.voice_profile")}>
+            <ModelSelector capKey="tts" value={pStr(p, "voice_profile")} profiles={config.model_profiles} onChange={(v) => set("voice_profile", v)} />
+          </Field>
+          <Field label={t("widgets.field.voice")}>
+            <input type="text" value={pStr(p, "voice", "default")} onChange={(e) => set("voice", e.target.value)} className={inputClass} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t("widgets.field.agent.timeout_secs")}>
+              <input
+                type="number" min={5} max={120} value={pNum(p, "timeout_secs", 30)}
+                onChange={(e) => set("timeout_secs", parseInt(e.target.value) || 30)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t("widgets.field.agent.max_turns")}>
+              <input
+                type="number" min={1} max={100} value={pNum(p, "max_turns", 20)}
+                onChange={(e) => set("max_turns", parseInt(e.target.value) || 20)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <AgentSkillsSection />
         </div>
       );
     }

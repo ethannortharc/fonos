@@ -263,6 +263,12 @@ pub struct AppConfig {
     /// to the pill (Workbench P1, spec §3c).
     #[serde(default)]
     pub pill_hotkey_migration_done: bool,
+    /// One-shot migration sentinel: the legacy standalone Agent hotkeys
+    /// (`hotkey_agent`/`hotkey_agent_panel`) folded into `Trigger::Hotkey`
+    /// chips on the `wf.agent-voice`/`wf.agent` recipes (Workbench P2 Task 6).
+    /// See [`crate::workflow::migrate::migrate_legacy_agent_triggers`].
+    #[serde(default)]
+    pub agent_triggers_migration_done: bool,
 }
 
 fn default_pill_hotkey_capture() -> String {
@@ -344,6 +350,7 @@ impl Default for AppConfig {
             pill_hotkey: String::new(),
             pill_hotkey_capture: default_pill_hotkey_capture(),
             pill_hotkey_migration_done: false,
+            agent_triggers_migration_done: false,
         }
     }
 }

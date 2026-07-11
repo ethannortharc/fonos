@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pillOrder, pillWorkflows, usageCount } from "../triggers";
+import { GROUPS, TYPE_TAGS } from "../../views/workbench/typeMeta";
 import type { WidgetDef, WorkflowRow } from "../../types";
 
 const row = (id: string, over: Partial<WorkflowRow> = {}): WorkflowRow => ({
@@ -56,5 +57,19 @@ describe("triggers helpers", () => {
     const rows: WorkflowRow[] = [row("r1", { source: "w.a", outputs: ["out.insert"] })];
     const widgets: WidgetDef[] = [widget("call.custom", "call", { llm_widget: "w.a" })];
     expect(usageCount("w.a", rows, widgets)).toBe(2);
+  });
+});
+
+// ── typeMeta two-sources-of-truth guard (Workbench P2 Task 6 rider) ─────────
+// GROUPS (the four-shelf presentation table) and TYPE_TAGS (the role-keyed
+// semantic table pickers/validation actually consume) are hand-maintained
+// separately — see typeMeta.ts's own comments on why. This guards that the
+// two never silently drift apart: every tag GROUPS renders must be one
+// TYPE_TAGS says some role can instantiate, and vice versa.
+describe("typeMeta two-sources-of-truth guard", () => {
+  it("GROUPS' tag union exactly matches TYPE_TAGS' tag union", () => {
+    const groupsTags = [...new Set(GROUPS.flatMap((g) => g.tags))].sort();
+    const typeTagsTags = [...new Set(Object.values(TYPE_TAGS).flat())].sort();
+    expect(groupsTags).toEqual(typeTagsTags);
   });
 });

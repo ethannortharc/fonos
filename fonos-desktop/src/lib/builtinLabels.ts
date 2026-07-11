@@ -18,10 +18,13 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "wf.explain": "builtin.wf.explain",
   "wf.listen": "builtin.wf.listen",
   "wf.note": "builtin.wf.note",
+  "wf.agent": "builtin.wf.agent",
+  "wf.agent-voice": "builtin.wf.agent-voice",
   // source widgets
   "src.selection": "builtin.src.selection",
   "src.mic-hold": "builtin.src.mic-hold",
   "src.mic-toggle": "builtin.src.mic-toggle",
+  "src.instant": "builtin.src.instant",
   // processor widgets
   "stt.default": "builtin.stt.default",
   "llm.polish": "builtin.llm.polish",
@@ -38,6 +41,7 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "out.dialog": "builtin.out.dialog",
   "out.speak": "builtin.out.speak",
   "out.quicknote": "builtin.out.quicknote",
+  "agent.default": "builtin.agent.default",
 };
 
 export function widgetLabel(w: { id: string; name: string; builtin?: boolean }): string {

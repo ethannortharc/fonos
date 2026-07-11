@@ -292,16 +292,6 @@ function PropsForm({
         </div>
       );
 
-    case "microphone":
-      return (
-        <Field label={t("widgets.field.capture")}>
-          <select value={pStr(p, "capture", "hold")} onChange={(e) => set("capture", e.target.value)} className={selectClass}>
-            <option value="hold">{t("widgets.field.capture.hold")}</option>
-            <option value="toggle">{t("widgets.field.capture.toggle")}</option>
-          </select>
-        </Field>
-      );
-
     case "notebook": {
       const notebooks = containers.filter((c) => c.container_type === "notebook");
       return (

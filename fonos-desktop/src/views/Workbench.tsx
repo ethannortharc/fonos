@@ -1,7 +1,8 @@
 // Workbench — the workbench-centered IA's home page (P1 skeleton). Three
 // segments: Recipes (widgets assembled + triggers), Widgets (tuned/named
 // instances of each type), Test Run (staged bench for stepping data through).
-// This task renders placeholder segment bodies; Tasks 9-11 fill them in.
+// Recipes (Task 10) and Widgets (Task 9) are wired; Test Run (Task 11) still
+// renders a placeholder body.
 
 import { useEffect, useState } from "react";
 import { useT } from "../lib/i18n";
@@ -9,6 +10,7 @@ import { useAppConfig } from "../lib/useAppConfig";
 import { listContainers } from "../lib/storage-api";
 import type { Container } from "../lib/storage-api";
 import WidgetsSection from "./workbench/WidgetsSection";
+import RecipesSection from "./workbench/RecipesSection";
 
 export type WorkbenchSeg = "recipes" | "widgets" | "testrun";
 export type BenchTarget = { kind: "recipe" | "widget"; id: string } | null;
@@ -62,7 +64,9 @@ export default function Workbench() {
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-[26px] py-4">
-        {seg === "recipes" && <div /* Task 10: <RecipesSection config={config} onSave={save} onOpenBench={openBench} …/> */ />}
+        {seg === "recipes" && (
+          <RecipesSection config={config} onBench={(id) => openBench({ kind: "recipe", id })} />
+        )}
         {seg === "widgets" && (
           <WidgetsSection
             config={config}

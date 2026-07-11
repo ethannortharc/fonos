@@ -1,29 +1,33 @@
-// FlowsTab.tsx — the Flows page (Flows UI redesign, Task 4). Supersedes
-// WorkflowsTab as a "flow-first" surface: the flow list/editor. (The
-// Building Blocks widget-library view that used to live behind a segmented
-// control here moved to the Workbench's Widgets section, Task 9 — this tab
-// is transitional and moves wholesale into Workbench in Task 10.)
+// RecipesSection.tsx — the Workbench's 配方 (Recipes) segment (Task 10).
+// Moved wholesale from settings/FlowsTab.tsx (Flows UI redesign, Task 4),
+// which superseded WorkflowsTab as a "flow-first" surface: the flow
+// list/editor. (The Building Blocks widget-library view that used to live
+// behind a segmented control here moved to the Workbench's Widgets section,
+// Task 9.)
 //
-// A flow renders as a card. Collapsed, its body is a read-only PipelineView
-// (source → processors → outputs) — a glanceable picture of what the flow
+// A recipe renders as a card. Collapsed, its body is a read-only PipelineView
+// (source → processors → outputs) — a glanceable picture of what the recipe
 // does. Expanded, the same pipeline becomes interactive and IS the editor:
 //
 //   • Click any node  → its widget's WidgetForm opens in place below the
 //     pipeline. Editing a node = editing the widget it references, without
-//     leaving the flow. Save persists the widget (save_widget) and reloads.
+//     leaving the recipe. Save persists the widget (save_widget) and reloads.
 //   • Swap a node      → a role-scoped picker in the node panel swaps which
 //     widget the slot references (save_workflow), or opens a fresh WidgetForm
-//     ("＋ New…") whose saved id is written straight into the flow.
+//     ("＋ New…") whose saved id is written straight into the recipe.
 //   • "+" between nodes → insert a processor at that position (picker → New).
 //   • "+ output"        → add another output (fan-out; ≥1 enforced).
 //   • Reorder / remove processors and remove extra outputs from the node panel.
 //
-// Structural workflow edits (name, hotkey, source/processor/output membership
-// and order) auto-save immediately via save_workflow — the backend re-validates
-// the chain and any Err surfaces in red — mirroring WorkflowsTab's inline
-// hotkey save. Widget prop edits save through WidgetForm's own Save button.
-// The backend is the final validator throughout; frontend only pre-hints the
-// microphone-needs-stt rule.
+// Every card also carries a trigger row (TriggerChips, Task 10) — hotkey and
+// pill-roller chips, replacing the old single `hotkey` field — and a "test
+// run" button that jumps to the Workbench's Test Run bench (`onBench`).
+//
+// Structural workflow edits (name, source/processor/output membership and
+// order, triggers) auto-save immediately via save_workflow — the backend
+// re-validates the chain and any Err surfaces in red. Widget prop edits save
+// through WidgetForm's own Save button. The backend is the final validator
+// throughout; frontend only pre-hints the microphone-needs-stt rule.
 
 import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
@@ -32,14 +36,16 @@ import { listWorkflows, listWidgets, saveWorkflow, deleteWorkflow, saveWidget } 
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 import { workflowLabel, widgetLabel } from "../../lib/builtinLabels";
-import { HotkeyInput } from "../../components/HotkeyInput";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import PipelineView from "../../components/PipelineView";
 import type { PipeNode } from "../../components/PipelineView";
-import { TYPE_TAGS } from "../workbench/typeMeta";
-import WidgetForm, { widgetToForm } from "./WidgetForm";
-import type { WidgetFormValue } from "./WidgetForm";
-import { inputClass, selectClass } from "./constants";
+import TriggerChips from "../../components/TriggerChips";
+import { TYPE_TAGS } from "./typeMeta";
+import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
+import type { WidgetFormValue } from "../settings/WidgetForm";
+import { inputClass, selectClass } from "../settings/constants";
+import UsageOverview from "./UsageOverview";
+import NewRecipeModal from "./NewRecipeModal";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetForm) ──────────
 // Local width variants: the flow-name field and the inline slot pickers use
@@ -148,9 +154,9 @@ function NameField({ initial, onCommit }: { initial: string; onCommit: (v: strin
   );
 }
 
-// ─── Main FlowsTab ─────────────────────────────────────────────────────────────
+// ─── Main RecipesSection ────────────────────────────────────────────────────
 
-export default function FlowsTab({ config }: { config: AppConfig }) {
+export default function RecipesSection({ config, onBench }: { config: AppConfig; onBench: (recipeId: string) => void }) {
   useT();
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
@@ -159,6 +165,8 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [error, setError] = useState<string>("");
+  const [showNew, setShowNew] = useState(false);
+  const [showOverview, setShowOverview] = useState(false);
   // Root of the currently-expanded flow card — used by the outside-click
   // listener below to tell inside-the-editor clicks from page-background ones.
   const expandedCardRef = useRef<HTMLDivElement>(null);
@@ -319,16 +327,28 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     saveFlow(wf, { outputs: wf.outputs.filter((o) => o !== id) });
   };
 
-  // ── Flow create / delete / expand ────────────────────────────────────────────
+  // ── Recipe create / delete / expand ──────────────────────────────────────────
 
-  const openNewFlow = async () => {
+  /** New-recipe modal's onCreate: source decides the recipe's seed shape —
+   *  mic seeds a dictation-shaped chain (mic-hold → stt.default → insert),
+   *  selection seeds a panel-shaped chain (selection → (no processor) →
+   *  panel). Ids match the built-in widgets (fonos-core builtin.rs) so the
+   *  chain type-checks immediately. */
+  const createRecipe = async (name: string, src: "mic" | "sel") => {
     setError(""); setActiveNodeId(null); setPicker(null);
     const id = `wf.custom-${Date.now()}`;
     try {
       await saveWorkflow({
-        id, name: t("flows.new-name"), icon: "", hotkey: "",
-        source: "src.selection", processors: [], outputs: ["out.panel"], builtin: false,
+        id,
+        name: name || t("flows.new-name"),
+        icon: "",
+        source: src === "mic" ? "src.mic-hold" : "src.selection",
+        processors: src === "mic" ? ["stt.default"] : [],
+        outputs: src === "mic" ? ["out.insert"] : ["out.panel"],
+        builtin: false,
+        triggers: [],
       });
+      setShowNew(false);
       await load();
       setExpandedId(id);
     } catch (e) {
@@ -492,6 +512,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     return (
       <div
         key={wf.id}
+        id={`recipe-card-${wf.id}`}
         ref={expanded ? expandedCardRef : undefined}
         className={[
           "rounded-[12px] transition-colors",
@@ -512,27 +533,32 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
               {t("wf.section.preset")}
             </span>
           )}
-          {!expanded && (
-            <span onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-              <HotkeyInput value={wf.hotkey ?? ""} onChange={(v) => saveFlow(wf, { hotkey: v })} />
-            </span>
-          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onBench(wf.id); }}
+            className="flex-shrink-0 rounded-[8px] border border-[rgba(242,184,75,0.2)] bg-[rgba(240,173,50,0.06)] px-3 py-[5px] text-[11px] text-[rgba(242,184,75,0.85)] hover:border-[rgba(242,184,75,0.4)] hover:text-[var(--accent)] transition-colors"
+          >
+            {t("wb.recipes.bench")}
+          </button>
           <Chevron expanded={expanded} />
+        </div>
+
+        {/* Trigger row — shown collapsed and expanded, inside the card root. */}
+        <div className="px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)]"
+             onClick={(e) => e.stopPropagation()}>
+          <TriggerChips
+            wf={wf}
+            isMic={wf.source_type_tag === "microphone"}
+            onChange={(triggers) => saveFlow(wf, { triggers })}
+          />
         </div>
 
         {expanded ? (
           <>
-            {/* Editor chrome: name + hotkey + delete */}
+            {/* Editor chrome: name + delete */}
             <div className="px-4 pb-3 flex gap-2.5 items-end flex-wrap">
               <div className="flex flex-col gap-1">
                 <label className={labelClass}>{t("wf.field.name")}</label>
                 <NameField key={wf.id} initial={wf.name} onCommit={(name) => saveFlow(wf, { name })} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className={labelClass}>{t("wf.field.hotkey")}</label>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <HotkeyInput value={wf.hotkey ?? ""} onChange={(v) => saveFlow(wf, { hotkey: v })} />
-                </span>
               </div>
               {!wf.builtin && (
                 <button
@@ -587,6 +613,27 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
         <div className="text-[11px] text-[#ef4444] leading-relaxed">{error}</div>
       )}
 
+      {/* Toolbar — usage overview toggle */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setShowOverview((v) => !v)}
+          className="flex-shrink-0 rounded-[8px] border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.025)] px-3 py-[5px] text-[11px] text-[rgba(255,255,255,0.43)] hover:border-[rgba(255,255,255,0.16)] hover:text-[rgba(255,255,255,0.7)] transition-colors"
+        >
+          ☰ {t("wb.overview.title")}
+        </button>
+      </div>
+      {showOverview && (
+        <UsageOverview
+          rows={workflows}
+          config={config}
+          onJump={(id) => {
+            setShowOverview(false);
+            setExpandedId(id);
+            document.getElementById(`recipe-card-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        />
+      )}
+
       {/* Preset */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
@@ -607,13 +654,15 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
         )}
         {customs.map(renderCard)}
         <button
-          onClick={openNewFlow}
+          onClick={() => setShowNew(true)}
           className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(242,184,75,0.14)] text-[rgba(242,184,75,0.65)] text-[11px] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          {t("wf.new")}
+          {t("wb.recipes.new")}
         </button>
       </div>
+
+      <NewRecipeModal open={showNew} onClose={() => setShowNew(false)} onCreate={createRecipe} />
     </div>
   );
 }

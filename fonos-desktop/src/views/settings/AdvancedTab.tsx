@@ -1,7 +1,8 @@
 // AdvancedTab.tsx — the Advanced page (Flows UI redesign, Task 5). Absorbs the
 // Speech / Agent / Meeting settings tabs plus their non-workflow hotkeys behind
 // a segmented control, retiring the standalone Hotkeys tab (workflow trigger
-// keys already live per-flow on the Flows page — see FlowsTab).
+// keys already live per-recipe in the Workbench's Recipes segment — see
+// RecipesSection).
 //
 // Each sub-page = the feature's existing settings component, unchanged, with
 // its hotkey row(s) relocated verbatim from HotkeysTab above it: same config
@@ -20,9 +21,9 @@ import InsertionTab from "./InsertionTab";
 
 type Sub = "speech" | "agent" | "meeting" | "insertion";
 
-// ─── Segmented control — same markup/classes as FlowsTab's top segmented
-//     control (container + SegButton), inlined here per YAGNI (see design doc
-//     §9: "各自内联; YAGNI 内联即可"). ───────────────────────────────────────
+// ─── Segmented control — same markup/classes as Workbench.tsx's top segment
+//     switcher (container + active-state pill), inlined here as its own
+//     SegButton per YAGNI (see design doc §9: "各自内联; YAGNI 内联即可"). ──────
 
 function SegButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

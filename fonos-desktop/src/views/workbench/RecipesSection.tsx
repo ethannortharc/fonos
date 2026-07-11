@@ -1,27 +1,35 @@
-// FlowsTab.tsx — the Flows page (Flows UI redesign, Task 4). Supersedes
-// WorkflowsTab as a "flow-first" surface: a top segmented control switches
-// between the flow list/editor and the BuildingBlocks (widget library) view.
+// RecipesSection.tsx — the Workbench's 配方 (Recipes) segment (Task 10).
+// Moved wholesale from settings/FlowsTab.tsx (Flows UI redesign, Task 4),
+// which superseded WorkflowsTab as a "flow-first" surface: the flow
+// list/editor. (The Building Blocks widget-library view that used to live
+// behind a segmented control here moved to the Workbench's Widgets section,
+// Task 9.)
 //
-// A flow renders as a card. Collapsed, its body is a read-only PipelineView
-// (source → processors → outputs) — a glanceable picture of what the flow
+// A recipe renders as a card. Collapsed, its body is a read-only PipelineView
+// (source → processors → outputs) — a glanceable picture of what the recipe
 // does. Expanded, the same pipeline becomes interactive and IS the editor:
 //
 //   • Click any node  → its widget's WidgetForm opens in place below the
 //     pipeline. Editing a node = editing the widget it references, without
-//     leaving the flow. Save persists the widget (save_widget) and reloads.
+//     leaving the recipe. Save persists the widget (save_widget) and reloads.
 //   • Swap a node      → a role-scoped picker in the node panel swaps which
 //     widget the slot references (save_workflow), or opens a fresh WidgetForm
-//     ("＋ New…") whose saved id is written straight into the flow.
+//     ("＋ New…") whose saved id is written straight into the recipe.
 //   • "+" between nodes → insert a processor at that position (picker → New).
 //   • "+ output"        → add another output (fan-out; ≥1 enforced).
 //   • Reorder / remove processors and remove extra outputs from the node panel.
 //
-// Structural workflow edits (name, hotkey, source/processor/output membership
-// and order) auto-save immediately via save_workflow — the backend re-validates
-// the chain and any Err surfaces in red — mirroring WorkflowsTab's inline
-// hotkey save. Widget prop edits save through WidgetForm's own Save button.
-// The backend is the final validator throughout; frontend only pre-hints the
-// microphone-needs-stt rule.
+// Every card also carries a trigger row (TriggerChips, Task 10) — hotkey and
+// pill-roller chips — and a "test run" button that jumps to the Workbench's
+// Test Run bench (`onBench`). Since Task 16, the chips render read-only here:
+// the Home page is the single place trigger edits are made and saved; this
+// row is a reminder of what's wired, with a hint pointing to Home.
+//
+// Structural workflow edits (name, source/processor/output membership and
+// order, triggers) auto-save immediately via save_workflow — the backend
+// re-validates the chain and any Err surfaces in red. Widget prop edits save
+// through WidgetForm's own Save button. The backend is the final validator
+// throughout; frontend only pre-hints the microphone-needs-stt rule.
 
 import { useState, useEffect, useRef } from "react";
 import { t, useT } from "../../lib/i18n";
@@ -30,16 +38,18 @@ import { listWorkflows, listWidgets, saveWorkflow, deleteWorkflow, saveWidget } 
 import { listContainers } from "../../lib/storage-api";
 import type { Container } from "../../lib/storage-api";
 import { workflowLabel, widgetLabel } from "../../lib/builtinLabels";
-import { HotkeyInput } from "../../components/HotkeyInput";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import PipelineView from "../../components/PipelineView";
 import type { PipeNode } from "../../components/PipelineView";
-import BuildingBlocks, { TYPE_TAGS } from "./BuildingBlocks";
-import WidgetForm, { widgetToForm } from "./WidgetForm";
-import type { WidgetFormValue } from "./WidgetForm";
-import { inputClass, selectClass } from "./constants";
+import TriggerChips from "../../components/TriggerChips";
+import type { FocusRecipe } from "../Workbench";
+import { TYPE_TAGS } from "./typeMeta";
+import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
+import type { WidgetFormValue } from "../settings/WidgetForm";
+import { inputClass, selectClass } from "../settings/constants";
+import NewRecipeModal from "./NewRecipeModal";
 
-// ─── Shared class recipes (canonical: constants.ts; match WidgetForm/BuildingBlocks) ──
+// ─── Shared class recipes (canonical: constants.ts; match WidgetForm) ──────────
 // Local width variants: the flow-name field and the inline slot pickers use
 // fixed/flex widths instead of w-full, so derive from the canonical
 // inputClass/selectClass (no re-literal of the shared bg/border/text/focus
@@ -58,8 +68,10 @@ const cancelBtnClass =
 const NEW = "__new__";
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** Strip the WorkflowRow-only `source_type_tag` before save_workflow. */
-function rowToDef(w: WorkflowRow): WorkflowDef {
+/** Strip the WorkflowRow-only `source_type_tag` before save_workflow.
+ *  Exported: HomePage (Task 16) reuses this to persist trigger edits, since
+ *  trigger editing now lives there instead of on the recipe card. */
+export function rowToDef(w: WorkflowRow): WorkflowDef {
   const { source_type_tag: _drop, ...def } = w;
   return def;
 }
@@ -79,35 +91,6 @@ type Picker =
   | { mode: "new"; role: WidgetRole; target: SlotTarget; value: WidgetFormValue };
 
 // ─── Small stateless chrome (module-level; re-render via parent useT) ──────────
-
-function FlowsGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="6" height="6" rx="1.5" /><rect x="15" y="14" width="6" height="6" rx="1.5" /><path d="M9 7h4a2 2 0 0 1 2 2v5" />
-    </svg>
-  );
-}
-function BlocksGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-
-function SegButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        "flex items-center gap-1.5 text-[10px] font-medium px-3 py-[5px] rounded-md transition-colors",
-        active ? "bg-[rgba(255,255,255,0.06)] text-[#fafaf9]" : "text-[rgba(255,255,255,0.32)] hover:text-[rgba(255,255,255,0.55)]",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
-}
 
 function Chevron({ expanded }: { expanded: boolean }) {
   return (
@@ -175,11 +158,17 @@ function NameField({ initial, onCommit }: { initial: string; onCommit: (v: strin
   );
 }
 
-// ─── Main FlowsTab ─────────────────────────────────────────────────────────────
+// ─── Main RecipesSection ────────────────────────────────────────────────────
 
-export default function FlowsTab({ config }: { config: AppConfig }) {
+export default function RecipesSection({ config, onBench, focusRecipe }: {
+  config: AppConfig;
+  onBench: (recipeId: string) => void;
+  /** Jump-to-recipe intent from the Home page's trigger table.
+   *  `nonce` (not just recipeId) so re-clicking the same row re-triggers the
+   *  effect even when the id is unchanged. */
+  focusRecipe?: FocusRecipe;
+}) {
   useT();
-  const [view, setView] = useState<"flows" | "blocks">("flows");
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
   const [containers, setContainers] = useState<Container[]>([]);
@@ -187,6 +176,11 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [error, setError] = useState<string>("");
+  const [showNew, setShowNew] = useState(false);
+  // createRecipe's failure, shown inline inside NewRecipeModal — `error`
+  // above renders behind the modal backdrop while the modal is open, so it's
+  // invisible right when it matters most.
+  const [modalError, setModalError] = useState<string | null>(null);
   // Root of the currently-expanded flow card — used by the outside-click
   // listener below to tell inside-the-editor clicks from page-background ones.
   const expandedCardRef = useRef<HTMLDivElement>(null);
@@ -205,6 +199,23 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   useEffect(() => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
   }, []);
+
+  // Jump-to-recipe intent from the Home page: expand the target card and
+  // scroll to it. Guarded by a handled-nonce ref (not just the nonce itself)
+  // since `workflows` is a dependency too — a jump arriving before the
+  // initial listWorkflows() resolves finds no `recipe-card-{id}` element yet,
+  // so this no-ops and retries on the next `workflows` update (post-load)
+  // instead of firing on every later, unrelated reload.
+  const handledFocusNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusRecipe?.nonce || handledFocusNonce.current === focusRecipe.nonce) return;
+    const el = document.getElementById(`recipe-card-${focusRecipe.recipeId}`);
+    if (!el) return;
+    handledFocusNonce.current = focusRecipe.nonce;
+    setError(""); setActiveNodeId(null); setPicker(null);
+    setExpandedId(focusRecipe.recipeId);
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusRecipe?.nonce, focusRecipe?.recipeId, workflows]);
 
   const widgetById = (id: string): WidgetDef | undefined => widgets.find((w) => w.id === id);
   const sourceWidgets = widgets.filter((w) => w.role === "source");
@@ -347,20 +358,32 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     saveFlow(wf, { outputs: wf.outputs.filter((o) => o !== id) });
   };
 
-  // ── Flow create / delete / expand ────────────────────────────────────────────
+  // ── Recipe create / delete / expand ──────────────────────────────────────────
 
-  const openNewFlow = async () => {
-    setError(""); setActiveNodeId(null); setPicker(null);
+  /** New-recipe modal's onCreate: source decides the recipe's seed shape —
+   *  mic seeds a dictation-shaped chain (mic-hold → stt.default → insert),
+   *  selection seeds a panel-shaped chain (selection → (no processor) →
+   *  panel). Ids match the built-in widgets (fonos-core builtin.rs) so the
+   *  chain type-checks immediately. */
+  const createRecipe = async (name: string, src: "mic" | "sel") => {
+    setError(""); setModalError(null); setActiveNodeId(null); setPicker(null);
     const id = `wf.custom-${Date.now()}`;
     try {
       await saveWorkflow({
-        id, name: t("flows.new-name"), icon: "", hotkey: "",
-        source: "src.selection", processors: [], outputs: ["out.panel"], builtin: false,
+        id,
+        name: name || t("flows.new-name"),
+        icon: "",
+        source: src === "mic" ? "src.mic-hold" : "src.selection",
+        processors: src === "mic" ? ["stt.default"] : [],
+        outputs: src === "mic" ? ["out.insert"] : ["out.panel"],
+        builtin: false,
+        triggers: [],
       });
+      setShowNew(false);
       await load();
       setExpandedId(id);
     } catch (e) {
-      setError(msg(e));
+      setModalError(msg(e));
     }
   };
 
@@ -407,12 +430,6 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     // avoids re-registering the listener on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandedId]);
-
-  const switchView = (v: "flows" | "blocks") => {
-    setActiveNodeId(null); setPicker(null); setError("");
-    if (v === "flows") load();  // pull in widget CRUD done in Building blocks
-    setView(v);
-  };
 
   // ── Render: node panel (below the pipeline in an expanded flow) ───────────────
 
@@ -526,6 +543,7 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
     return (
       <div
         key={wf.id}
+        id={`recipe-card-${wf.id}`}
         ref={expanded ? expandedCardRef : undefined}
         className={[
           "rounded-[12px] transition-colors",
@@ -546,27 +564,34 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
               {t("wf.section.preset")}
             </span>
           )}
-          {!expanded && (
-            <span onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-              <HotkeyInput value={wf.hotkey ?? ""} onChange={(v) => saveFlow(wf, { hotkey: v })} />
-            </span>
-          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onBench(wf.id); }}
+            className="flex-shrink-0 rounded-[8px] border border-[rgba(242,184,75,0.2)] bg-[rgba(240,173,50,0.06)] px-3 py-[5px] text-[11px] text-[rgba(242,184,75,0.85)] hover:border-[rgba(242,184,75,0.4)] hover:text-[var(--accent)] transition-colors"
+          >
+            {t("wb.recipes.bench")}
+          </button>
           <Chevron expanded={expanded} />
+        </div>
+
+        {/* Trigger row — read-only (Task 16): editing moved to the Home page,
+            "the workbench builds what, Home pulls the trigger." No chips at
+            all shows just the hint (no bare "Triggers:" label). */}
+        <div className="px-[14px] pb-[11px] pt-[9px] mt-0 border-t border-[rgba(255,255,255,0.045)] flex items-center gap-2 flex-wrap">
+          {(wf.triggers ?? []).length > 0 && (
+            <TriggerChips wf={wf} isMic={wf.source_type_tag === "microphone"} readOnly />
+          )}
+          <span className="ml-auto text-[10px] text-[rgba(255,255,255,0.28)] italic flex-shrink-0">
+            {t("wb.recipes.triggers-hint")}
+          </span>
         </div>
 
         {expanded ? (
           <>
-            {/* Editor chrome: name + hotkey + delete */}
+            {/* Editor chrome: name + delete */}
             <div className="px-4 pb-3 flex gap-2.5 items-end flex-wrap">
               <div className="flex flex-col gap-1">
                 <label className={labelClass}>{t("wf.field.name")}</label>
                 <NameField key={wf.id} initial={wf.name} onCommit={(name) => saveFlow(wf, { name })} />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className={labelClass}>{t("wf.field.hotkey")}</label>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <HotkeyInput value={wf.hotkey ?? ""} onChange={(v) => saveFlow(wf, { hotkey: v })} />
-                </span>
               </div>
               {!wf.builtin && (
                 <button
@@ -616,50 +641,45 @@ export default function FlowsTab({ config }: { config: AppConfig }) {
   const customs = workflows.filter((w) => !w.builtin);
 
   return (
-    <div className="flex flex-col">
-      {/* Segmented control [Flows] [Building blocks] */}
-      <div className="inline-flex self-start bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-[9px] p-[3px] gap-[3px] mb-[18px]">
-        <SegButton active={view === "flows"} onClick={() => switchView("flows")}><FlowsGlyph /><span>{t("flows.seg.flows")}</span></SegButton>
-        <SegButton active={view === "blocks"} onClick={() => switchView("blocks")}><BlocksGlyph /><span>{t("flows.seg.blocks")}</span></SegButton>
+    <div className="flex flex-col gap-5">
+      {error && expandedId === null && (
+        <div className="text-[11px] text-[#ef4444] leading-relaxed">{error}</div>
+      )}
+
+      {/* Preset */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className={headingClass}>{t("wf.section.preset")}</span>
+          <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({presets.length})</span>
+        </div>
+        {presets.map(renderCard)}
       </div>
 
-      {view === "blocks" ? (
-        <BuildingBlocks />
-      ) : (
-        <div className="flex flex-col gap-5">
-          {error && expandedId === null && (
-            <div className="text-[11px] text-[#ef4444] leading-relaxed">{error}</div>
-          )}
-
-          {/* Preset */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className={headingClass}>{t("wf.section.preset")}</span>
-              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({presets.length})</span>
-            </div>
-            {presets.map(renderCard)}
-          </div>
-
-          {/* Custom */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className={headingClass}>{t("wf.section.custom")}</span>
-              <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({customs.length})</span>
-            </div>
-            {customs.length === 0 && (
-              <div className="text-[11px] text-[rgba(255,255,255,0.25)] italic py-1">{t("wf.empty.custom")}</div>
-            )}
-            {customs.map(renderCard)}
-            <button
-              onClick={openNewFlow}
-              className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(242,184,75,0.14)] text-[rgba(242,184,75,0.65)] text-[11px] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              {t("wf.new")}
-            </button>
-          </div>
+      {/* Custom */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className={headingClass}>{t("wf.section.custom")}</span>
+          <span className="text-[9px] text-[rgba(255,255,255,0.15)]">({customs.length})</span>
         </div>
-      )}
+        {customs.length === 0 && (
+          <div className="text-[11px] text-[rgba(255,255,255,0.25)] italic py-1">{t("wf.empty.custom")}</div>
+        )}
+        {customs.map(renderCard)}
+        <button
+          onClick={() => { setModalError(null); setShowNew(true); }}
+          className="w-full py-2.5 rounded-[11px] border border-dashed border-[rgba(242,184,75,0.14)] text-[rgba(242,184,75,0.65)] text-[11px] hover:border-[rgba(242,184,75,0.3)] hover:text-[var(--accent)] transition-colors flex items-center justify-center gap-1.5"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          {t("wb.recipes.new")}
+        </button>
+      </div>
+
+      <NewRecipeModal
+        open={showNew}
+        onClose={() => { setShowNew(false); setModalError(null); }}
+        onCreate={createRecipe}
+        errorText={modalError}
+      />
     </div>
   );
 }

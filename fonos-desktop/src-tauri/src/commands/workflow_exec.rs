@@ -33,10 +33,28 @@ static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 /// RAII reset for [`IN_FLIGHT`]: clears the flag on scope exit (including early
 /// returns and the `engine::run` await point), so a failed or empty run never
 /// wedges the trigger.
-struct InFlightGuard;
+///
+/// `pub(crate)` so the bench commands (`commands::bench`) can share the same
+/// re-entrancy flag — a bench run and a real hotkey-triggered run can't
+/// overlap any more than two real runs could.
+pub(crate) struct InFlightGuard;
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
         IN_FLIGHT.store(false, Ordering::SeqCst);
+    }
+}
+
+impl InFlightGuard {
+    /// Attempt to claim the in-flight guard: `None` if a run is already in
+    /// progress. A `compare_exchange`-based alternative to `run_workflow`'s own
+    /// `swap` + distinct re-entrant-trigger log message below — used by callers
+    /// (the bench commands) that want a plain `Option`-shaped acquire rather
+    /// than a fire-and-forget log-and-return.
+    pub(crate) fn try_acquire() -> Option<InFlightGuard> {
+        IN_FLIGHT
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| InFlightGuard)
     }
 }
 
@@ -94,6 +112,8 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
         recorder: Some(Arc::new(DbRecorder {
             handle: handle.clone(),
         })),
+        mock_text: None,
+        dry_run: false,
     };
 
     // 4. Run against the shared registry, built once in `main`'s `.setup()`
@@ -173,5 +193,34 @@ impl RunRecorder for DbRecorder {
                 Ok(0)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `try_acquire` only ever hands out one guard at a time, and releases the
+    /// flag when that guard drops — the mutual-exclusion contract the bench
+    /// commands (`commands::bench`) rely on to share this flag with
+    /// `run_workflow`.
+    ///
+    /// `IN_FLIGHT` is a single process-wide static, so this test claims and
+    /// releases it deterministically (no `run_workflow`/bench call in the test
+    /// suite touches it concurrently) rather than asserting on timing.
+    #[test]
+    fn try_acquire_is_mutually_exclusive_and_releases_on_drop() {
+        // Defensive reset in case an earlier failed test left the flag set.
+        IN_FLIGHT.store(false, Ordering::SeqCst);
+
+        let first = InFlightGuard::try_acquire();
+        assert!(first.is_some(), "first acquire should succeed while nothing is in flight");
+
+        let second = InFlightGuard::try_acquire();
+        assert!(second.is_none(), "second acquire must fail while the first guard is held");
+
+        drop(first);
+        let third = InFlightGuard::try_acquire();
+        assert!(third.is_some(), "acquire should succeed again once the prior guard is dropped");
     }
 }

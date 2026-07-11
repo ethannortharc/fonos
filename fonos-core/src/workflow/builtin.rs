@@ -13,7 +13,7 @@
 //! built-in modes; a `#[cfg(test)]`-only regression test cross-checks them
 //! for drift and can be deleted once `modes.rs` goes away.
 
-use crate::workflow::model::{WidgetDef, WidgetRole, WorkflowDef};
+use crate::workflow::model::{Trigger, WidgetDef, WidgetRole, WorkflowDef};
 
 /// Build a built-in [`WidgetDef`] (always `builtin: true`).
 fn widget(
@@ -75,6 +75,7 @@ fn workflow(id: &str, name: &str, icon: &str, source: &str, processors: &[&str],
         name: name.to_string(),
         icon: icon.to_string(),
         hotkey: String::new(),
+        triggers: Vec::new(),
         source: source.to_string(),
         processors: processors.iter().map(|s| s.to_string()).collect(),
         outputs: outputs.iter().map(|s| s.to_string()).collect(),
@@ -267,7 +268,7 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
 /// All ship with an empty hotkey — user key bindings are supplied by migration
 /// or the settings UI.
 pub fn built_in_workflows() -> Vec<WorkflowDef> {
-    vec![
+    let mut v = vec![
         workflow("wf.dictation", "听写", "🎤", "src.mic-hold", &["stt.default"], &["out.insert"]),
         workflow(
             "wf.translate-pop",
@@ -295,7 +296,23 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
         ),
         workflow("wf.listen", "朗读", "🎧", "src.selection", &["llm.summarize"], &["out.speak"]),
         workflow("wf.note", "记笔记", "📓", "src.mic-hold", &["stt.default"], &["out.quicknote"]),
-    ]
+    ];
+
+    // Workbench P1: every microphone-sourced builtin gets a pill-roller
+    // slot, ordered by its position in this list (0, 10, 20, …).
+    let mic_ids: std::collections::BTreeSet<String> = built_in_widgets()
+        .into_iter()
+        .filter(|w| w.type_tag == "microphone")
+        .map(|w| w.id)
+        .collect();
+    let mut order = 0i64;
+    for wf in v.iter_mut() {
+        if mic_ids.contains(&wf.source) {
+            wf.triggers.push(Trigger::PillSlot { order });
+            order += 10;
+        }
+    }
+    v
 }
 
 #[cfg(test)]
@@ -394,6 +411,7 @@ mod tests {
             id: "wf.dictation".into(),
             name: "听写".into(),
             hotkey: "cmd+shift+space".into(),
+            triggers: Vec::new(),
             source: "src.mic-hold".into(),
             processors: vec!["stt.default".into(), "llm.polish".into()],
             outputs: vec!["out.insert".into()],
@@ -404,6 +422,7 @@ mod tests {
             id: "wf.custom-1".into(),
             name: "我的".into(),
             hotkey: String::new(),
+            triggers: Vec::new(),
             source: "src.selection".into(),
             processors: vec![],
             outputs: vec!["out.insert".into()],
@@ -498,5 +517,28 @@ mod tests {
             .find(|w| w.id == "wf.explain")
             .unwrap();
         engine::validate(&reg, &wf, &built_in_widgets()).expect("wf.explain chain must type-check");
+    }
+
+    #[test]
+    fn mic_builtins_carry_pill_slot() {
+        use std::collections::BTreeSet;
+        let mic_ids: BTreeSet<String> = built_in_widgets()
+            .into_iter()
+            .filter(|w| w.type_tag == "microphone")
+            .map(|w| w.id)
+            .collect();
+        let mut orders = Vec::new();
+        for wf in built_in_workflows() {
+            if mic_ids.contains(&wf.source) {
+                let o = wf.pill_order().expect("mic builtin must have a PillSlot");
+                orders.push(o);
+            } else {
+                assert!(wf.pill_order().is_none(), "non-mic builtin {} must not have PillSlot", wf.id);
+            }
+        }
+        assert!(!orders.is_empty());
+        let mut sorted = orders.clone();
+        sorted.sort();
+        assert_eq!(orders, sorted, "pill orders follow list order");
     }
 }

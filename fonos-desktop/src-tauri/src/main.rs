@@ -8,6 +8,7 @@ mod error_surface;
 mod hotkey;
 mod injection;
 mod skills;
+mod trigger_label;
 
 use commands::AppState;
 use fonos_core::config::AppConfig;
@@ -190,12 +191,99 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     try_add(&config.hotkey_meeting, "meeting");
     try_add(&config.hotkey_sts, "sts");
     // Dictation / note / listen / text-actions are unified onto the workflow
-    // engine (Workflow P1): every workflow that carries a hotkey registers under
-    // a `workflow-{id}` label handled by the `starts_with("workflow-")` arm.
+    // engine (Workflow P1): every Hotkey chip on a workflow registers its own
+    // `workflow-{id}@{trigger_idx}` label (Workbench P1), handled by the
+    // `starts_with("workflow-")` arm.
     for wf in fonos_core::workflow::engine::effective_workflows(config) {
-        try_add(&wf.hotkey, &format!("workflow-{}", wf.id));
+        for (idx, combo, _capture) in wf.hotkey_triggers() {
+            try_add(combo, &crate::trigger_label::hotkey_label(&wf.id, idx));
+        }
     }
+    // Pill-owned hotkey (Workbench P1, spec §3c): the floating pill holds its
+    // own global key, separate from any recipe's Hotkey chips, dispatched by
+    // the `"pill"` arm below.
+    try_add(&config.pill_hotkey, "pill");
     configs
+}
+
+/// Debounces a fast physical double-press of a toggle-capture hotkey so it
+/// doesn't re-trigger the same mic workflow twice in quick succession.
+/// Key-repeat is already suppressed by the hotkey layer, so this only guards
+/// against an actual double tap. Shared by every mic-sourced trigger — the
+/// `workflow-{id}` and `pill` hotkey arms alike (see
+/// [`dispatch_workflow_trigger`]) — since the guard is about a fast physical
+/// gesture, not about which specific hotkey fired.
+#[cfg(target_os = "macos")]
+static TOGGLE_DEBOUNCE_LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+#[cfg(target_os = "macos")]
+const TOGGLE_DELAY_MS: u64 = 500;
+
+/// The shared mic hold/toggle dispatch dance for every workflow-triggering
+/// hotkey arm (`workflow-{id}` and `pill` alike): given the resolved target
+/// workflow id, whether its source is a microphone widget, this trigger's
+/// capture mode ("hold" or "toggle"), and the key event, either runs the
+/// workflow — mic sources on the correct hold/toggle edge (toggle key-downs
+/// debounced via [`TOGGLE_DEBOUNCE_LAST`]), non-mic sources once on
+/// key-down — or finishes an in-flight capture.
+#[cfg(target_os = "macos")]
+async fn dispatch_workflow_trigger(
+    handle: tauri::AppHandle,
+    wf_id: String,
+    is_mic: bool,
+    capture: &str,
+    is_down: bool,
+) {
+    if is_mic {
+        if capture == "toggle" && is_down {
+            {
+                let mut last = TOGGLE_DEBOUNCE_LAST.lock().unwrap();
+                let debounced = last
+                    .map(|t| t.elapsed().as_millis() < TOGGLE_DELAY_MS as u128)
+                    .unwrap_or(false);
+                if debounced {
+                    eprintln!("fonos: workflow toggle debounce — too soon since last action");
+                    return;
+                }
+                *last = Some(std::time::Instant::now());
+            }
+        }
+        // MicSource starts on key-down and blocks (no timeout) until
+        // finish_active_capture fires. is_recording() here + run_workflow's
+        // own IN_FLIGHT guard together prevent a second capture starting
+        // while one is live, so the single global CAPTURE_DONE signal always
+        // targets the run the trigger owns.
+        match (capture, is_down, commands::dictation::is_recording()) {
+            // hold: key-down starts, key-up finishes.
+            ("hold", true, false) => {
+                commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
+            }
+            // Finish is unconditional on key-up — NOT gated on
+            // is_recording() — because a fast tap can release the key before
+            // start_recording flips IS_RECORDING (set only after mic warm-up
+            // completes). If finish were gated here, that key-up would no-op
+            // and MicSource::acquire would be left awaiting CAPTURE_DONE
+            // forever (no timeout), hanging the mic live until the next
+            // gesture. This is safe because MicSource::acquire registers its
+            // CAPTURE_DONE waiter before calling start_recording, so an
+            // "early" finish still latches via notify_waiters(); and when
+            // nothing is capturing, finishing is a harmless no-op
+            // (notify_waiters with no registered waiter is simply dropped).
+            ("hold", false, _) => {
+                commands::workflow_widgets::finish_active_capture();
+            }
+            // toggle: 1st press starts, 2nd press finishes.
+            ("toggle", true, false) => {
+                commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
+            }
+            ("toggle", true, true) => {
+                commands::workflow_widgets::finish_active_capture();
+            }
+            _ => {}
+        }
+    } else if is_down {
+        // Non-mic sources (e.g. selection) fire once on key-down.
+        commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
+    }
 }
 
 fn main() {
@@ -236,6 +324,26 @@ fn main() {
         match config.save() {
             Ok(()) => eprintln!("fonos: remapped renamed built-in ids (out.dialog-explain → out.dialog)"),
             Err(e) => eprintln!("fonos: builtin remap save failed: {e}"),
+        }
+    }
+    // One-time migration: legacy per-workflow `hotkey` strings → `triggers`
+    // (Workbench P1). Runs after the migrations above so it sees the
+    // fully-migrated workflow shape, and before the pill-hotkey migration
+    // below (which consumes the Hotkey chip this one creates on wf.dictation).
+    if fonos_core::workflow::migrate::migrate_hotkeys_to_triggers(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated workflow hotkeys into triggers"),
+            Err(e) => eprintln!("fonos: hotkey-to-triggers migration save failed: {e}"),
+        }
+    }
+    // One-time migration: wf.dictation's primary Hotkey chip → the pill's own
+    // `pill_hotkey`/`pill_hotkey_capture` fields (Workbench P1, spec §3c).
+    // Runs LAST, after `migrate_hotkeys_to_triggers`, since it consumes the
+    // chip that migration creates.
+    if fonos_core::workflow::migrate::migrate_primary_hotkey_to_pill(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated primary dictation hotkey to the pill"),
+            Err(e) => eprintln!("fonos: pill-hotkey migration save failed: {e}"),
         }
     }
     let config = config;
@@ -470,6 +578,9 @@ fn main() {
             // Workflow execution (frontend entry points to the engine)
             commands::workflow_exec::run_workflow_by_id,
             commands::workflow_widgets::finish_capture,
+            // Test Run bench (settings-only; step-traced, intercepted runs)
+            commands::bench::bench_run_workflow,
+            commands::bench::bench_run_widget,
         ])
         .setup(move |app| {
             // Assemble and manage the shared AppState first — the rest of setup
@@ -563,17 +674,12 @@ fn main() {
 
             if any_hotkey {
                 let app_handle = app.handle().clone();
-                // Toggle debounce: ignore a toggle key-down that lands within
-                // TOGGLE_DELAY_MS of the last toggle action. Key-repeat is already
-                // suppressed by the hotkey layer, so this only guards against a
-                // fast physical double-press re-triggering the same mic workflow.
-                let toggle_last_action: Arc<Mutex<std::time::Instant>> = Arc::new(Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(10)));
-                const TOGGLE_DELAY_MS: u64 = 500;
-                let tg_last = Arc::clone(&toggle_last_action);
+                // Toggle debounce state lives in the shared `TOGGLE_DEBOUNCE_LAST`
+                // static (see above) so it's usable from the free-standing
+                // `dispatch_workflow_trigger` helper, not just this closure.
                 hm.set_callback(move |label, is_down| {
                     let handle = app_handle.clone();
                     let label = label.to_string();
-                    let last_action = Arc::clone(&tg_last);
                     tauri::async_runtime::spawn(async move {
                         match label.as_str() {
                             "agent" => {
@@ -846,20 +952,24 @@ fn main() {
                                 }
                             }
                             l if l.starts_with("workflow-") => {
-                                // Resolve the trigger target and the source
-                                // widget's capture semantics under the config
-                                // lock, then drop it before any await. The
-                                // primary dictation label
-                                // (`workflow-wf.dictation`) redirects to
-                                // `active_voice_workflow` via
-                                // `resolve_trigger_target`, so the main dictation
-                                // hotkey fires the user's selected voice
-                                // workflow; every other `workflow-{id}` label
-                                // triggers its own id. `is_mic` gates the
-                                // two-phase mic dance, and `capture`
-                                // ("hold"|"toggle") is the mic widget's prop. A
-                                // missing/dangling workflow is logged and the
-                                // trigger dropped.
+                                // Resolve the trigger target and derive
+                                // `is_mic`/`capture` under the config lock,
+                                // then drop it before any await. The label
+                                // carries the fired trigger chip as
+                                // `workflow-{id}@{trigger_idx}`
+                                // (Workbench P1 — one binding per Hotkey
+                                // chip). Every `workflow-{id}` label triggers
+                                // its own id directly (Workbench P1, spec
+                                // §3c: the former `workflow-wf.dictation` →
+                                // `active_voice_workflow` redirect is gone —
+                                // that behavior now belongs to the pill's own
+                                // hotkey, see the `"pill"` arm below).
+                                // `is_mic` gates the two-phase mic dance and
+                                // comes from the target workflow's source
+                                // widget; `capture` ("hold"|"toggle") comes
+                                // from the fired workflow's
+                                // `triggers[trigger_idx]`. A missing/dangling
+                                // workflow is logged and the trigger dropped.
                                 let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let config = match state.config.lock() {
@@ -869,25 +979,28 @@ fn main() {
                                             return;
                                         }
                                     };
+                                    let (base_label, trigger_idx) =
+                                        crate::trigger_label::parse_hotkey_label(l);
                                     let wf_id =
-                                        fonos_core::workflow::engine::resolve_trigger_target(l, &config);
+                                        fonos_core::workflow::engine::resolve_trigger_target(base_label);
                                     let widgets =
                                         fonos_core::workflow::engine::effective_widgets(&config);
-                                    fonos_core::workflow::engine::effective_workflows(&config)
-                                        .into_iter()
+                                    let workflows =
+                                        fonos_core::workflow::engine::effective_workflows(&config);
+                                    workflows
+                                        .iter()
                                         .find(|w| w.id == wf_id)
                                         .map(|wf| {
                                             let src = widgets.iter().find(|w| w.id == wf.source);
                                             let is_mic = src
                                                 .map(|w| w.type_tag == "microphone")
                                                 .unwrap_or(false);
-                                            let capture = src
-                                                .and_then(|w| {
-                                                    w.props.get("capture").and_then(|v| v.as_str())
-                                                })
-                                                .unwrap_or("hold")
-                                                .to_string();
-                                            (wf.id, is_mic, capture)
+                                            let capture = wf
+                                                .hotkey_triggers()
+                                                .find(|(i, _, _)| *i == trigger_idx)
+                                                .map(|(_, _, cap)| cap.to_string())
+                                                .unwrap_or_else(|| "hold".to_string());
+                                            (wf.id.clone(), is_mic, capture)
                                         })
                                 };
                                 let Some((wf_id, is_mic, capture)) = resolved else {
@@ -896,79 +1009,71 @@ fn main() {
                                     );
                                     return;
                                 };
+                                dispatch_workflow_trigger(handle.clone(), wf_id, is_mic, &capture, is_down)
+                                    .await;
+                            }
 
-                                if is_mic {
-                                    // Toggle key-downs are debounced (guards a fast
-                                    // physical double-press); hold needs no debounce.
-                                    if capture == "toggle" && is_down {
-                                        {
-                                            let last = last_action.lock().unwrap();
-                                            if last.elapsed().as_millis()
-                                                < TOGGLE_DELAY_MS as u128
-                                            {
-                                                eprintln!("fonos: workflow toggle debounce — too soon since last action");
-                                                return;
-                                            }
+                            "pill" => {
+                                // Pill-owned hotkey (Workbench P1, spec §3c):
+                                // the floating pill holds its own global key,
+                                // separate from any recipe's Hotkey chips.
+                                // Pressing it runs whichever workflow the
+                                // pill roller currently has selected
+                                // (`active_voice_workflow`), falling back to
+                                // the built-in wf.dictation — this is the
+                                // exact "run whatever's selected" behavior
+                                // the old `workflow-wf.dictation` redirect
+                                // used to provide, now read directly rather
+                                // than through `resolve_trigger_target`.
+                                // `is_mic` is derived the same way as the
+                                // `workflow-` arm above; `capture` comes from
+                                // `config.pill_hotkey_capture` (not a
+                                // per-workflow trigger chip, since the pill's
+                                // key isn't one). Shares the mic dance with
+                                // the `workflow-` arm via
+                                // `dispatch_workflow_trigger`.
+                                let resolved = {
+                                    let state: tauri::State<'_, AppState> = handle.state();
+                                    let config = match state.config.lock() {
+                                        Ok(c) => c,
+                                        Err(e) => {
+                                            eprintln!("fonos: pill hotkey — config lock poisoned: {e}");
+                                            return;
                                         }
-                                        *last_action.lock().unwrap() = std::time::Instant::now();
-                                    }
-                                    // MicSource starts on key-down and blocks (no
-                                    // timeout) until finish_active_capture fires.
-                                    // is_recording() here + run_workflow's own
-                                    // IN_FLIGHT guard together prevent a second
-                                    // capture starting while one is live, so the
-                                    // single global CAPTURE_DONE signal always
-                                    // targets the run the trigger owns.
-                                    match (
-                                        capture.as_str(),
-                                        is_down,
-                                        commands::dictation::is_recording(),
-                                    ) {
-                                        // hold: key-down starts, key-up finishes.
-                                        ("hold", true, false) => {
-                                            commands::workflow_exec::run_workflow(
-                                                handle.clone(),
-                                                wf_id,
-                                            )
-                                            .await;
-                                        }
-                                        // Finish is unconditional on key-up — NOT
-                                        // gated on is_recording() — because a fast
-                                        // tap can release the key before
-                                        // start_recording flips IS_RECORDING (set
-                                        // only after mic warm-up completes). If
-                                        // finish were gated here, that key-up would
-                                        // no-op and MicSource::acquire would be
-                                        // left awaiting CAPTURE_DONE forever (no
-                                        // timeout), hanging the mic live until the
-                                        // next gesture. This is safe because
-                                        // MicSource::acquire registers its
-                                        // CAPTURE_DONE waiter before calling
-                                        // start_recording, so an "early" finish
-                                        // still latches via notify_waiters(); and
-                                        // when nothing is capturing, finishing is a
-                                        // harmless no-op (notify_waiters with no
-                                        // registered waiter is simply dropped).
-                                        ("hold", false, _) => {
-                                            commands::workflow_widgets::finish_active_capture();
-                                        }
-                                        // toggle: 1st press starts, 2nd press finishes.
-                                        ("toggle", true, false) => {
-                                            commands::workflow_exec::run_workflow(
-                                                handle.clone(),
-                                                wf_id,
-                                            )
-                                            .await;
-                                        }
-                                        ("toggle", true, true) => {
-                                            commands::workflow_widgets::finish_active_capture();
-                                        }
-                                        _ => {}
-                                    }
-                                } else if is_down {
-                                    // Non-mic sources (e.g. selection) fire once on key-down.
-                                    commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
-                                }
+                                    };
+                                    let workflows =
+                                        fonos_core::workflow::engine::effective_workflows(&config);
+                                    let active = &config.active_voice_workflow;
+                                    let wf_id = if !active.is_empty()
+                                        && workflows.iter().any(|w| w.id == *active)
+                                    {
+                                        active.clone()
+                                    } else {
+                                        "wf.dictation".to_string()
+                                    };
+                                    let widgets =
+                                        fonos_core::workflow::engine::effective_widgets(&config);
+                                    let capture = if config.pill_hotkey_capture.is_empty() {
+                                        "hold".to_string()
+                                    } else {
+                                        config.pill_hotkey_capture.clone()
+                                    };
+                                    workflows.iter().find(|w| w.id == wf_id).map(|wf| {
+                                        let src = widgets.iter().find(|w| w.id == wf.source);
+                                        let is_mic = src
+                                            .map(|w| w.type_tag == "microphone")
+                                            .unwrap_or(false);
+                                        (wf.id.clone(), is_mic, capture)
+                                    })
+                                };
+                                let Some((wf_id, is_mic, capture)) = resolved else {
+                                    eprintln!(
+                                        "fonos: pill hotkey resolved to no definition — ignoring"
+                                    );
+                                    return;
+                                };
+                                dispatch_workflow_trigger(handle.clone(), wf_id, is_mic, &capture, is_down)
+                                    .await;
                             }
 
                             _ => {}

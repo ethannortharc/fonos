@@ -41,6 +41,40 @@ pub enum PipelineEvent {
     NoSpeech,
     /// The pipeline failed; the error is already classified for display.
     Failed(SurfacedError),
+    /// A pipeline step began (test-run tracing; UI-agnostic).
+    StepStarted {
+        /// The workflow this step belongs to.
+        workflow: String,
+        /// The widget id of this step's component.
+        step_id: String,
+        /// Zero-based position in the run's step sequence (source, then
+        /// processors in order, then outputs in order).
+        index: usize,
+        /// `"source"`, `"processor"`, or `"output"`.
+        role: String,
+    },
+    /// A pipeline step finished. `preview` renders the step's output as
+    /// text ("[audio]" for audio payloads, truncated to 4000 chars);
+    /// `intercepted` marks an output skipped by dry-run.
+    StepFinished {
+        /// The workflow this step belongs to.
+        workflow: String,
+        /// The widget id of this step's component.
+        step_id: String,
+        /// Zero-based position in the run's step sequence.
+        index: usize,
+        /// `"source"`, `"processor"`, or `"output"`.
+        role: String,
+        /// A text rendering of the step's output.
+        preview: String,
+        /// Wall-clock duration of this step, in milliseconds.
+        ms: u64,
+        /// The step's error, if it failed.
+        error: Option<String>,
+        /// Whether this was an output skipped by dry-run (no delivery
+        /// happened; `ms` is `0`).
+        intercepted: bool,
+    },
 }
 
 /// UI notification port. Implemented by platform shells.

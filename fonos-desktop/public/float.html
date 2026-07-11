@@ -559,13 +559,20 @@ function loadCfg(){
 }
 function loadModes(){
   if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
-  // Voice workflows only: filter list_workflows to microphone-source rows.
+  // Pill-roller workflows only: filter list_workflows to rows carrying a
+  // pill_slot trigger (the roller shows one entry per such workflow,
+  // ordered by its slot's `order`) — not to a widget's source type_tag.
   return window.__TAURI_INTERNALS__.invoke('list_workflows').then(rows=>{
     if(Array.isArray(rows)){
-      var mic=rows.filter(w=>w&&w.source_type_tag==='microphone');
-      if(mic.length>0){
-        allModes=mic.map(w=>({id:w.id,icon:w.icon||'⚙',name:w.name}));
-      }
+      var pillOrder=function(w){
+        var t=(w.triggers||[]).find(function(x){return x&&x.kind==='pill_slot';});
+        return t&&typeof t.order==='number'?t.order:0;
+      };
+      var pill=rows.filter(function(w){
+        return w&&Array.isArray(w.triggers)&&w.triggers.some(function(t){return t&&t.kind==='pill_slot';});
+      });
+      pill.sort(function(a,b){return pillOrder(a)-pillOrder(b);});
+      if(pill.length>0){ allModes=pill.map(function(w){return {id:w.id,icon:w.icon||'⚙',name:w.name};}); }
     }
   }).catch(()=>{});
 }
@@ -627,6 +634,26 @@ function stopRec(text){
       idleSz();
     },1200);
   },resultW(L(key)),PH);
+}
+// ── Bench reset ── Emitted by BenchEventSink (bench.rs) once a Test Run bench
+// run reaches a terminal state (Delivered/NoSpeech/Failed). A bench mic run's
+// MicSource::acquire drives float:start directly (bypassing BenchEventSink
+// entirely, so the pill correctly shows "recording" during bench capture) —
+// without this, nothing ever tells the pill to leave that state once the
+// bench run finishes. Silent: no result pane, no flash. `float:stop("")` was
+// rejected for this (see bench.rs) — stopRec treats an empty payload as "no
+// speech" and shows the red-cross result for ~1.2s, which is wrong for a
+// successful Delivered bench run. Resets the full recording state (isRec/
+// durTm/animId), not just the CSS class, so a bench mic run can't leave stale
+// state that would block the NEXT real recording's startRec() (`if(isRec)
+// return;`). A no-op (idle→idle, no visible change) when the bench run never
+// touched the pill (non-mic recipes/widgets).
+function resetPill(){
+  isRec=false;
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  clearErr();
+  idleSz();
 }
 function clearErr(){
   errActive=false;errPane=null;
@@ -715,6 +742,7 @@ function setup(){
   listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
+  listen('float:reset',()=>resetPill());
   // Settings changed (not a pill terminal event): live-update the language and
   // active voice workflow from the small subset save_config emits.
   listen('config:saved',e=>{

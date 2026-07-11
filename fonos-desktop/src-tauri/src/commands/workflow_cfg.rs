@@ -19,9 +19,32 @@ use tauri::Emitter;
 
 use fonos_core::workflow::builtin::{built_in_widgets, built_in_workflows};
 use fonos_core::workflow::engine::{self, effective_widgets, effective_workflows};
-use fonos_core::workflow::model::{WidgetDef, WorkflowDef};
+use fonos_core::workflow::model::{Trigger, WidgetDef, WorkflowDef};
 
 use super::AppState;
+
+/// Fold a legacy `hotkey` field into a `Trigger::Hotkey` chip (capture
+/// `None`), clearing `hotkey` regardless. Skips adding the chip if an
+/// equivalent combo is already present among `workflow.triggers`, so this is
+/// safe to call unconditionally and repeatedly (matches the
+/// `migrate_hotkeys_to_triggers` dedup behavior in fonos-core). Extracted
+/// from [`save_workflow`] so the fold logic is testable without tauri
+/// plumbing (a `tauri::State`/`tauri::AppHandle` command can't be
+/// constructed in a plain unit test).
+///
+/// `capture: None` is deliberate here, not a placeholder: this bridge has no
+/// widget-source lookup at its call site to derive a capture mode from, so
+/// unlike `migrate_hotkeys_to_triggers` (which resolves the source widget and
+/// carries its capture mode into the chip), this fold always leaves it unset.
+pub(crate) fn fold_legacy_hotkey(workflow: &mut WorkflowDef) {
+    if !workflow.hotkey.is_empty() {
+        let combo = std::mem::take(&mut workflow.hotkey);
+        let dup = workflow.hotkey_triggers().any(|(_, c, _)| c == combo.as_str());
+        if !dup {
+            workflow.triggers.push(Trigger::Hotkey { combo, capture: None });
+        }
+    }
+}
 
 /// A workflow row for the settings list: the full [`WorkflowDef`] flattened,
 /// plus the `type_tag` of its source widget resolved against the effective
@@ -106,9 +129,14 @@ pub fn save_widget(
 pub fn save_workflow(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    workflow: WorkflowDef,
+    mut workflow: WorkflowDef,
 ) -> Result<(), String> {
     let mut config = state.config.lock().map_err(|e| e.to_string())?;
+
+    // Transition bridge: an older client or an imported scenario may still
+    // write the legacy `hotkey` field — fold it into `triggers` so a saved
+    // hotkey never silently stops registering.
+    fold_legacy_hotkey(&mut workflow);
 
     // Validate BEFORE persisting. `effective_widgets` returns an owned Vec, so
     // the immutable borrow of `config` ends before the mutation below.
@@ -181,4 +209,56 @@ pub fn delete_workflow(
 
     let _ = app.emit("hotkey:reload", ());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wf(hotkey: &str, triggers: Vec<Trigger>) -> WorkflowDef {
+        WorkflowDef {
+            id: "wf.test".into(),
+            name: "Test".into(),
+            icon: String::new(),
+            hotkey: hotkey.to_string(),
+            triggers,
+            source: "src.selection".into(),
+            processors: vec![],
+            outputs: vec!["out.panel".into()],
+            builtin: false,
+        }
+    }
+
+    /// A non-empty legacy `hotkey` becomes exactly one `Hotkey` chip with
+    /// `capture: None`, and the legacy field is emptied.
+    #[test]
+    fn fold_legacy_hotkey_becomes_hotkey_chip_and_clears_field() {
+        let mut w = wf("cmd+shift+z", vec![]);
+        fold_legacy_hotkey(&mut w);
+
+        assert!(w.hotkey.is_empty(), "legacy hotkey field cleared");
+        let hks: Vec<_> = w.hotkey_triggers().collect();
+        assert_eq!(hks.len(), 1, "exactly one hotkey chip");
+        assert_eq!(hks[0].1, "cmd+shift+z");
+        assert!(
+            matches!(w.triggers[0], Trigger::Hotkey { capture: None, .. }),
+            "capture is None (not carried over — no source widget context here)"
+        );
+    }
+
+    /// A legacy hotkey matching an existing chip's combo does not duplicate
+    /// the chip (still clears the legacy field, though).
+    #[test]
+    fn fold_legacy_hotkey_does_not_duplicate_existing_combo() {
+        let mut w = wf(
+            "cmd+shift+z",
+            vec![Trigger::Hotkey { combo: "cmd+shift+z".into(), capture: None }],
+        );
+        fold_legacy_hotkey(&mut w);
+
+        assert!(w.hotkey.is_empty(), "legacy hotkey field cleared");
+        let matching: Vec<_> =
+            w.hotkey_triggers().filter(|(_, c, _)| *c == "cmd+shift+z").collect();
+        assert_eq!(matching.len(), 1, "no duplicate hotkey chip for the same combo");
+    }
 }

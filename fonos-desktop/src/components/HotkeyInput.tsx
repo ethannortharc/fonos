@@ -1,6 +1,6 @@
 // Shared hotkey-capture primitives — extracted from HotkeysTab so other tabs
-// (WorkflowsTab, and later FlowsTab/AdvancedTab) can reuse the same input,
-// section, and row without importing a whole settings tab.
+// (WorkflowsTab, and later RecipesSection/AdvancedTab) can reuse the same
+// input, section, and row without importing a whole settings tab.
 
 import { useState, useCallback, useRef } from "react";
 import { t, useT } from "../lib/i18n";

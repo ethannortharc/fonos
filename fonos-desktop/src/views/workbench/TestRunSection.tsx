@@ -20,6 +20,7 @@ import BenchGraph, { type BenchNode } from "../../components/BenchGraph";
 import MicButton from "../../components/MicButton";
 import WaveCanvas from "../../components/WaveCanvas";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
+import { ROLES, TYPE_TAGS, TYPE_META } from "./typeMeta";
 import type { BenchTarget } from "../Workbench";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig, WidgetDef, WorkflowRow } from "../../types";
@@ -256,11 +257,19 @@ export default function TestRunSection({
           <optgroup label={t("wb.seg.recipes")}>
             {rows.map((r) => <option key={r.id} value={`recipe:${r.id}`}>{workflowLabel(r)}</option>)}
           </optgroup>
-          <optgroup label={t("wb.bench.group-widgets")}>
-            {widgets.filter((w) => !(w.type_tag === "selection")).map((w) => (
-              <option key={w.id} value={`widget:${w.id}`}>{widgetLabel(w)}</option>
-            ))}
-          </optgroup>
+          {ROLES.flatMap(({ role }) => TYPE_TAGS[role])
+            .filter((tag) => tag !== "selection")
+            .map((tag) => {
+              const matches = widgets.filter((w) => w.type_tag === tag);
+              if (matches.length === 0) return null;
+              return (
+                <optgroup key={tag} label={`${t("wb.seg.widgets")} · ${t(TYPE_META[tag].name)}`}>
+                  {matches.map((w) => (
+                    <option key={w.id} value={`widget:${w.id}`}>{widgetLabel(w)}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
         </select>
         <span className="flex-1" />
         <label className="flex items-center gap-[7px] text-[11px] text-[rgba(255,255,255,0.43)]" title={t("wb.bench.deliver-tip")}>
@@ -284,7 +293,17 @@ export default function TestRunSection({
       </div>
 
       <div className="fonos-surface rounded-[12px] px-[22px] py-5">
-        <div className="mb-5 flex items-center gap-[18px]">
+        {/* Own (lower) stacking context: MicButton's VoiceAura extends well
+            beyond the 88px mic wrap (blur + breathing animation while
+            recording) — as a position:absolute, z-index:auto descendant with
+            no bounding stacking context, it would otherwise paint above the
+            graph/editor/run-row below it (positioned elements paint after
+            in-flow non-positioned content within their stacking context,
+            regardless of DOM order). `relative z-0` here + `z-[1]` on every
+            sibling below contains the aura's paint layer to this row alone,
+            without clipping it (no overflow:hidden) or touching the
+            animation. Aura layers are already pointer-events-none. */}
+        <div className="relative z-0 mb-5 flex items-center gap-[18px]">
           {audioInput ? (
             <>
               <div className="relative h-[88px] w-[88px] flex-shrink-0 flex items-center justify-center">
@@ -309,13 +328,15 @@ export default function TestRunSection({
           )}
         </div>
 
-        <BenchGraph
-          nodes={nodes}
-          onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
-        />
+        <div className="relative z-[1]">
+          <BenchGraph
+            nodes={nodes}
+            onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
+          />
+        </div>
 
         {editNode && wById(editNode) && (
-          <div className="mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
+          <div className="relative z-[1] mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
             {usageCount(editNode, rows) > 0 && (
               <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
             )}
@@ -333,7 +354,7 @@ export default function TestRunSection({
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-3">
+        <div className="relative z-[1] mt-4 flex items-center gap-3">
           {!audioInput && (
             <button
               onClick={run}

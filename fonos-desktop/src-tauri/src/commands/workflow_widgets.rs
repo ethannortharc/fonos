@@ -1,8 +1,8 @@
 //! Desktop adapters that bridge the platform-independent workflow component
 //! traits ([`Source`], [`Processor`], [`Output`]) to real macOS behavior: the
-//! selection grabber, the two-phase microphone source, the STT / LLM
-//! processors, and the six terminal outputs (insert / replace / clipboard /
-//! notebook / speak / panel).
+//! selection grabber, the blank-open instant source, the two-phase microphone
+//! source, the STT / LLM processors, and the six terminal outputs (insert /
+//! replace / clipboard / notebook / speak / panel).
 //!
 //! These are the concrete widgets a workflow's `type_tag`s resolve to.
 //! [`build_registry`] wires every factory into one [`Registry`], which the
@@ -86,6 +86,31 @@ impl Source for SelectionSource {
 
         // Empty selection is returned as-is; the engine maps empty text to NoSpeech.
         Ok(Data::Text(selection.text))
+    }
+}
+
+// ─── Instant source ──────────────────────────────────────────────────────────
+
+/// Source with no acquisition step at all: it produces empty text
+/// immediately and opts into [`Source::allows_empty`], so the engine's
+/// empty-text `NoSpeech` short-circuit does not fire. Backs `src.instant`,
+/// the blank-open source for "press-to-open" session-composite recipes
+/// (call/agent/meeting) — they want to open their session with no first
+/// turn rather than requiring one before anything appears.
+pub struct InstantSource;
+
+#[async_trait::async_trait]
+impl Source for InstantSource {
+    fn output_kind(&self) -> DataKind {
+        DataKind::Text
+    }
+
+    async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+        Ok(Data::Text(String::new()))
+    }
+
+    fn allows_empty(&self) -> bool {
+        true
     }
 }
 
@@ -651,9 +676,9 @@ impl Output for PanelOutput {
 // ─── Registry assembly ────────────────────────────────────────────────────────
 
 /// Build the workflow [`Registry`] with every desktop factory registered by
-/// `type_tag`: the sources (`selection`, `microphone`), processors (`stt`,
-/// `llm`), and the six terminal outputs (`insert`, `replace`, `clipboard`,
-/// `notebook`, `speak`, `panel`).
+/// `type_tag`: the sources (`selection`, `instant`, `microphone`), processors
+/// (`stt`, `llm`), and the six terminal outputs (`insert`, `replace`,
+/// `clipboard`, `notebook`, `speak`, `panel`).
 ///
 /// Each factory closure captures `app.clone()` and re-clones per instantiation
 /// so a widget can be built many times. The `uppercase` processor (Task 16's
@@ -666,6 +691,10 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
     reg.register_source(
         "selection",
         Box::new(|_props| Ok(Arc::new(SelectionSource) as Arc<dyn Source>)),
+    );
+    reg.register_source(
+        "instant",
+        Box::new(|_props| Ok(Arc::new(InstantSource) as Arc<dyn Source>)),
     );
     {
         let app = app.clone();

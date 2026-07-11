@@ -107,6 +107,12 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "🎙",
             serde_json::json!({ "capture": "toggle" }),
         ),
+        // `src.instant` has no acquisition step at all — it produces empty
+        // text immediately (see `InstantSource::allows_empty`) and exists to
+        // seed "blank-open" session-composite recipes (call/agent/meeting)
+        // built in later Workbench tasks; no built-in workflow references it
+        // yet.
+        widget("src.instant", Source, "instant", "即刻", "⚡", serde_json::json!({})),
         // ── Processors ───────────────────────────────────────────────────
         widget(
             "stt.default",
@@ -339,6 +345,18 @@ mod tests {
             }
             assert!(wf.builtin && wf.hotkey.is_empty());
         }
+    }
+
+    /// Task 2: `src.instant` ships as a builtin source with no props,
+    /// resolving to the `instant` type_tag — the blank-open source later
+    /// session-composite recipes wire in as their `source`.
+    #[test]
+    fn instant_source_builtin_present_with_no_props() {
+        let w = built_in_widgets().into_iter().find(|w| w.id == "src.instant").unwrap();
+        assert_eq!(w.role, WidgetRole::Source);
+        assert_eq!(w.type_tag, "instant");
+        assert_eq!(w.props, serde_json::json!({}));
+        assert!(w.builtin);
     }
 
     #[test]

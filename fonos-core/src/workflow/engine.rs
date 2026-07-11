@@ -8,7 +8,10 @@
 //! Every run that reaches [`Source::acquire`] emits **exactly one** terminal
 //! event:
 //!
-//! * [`PipelineEvent::NoSpeech`] — the source produced empty text.
+//! * [`PipelineEvent::NoSpeech`] — the source produced empty text and
+//!   [`Source::allows_empty`] is false (the default; a source like
+//!   `src.instant` that opts in with `allows_empty() == true` skips this and
+//!   proceeds instead, for "blank-open" composites).
 //! * [`PipelineEvent::Failed`] — the source, a processor, the recorder, or an
 //!   output failed (the raw error is run through [`classify_error`]).
 //! * [`PipelineEvent::Delivered`] — every output accepted the final text.
@@ -34,7 +37,10 @@
 //! intercepts output delivery — each output's `StepFinished` is emitted with
 //! `intercepted: true` and `ms: 0` instead of calling [`Output::deliver`] — and
 //! skips the history recorder; `Processing` / `Delivered` are still emitted as
-//! usual.
+//! usual. The recorder is also skipped (independent of `dry_run`) whenever
+//! `final_text` is empty — an instant→composite run's blank open has nothing
+//! worth a top-level history entry; the composite's own session widgets
+//! record their own containers.
 
 use std::sync::Arc;
 
@@ -266,9 +272,10 @@ fn step_done(
 /// this module.
 ///
 /// The sequence is: instantiate + check the chain (fail fast, no event) →
-/// `acquire` (or substitute [`RunCtx::mock_text`]; empty text ⇒ `NoSpeech`) →
-/// emit `Processing` → run processors (capturing the first text as
-/// `raw_text`) → record to history (skipped when [`RunCtx::dry_run`]) →
+/// `acquire` (or substitute [`RunCtx::mock_text`]; empty text ⇒ `NoSpeech`,
+/// unless [`Source::allows_empty`] is true) → emit `Processing` → run
+/// processors (capturing the first text as `raw_text`) → record to history
+/// (skipped when [`RunCtx::dry_run`], or when `final_text` is empty) →
 /// deliver to every output in declared order (intercepted when `dry_run`) →
 /// emit `Delivered`. The first failure at or after `acquire` emits
 /// `Failed(classify_error(err))` and returns `Err`; delivery stops at the
@@ -334,7 +341,7 @@ pub async fn run(
         false,
     );
     if let Data::Text(text) = &current {
-        if text.is_empty() {
+        if text.is_empty() && !source.allows_empty() {
             ctx.events.emit(PipelineEvent::NoSpeech);
             return Err("empty input".to_string());
         }
@@ -403,10 +410,13 @@ pub async fn run(
     let raw_text = raw_text.unwrap_or_else(|| final_text.clone());
 
     // 5. Record to history between processing and delivery — skipped
-    //    entirely in a dry run. A recorder failure is terminal, consistent
-    //    with the other post-acquire steps.
+    //    entirely in a dry run, and also skipped when `final_text` is empty
+    //    (a blank-open instant→composite run: session widgets record their
+    //    own containers, so an empty top-level entry would just be litter).
+    //    A recorder failure is terminal, consistent with the other
+    //    post-acquire steps.
     let mut entry_id = None;
-    if !ctx.dry_run {
+    if !ctx.dry_run && !final_text.is_empty() {
         if let Some(recorder) = &ctx.recorder {
             // Contract: a RunRecorder that returns Err fails the run (single
             // terminal Failed). Recorders whose write is non-essential (e.g.
@@ -507,6 +517,23 @@ mod tests {
         }
         async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
             Ok(Data::Text(self.0.clone()))
+        }
+    }
+
+    /// A text source that always yields empty text and opts into
+    /// [`Source::allows_empty`] — stands in for `src.instant` (Task 2's
+    /// blank-open support) without pulling in the desktop-side registry.
+    struct AllowEmptyText;
+    #[async_trait::async_trait]
+    impl Source for AllowEmptyText {
+        fn output_kind(&self) -> DataKind {
+            DataKind::Text
+        }
+        async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+            Ok(Data::Text(String::new()))
+        }
+        fn allows_empty(&self) -> bool {
+            true
         }
     }
 
@@ -685,6 +712,7 @@ mod tests {
             "failing_source",
             Box::new(|_| Ok(Arc::new(FailingSource) as Arc<dyn Source>)),
         );
+        reg.register_source("instant", Box::new(|_| Ok(Arc::new(AllowEmptyText) as Arc<dyn Source>)));
         reg.register_processor("upper", Box::new(|_| Ok(Arc::new(Upper) as Arc<dyn Processor>)));
         reg.register_processor(
             "cjk_flood",
@@ -747,6 +775,10 @@ mod tests {
         assert_eq!(ev.len(), 2);
     }
 
+    /// A source that does not override `allows_empty` (the default `false`,
+    /// same as the real `microphone` / `selection` adapters) still yields
+    /// `NoSpeech` on empty text — Task 2's `allows_empty` opt-in must not
+    /// weaken this default.
     #[tokio::test]
     async fn empty_text_source_emits_no_speech_only() {
         let (reg, widgets, wf, sink) = setup("");
@@ -771,6 +803,75 @@ mod tests {
         assert_eq!(ev.len(), 1);
         assert!(matches!(ev[0], PipelineEvent::NoSpeech));
         assert!(sink.0.lock().unwrap().is_empty(), "nothing should be delivered");
+    }
+
+    /// Task 2: an `allows_empty` source (standing in for `src.instant`) with
+    /// empty text runs the chain to completion — no `NoSpeech` short-circuit
+    /// — and delivers the empty text to its output. This is the "blank-open"
+    /// contract that later session-composite recipes (call/agent/meeting via
+    /// `src.instant`) depend on.
+    #[tokio::test]
+    async fn allows_empty_source_runs_to_delivered_with_empty_text() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.instant", WidgetRole::Source, "instant", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.instant", &[], &["out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: None,
+            dry_run: false,
+        };
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(out.final_text, "");
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
+        assert_eq!(ev.len(), 2, "no NoSpeech; Processing then Delivered");
+        assert!(matches!(ev[0], PipelineEvent::Processing));
+        assert!(matches!(&ev[1], PipelineEvent::Delivered { final_text, .. } if final_text.is_empty()));
+        assert_eq!(sink.0.lock().unwrap().as_slice(), [""], "empty text is still delivered");
+    }
+
+    /// Task 2: an instant→composite run whose `final_text` is empty must not
+    /// create a History entry — session-composite widgets (call/agent/
+    /// meeting) record their own containers, so a top-level empty entry
+    /// would just be litter. Proven independent of `dry_run` (which is
+    /// false here) by asserting the recorder itself was never invoked.
+    #[tokio::test]
+    async fn instant_chain_with_empty_final_text_skips_recorder() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.instant", WidgetRole::Source, "instant", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.instant", &[], &["out.sink"]);
+        let rec = Arc::new(Rec(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: Arc::new(Capture(Mutex::new(vec![]))),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: Some(rec.clone()),
+            mock_text: None,
+            dry_run: false,
+        };
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(out.entry_id, None, "recorder must be skipped for an empty final_text");
+        assert!(rec.0.lock().unwrap().is_empty(), "recorder must not be called");
+        assert!(
+            ctx.meta.lock().unwrap().get("entry_id").is_none(),
+            "no entry_id written to meta when the recorder is skipped"
+        );
     }
 
     #[tokio::test]

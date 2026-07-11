@@ -325,8 +325,8 @@ export interface WidgetDef {
   id: string;
   role: WidgetRole;
   /** Which registered component implementation to instantiate, e.g.
-   *  "selection" | "microphone" | "stt" | "llm" | "insert" | "replace" |
-   *  "clipboard" | "notebook" | "speak" | "panel" | "uppercase". */
+   *  "selection" | "instant" | "microphone" | "stt" | "llm" | "insert" |
+   *  "replace" | "clipboard" | "notebook" | "speak" | "panel" | "uppercase". */
   type_tag: string;
   name: string;
   icon?: string;

@@ -18,6 +18,7 @@ function S({ size = 14, className, children }: IP & { children: React.ReactNode 
 const ICONS: Record<string, React.ReactNode> = {
   microphone: <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /></>,
   selection: <><path d="M9 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2" /><path d="M15 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2" /><line x1="12" y1="7" x2="12" y2="17" /></>,
+  instant: <path d="M13 2 3 14h7l-1 8 11-14h-7z" />,
   stt: <><line x1="4" y1="10" x2="4" y2="14" /><line x1="8" y1="6" x2="8" y2="18" /><line x1="12" y1="9" x2="12" y2="15" /><line x1="16" y1="4" x2="16" y2="20" /><line x1="20" y1="10" x2="20" y2="14" /></>,
   llm: <><rect x="6" y="6" width="12" height="12" rx="2" /><rect x="9.5" y="9.5" width="5" height="5" /><line x1="3" y1="9" x2="6" y2="9" /><line x1="3" y1="15" x2="6" y2="15" /><line x1="18" y1="9" x2="21" y2="9" /><line x1="18" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="6" /><line x1="15" y1="3" x2="15" y2="6" /><line x1="9" y1="18" x2="9" y2="21" /><line x1="15" y1="18" x2="15" y2="21" /></>,
   uppercase: <><path d="M6 20V7a3 3 0 0 1 6 0v13" /><line x1="6" y1="13" x2="12" y2="13" /><line x1="16" y1="8" x2="16" y2="20" /><path d="M16 11a3 3 0 0 1 4 0" /></>,

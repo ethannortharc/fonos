@@ -73,6 +73,14 @@ pub trait Source: Send + Sync {
     fn output_kind(&self) -> DataKind;
     /// Acquire the initial data for a run.
     async fn acquire(&self, ctx: &RunCtx) -> Result<Data, String>;
+
+    /// Whether an empty acquisition is a valid, intentional result. When
+    /// true the engine skips its empty-text NoSpeech short-circuit —
+    /// "blank-open" composites (call/agent/meeting via src.instant) rely
+    /// on this to open their session with no first turn.
+    fn allows_empty(&self) -> bool {
+        false
+    }
 }
 
 /// Transforms [`Data`] as it flows through a workflow (e.g. STT, LLM

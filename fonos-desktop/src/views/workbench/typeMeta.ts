@@ -14,7 +14,7 @@ import type { WidgetRole } from "../../types";
 // in-place node editor, the Workbench Widgets section) can share one source
 // of truth for the allowed-types picker instead of duplicating this map.
 export const TYPE_TAGS: Record<WidgetRole, string[]> = {
-  source: ["microphone", "selection"],
+  source: ["microphone", "selection", "instant"],
   processor: ["stt", "llm"],
   output: ["insert", "replace", "clipboard", "notebook", "speak", "panel", "dialog"],
 };
@@ -31,6 +31,7 @@ export const ROLES: { role: WidgetRole; label: TKey }[] = [
 export const TYPE_META: Record<string, { name: TKey; desc: TKey }> = {
   microphone: { name: "widgets.type.microphone.name", desc: "widgets.type.microphone.desc" },
   selection: { name: "widgets.type.selection.name", desc: "widgets.type.selection.desc" },
+  instant: { name: "widgets.type.instant.name", desc: "widgets.type.instant.desc" },
   stt: { name: "widgets.type.stt.name", desc: "widgets.type.stt.desc" },
   llm: { name: "widgets.type.llm.name", desc: "widgets.type.llm.desc" },
   insert: { name: "widgets.type.insert.name", desc: "widgets.type.insert.desc" },

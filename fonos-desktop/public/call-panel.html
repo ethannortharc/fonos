@@ -88,7 +88,7 @@ body{background:transparent;overflow:hidden}
   </div>
   <div id="log"><div id="emptyHint"></div></div>
   <div id="ftr">
-    <button id="hangup" onclick="iv('call_stop')">
+    <button id="hangup" onclick="iv('call_stop').catch(function(e){console.error(e);})">
       <!-- Same handset glyph as Conversation.tsx's voice button, rotated to the
            "held to ear" / live pose — recognizable "in a call, tap to hang up". -->
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"

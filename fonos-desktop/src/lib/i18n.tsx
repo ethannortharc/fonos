@@ -84,8 +84,6 @@ const en = {
   "speech.listen.desc":
     "Select text anywhere, press the hotkey — summarized, synthesized, playable from History › Listen.",
   "speech.listen.hotkey": "Capture hotkey",
-  "speech.processing": "Processing",
-  "speech.processing.hint": "how text is rewritten",
   "speech.voicemodel": "Voice model",
   "speech.voicemodel.hint": "empty = default TTS",
   "speech.voice": "Voice",
@@ -957,8 +955,6 @@ const zh: Partial<Record<Key, string>> = {
   "speech.listen.title": "Listen 队列",
   "speech.listen.desc": "在任意应用选中文字、按下快捷键 — 自动摘要并合成语音,在 历史 › Listen 中播放。",
   "speech.listen.hotkey": "捕获快捷键",
-  "speech.processing": "处理方式",
-  "speech.processing.hint": "文字如何改写",
   "speech.voicemodel": "语音模型",
   "speech.voicemodel.hint": "留空 = 默认 TTS",
   "speech.voice": "音色",

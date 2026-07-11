@@ -26,6 +26,9 @@ export interface AppConfig {
   warmup_enabled?: boolean;
   ui_language?: "auto" | "en" | "zh";
   hotkey_listen?: string;
+  // DEPRECATED (Workbench P2 T10): still a real Rust config field, but no
+  // longer read — Listen always resolves the built-in `llm.listen` widget
+  // instead (ScenariosTab snapshots still carry it).
   listen_mode?: string;
   listen_voice_profile?: string;
   listen_voice?: string;

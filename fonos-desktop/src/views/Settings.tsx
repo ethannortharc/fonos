@@ -126,7 +126,7 @@ export default function Settings() {
 
         {/* ────────────── Advanced tab (Speech + Agent + Meeting, Flows UI redesign) ────────────── */}
         {settingsTab === "advanced" && (
-          <AdvancedTab config={config} modes={modes} onSave={handleSave} />
+          <AdvancedTab config={config} onSave={handleSave} />
         )}
 
         {/* ────────────── Scenarios tab (saved bundles + templates) ────────────── */}

@@ -4,9 +4,16 @@
 // that used to live below it was retired by Workbench P2 Task 9 — the call's
 // persona/voice/VAD tuning now lives on the `call.default` composite widget
 // (Workbench → Components → Call).
+//
+// The "processing mode" row (a `listen_mode` picker over `modes`/`ModeEntry`)
+// was removed by Workbench P2 Task 10: `commands::listen::do_create` now
+// always resolves the built-in `llm.listen` widget instead of a
+// user-selectable legacy mode id, so there is no mode list left to pick
+// from — customizing Listen's prompt means editing that widget (Workbench →
+// Components) instead. No more `modes` prop needed on this tab.
 
 import { useEffect, useState } from "react";
-import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types";
+import type { AppConfig, ModelProfile, VoiceEntry } from "../../types";
 import { listVoices, listModelVoices, generateAndPlay } from "../../lib/api";
 import { HotkeyInput } from "../../components/HotkeyInput";
 import { t, useT } from "../../lib/i18n";
@@ -180,17 +187,14 @@ function VoicePicker({
 
 export default function SpeechTab({
   config,
-  modes,
   onSave,
 }: {
   config: AppConfig;
-  modes: ModeEntry[];
   onSave: (updates: Partial<AppConfig>) => void;
 }) {
   useT();
   const profiles = (config.model_profiles ?? []) as ModelProfile[];
   const ttsProfiles = profiles.filter((p) => p.capabilities?.includes("tts"));
-  const llmModes = modes.filter((m) => m.system || m.user_template);
   const [voices, setVoices] = useState<VoiceEntry[]>([]);
   const [serverVoices, setServerVoices] = useState<Record<string, string[]>>({});
 
@@ -231,19 +235,6 @@ export default function SpeechTab({
               onChange={(v) => onSave({ hotkey_listen: v })}
             />
           </div>
-        </Row>
-        <Row label={t("speech.processing")} hint={t("speech.processing.hint")}>
-          <select
-            value={config.listen_mode ?? "listen"}
-            onChange={(e) => onSave({ listen_mode: e.target.value })}
-            className={`${selectControl} w-44`}
-          >
-            {llmModes.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
         </Row>
         <Row label={t("speech.voicemodel")} hint={t("speech.voicemodel.hint")}>
           <select

@@ -203,7 +203,15 @@ pub struct AppConfig {
 
     /// Global hotkey: capture the current selection into the Listen queue.
     pub hotkey_listen: String,
-    /// Mode id used to process captured text (summary / cleanup / custom).
+    /// DEPRECATED (Workbench P2 Task 10): mode id used to process captured
+    /// text. No longer read — `commands::listen::do_create` always resolves
+    /// the built-in `llm.listen` widget via
+    /// [`crate::workflow::engine::effective_widgets`] instead (customization
+    /// now happens by editing that widget, not by pointing Listen at a
+    /// different mode id). A custom mode id parked here is NOT migrated onto
+    /// the widget — an acknowledged edge case (see Task 10's report) — so a
+    /// user who had customized Listen this way loses that customization. No
+    /// remaining readers.
     pub listen_mode: String,
     /// TTS profile id for listen synthesis; empty = fall back to `tts_profile`.
     pub listen_voice_profile: String,

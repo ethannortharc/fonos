@@ -26,10 +26,14 @@
 // field, never a real Rust config field, is simply gone), and its standalone
 // hotkey was folded into `wf.meeting`'s own Hotkey chip by
 // `migrate_legacy_meeting_triggers`.
+//
+// `modes`/`ModeEntry` are no longer threaded through to `SpeechTab` —
+// Workbench P2 Task 10 removed its `listen_mode` picker (Listen now always
+// resolves the built-in `llm.listen` widget).
 
 import { useState } from "react";
 import { t, useT } from "../../lib/i18n";
-import type { AppConfig, ModeEntry } from "../../types";
+import type { AppConfig } from "../../types";
 import { HotkeyRow } from "../../components/HotkeyInput";
 import SpeechTab from "./SpeechTab";
 import InsertionTab from "./InsertionTab";
@@ -56,8 +60,8 @@ function SegButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 // ─── Main AdvancedTab ────────────────────────────────────────────────────────
 
-export default function AdvancedTab({ config, modes, onSave }: {
-  config: AppConfig; modes: ModeEntry[]; onSave: (updates: Partial<AppConfig>) => void;
+export default function AdvancedTab({ config, onSave }: {
+  config: AppConfig; onSave: (updates: Partial<AppConfig>) => void;
 }) {
   useT();
   const [sub, setSub] = useState<Sub>("speech");
@@ -78,7 +82,7 @@ export default function AdvancedTab({ config, modes, onSave }: {
             value={config.hotkey_tts ?? ""}
             onChange={(v) => onSave({ hotkey_tts: v })}
           />
-          <SpeechTab config={config} modes={modes} onSave={onSave} />
+          <SpeechTab config={config} onSave={onSave} />
         </div>
       )}
 

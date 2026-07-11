@@ -8,6 +8,7 @@ mod error_surface;
 mod hotkey;
 mod injection;
 mod skills;
+mod trigger_label;
 
 use commands::AppState;
 use fonos_core::config::AppConfig;
@@ -190,10 +191,13 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     try_add(&config.hotkey_meeting, "meeting");
     try_add(&config.hotkey_sts, "sts");
     // Dictation / note / listen / text-actions are unified onto the workflow
-    // engine (Workflow P1): every workflow that carries a hotkey registers under
-    // a `workflow-{id}` label handled by the `starts_with("workflow-")` arm.
+    // engine (Workflow P1): every Hotkey chip on a workflow registers its own
+    // `workflow-{id}@{trigger_idx}` label (Workbench P1), handled by the
+    // `starts_with("workflow-")` arm.
     for wf in fonos_core::workflow::engine::effective_workflows(config) {
-        try_add(&wf.hotkey, &format!("workflow-{}", wf.id));
+        for (idx, combo, _capture) in wf.hotkey_triggers() {
+            try_add(combo, &crate::trigger_label::hotkey_label(&wf.id, idx));
+        }
     }
     configs
 }
@@ -855,20 +859,30 @@ fn main() {
                                 }
                             }
                             l if l.starts_with("workflow-") => {
-                                // Resolve the trigger target and the source
-                                // widget's capture semantics under the config
-                                // lock, then drop it before any await. The
-                                // primary dictation label
-                                // (`workflow-wf.dictation`) redirects to
-                                // `active_voice_workflow` via
-                                // `resolve_trigger_target`, so the main dictation
-                                // hotkey fires the user's selected voice
-                                // workflow; every other `workflow-{id}` label
-                                // triggers its own id. `is_mic` gates the
-                                // two-phase mic dance, and `capture`
-                                // ("hold"|"toggle") is the mic widget's prop. A
-                                // missing/dangling workflow is logged and the
-                                // trigger dropped.
+                                // Resolve the trigger target and derive
+                                // `is_mic`/`capture` under the config lock,
+                                // then drop it before any await. The label
+                                // carries the fired trigger chip as
+                                // `workflow-{id}@{trigger_idx}`
+                                // (Workbench P1 — one binding per Hotkey
+                                // chip). The primary dictation label
+                                // (`workflow-wf.dictation@…`) redirects its
+                                // *base* label to `active_voice_workflow` via
+                                // `resolve_trigger_target`, so the main
+                                // dictation hotkey fires the user's selected
+                                // voice workflow; every other `workflow-{id}`
+                                // label triggers its own id. `is_mic` gates
+                                // the two-phase mic dance and is still read
+                                // from the **target** workflow's source
+                                // widget (the thing that actually runs).
+                                // `capture` ("hold"|"toggle"), however, rides
+                                // the fired chip: it comes from the **fired**
+                                // workflow's `triggers[trigger_idx]`, not the
+                                // target's source-widget prop, so redirecting
+                                // the main dictation key to a different voice
+                                // workflow keeps that key's own hold/toggle
+                                // behavior. A missing/dangling workflow is
+                                // logged and the trigger dropped.
                                 let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let config = match state.config.lock() {
@@ -878,25 +892,32 @@ fn main() {
                                             return;
                                         }
                                     };
+                                    let (base_label, trigger_idx) =
+                                        crate::trigger_label::parse_hotkey_label(l);
                                     let wf_id =
-                                        fonos_core::workflow::engine::resolve_trigger_target(l, &config);
+                                        fonos_core::workflow::engine::resolve_trigger_target(base_label, &config);
+                                    let fired_id = base_label.strip_prefix("workflow-").unwrap_or(base_label);
                                     let widgets =
                                         fonos_core::workflow::engine::effective_widgets(&config);
-                                    fonos_core::workflow::engine::effective_workflows(&config)
-                                        .into_iter()
+                                    let workflows =
+                                        fonos_core::workflow::engine::effective_workflows(&config);
+                                    workflows
+                                        .iter()
                                         .find(|w| w.id == wf_id)
                                         .map(|wf| {
                                             let src = widgets.iter().find(|w| w.id == wf.source);
                                             let is_mic = src
                                                 .map(|w| w.type_tag == "microphone")
                                                 .unwrap_or(false);
-                                            let capture = src
+                                            let capture = workflows
+                                                .iter()
+                                                .find(|w| w.id == fired_id)
                                                 .and_then(|w| {
-                                                    w.props.get("capture").and_then(|v| v.as_str())
+                                                    w.hotkey_triggers().find(|(i, _, _)| *i == trigger_idx)
                                                 })
-                                                .unwrap_or("hold")
-                                                .to_string();
-                                            (wf.id, is_mic, capture)
+                                                .map(|(_, _, cap)| cap.to_string())
+                                                .unwrap_or_else(|| "hold".to_string());
+                                            (wf.id.clone(), is_mic, capture)
                                         })
                                 };
                                 let Some((wf_id, is_mic, capture)) = resolved else {

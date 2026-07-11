@@ -19,6 +19,26 @@ export const TYPE_TAGS: Record<WidgetRole, string[]> = {
   output: ["insert", "replace", "clipboard", "notebook", "speak", "panel", "dialog"],
 };
 
+// Props that hold references to other widget instances, per type_tag —
+// mirrors fonos-core's widget_ref_props(type_tag) (workflow/model.rs).
+// Workbench P2's composite widgets (dialog/call/agent/meeting, built in
+// T4/T6-T9) embed a capability widget's id directly as a string prop value
+// instead of instantiating their own — e.g. a "call" widget's stt_widget prop
+// names the "stt"-type widget it delegates to. usageCount (lib/triggers.ts)
+// reads this table to count a widget still embedded inside a composite as
+// "in use", even though no workflow's source/processors/outputs names it
+// directly (pierced usage). None of dialog/call/agent/meeting is in
+// TYPE_TAGS yet — no widget of these types can be created via the form until
+// their PropsForm cases land — so this table currently has no effect on the
+// running app; it exists now so the two sides (Rust/TS) can't drift once
+// they do.
+export const WIDGET_REF_PROPS: Record<string, string[]> = {
+  dialog: ["llm_widget"],
+  call: ["stt_widget", "llm_widget"],
+  agent: ["llm_widget"],
+  meeting: ["stt_widget", "llm_widget"],
+};
+
 export const ROLES: { role: WidgetRole; label: TKey }[] = [
   { role: "source", label: "widgets.section.sources" },
   { role: "processor", label: "widgets.section.processors" },

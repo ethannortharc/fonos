@@ -349,13 +349,14 @@ export default function TestRunSection({
 
         {editNode && wById(editNode) && (
           <div className="relative z-[1] mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
-            {usageCount(editNode, rows) > 0 && (
-              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
+            {usageCount(editNode, rows, widgets) > 0 && (
+              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows, widgets)))}</div>
             )}
             <WidgetForm
               value={widgetToForm(wById(editNode)!)}
               config={config}
               containers={containers}
+              widgets={widgets}
               onSave={async (w) => {
                 await saveWidget(w);
                 setWidgets(await listWidgets());

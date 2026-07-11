@@ -48,7 +48,7 @@ use crate::config::AppConfig;
 use crate::error_class::classify_error;
 use crate::pipeline::{EventSink, PipelineEvent};
 use crate::workflow::builtin::{built_in_widgets, built_in_workflows};
-use crate::workflow::model::{Data, DataKind, WidgetDef, WorkflowDef};
+use crate::workflow::model::{widget_ref_props, Data, DataKind, WidgetDef, WorkflowDef};
 use crate::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
 
 /// The result of a successful [`run`].
@@ -114,11 +114,18 @@ pub fn resolve_trigger_target(label: &str) -> String {
 }
 
 /// The **names** of every workflow in `workflows` that references `widget_id`
-/// in its source, processors, or outputs. The settings layer uses this to
-/// refuse deleting a widget a workflow still depends on, listing the referrers
-/// by name. Returns an empty vec when nothing references the id.
-pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef]) -> Vec<String> {
-    workflows
+/// in its source, processors, or outputs, plus every widget in `widgets`
+/// whose [`widget_ref_props`] point at it (a composite like `call` naming it
+/// as its `stt_widget`/`llm_widget`) — pierced usage, so a capability widget
+/// embedded only inside a composite isn't reported as unused. Widget
+/// referrers are suffixed `" (widget)"` so the settings layer's referrer list
+/// can tell the two kinds apart at a glance (this suffix is English-only;
+/// the delete-error surface as a whole isn't localized yet). The settings
+/// layer uses this to refuse deleting a widget something still depends on,
+/// listing the referrers by name. Returns an empty vec when nothing
+/// references the id.
+pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef], widgets: &[WidgetDef]) -> Vec<String> {
+    let mut names: Vec<String> = workflows
         .iter()
         .filter(|wf| {
             wf.source == widget_id
@@ -126,7 +133,21 @@ pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef]) -> Vec<S
                 || wf.outputs.iter().any(|o| o == widget_id)
         })
         .map(|wf| wf.name.clone())
-        .collect()
+        .collect();
+
+    names.extend(
+        widgets
+            .iter()
+            .filter(|w| w.id != widget_id)
+            .filter(|w| {
+                widget_ref_props(&w.type_tag)
+                    .iter()
+                    .any(|prop| w.props.get(*prop).and_then(|v| v.as_str()) == Some(widget_id))
+            })
+            .map(|w| format!("{} (widget)", w.name)),
+    );
+
+    names
 }
 
 /// The live components a workflow resolves to: its source, its processors (in
@@ -1009,10 +1030,44 @@ mod tests {
         ];
         // Referenced in the source, a processor, or an output → the workflow's
         // name is returned; the workflow that never mentions it is excluded.
-        let refs = engine::widget_referenced_by("w.target", &workflows);
+        let refs = engine::widget_referenced_by("w.target", &workflows, &[]);
         assert_eq!(refs, vec!["as_source", "as_processor", "as_output"]);
         // A widget nothing references yields an empty list.
-        assert!(engine::widget_referenced_by("w.nobody", &workflows).is_empty());
+        assert!(engine::widget_referenced_by("w.nobody", &workflows, &[]).is_empty());
+    }
+
+    /// A composite widget's ref props (per [`widget_ref_props`]) are pierced:
+    /// a `call` widget naming `w.target` as its `stt_widget` or `llm_widget`
+    /// is reported as a referrer, suffixed `" (widget)"` to distinguish it
+    /// from workflow referrers. A non-ref prop (or a non-composite type)
+    /// holding the same string is NOT a match — only declared ref props count.
+    #[test]
+    fn widget_referenced_by_pierces_composite_ref_props() {
+        let mk_widget = |id: &str, type_tag: &str, props: serde_json::Value| -> WidgetDef {
+            WidgetDef {
+                id: id.to_string(),
+                role: WidgetRole::Processor,
+                type_tag: type_tag.to_string(),
+                name: id.to_string(),
+                icon: String::new(),
+                props,
+                builtin: false,
+            }
+        };
+        let widgets = vec![
+            mk_widget("call.session", "call", serde_json::json!({ "stt_widget": "w.target", "llm_widget": "" })),
+            mk_widget("agent.session", "agent", serde_json::json!({ "llm_widget": "w.target" })),
+            mk_widget("stt.other", "stt", serde_json::json!({ "some_field": "w.target" })), // not a ref prop for "stt"
+            mk_widget("call.unrelated", "call", serde_json::json!({ "stt_widget": "w.other", "llm_widget": "w.other" })),
+        ];
+        let refs = engine::widget_referenced_by("w.target", &[], &widgets);
+        assert_eq!(refs, vec!["call.session (widget)", "agent.session (widget)"]);
+
+        // A widget referencing itself doesn't count (defensive; shouldn't
+        // arise since save_widget rejects composite→composite, but
+        // widget_referenced_by shouldn't blow up on it either).
+        let self_ref = vec![mk_widget("call.self", "call", serde_json::json!({ "stt_widget": "call.self" }))];
+        assert!(engine::widget_referenced_by("call.self", &[], &self_ref).is_empty());
     }
 
     #[tokio::test]

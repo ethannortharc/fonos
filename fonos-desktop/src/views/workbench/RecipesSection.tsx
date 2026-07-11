@@ -473,6 +473,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
             value={picker.value}
             config={config}
             containers={containers}
+            widgets={widgets}
             typeTags={TYPE_TAGS[picker.role]}
             onSave={(w) => saveNewWidget(wf, picker.target, w)}
             onCancel={() => setPicker(null)}
@@ -509,6 +510,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
             value={widgetToForm(w)}
             config={config}
             containers={containers}
+            widgets={widgets}
             onSave={editNodeSave}
             onCancel={() => setActiveNodeId(null)}
           />

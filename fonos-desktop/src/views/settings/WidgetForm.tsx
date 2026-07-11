@@ -127,6 +127,34 @@ export function ModelSelector({
   );
 }
 
+/** Widget-instance dropdown for a composite's ref prop (Workbench P2
+ *  foundation for the "dialog"/"call"/"agent"/"meeting" composites built in
+ *  T4/T6-T9 — e.g. a "call" widget's stt_widget/llm_widget prop names the
+ *  "stt"/"llm" widget it delegates to). Modeled on ModelSelector above:
+ *  filtered to widgets of `wantTag`, empty value = "use default" (reuses
+ *  modes.use-default — same copy, same "no override" meaning as
+ *  ModelSelector's empty option). No PropsForm case renders this yet; it's
+ *  exported now so those tasks can wire it in without re-deriving the
+ *  filter/empty-option shape. */
+export function WidgetRefSelector({
+  wantTag, value, widgets, onChange,
+}: {
+  wantTag: string;
+  value: string;
+  widgets: WidgetDef[];
+  onChange: (v: string) => void;
+}) {
+  const filtered = widgets.filter((w) => w.type_tag === wantTag);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass} style={{ backgroundImage: "none" }}>
+      <option value="">{t("modes.use-default")}</option>
+      {filtered.map((w) => (
+        <option key={w.id} value={w.id}>{widgetLabel(w)}</option>
+      ))}
+    </select>
+  );
+}
+
 export function VocabChips({
   books, selected, onToggle,
 }: {
@@ -223,6 +251,11 @@ function PropsForm({
   form: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
+  /** Loaded widget instances, for composite cases' WidgetRefSelector
+   *  (stt_widget/llm_widget dropdowns). Threaded through from WidgetForm now
+   *  so T4/T6/T7/T9 can add composite cases without a signature change here;
+   *  no current case destructures it (none renders WidgetRefSelector yet). */
+  widgets: WidgetDef[];
   onProps: (props: Props) => void;
 }) {
   const p = form.props;
@@ -385,11 +418,17 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
+  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
+  /** Every loaded widget instance — threaded down to PropsForm for composite
+   *  cases' WidgetRefSelector (stt_widget/llm_widget dropdowns filtered by
+   *  type_tag). No current PropsForm case uses it yet (T4/T6/T7/T9 add
+   *  those); every caller still passes its own loaded widgets list so the
+   *  plumbing is ready when they do. */
+  widgets: WidgetDef[];
   /** Allowed type_tags for a NEW widget of value.role (e.g. BuildingBlocks'
    *  TYPE_TAGS[role]) — populates the isNew type_tag <select> below.
    *  Ignored for existing widgets (type_tag is fixed once saved). Falls
@@ -542,6 +581,7 @@ export default function WidgetForm({
             form={form}
             config={config}
             containers={containers}
+            widgets={widgets}
             onProps={(props) => setForm({ ...form, props })}
           />
         </div>

@@ -99,6 +99,36 @@ pub struct WidgetDef {
     pub builtin: bool,
 }
 
+/// Props that hold references to other widget instances, per `type_tag`.
+/// Workbench P2's composite widgets (`dialog`/`call`/`agent`/`meeting`, built
+/// in T4/T6-T9) embed a capability widget's id directly as a string prop
+/// value instead of instantiating their own — e.g. a `call` widget's
+/// `stt_widget` prop names the `stt`-type widget it delegates to. This table
+/// is the single declaration of which props are ref props for which
+/// composite, consulted by [`crate::workflow::engine::widget_referenced_by`]
+/// (pierced usage/delete guards) and by the desktop's `save_widget` composite
+/// validation (never composite→composite, target type must match). A
+/// `type_tag` absent here (every non-composite type) has no ref props.
+pub fn widget_ref_props(type_tag: &str) -> &'static [&'static str] {
+    match type_tag {
+        "dialog" => &["llm_widget"],
+        "call" => &["stt_widget", "llm_widget"],
+        "agent" => &["llm_widget"],
+        "meeting" => &["stt_widget", "llm_widget"],
+        _ => &[],
+    }
+}
+
+/// Session composites — may reference capability widgets (via
+/// [`widget_ref_props`]), but never each other. Used to reject a composite's
+/// ref prop pointing at another composite (a cycle risk the linear engine
+/// isn't built to resolve) and to decide, in
+/// [`crate::workflow::engine::widget_referenced_by`], which referrer names
+/// need the "(widget)" suffix.
+pub fn is_composite(type_tag: &str) -> bool {
+    matches!(type_tag, "dialog" | "call" | "agent" | "meeting")
+}
+
 /// A usage-side entry point attached to a workflow. Tagged enum (`kind`)
 /// so new trigger kinds (e.g. a selection popup menu) can be added
 /// without a schema break.

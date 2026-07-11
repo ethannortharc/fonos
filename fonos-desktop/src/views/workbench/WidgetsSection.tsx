@@ -112,6 +112,7 @@ export default function WidgetsSection({
                         value={{ id: `${tag}.custom-${Date.now()}`, role, type_tag: tag, name: "", icon: "", props: {}, builtin: false, isNew: true }}
                         config={config}
                         containers={containers}
+                        widgets={widgets}
                         typeTags={[tag]}
                         onSave={onSaved}
                         onCancel={() => setCreating(null)}
@@ -120,7 +121,7 @@ export default function WidgetsSection({
                   )}
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-2.5">
                     {instances.map((w) => {
-                      const used = usageCount(w.id, rows);
+                      const used = usageCount(w.id, rows, widgets);
                       const open = editing === w.id;
                       return (
                         <div key={w.id} className="rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] hover:border-[rgba(255,255,255,0.13)] transition-colors p-[13px]">
@@ -156,6 +157,7 @@ export default function WidgetsSection({
                                 value={widgetToForm(w)}
                                 config={config}
                                 containers={containers}
+                                widgets={widgets}
                                 onSave={onSaved}
                                 onCancel={() => setEditing(null)}
                                 onDelete={w.builtin ? undefined : () => { void onDeleteWidget(w.id); }}

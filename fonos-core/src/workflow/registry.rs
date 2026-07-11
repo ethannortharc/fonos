@@ -27,6 +27,12 @@ pub struct RunCtx {
     /// to persist a history entry. `None` means don't record (used in
     /// tests).
     pub recorder: Option<Arc<dyn RunRecorder>>,
+    /// Test-run: when set, skip the source's acquire() and start the chain
+    /// from this text (requires a text-consuming chain head).
+    pub mock_text: Option<String>,
+    /// Test-run: skip output delivery (emit an intercepted StepFinished
+    /// instead) and skip the history recorder.
+    pub dry_run: bool,
 }
 
 impl RunCtx {
@@ -38,6 +44,8 @@ impl RunCtx {
             events: Arc::new(NullSink),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         }
     }
 }

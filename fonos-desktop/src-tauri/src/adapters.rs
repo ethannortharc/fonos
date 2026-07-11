@@ -41,6 +41,9 @@ impl EventSink for PillEventSink {
             PipelineEvent::Failed(surfaced) => {
                 crate::error_surface::emit_surfaced(&self.0, &surfaced);
             }
+            // Per-step test-run tracing has no float pill surface; the Test
+            // Run bench (a later task) uses its own sink for these.
+            PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. } => {}
         }
     }
 }

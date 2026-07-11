@@ -94,6 +94,8 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
         recorder: Some(Arc::new(DbRecorder {
             handle: handle.clone(),
         })),
+        mock_text: None,
+        dry_run: false,
     };
 
     // 4. Run against the shared registry, built once in `main`'s `.setup()`

@@ -18,12 +18,29 @@
 //! *before* `acquire` (an unknown widget id, a broken kind chain, no outputs, a
 //! factory error) emit **no** event and simply return `Err`; callers pre-flight
 //! these with [`validate`].
+//!
+//! # Step tracing (test-run bench)
+//!
+//! Independent of the terminal-event contract above, `run` also emits a
+//! [`PipelineEvent::StepStarted`] / [`PipelineEvent::StepFinished`] pair around
+//! every component invocation (the source, each processor, each output, in
+//! that order) — UI-agnostic tracing consumed by the Test Run bench. These are
+//! non-terminal and additional to the terminal event; adapters that don't care
+//! about step tracing (e.g. the desktop float pill) ignore them.
+//!
+//! [`RunCtx::mock_text`] lets a caller start the chain from literal text
+//! instead of calling [`Source::acquire`] (the chain must start with a
+//! text-consuming source; an audio source rejects it). [`RunCtx::dry_run`]
+//! intercepts output delivery — each output's `StepFinished` is emitted with
+//! `intercepted: true` and `ms: 0` instead of calling [`Output::deliver`] — and
+//! skips the history recorder; `Processing` / `Delivered` are still emitted as
+//! usual.
 
 use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::error_class::classify_error;
-use crate::pipeline::PipelineEvent;
+use crate::pipeline::{EventSink, PipelineEvent};
 use crate::workflow::builtin::{built_in_widgets, built_in_workflows};
 use crate::workflow::model::{Data, DataKind, WidgetDef, WorkflowDef};
 use crate::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
@@ -201,34 +218,130 @@ pub fn validate(reg: &Registry, wf: &WorkflowDef, widgets: &[WidgetDef]) -> Resu
     check_chain(wf, &source, &processors, &outputs)
 }
 
+/// A text rendering of `d` for step-trace previews: the text itself
+/// (truncated to 4000 chars) for [`Data::Text`], the literal `"[audio]"` for
+/// [`Data::Audio`].
+fn preview_of(d: &Data) -> String {
+    match d {
+        Data::Text(t) => {
+            let mut s = t.clone();
+            s.truncate(4000);
+            s
+        }
+        Data::Audio(_) => "[audio]".to_string(),
+    }
+}
+
+/// Emit a [`PipelineEvent::StepStarted`] for step `index` (`step_id`/`role`
+/// identify the component). A free function rather than a closure so it
+/// borrows only what each call site passes, with no capture-conflict risk
+/// against the surrounding `run` body's other borrows of `ctx`/`wf`.
+fn step_start(events: &dyn EventSink, workflow: &str, index: usize, step_id: &str, role: &str) {
+    events.emit(PipelineEvent::StepStarted {
+        workflow: workflow.to_string(),
+        step_id: step_id.to_string(),
+        index,
+        role: role.to_string(),
+    });
+}
+
+/// Emit a [`PipelineEvent::StepFinished`] for step `index`. See [`step_start`]
+/// for why this is a free function rather than a closure.
+#[allow(clippy::too_many_arguments)]
+fn step_done(
+    events: &dyn EventSink,
+    workflow: &str,
+    index: usize,
+    step_id: &str,
+    role: &str,
+    preview: String,
+    ms: u64,
+    error: Option<String>,
+    intercepted: bool,
+) {
+    events.emit(PipelineEvent::StepFinished {
+        workflow: workflow.to_string(),
+        step_id: step_id.to_string(),
+        index,
+        role: role.to_string(),
+        preview,
+        ms,
+        error,
+        intercepted,
+    });
+}
+
 /// Execute `wf` end to end, honoring the terminal-event contract documented on
 /// this module.
 ///
 /// The sequence is: instantiate + check the chain (fail fast, no event) →
-/// `acquire` (empty text ⇒ `NoSpeech`) → emit `Processing` → run processors
-/// (capturing the first text as `raw_text`) → record to history → deliver to
-/// every output in declared order → emit `Delivered`. The first failure at or
-/// after `acquire` emits `Failed(classify_error(err))` and returns `Err`;
-/// delivery stops at the first failing output.
+/// `acquire` (or substitute [`RunCtx::mock_text`]; empty text ⇒ `NoSpeech`) →
+/// emit `Processing` → run processors (capturing the first text as
+/// `raw_text`) → record to history (skipped when [`RunCtx::dry_run`]) →
+/// deliver to every output in declared order (intercepted when `dry_run`) →
+/// emit `Delivered`. The first failure at or after `acquire` emits
+/// `Failed(classify_error(err))` and returns `Err`; delivery stops at the
+/// first failing output. A [`PipelineEvent::StepStarted`] /
+/// [`PipelineEvent::StepFinished`] pair brackets every component invocation
+/// (source, then each processor, then each output) — see the module-level
+/// "Step tracing" docs.
 pub async fn run(
     reg: &Registry,
     wf: &WorkflowDef,
     widgets: &[WidgetDef],
     ctx: &RunCtx,
 ) -> Result<RunOutcome, String> {
+    let events = ctx.events.as_ref();
+
     // 1. Fail fast: instantiate everything and check the chain, before any
     //    observable side effect. Structural errors emit no event.
     let (source, processors, outputs) = instantiate(reg, wf, widgets)?;
     check_chain(wf, &source, &processors, &outputs)?;
 
-    // 2. Acquire the initial datum.
-    let mut current = match source.acquire(ctx).await {
-        Ok(data) => data,
-        Err(e) => {
-            ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
+    // 2. Acquire the initial datum — or, for a test run, substitute
+    //    `ctx.mock_text` in place of calling `source.acquire`. Mock text
+    //    requires a text-consuming chain head; an audio source rejects it
+    //    before anything observable happens beyond this step's own trace.
+    step_start(events, &wf.id, 0, &wf.source, "source");
+    let t0 = std::time::Instant::now();
+    let mut current = if let Some(text) = &ctx.mock_text {
+        if source.output_kind() == DataKind::Audio {
+            let e = "mock text input requires a text-consuming chain".to_string();
+            step_done(events, &wf.id, 0, &wf.source, "source", String::new(), 0, Some(e.clone()), false);
             return Err(e);
         }
+        Data::Text(text.clone())
+    } else {
+        match source.acquire(ctx).await {
+            Ok(data) => data,
+            Err(e) => {
+                step_done(
+                    events,
+                    &wf.id,
+                    0,
+                    &wf.source,
+                    "source",
+                    String::new(),
+                    t0.elapsed().as_millis() as u64,
+                    Some(e.clone()),
+                    false,
+                );
+                ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
+                return Err(e);
+            }
+        }
     };
+    step_done(
+        events,
+        &wf.id,
+        0,
+        &wf.source,
+        "source",
+        preview_of(&current),
+        t0.elapsed().as_millis() as u64,
+        None,
+        false,
+    );
     if let Data::Text(text) = &current {
         if text.is_empty() {
             ctx.events.emit(PipelineEvent::NoSpeech);
@@ -244,15 +357,41 @@ pub async fn run(
         Data::Text(text) => Some(text.clone()),
         Data::Audio(_) => None,
     };
-    for proc in &processors {
+    for (i, proc) in processors.iter().enumerate() {
+        let sid = &wf.processors[i];
+        let index = 1 + i;
+        step_start(events, &wf.id, index, sid, "processor");
+        let t = std::time::Instant::now();
         current = match proc.process(current, ctx).await {
             Ok(data) => data,
             Err(e) => {
+                step_done(
+                    events,
+                    &wf.id,
+                    index,
+                    sid,
+                    "processor",
+                    String::new(),
+                    t.elapsed().as_millis() as u64,
+                    Some(e.clone()),
+                    false,
+                );
                 // 8. Processor failure is terminal.
                 ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
                 return Err(e);
             }
         };
+        step_done(
+            events,
+            &wf.id,
+            index,
+            sid,
+            "processor",
+            preview_of(&current),
+            t.elapsed().as_millis() as u64,
+            None,
+            false,
+        );
         if raw_text.is_none() {
             if let Data::Text(text) = &current {
                 raw_text = Some(text.clone());
@@ -272,37 +411,73 @@ pub async fn run(
     };
     let raw_text = raw_text.unwrap_or_else(|| final_text.clone());
 
-    // 5. Record to history between processing and delivery. A recorder failure
-    //    is terminal, consistent with the other post-acquire steps.
+    // 5. Record to history between processing and delivery — skipped
+    //    entirely in a dry run. A recorder failure is terminal, consistent
+    //    with the other post-acquire steps.
     let mut entry_id = None;
-    if let Some(recorder) = &ctx.recorder {
-        // Contract: a RunRecorder that returns Err fails the run (single
-        // terminal Failed). Recorders whose write is non-essential (e.g.
-        // history logging) should absorb their own errors and return Ok —
-        // see DbRecorder.
-        match recorder.record(wf, &raw_text, &final_text) {
-            Ok(id) => {
-                entry_id = Some(id);
-                // Scoped so the std mutex guard is dropped before the next
-                // `.await`; the lock is never held across an await point.
-                ctx.meta
-                    .lock()
-                    .expect("run ctx meta mutex poisoned")
-                    .insert("entry_id".to_string(), serde_json::json!(id));
-            }
-            Err(e) => {
-                ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
-                return Err(e);
+    if !ctx.dry_run {
+        if let Some(recorder) = &ctx.recorder {
+            // Contract: a RunRecorder that returns Err fails the run (single
+            // terminal Failed). Recorders whose write is non-essential (e.g.
+            // history logging) should absorb their own errors and return Ok —
+            // see DbRecorder.
+            match recorder.record(wf, &raw_text, &final_text) {
+                Ok(id) => {
+                    entry_id = Some(id);
+                    // Scoped so the std mutex guard is dropped before the next
+                    // `.await`; the lock is never held across an await point.
+                    ctx.meta
+                        .lock()
+                        .expect("run ctx meta mutex poisoned")
+                        .insert("entry_id".to_string(), serde_json::json!(id));
+                }
+                Err(e) => {
+                    ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
+                    return Err(e);
+                }
             }
         }
     }
 
     // 6. Deliver to each output in declared order; stop at the first failure.
-    for output in &outputs {
+    //    A dry run intercepts delivery: emit an `intercepted` StepFinished
+    //    instead of calling `Output::deliver`.
+    let base = 1 + processors.len();
+    for (j, output) in outputs.iter().enumerate() {
+        let sid = &wf.outputs[j];
+        let index = base + j;
+        step_start(events, &wf.id, index, sid, "output");
+        if ctx.dry_run {
+            step_done(events, &wf.id, index, sid, "output", preview_of(&current), 0, None, true);
+            continue;
+        }
+        let t = std::time::Instant::now();
         if let Err(e) = output.deliver(&current, ctx).await {
+            step_done(
+                events,
+                &wf.id,
+                index,
+                sid,
+                "output",
+                String::new(),
+                t.elapsed().as_millis() as u64,
+                Some(e.clone()),
+                false,
+            );
             ctx.events.emit(PipelineEvent::Failed(classify_error(&e)));
             return Err(e);
         }
+        step_done(
+            events,
+            &wf.id,
+            index,
+            sid,
+            "output",
+            preview_of(&current),
+            t.elapsed().as_millis() as u64,
+            None,
+            false,
+        );
     }
 
     // 7. Every output accepted the result. Carry the raw transcript, the final
@@ -532,12 +707,23 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
         assert_eq!(out.raw_text, "hello");
         assert_eq!(out.final_text, "HELLO");
         assert_eq!(sink.0.lock().unwrap().as_slice(), ["HELLO"]);
-        let ev = cap.0.lock().unwrap();
+        // Filter out the per-step trace events (covered by their own test);
+        // this test's concern is the terminal-event contract.
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
         assert!(matches!(ev[0], PipelineEvent::Processing));
         assert!(matches!(
             &ev[1],
@@ -555,10 +741,19 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert_eq!(err, "empty input");
-        let ev = cap.0.lock().unwrap();
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
         assert_eq!(ev.len(), 1);
         assert!(matches!(ev[0], PipelineEvent::NoSpeech));
         assert!(sink.0.lock().unwrap().is_empty(), "nothing should be delivered");
@@ -579,10 +774,19 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert_eq!(err, "processor boom");
-        let ev = cap.0.lock().unwrap();
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
         assert_eq!(ev.len(), 2);
         assert!(matches!(ev[0], PipelineEvent::Processing));
         assert!(matches!(ev[1], PipelineEvent::Failed(_)));
@@ -598,6 +802,8 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: Some(rec.clone()),
+            mock_text: None,
+            dry_run: false,
         };
         let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
         assert_eq!(out.entry_id, Some(42));
@@ -745,6 +951,8 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert!(err.contains("p.nope"), "error should name the missing id, got: {err}");
@@ -773,10 +981,19 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert_eq!(err, "boom");
-        let ev = cap.0.lock().unwrap();
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
         assert_eq!(ev.len(), 2);
         assert!(matches!(ev[0], PipelineEvent::Processing));
         assert!(matches!(ev[1], PipelineEvent::Failed(_)));
@@ -800,12 +1017,78 @@ mod tests {
             events: cap.clone(),
             meta: Mutex::new(serde_json::Map::new()),
             recorder: None,
+            mock_text: None,
+            dry_run: false,
         };
         let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
         assert_eq!(err, "acquire boom");
-        let ev = cap.0.lock().unwrap();
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
         assert_eq!(ev.len(), 1);
         assert!(matches!(ev[0], PipelineEvent::Failed(_)));
         assert!(sink.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_emits_step_trace_and_dry_run_intercepts_outputs() {
+        // src.t (fixed text, overridden by mock_text) → p.upper → out.sink.
+        let (reg, widgets, wf, sink) = setup("unused");
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: Some("hello".into()),
+            dry_run: true,
+        };
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert!(!out.final_text.is_empty());
+
+        let evs = cap.0.lock().unwrap();
+        // Order: Step(source) → Processing → Step(processor) → Step(output, intercepted).
+        let steps: Vec<_> = evs
+            .iter()
+            .filter_map(|e| match e {
+                PipelineEvent::StepFinished { role, intercepted, error, .. } => {
+                    Some((role.clone(), *intercepted, error.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(steps.len(), 3);
+        assert_eq!(steps[0], ("source".into(), false, None));
+        assert_eq!(steps[1], ("processor".into(), false, None));
+        assert_eq!(steps[2], ("output".into(), true, None), "output must be intercepted");
+
+        // dry_run must skip actual delivery to the fake output.
+        assert!(sink.0.lock().unwrap().is_empty(), "dry-run must not deliver to the output");
+    }
+
+    #[tokio::test]
+    async fn mock_text_on_audio_chain_is_rejected() {
+        // src.audio (Audio kind) → p.stt → out.sink.
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.audio", WidgetRole::Source, "audio", serde_json::Value::Null),
+            widget("p.stt", WidgetRole::Processor, "stt", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.audio", &["p.stt"], &["out.sink"]);
+        let ctx = RunCtx {
+            events: Arc::new(Capture(Mutex::new(vec![]))),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: Some("x".into()),
+            dry_run: true,
+        };
+        let err = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap_err();
+        assert!(err.contains("mock text"), "expected error mentioning mock text, got: {err}");
     }
 }

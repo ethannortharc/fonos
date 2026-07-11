@@ -4,6 +4,7 @@ pub mod agent;
 pub mod agent_widget;
 pub mod bench;
 pub mod call;
+pub mod call_widget;
 pub mod config;
 pub mod dialog;
 pub mod dictation;
@@ -358,12 +359,8 @@ pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32
 /// (like Meeting): it's a peer to the Dialog panel's session-type surface,
 /// not a background recording indicator.
 ///
-/// Unused until Workbench P2 Task 9 wires the call composite widget's
-/// `deliver()` to call this before showing the panel (this task only ships
-/// the panel HTML + window registration; the widget's own `run_call_loop`
-/// already emits `call_started`/`call_listening`/etc. via the unchanged
-/// `sts:event` contract, but nothing shows the window yet).
-#[allow(dead_code)]
+/// Called by `commands::call_widget::CallOutput::deliver` (Workbench P2
+/// Task 9) before showing the panel and starting the call loop.
 #[cfg(target_os = "macos")]
 pub(crate) fn move_call_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
     use tauri::Manager;

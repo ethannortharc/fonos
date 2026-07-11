@@ -2,11 +2,12 @@
 //! traits ([`Source`], [`Processor`], [`Output`]) to real macOS behavior: the
 //! selection grabber, the blank-open instant source, the two-phase microphone
 //! source, the STT / LLM processors, the six terminal outputs (insert /
-//! replace / clipboard / notebook / speak / panel), and the three session
+//! replace / clipboard / notebook / speak / panel), and the four session
 //! composites registered here but implemented in their own modules — `dialog`
 //! ([`super::dialog::DialogOutput`]), `agent`
-//! ([`super::agent_widget::AgentOutput`]), and `meeting`
-//! ([`super::meeting_widget::MeetingOutput`]).
+//! ([`super::agent_widget::AgentOutput`]), `meeting`
+//! ([`super::meeting_widget::MeetingOutput`]), and `call`
+//! ([`super::call_widget::CallOutput`]).
 //!
 //! These are the concrete widgets a workflow's `type_tag`s resolve to.
 //! [`build_registry`] wires every factory into one [`Registry`], which the
@@ -683,7 +684,7 @@ impl Output for PanelOutput {
 /// `type_tag`: the sources (`selection`, `instant`, `microphone`), processors
 /// (`stt`, `llm`), the six terminal outputs (`insert`, `replace`,
 /// `clipboard`, `notebook`, `speak`, `panel`), and the session composites
-/// (`dialog`, `agent`, `meeting`).
+/// (`dialog`, `agent`, `meeting`, `call`).
 ///
 /// Each factory closure captures `app.clone()` and re-clones per instantiation
 /// so a widget can be built many times. The `uppercase` processor (Task 16's
@@ -874,6 +875,20 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                 let props: super::meeting_widget::MeetingProps = serde_json::from_value(props.clone())
                     .map_err(|e| format!("meeting props: {e}"))?;
                 Ok(Arc::new(super::meeting_widget::MeetingOutput {
+                    app: app.clone(),
+                    props,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "call",
+            Box::new(move |props| {
+                let props: super::call_widget::CallProps = serde_json::from_value(props.clone())
+                    .map_err(|e| format!("call props: {e}"))?;
+                Ok(Arc::new(super::call_widget::CallOutput {
                     app: app.clone(),
                     props,
                 }) as Arc<dyn Output>)

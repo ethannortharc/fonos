@@ -29,6 +29,10 @@ export interface AppConfig {
   listen_mode?: string;
   listen_voice_profile?: string;
   listen_voice?: string;
+  // Legacy STS/call fields (Workbench P2 T9): still real Rust config fields,
+  // but DEPRECATED — one-time-migrated into the wf.call recipe /
+  // call.default widget props and no longer settings-tab-editable
+  // (ScenariosTab snapshots still carry them).
   hotkey_sts?: string;
   sts_persona?: string;
   sts_llm_profile?: string;

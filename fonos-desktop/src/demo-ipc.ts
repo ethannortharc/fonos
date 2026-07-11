@@ -538,15 +538,8 @@ export function installDemoIpc() {
       case "play_audio_file":
       case "stop_playback":
         return null;
-      case "reset_sts_session":
-      case "sts_page_start":
-      case "call_start":
       case "call_stop":
         return null;
-      case "sts_page_stop":
-        return "This is a demo reply.";
-      case "get_sts_history":
-        return [["帮我总结一下今天的会议重点", "好的,今天会议有三个重点:发布计划确认到月底,预算需要再压缩百分之十,新同事下周入职。"]];
       case "create_listen_from_text":
         return 99;
       case "has_microphone":

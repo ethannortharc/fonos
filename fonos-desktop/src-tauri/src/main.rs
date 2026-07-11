@@ -140,8 +140,8 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
     // Hotkey chips, handled by the `starts_with("workflow-")` arm below.
     // Meeting's former standalone "meeting" label is gone the same way —
     // Workbench P2 Task 7 folded hotkey_meeting into wf.meeting's own Hotkey
-    // chip.)
-    try_add(&config.hotkey_sts, "sts");
+    // chip; the STS walkie's "sts" label likewise — Task 9 folded hotkey_sts
+    // into wf.call's own Hotkey chip, retiring the hold-to-talk arm.)
     // Dictation / note / listen / text-actions are unified onto the workflow
     // engine (Workflow P1): every Hotkey chip on a workflow registers its own
     // `workflow-{id}@{trigger_idx}` label (Workbench P1), handled by the
@@ -321,6 +321,17 @@ fn main() {
             Err(e) => eprintln!("fonos: meeting-triggers migration save failed: {e}"),
         }
     }
+    // One-time migration: the legacy STS walkie config → the `wf.call`
+    // composite recipe (hotkey_sts → Hotkey chip, sts_persona → minted
+    // llm.call-persona widget, sts_voice*/sts_max_turns/call_* →
+    // call.default props; Workbench P2 Task 9). Runs after the
+    // meeting-triggers migration above ("newest migration runs last").
+    if fonos_core::workflow::migrate::migrate_legacy_call_triggers(&mut config) {
+        match config.save() {
+            Ok(()) => eprintln!("fonos: migrated legacy STS/call config to the call recipe"),
+            Err(e) => eprintln!("fonos: call-triggers migration save failed: {e}"),
+        }
+    }
     let config = config;
 
     // Initialize SQLite database for stats & history
@@ -457,11 +468,10 @@ fn main() {
             commands::scenarios::import_scenario_json,
             // Permission commands
             commands::listen::create_listen_from_text,
-            commands::sts::reset_sts_session,
-            commands::sts::sts_page_start,
-            commands::sts::sts_page_stop,
-            commands::sts::get_sts_history,
-            commands::call::call_start,
+            // The STS walkie/Talk-page commands (sts_page_start/stop,
+            // get_sts_history, reset_sts_session) and call_start are gone
+            // (Workbench P2 Task 9): calls start via the `call` composite
+            // widget; call-panel.html only invokes call_stop/hide_call_panel.
             commands::call::call_stop,
             commands::call::hide_call_panel,
             commands::tts::list_model_voices,
@@ -664,38 +674,12 @@ fn main() {
                             // `commands::meeting_widget::MeetingOutput` reads the
                             // live recording state itself to decide start vs stop,
                             // the same toggle dance this arm used to do inline.
+                            // The STS walkie's former "sts" hold-to-talk arm is gone
+                            // the same way (Workbench P2 Task 9) — hotkey_sts is now
+                            // a Hotkey chip on `wf.call`, whose
+                            // `commands::call_widget::CallOutput` toggles a
+                            // hands-free call on each key-down.
 
-                            "sts" => {
-                                // Hold-to-talk conversation turn (issue #24):
-                                // key-down records, key-up transcribes → chat → speaks.
-                                // Disabled entirely while a hands-free call owns the mic.
-                                {
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if commands::call::is_call_active(&state) {
-                                        return;
-                                    }
-                                }
-                                if is_down {
-                                    // Never start a second recording while a turn is
-                                    // still thinking/speaking or another recording is
-                                    // live — the orphaned recording would corrupt the
-                                    // pill state and hijack the next key-up.
-                                    if commands::sts::turn_in_flight() || commands::dictation::is_recording() {
-                                        return;
-                                    }
-                                    let state: tauri::State<'_, AppState> = handle.state();
-                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                        crate::error_surface::emit_float_error(&handle, &e);
-                                    }
-                                } else {
-                                    // Skip key-ups whose key-down was suppressed (turn
-                                    // was in flight) or when no recording is live.
-                                    if commands::sts::turn_in_flight() || !commands::dictation::is_recording() {
-                                        return;
-                                    }
-                                    let _ = commands::sts::run_sts_turn(handle.clone()).await;
-                                }
-                            }
                             l if l.starts_with("workflow-") => {
                                 // Resolve the trigger target and derive
                                 // `is_mic`/`capture` under the config lock,

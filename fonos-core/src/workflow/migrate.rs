@@ -64,6 +64,16 @@
 //! become; both stay live-read as a resolve-time fallback (see their doc
 //! comments). Guarded by the separate `config.meeting_triggers_migration_done`
 //! sentinel.
+//!
+//! [`migrate_legacy_call_triggers`] (Workbench P2 Task 9) runs after
+//! [`migrate_legacy_meeting_triggers`]: it folds the legacy `hotkey_sts` into
+//! a `Trigger::Hotkey` chip on the new `wf.call` composite recipe, mints a
+//! customized `sts_persona` into a custom `llm` widget referenced by
+//! `call.default`, and seeds `call.default`'s tuning props from the legacy
+//! `sts_voice*`/`sts_max_turns`/`call_*` fields (then resets those six —
+//! `sts_llm_profile` alone stays live-read, the same id-space mismatch as the
+//! meeting profile fields). Guarded by the separate
+//! `config.call_triggers_migration_done` sentinel.
 
 use std::collections::BTreeMap;
 
@@ -932,6 +942,145 @@ pub fn migrate_legacy_meeting_triggers(config: &mut AppConfig) -> bool {
     }
 
     config.meeting_triggers_migration_done = true;
+    true
+}
+
+/// Id of the custom `llm` widget [`migrate_legacy_call_triggers`] mints to
+/// carry a customized legacy `sts_persona` (「通话人格」/"Call persona").
+pub const CALL_PERSONA_WIDGET_ID: &str = "llm.call-persona";
+
+/// Workbench P2 Task 9: fold the legacy STS walkie/call config into the new
+/// `wf.call` recipe + `call.default` composite widget (same
+/// generate-fresh-or-reuse-existing-overlay approach as
+/// [`migrate_legacy_agent_triggers`]/[`migrate_legacy_meeting_triggers`], via
+/// the shared [`take_or_seed_workflow`]/[`take_or_seed_widget`]). Three
+/// independent blocks:
+///
+/// 1. **Hotkey**: `hotkey_sts` (default `"option+s"`, so this runs on a fresh
+///    install too) becomes a plain Hotkey chip (`capture: None`) on `wf.call`,
+///    then the field is cleared. NOTE the gesture changes meaning with the
+///    walkie mode's retirement: the legacy key was hold-to-talk (one turn per
+///    press); the chip now toggles a hands-free call on key-down (`wf.call`'s
+///    `src.instant` source never consults `capture`), exactly like
+///    `wf.meeting`'s toggle chip. This re-reading is the task's deliberate
+///    "speech 就是一个独立配方" cut — the walkie gesture has no composite home.
+///
+/// 2. **Persona mint**: a `sts_persona` that is non-empty AND differs from the
+///    built-in default is minted into a custom `llm` widget
+///    ([`CALL_PERSONA_WIDGET_ID`], name 「通话人格」, `system` = the persona,
+///    `model_profile` = `sts_llm_profile`, temperature/max_tokens = the call
+///    chat stage's fixed 0.4/512) and referenced from `call.default`'s
+///    `llm_widget` prop. The default persona is NOT minted — it lives on as
+///    the desktop resolver's built-in fallback constant
+///    (`commands::call_widget::DEFAULT_CALL_PERSONA`), so a default config
+///    stays overlay-free. `sts_persona` itself is left in place (not cleared),
+///    mirroring `agent_system_prompt`'s treatment.
+///
+/// 3. **Tuning seed**: `sts_voice_profile`/`sts_voice`/`sts_max_turns`/
+///    `call_vad_sensitivity`/`call_vad_silence_ms`/`call_barge_in` are copied
+///    onto `call.default`'s props — but only when at least one differs from
+///    its default (a default config seeds nothing, keeping it overlay-free) —
+///    and then reset to their defaults (these six fully migrate; no readers
+///    remain, unlike the live-read `sts_llm_profile` — see each field's doc
+///    comment in `AppConfig`).
+///
+/// Idempotent: guarded by `config.call_triggers_migration_done` and a no-op
+/// (returning `false`) once that flag is set. Wired into `main.rs` after
+/// [`migrate_legacy_meeting_triggers`] ("newest migration runs last").
+pub fn migrate_legacy_call_triggers(config: &mut AppConfig) -> bool {
+    if config.call_triggers_migration_done {
+        return false;
+    }
+    let defaults = AppConfig::default();
+
+    // (1) Hotkey → wf.call chip.
+    let hotkey_sts = std::mem::take(&mut config.hotkey_sts);
+    if !hotkey_sts.is_empty() {
+        if let Some(mut wf) = take_or_seed_workflow(config, "wf.call") {
+            if !wf.hotkey_triggers().any(|(_, c, _)| c == hotkey_sts.as_str()) {
+                wf.triggers.push(Trigger::Hotkey { combo: hotkey_sts, capture: None });
+            }
+            upsert_workflow(config, wf);
+        }
+    }
+
+    // (2) Persona mint: non-empty AND non-default only. The minted widget's
+    // temperature/max_tokens mirror the call chat stage's fixed 0.4/512 (they
+    // are inert for the call path itself — the stage hardcodes both — but keep
+    // the widget faithful if reused as a generic llm processor).
+    let persona = config.sts_persona.clone();
+    if !persona.is_empty() && persona != defaults.sts_persona {
+        let props = LlmProps {
+            system: Some(persona),
+            user_template: None,
+            model_profile: config.sts_llm_profile.clone(),
+            temperature: 0.4,
+            max_tokens: 512,
+            output_language: "auto".to_string(),
+            vocab_books: Vec::new(),
+        };
+        let props = serde_json::to_value(&props).unwrap_or_else(|_| serde_json::json!({}));
+        upsert_widget(
+            config,
+            WidgetDef {
+                id: CALL_PERSONA_WIDGET_ID.to_string(),
+                role: WidgetRole::Processor,
+                type_tag: "llm".to_string(),
+                name: "通话人格".to_string(),
+                icon: "📞".to_string(),
+                props,
+                builtin: false,
+            },
+        );
+        if let Some(mut w) = take_or_seed_widget(config, "call.default") {
+            if let Some(obj) = w.props.as_object_mut() {
+                obj.insert(
+                    "llm_widget".to_string(),
+                    serde_json::Value::String(CALL_PERSONA_WIDGET_ID.to_string()),
+                );
+            }
+            upsert_widget(config, w);
+        }
+    }
+
+    // (3) Tuning seed: only when something actually differs from the defaults
+    // (a pristine config stays overlay-free), then reset the six fields.
+    let tuning_customized = config.sts_voice_profile != defaults.sts_voice_profile
+        || config.sts_voice != defaults.sts_voice
+        || config.sts_max_turns != defaults.sts_max_turns
+        || config.call_vad_sensitivity != defaults.call_vad_sensitivity
+        || config.call_vad_silence_ms != defaults.call_vad_silence_ms
+        || config.call_barge_in != defaults.call_barge_in;
+    if tuning_customized {
+        if let Some(mut w) = take_or_seed_widget(config, "call.default") {
+            if let Some(obj) = w.props.as_object_mut() {
+                obj.insert(
+                    "voice_profile".to_string(),
+                    serde_json::Value::String(config.sts_voice_profile.clone()),
+                );
+                obj.insert("voice".to_string(), serde_json::Value::String(config.sts_voice.clone()));
+                obj.insert("max_turns".to_string(), serde_json::json!(config.sts_max_turns));
+                obj.insert(
+                    "vad_sensitivity".to_string(),
+                    serde_json::json!(config.call_vad_sensitivity),
+                );
+                obj.insert(
+                    "vad_silence_ms".to_string(),
+                    serde_json::json!(config.call_vad_silence_ms),
+                );
+                obj.insert("barge_in".to_string(), serde_json::json!(config.call_barge_in));
+            }
+            upsert_widget(config, w);
+        }
+    }
+    config.sts_voice_profile = defaults.sts_voice_profile;
+    config.sts_voice = defaults.sts_voice;
+    config.sts_max_turns = defaults.sts_max_turns;
+    config.call_vad_sensitivity = defaults.call_vad_sensitivity;
+    config.call_vad_silence_ms = defaults.call_vad_silence_ms;
+    config.call_barge_in = defaults.call_barge_in;
+
+    config.call_triggers_migration_done = true;
     true
 }
 
@@ -2167,12 +2316,227 @@ mod tests {
         assert_eq!(w.props["summary_prompt"], cfg.meeting_summary_prompt, "summary_prompt seeded from the legacy field");
     }
 
+    // ── migrate_legacy_call_triggers (Workbench P2 Task 9) ───────────────────
+
+    /// A fresh config (legacy STS hotkey at its non-empty default, persona at
+    /// its default, tuning at defaults) produces exactly one chip and NO
+    /// widget overlays — the defaults-preserved, overlay-free intent.
+    #[test]
+    fn call_triggers_migration_default_config_creates_chip_only() {
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.hotkey_sts, "option+s");
+        assert!(!cfg.sts_persona.is_empty(), "default persona is non-empty");
+
+        assert!(migrate_legacy_call_triggers(&mut cfg), "first run reports a change");
+        assert!(cfg.call_triggers_migration_done);
+
+        // Legacy hotkey field cleared (rule-6-style hygiene).
+        assert!(cfg.hotkey_sts.is_empty());
+
+        // wf.call: toggle chip, generated fresh from the built-in shape
+        // (src.instant source, call.default output). Its Trigger::Hotkey
+        // really carries `capture: None` (src.instant isn't a mic; the legacy
+        // hold-to-talk gesture is retired with the walkie mode) — checked
+        // directly against the enum, mirroring wf.meeting's own test.
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.call").expect("wf.call overlay");
+        assert_eq!(wf.source, "src.instant");
+        assert_eq!(wf.outputs, vec!["call.default".to_string()]);
+        assert!(wf.triggers.iter().any(|t| matches!(
+            t,
+            Trigger::Hotkey { combo, capture } if combo == "option+s" && capture.is_none()
+        )));
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
+
+        // DEFAULT persona ⇒ no mint, no call.default overlay; default tuning
+        // ⇒ no seed either. The persona field itself is left in place.
+        assert!(!cfg.widgets.iter().any(|w| w.id == CALL_PERSONA_WIDGET_ID), "default persona is not minted");
+        assert!(!cfg.widgets.iter().any(|w| w.id == "call.default"), "default tuning seeds no overlay");
+        assert_eq!(cfg.sts_persona, AppConfig::default().sts_persona, "persona field left in place");
+    }
+
+    #[test]
+    fn call_triggers_migration_is_idempotent() {
+        let mut cfg = AppConfig {
+            sts_persona: "You are Rex, a pirate.".to_string(),
+            sts_voice: "af_bella".to_string(),
+            ..Default::default()
+        };
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+        let workflows_after_first = cfg.workflows.clone();
+        let widgets_after_first = cfg.widgets.clone();
+
+        assert!(!migrate_legacy_call_triggers(&mut cfg), "second call reports no change");
+        assert_eq!(cfg.workflows, workflows_after_first, "workflows unchanged");
+        assert_eq!(cfg.widgets, widgets_after_first, "widgets (incl. minted persona + seeded props) unchanged");
+        assert!(cfg.call_triggers_migration_done);
+    }
+
+    #[test]
+    fn call_triggers_migration_returns_false_when_already_done() {
+        let mut cfg = AppConfig { call_triggers_migration_done: true, ..Default::default() };
+        assert!(!migrate_legacy_call_triggers(&mut cfg));
+        assert_eq!(cfg.hotkey_sts, "option+s", "no-op leaves the legacy field untouched");
+    }
+
+    /// A user-cleared legacy hotkey generates no wf.call overlay at all —
+    /// mirrors every other hotkey fold's "nothing to migrate" behavior.
+    #[test]
+    fn call_triggers_migration_empty_legacy_hotkey_creates_no_overlay() {
+        let mut cfg = AppConfig { hotkey_sts: String::new(), ..Default::default() };
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+        assert!(!cfg.workflows.iter().any(|w| w.id == "wf.call"));
+    }
+
+    /// A pre-existing overlay (hand-edited config, or a re-run after a
+    /// bypassed sentinel) is mutated in place — its other fields survive and
+    /// the combo isn't duplicated if already present as a chip.
+    #[test]
+    fn call_triggers_migration_preserves_existing_overlay() {
+        let mut cfg = AppConfig::default();
+        cfg.workflows.push(WorkflowDef {
+            id: "wf.call".to_string(),
+            name: "我的通话".to_string(),
+            icon: "📞".to_string(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::Hotkey { combo: "option+s".into(), capture: None }],
+            source: "src.instant".to_string(),
+            processors: vec![],
+            outputs: vec!["call.default".to_string()],
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+
+        let wf = cfg.workflows.iter().find(|w| w.id == "wf.call").unwrap();
+        assert_eq!(wf.name, "我的通话", "existing overlay's name preserved");
+        assert_eq!(
+            wf.hotkey_triggers().filter(|(_, c, _)| *c == "option+s").count(),
+            1,
+            "combo not duplicated when already present as a chip"
+        );
+    }
+
+    // ── Persona mint: sts_persona → llm.call-persona widget + call.default ref ──
+
+    /// A customized persona is minted into the llm.call-persona widget
+    /// (system = persona, model_profile = sts_llm_profile) and call.default's
+    /// llm_widget points at it.
+    #[test]
+    fn call_triggers_migration_custom_persona_mints_widget_and_ref() {
+        let mut cfg = AppConfig {
+            sts_persona: "You are Rex, a pirate.".to_string(),
+            sts_llm_profile: "tuned-llm-profile".to_string(),
+            ..Default::default()
+        };
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+
+        let minted = cfg.widgets.iter().find(|w| w.id == CALL_PERSONA_WIDGET_ID).expect("minted persona widget");
+        assert_eq!(minted.type_tag, "llm");
+        assert_eq!(minted.role, WidgetRole::Processor);
+        assert!(!minted.builtin);
+        assert_eq!(minted.props["system"], "You are Rex, a pirate.");
+        assert_eq!(minted.props["model_profile"], "tuned-llm-profile");
+
+        let call_default = cfg.widgets.iter().find(|w| w.id == "call.default").expect("call.default overlay");
+        assert_eq!(call_default.props["llm_widget"], CALL_PERSONA_WIDGET_ID);
+        // The persona field is left in place (agent_system_prompt treatment);
+        // sts_llm_profile stays live-read, untouched.
+        assert_eq!(cfg.sts_persona, "You are Rex, a pirate.");
+        assert_eq!(cfg.sts_llm_profile, "tuned-llm-profile");
+    }
+
+    /// An EMPTY (user-cleared) persona mints nothing — per the task's explicit
+    /// non-empty-and-non-default mint condition.
+    #[test]
+    fn call_triggers_migration_empty_persona_mints_nothing() {
+        let mut cfg = AppConfig { sts_persona: String::new(), ..Default::default() };
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+        assert!(!cfg.widgets.iter().any(|w| w.id == CALL_PERSONA_WIDGET_ID));
+        assert!(!cfg.widgets.iter().any(|w| w.id == "call.default"));
+    }
+
+    // ── Tuning seed: sts_voice*/sts_max_turns/call_* → call.default props ────
+
+    /// Customized tuning is copied onto call.default's props and the six
+    /// legacy fields are reset to their defaults afterwards.
+    #[test]
+    fn call_triggers_migration_seeds_tuning_props_and_resets_fields() {
+        let mut cfg = AppConfig {
+            sts_voice_profile: "tuned-tts-profile".to_string(),
+            sts_voice: "af_bella".to_string(),
+            sts_max_turns: 4,
+            call_vad_sensitivity: 0.8,
+            call_vad_silence_ms: 1200,
+            call_barge_in: false,
+            ..Default::default()
+        };
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+
+        let w = cfg.widgets.iter().find(|w| w.id == "call.default").expect("call.default overlay");
+        assert_eq!(w.props["voice_profile"], "tuned-tts-profile");
+        assert_eq!(w.props["voice"], "af_bella");
+        assert_eq!(w.props["max_turns"], 4);
+        assert_eq!(w.props["vad_sensitivity"].as_f64().unwrap(), 0.8f32 as f64);
+        assert_eq!(w.props["vad_silence_ms"], 1200);
+        assert_eq!(w.props["barge_in"], false);
+
+        // Fully-migrated fields are reset to their defaults (no readers left).
+        let d = AppConfig::default();
+        assert_eq!(cfg.sts_voice_profile, d.sts_voice_profile);
+        assert_eq!(cfg.sts_voice, d.sts_voice);
+        assert_eq!(cfg.sts_max_turns, d.sts_max_turns);
+        assert_eq!(cfg.call_vad_sensitivity, d.call_vad_sensitivity);
+        assert_eq!(cfg.call_vad_silence_ms, d.call_vad_silence_ms);
+        assert_eq!(cfg.call_barge_in, d.call_barge_in);
+    }
+
+    /// A pre-existing `call.default` override (e.g. the user already picked a
+    /// tuned `stt_widget` by hand) is mutated in place: the tuning props are
+    /// written, every other prop the user configured survives — and the
+    /// persona mint's ref write composes with the tuning seed on the same
+    /// overlay.
+    #[test]
+    fn call_triggers_migration_preserves_existing_call_default_overlay_props() {
+        let mut cfg = AppConfig {
+            sts_persona: "You are Rex.".to_string(),
+            sts_voice: "af_bella".to_string(),
+            ..Default::default()
+        };
+        cfg.widgets.push(WidgetDef {
+            id: "call.default".to_string(),
+            role: WidgetRole::Output,
+            type_tag: "call".to_string(),
+            name: "My Call".to_string(),
+            icon: "📞".to_string(),
+            props: serde_json::json!({
+                "stt_widget": "stt.tuned",
+                "llm_widget": "",
+                "voice_profile": "",
+                "voice": "default",
+                "max_turns": 8,
+                "vad_sensitivity": 0.5,
+                "vad_silence_ms": 800,
+                "barge_in": true,
+            }),
+            builtin: false,
+        });
+
+        assert!(migrate_legacy_call_triggers(&mut cfg));
+
+        let w = cfg.widgets.iter().find(|w| w.id == "call.default").unwrap();
+        assert_eq!(w.name, "My Call", "existing overlay's name preserved");
+        assert_eq!(w.props["stt_widget"], "stt.tuned", "existing stt_widget ref preserved");
+        assert_eq!(w.props["llm_widget"], CALL_PERSONA_WIDGET_ID, "persona mint's ref landed");
+        assert_eq!(w.props["voice"], "af_bella", "tuning seed landed on the same overlay");
+    }
+
     // ── End-to-end: the FULL migration chain, in main.rs's exact order ──────
     // A regression test for the whole v0.6.x → current pipeline:
     // migrate_transform_to_text_actions → migrate_to_workflows →
     // migrate_settings_into_flow → remap_renamed_builtins →
     // migrate_hotkeys_to_triggers → migrate_primary_hotkey_to_pill →
-    // migrate_legacy_agent_triggers → migrate_legacy_meeting_triggers.
+    // migrate_legacy_agent_triggers → migrate_legacy_meeting_triggers →
+    // migrate_legacy_call_triggers.
     // Simulates
     // a realistic pre-Workbench-P1 config: legacy
     // dictation/toggle/note/notebook/listen/quick-transform hotkeys, a
@@ -2206,6 +2570,13 @@ mod tests {
         // migrate_legacy_meeting_triggers should seed this onto
         // meeting.default's props.summary_prompt, checked at (g) below.
         cfg.meeting_summary_prompt = "Summarize action items only.".to_string();
+        // Customized legacy STS persona + call tuning — Task 9's
+        // migrate_legacy_call_triggers should mint the persona widget and
+        // seed call.default's props, checked at (h) below.
+        cfg.sts_persona = "You are Rex, a spoken pirate.".to_string();
+        cfg.sts_llm_profile = "tuned-call-llm".to_string();
+        cfg.sts_voice = "af_bella".to_string();
+        cfg.call_vad_silence_ms = 1200;
 
         // A custom workflow overlay pre-dating Workbench P1: it already lives
         // in `config.workflows` (as Workflow P1/P2 would have written it) but
@@ -2237,6 +2608,7 @@ mod tests {
             "cmd+shift+a",     // agent (left at its default) → wf.agent-voice
             "cmd+shift+g",     // agent panel (left at its default) → wf.agent
             "option+m",        // meeting (left at its default) → wf.meeting
+            "option+s",        // STS walkie (left at its default) → wf.call
         ];
 
         let custom_modes = BTreeMap::new();
@@ -2250,6 +2622,7 @@ mod tests {
         assert!(migrate_primary_hotkey_to_pill(&mut cfg), "pill hotkey migration runs");
         assert!(migrate_legacy_agent_triggers(&mut cfg), "agent-triggers migration runs");
         assert!(migrate_legacy_meeting_triggers(&mut cfg), "meeting-triggers migration runs");
+        assert!(migrate_legacy_call_triggers(&mut cfg), "call-triggers migration runs");
 
         // (a) All sentinels set.
         assert!(cfg.workflow_migration_done, "workflow_migration_done set");
@@ -2258,6 +2631,7 @@ mod tests {
         assert!(cfg.pill_hotkey_migration_done, "pill_hotkey_migration_done set");
         assert!(cfg.agent_triggers_migration_done, "agent_triggers_migration_done set");
         assert!(cfg.meeting_triggers_migration_done, "meeting_triggers_migration_done set");
+        assert!(cfg.call_triggers_migration_done, "call_triggers_migration_done set");
 
         // (a2) The primary dictation hotkey landed on the pill, carrying its
         // capture ("hold" — wf.dictation's source is src.mic-hold).
@@ -2316,6 +2690,23 @@ mod tests {
         assert_eq!(meeting_default.props["summary_prompt"], cfg.meeting_summary_prompt);
         assert_eq!(cfg.meeting_summary_prompt, "Summarize action items only.");
 
+        // (h) The customized STS persona was minted into the llm.call-persona
+        // widget (carrying the tuned model profile) and call.default both
+        // references it and carries the seeded tuning; the fully-migrated
+        // tuning fields are back at their defaults, while sts_persona /
+        // sts_llm_profile are left in place (deprecated / live-read).
+        let minted = effective_widgets(&cfg).into_iter().find(|w| w.id == CALL_PERSONA_WIDGET_ID).expect("llm.call-persona");
+        assert_eq!(minted.props["system"], "You are Rex, a spoken pirate.");
+        assert_eq!(minted.props["model_profile"], "tuned-call-llm");
+        let call_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "call.default").expect("call.default");
+        assert_eq!(call_default.props["llm_widget"], CALL_PERSONA_WIDGET_ID);
+        assert_eq!(call_default.props["voice"], "af_bella");
+        assert_eq!(call_default.props["vad_silence_ms"], 1200);
+        assert_eq!(cfg.sts_voice, AppConfig::default().sts_voice, "fully-migrated field reset");
+        assert_eq!(cfg.call_vad_silence_ms, AppConfig::default().call_vad_silence_ms, "fully-migrated field reset");
+        assert_eq!(cfg.sts_persona, "You are Rex, a spoken pirate.", "persona field left in place");
+        assert_eq!(cfg.sts_llm_profile, "tuned-call-llm", "live-read fallback field untouched");
+
         // (e) Running the whole chain a second time changes nothing.
         let json_before = serde_json::to_string(&cfg).expect("serialize before second pass");
         let r1 = migrate_transform_to_text_actions(&mut cfg);
@@ -2326,9 +2717,10 @@ mod tests {
         let r6 = migrate_primary_hotkey_to_pill(&mut cfg);
         let r7 = migrate_legacy_agent_triggers(&mut cfg);
         let r8 = migrate_legacy_meeting_triggers(&mut cfg);
+        let r9 = migrate_legacy_call_triggers(&mut cfg);
         assert!(
-            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7 && !r8,
-            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7} r8={r8})"
+            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7 && !r8 && !r9,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7} r8={r8} r9={r9})"
         );
         let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
         assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");

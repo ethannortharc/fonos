@@ -43,6 +43,7 @@ use fonos_core::vad::{rms, speech_threshold_factor, BargeDetector, VadConfig, Va
 
 use crate::audio::capture::AudioCapture;
 use crate::audio::playback::AudioPlayback;
+use super::call_widget::ResolvedCallCfg;
 use super::AppState;
 use super::dictation::transcribe_samples;
 use super::sts::execute_turn;
@@ -197,32 +198,38 @@ impl CallLog {
     }
 }
 
-/// Whether a hands-free call is currently running (checked by the ⌥S hotkey so
-/// hold-to-talk stays disabled for the duration of a call).
+/// Whether a hands-free call is currently running (checked by
+/// `CallOutput::deliver` to decide which half of its start/hang-up toggle to
+/// run).
 pub fn is_call_active(state: &AppState) -> bool {
     state.call_active.load(Ordering::SeqCst)
 }
 
-/// Start a hands-free call. Idempotent: a second call while one is running is a
-/// no-op. Refuses to start on top of an in-flight hold-to-talk turn.
-#[tauri::command]
-pub async fn call_start(
+/// Start a hands-free call with an already-resolved [`ResolvedCallCfg`] (the
+/// single constructor is `CallOutput::deliver` — Workbench P2 Task 9, which
+/// retired the `call_start` command along with the Talk page). Idempotent: a
+/// second call while one is running is a no-op. Refuses to start on top of a
+/// live recording (the former `sts::turn_in_flight()` half of this guard is
+/// gone with the walkie mode — nothing sets it anymore). A non-empty
+/// `first_transcript` is spoken as the first turn before the listen loop.
+pub(crate) fn start_call(
     app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
+    state: &AppState,
+    call_cfg: ResolvedCallCfg,
+    first_transcript: Option<String>,
 ) -> Result<(), String> {
-    if super::sts::turn_in_flight() || super::dictation::is_recording() {
+    if super::dictation::is_recording() {
         return Err("Busy — finish the current turn first.".into());
     }
     if state.call_active.swap(true, Ordering::SeqCst) {
         return Ok(()); // already in a call
     }
     let active = state.call_active.clone();
-    let app2 = app.clone();
     // `call_started` is emitted from the loop once the audio path is known, so it
-    // can carry which path engaged (the UI's AEC truth chip). The frontend shows
-    // the call UI optimistically on the button press, so nothing waits on this.
+    // can carry which path engaged (the UI's AEC truth chip). The call panel shows
+    // its call UI on that event, so nothing waits on this.
     tauri::async_runtime::spawn(async move {
-        run_call_loop(app2, active).await;
+        run_call_loop(app, active, call_cfg, first_transcript).await;
     });
     Ok(())
 }
@@ -247,8 +254,8 @@ pub async fn call_stop(state: tauri::State<'_, AppState>) -> Result<(), String> 
 /// Does NOT hang up — the panel's own close button hangs up first (calling
 /// `call_stop`, which is safe in any phase) when it knows a call is active,
 /// then calls this. Kept as a plain hide here rather than folded into
-/// `call_stop` so a future non-UI caller of `call_stop` (e.g. the call
-/// composite widget's own lifecycle, Task 9) doesn't also hide a window it
+/// `call_stop` so non-UI callers of `call_stop` (the call composite widget's
+/// hang-up toggle in `CallOutput::deliver`) don't also hide a window they
 /// never showed.
 #[tauri::command(rename_all = "snake_case")]
 pub fn hide_call_panel(app: tauri::AppHandle) -> Result<(), String> {
@@ -410,21 +417,24 @@ impl CallAudio {
 /// Run one conversation turn for the call loop, routing the spoken reply
 /// through the call's audio source: macOS voice mode plays TTS via the helper
 /// engine (so VPIO's echo canceller sees the true reference), everything else
-/// keeps the default rodio playback + envelope reference.
+/// keeps the default rodio playback + envelope reference. `call_cfg` carries
+/// the pre-resolved persona/LLM/TTS/max_turns the turn executor used to read
+/// from config (Task 9's config-sourcing change; turn logic unchanged).
 async fn run_call_turn(
     app: &tauri::AppHandle,
     audio: &CallAudio,
     transcript: String,
     bridge: &crate::adapters::TurnEventBridge,
+    call_cfg: &ResolvedCallCfg,
 ) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     if let CallAudio::MacVoice(v) = audio {
         let out = v.audio_out();
-        return super::sts::execute_turn_with_audio(app, transcript, None, bridge, &out).await;
+        return super::sts::execute_turn_with_audio(app, transcript, call_cfg, bridge, &out).await;
     }
     #[cfg(not(target_os = "macos"))]
     let _ = audio; // only matched on macOS
-    execute_turn(app, transcript, None, bridge).await
+    execute_turn(app, transcript, call_cfg, bridge).await
 }
 
 /// Pick the call's audio source. With barge-in enabled, try platform system echo
@@ -541,21 +551,30 @@ enum Outcome {
 }
 
 /// The call loop: runs until the active flag clears or the VAD times out.
-async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
-    // Snapshot the tuning + shared handles once.
-    let (sensitivity, silence_ms, barge_enabled, device_name) = app
+///
+/// Task 9 (config-sourcing only): the VAD/barge tuning that used to be
+/// snapshotted from `cfg.call_*` here now arrives pre-resolved in `call_cfg`
+/// (single constructor: `CallOutput::deliver`); `audio_input_device` stays a
+/// live config read, as before. A non-empty `first_transcript` is spoken as
+/// one turn before the listen loop engages (mic closed during that reply —
+/// no listen phase has learned an ambient floor yet, so no barge monitor for
+/// turn zero).
+async fn run_call_loop(
+    app: tauri::AppHandle,
+    active: Arc<AtomicBool>,
+    call_cfg: ResolvedCallCfg,
+    first_transcript: Option<String>,
+) {
+    // Tuning comes pre-resolved; only the input-device name is snapshotted
+    // from config (unchanged live read, same "auto" fallback as before).
+    let (sensitivity, silence_ms, barge_enabled) =
+        (call_cfg.vad_sensitivity, call_cfg.vad_silence_ms, call_cfg.barge_in);
+    let device_name = app
         .state::<AppState>()
         .config
         .lock()
-        .map(|c| {
-            (
-                c.call_vad_sensitivity,
-                c.call_vad_silence_ms,
-                c.call_barge_in,
-                c.audio_input_device.clone(),
-            )
-        })
-        .unwrap_or((0.5, 800, true, "auto".to_string()));
+        .map(|c| c.audio_input_device.clone())
+        .unwrap_or_else(|_| "auto".to_string());
     let mut vad_cfg = VadConfig {
         sensitivity,
         silence_hang_ms: silence_ms.clamp(500, 2000),
@@ -595,7 +614,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     // The barge floor's ambient-seed multiplier: the same "clearly louder than
     // the quiet room" notion the listen VAD uses, plus an extra margin.
     let ambient_k = speech_threshold_factor(sensitivity) * BARGE_AMBIENT_MARGIN;
-    // No pill for call-mode turns — everything renders in the Conversation page.
+    // No pill for call-mode turns — everything renders in the call panel.
     let bridge = crate::adapters::TurnEventBridge::new(app.clone(), false);
     // Shared handle to the reply text of the turn in flight (updated by the
     // bridge on TurnEvent::Reply). The barge monitor reads it to compare a
@@ -609,6 +628,23 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
     // buffered samples (pre-roll + interrupting words) are stashed here and
     // seeded into the next listen so nothing they said is lost.
     let mut seed: Option<Vec<i16>> = None;
+
+    // First-turn seed (Task 9, additive pre-loop block): a non-empty first
+    // text (rare: a mic→STT recipe delivering into `call`) is spoken as one
+    // turn before the listen loop. Errors surface through the bridge and the
+    // call stays alive, same as an in-loop turn failure.
+    if let Some(t) = first_transcript.filter(|t| !t.trim().is_empty()) {
+        if active.load(Ordering::SeqCst) {
+            log.line(&format!("first-turn: seeded transcript ({} chars)", t.chars().count()));
+            match run_call_turn(&app, &audio, t, &bridge, &call_cfg).await {
+                Ok(text) => log.line(&format!(
+                    "first-turn: reply played to completion ({} chars)",
+                    text.chars().count()
+                )),
+                Err(e) => log.line(&format!("first-turn: turn error — {e}")),
+            }
+        }
+    }
 
     'session: loop {
         if !active.load(Ordering::SeqCst) {
@@ -717,9 +753,20 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
         }
 
         // ── TRANSCRIBE the accumulated utterance (shared STT path) ──
+        // The resolved stt_profile (None = global "stt", the retired mode's
+        // behavior) overrides the mode-based profile resolution; everything
+        // else about the "sts-page" mode string (pill silence, stats/storage
+        // labeling) is unchanged.
         let stt = {
             let st = app.state::<AppState>();
-            transcribe_samples(&app, st.inner(), buf, Some("sts-page".to_string())).await
+            transcribe_samples(
+                &app,
+                st.inner(),
+                buf,
+                Some("sts-page".to_string()),
+                call_cfg.stt_profile.clone(),
+            )
+            .await
         };
         let transcript = match stt {
             Ok(r) => r.text.trim().to_string(),
@@ -745,7 +792,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // Run the reply and a barge monitor concurrently. The turn future
             // only synthesizes + plays (it never touches capture); the monitor
             // owns capture. They can't fight over the lock.
-            let turn_fut = run_call_turn(&app, &audio, transcript, &bridge);
+            let turn_fut = run_call_turn(&app, &audio, transcript, &bridge, &call_cfg);
             let barge_fut = barge_monitor(
                 &app, &audio, &capture, &playback, &active, &log, ambient_floor, ambient_k,
                 &reply_slot,
@@ -806,7 +853,7 @@ async fn run_call_loop(app: tauri::AppHandle, active: Arc<AtomicBool>) {
             // sts_session lock and cancels any in-flight synthesis cleanly.
         } else {
             // Barge-in off: exact v1 behavior — mic closed, reply plays through.
-            let _ = execute_turn(&app, transcript, None, &bridge).await;
+            let _ = execute_turn(&app, transcript, &call_cfg, &bridge).await;
         }
 
         if !active.load(Ordering::SeqCst) {
@@ -1219,14 +1266,14 @@ fn stop_capture(capture: &Arc<Mutex<Option<AudioCapture>>>) {
     super::dictation::clear_recording_flag();
 }
 
-/// Mirror a call-lifecycle event onto the `sts:event` channel the Conversation
-/// page listens on (same shape as [`crate::adapters::TurnEventBridge`]).
+/// Mirror a call-lifecycle event onto the `sts:event` channel the call panel
+/// listens on (same shape as [`crate::adapters::TurnEventBridge`]).
 fn emit_call(app: &tauri::AppHandle, kind: &str, text: &str) {
     let _ = app.emit("sts:event", serde_json::json!({ "kind": kind, "text": text }));
 }
 
 /// The `call_started` event, carrying which audio path engaged (`"aec"` / `"ec"`
-/// / `"fallback"`) so the Conversation page can render its AEC truth chip.
+/// / `"fallback"`) so the call panel can render its AEC truth chip.
 fn emit_call_started(app: &tauri::AppHandle, audio: &str) {
     let _ = app.emit(
         "sts:event",

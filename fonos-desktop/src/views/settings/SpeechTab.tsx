@@ -1,6 +1,9 @@
-// Speech settings — voice-output pipelines: the Listen queue (issue #23) and
-// the STS conversation (issue #24). Layout follows the settings conventions:
-// section header + description, aligned label/control rows, compact controls.
+// Speech settings — the Listen queue's voice-output pipeline (issue #23).
+// Layout follows the settings conventions: section header + description,
+// aligned label/control rows, compact controls. The STS conversation section
+// that used to live below it was retired by Workbench P2 Task 9 — the call's
+// persona/voice/VAD tuning now lives on the `call.default` composite widget
+// (Workbench → Components → Call).
 
 import { useEffect, useState } from "react";
 import type { AppConfig, ModeEntry, ModelProfile, VoiceEntry } from "../../types";
@@ -187,7 +190,6 @@ export default function SpeechTab({
   useT();
   const profiles = (config.model_profiles ?? []) as ModelProfile[];
   const ttsProfiles = profiles.filter((p) => p.capabilities?.includes("tts"));
-  const llmProfiles = profiles.filter((p) => p.capabilities?.includes("llm"));
   const llmModes = modes.filter((m) => m.system || m.user_template);
   const [voices, setVoices] = useState<VoiceEntry[]>([]);
   const [serverVoices, setServerVoices] = useState<Record<string, string[]>>({});
@@ -198,16 +200,13 @@ export default function SpeechTab({
       .catch(() => {});
   }, []);
 
-  // Ask the server which speakers each selected voice profile's model has.
+  // Ask the server which speakers the selected voice profile's model has.
   const listenProfileId = config.listen_voice_profile ?? "";
-  const stsProfileId = config.sts_voice_profile ?? "";
   useEffect(() => {
-    for (const id of new Set([listenProfileId, stsProfileId])) {
-      listModelVoices(id)
-        .then((v) => setServerVoices((m) => ({ ...m, [id]: v })))
-        .catch(() => {});
-    }
-  }, [listenProfileId, stsProfileId]);
+    listModelVoices(listenProfileId)
+      .then((v) => setServerVoices((m) => ({ ...m, [listenProfileId]: v })))
+      .catch(() => {});
+  }, [listenProfileId]);
 
   const effectiveTtsModel = (profileId: string) => {
     const p =
@@ -270,167 +269,6 @@ export default function SpeechTab({
           />
         </Row>
       </div>
-
-      <div className="border-t border-[rgba(255,255,255,0.04)]" />
-
-      {/* ── Conversation ── */}
-      <div className="flex flex-col gap-2.5">
-        <SectionHeader
-          icon="💬"
-          title={t("speech.conv.title")}
-          desc={t("speech.conv.desc")}
-        />
-        <Row label={t("speech.conv.hotkey")}>
-          <div className="max-w-[240px]">
-            <HotkeyInput
-              value={config.hotkey_sts ?? "option+s"}
-              onChange={(v) => onSave({ hotkey_sts: v })}
-            />
-          </div>
-        </Row>
-        <Row label={t("speech.persona")} hint={t("speech.persona.hint")}>
-          <textarea
-            defaultValue={config.sts_persona ?? ""}
-            onBlur={(e) => {
-              if (e.target.value !== (config.sts_persona ?? "")) onSave({ sts_persona: e.target.value });
-            }}
-            rows={3}
-            spellCheck={false}
-            className={`${control} w-full max-w-[420px] resize-y leading-relaxed`}
-          />
-        </Row>
-        <Row label={t("speech.llm")} hint={t("speech.llm.hint")}>
-          <select
-            value={config.sts_llm_profile ?? ""}
-            onChange={(e) => onSave({ sts_llm_profile: e.target.value })}
-            className={`${selectControl} w-44`}
-          >
-            <option value="">{t("speech.default-llm-profile")}</option>
-            {llmProfiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row label={t("speech.voicemodel")} hint={t("speech.voicemodel.hint")}>
-          <select
-            value={config.sts_voice_profile ?? ""}
-            onChange={(e) => onSave({ sts_voice_profile: e.target.value })}
-            className={`${selectControl} w-44`}
-          >
-            <option value="">{t("speech.default-tts-profile")}</option>
-            {ttsProfiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row label={t("speech.voice")}>
-          <VoicePicker
-            value={config.sts_voice ?? "default"}
-            voices={voices}
-            modelName={effectiveTtsModel(stsProfileId)}
-            serverVoices={serverVoices[stsProfileId] ?? []}
-            onChange={(v) => onSave({ sts_voice: v })}
-          />
-        </Row>
-        <Row label={t("speech.memory")} hint={t("speech.memory.hint")}>
-          <input
-            type="number"
-            min={0}
-            max={50}
-            defaultValue={config.sts_max_turns ?? 8}
-            onBlur={(e) => {
-              const v = Math.max(0, Math.min(50, parseInt(e.target.value) || 0));
-              if (v !== (config.sts_max_turns ?? 8)) onSave({ sts_max_turns: v });
-            }}
-            className={`${control} w-20`}
-          />
-        </Row>
-        <Row label={t("speech.sensitivity")} hint={t("speech.sensitivity.hint")}>
-          <SensitivityPicker
-            value={config.call_vad_sensitivity ?? 0.5}
-            onChange={(v) => onSave({ call_vad_sensitivity: v })}
-          />
-        </Row>
-        <Row label={t("speech.silence")} hint={t("speech.silence.hint")}>
-          <SilenceSlider
-            value={config.call_vad_silence_ms ?? 800}
-            onChange={(v) => onSave({ call_vad_silence_ms: v })}
-          />
-        </Row>
-        <Row label={t("speech.barge")} hint={t("speech.barge.hint")}>
-          <label className="flex items-center gap-2 cursor-pointer pt-0.5">
-            <input
-              type="checkbox"
-              checked={config.call_barge_in ?? true}
-              onChange={(e) => onSave({ call_barge_in: e.target.checked })}
-              className="accent-[var(--accent)]"
-            />
-            <span className="text-[10.5px] text-[rgba(255,255,255,0.5)]">
-              {t("speech.barge.toggle")}
-            </span>
-          </label>
-        </Row>
-      </div>
-    </div>
-  );
-}
-
-/** Three-step Low / Medium / High selector for the call-mode VAD sensitivity
- *  (0.0–1.0). Buckets map Low → 0.25, Medium → 0.5, High → 0.8; the button
- *  nearest the stored value is highlighted. */
-/** Draggable 0.5–2.0s slider for the end-of-utterance silence window. */
-function SilenceSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const [live, setLive] = useState(value);
-  useEffect(() => setLive(value), [value]);
-  return (
-    <div className="flex items-center gap-3">
-      <input
-        type="range"
-        min={500}
-        max={2000}
-        step={100}
-        value={live}
-        onChange={(e) => setLive(parseInt(e.target.value))}
-        onPointerUp={() => { if (live !== value) onChange(live); }}
-        onKeyUp={() => { if (live !== value) onChange(live); }}
-        className="w-44 accent-[var(--accent)]"
-      />
-      <span className="text-[11px] text-[#fafaf9] tabular-nums w-10">{(live / 1000).toFixed(1)}s</span>
-    </div>
-  );
-}
-
-function SensitivityPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const steps = [
-    { val: 0.25, label: t("speech.sensitivity.low") },
-    { val: 0.5, label: t("speech.sensitivity.med") },
-    { val: 0.8, label: t("speech.sensitivity.high") },
-  ];
-  const activeIdx = steps.reduce(
-    (best, s, i) => (Math.abs(s.val - value) < Math.abs(steps[best].val - value) ? i : best),
-    0,
-  );
-  return (
-    <div className="inline-flex rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)]">
-      {steps.map((s, i) => (
-        <button
-          key={s.val}
-          onClick={() => onChange(s.val)}
-          className={`px-3 py-1.5 text-[10.5px] transition-colors ${
-            i > 0 ? "border-l border-[rgba(255,255,255,0.06)]" : ""
-          } ${
-            i === activeIdx
-              ? "bg-[rgba(242,184,75,0.14)] text-[var(--accent)]"
-              : "bg-[rgba(255,255,255,0.03)] text-[rgba(255,255,255,0.45)] hover:text-[rgba(255,255,255,0.75)]"
-          }`}
-        >
-          {s.label}
-        </button>
-      ))}
     </div>
   );
 }

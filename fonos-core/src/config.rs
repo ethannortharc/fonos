@@ -210,29 +210,64 @@ pub struct AppConfig {
     /// Voice identifier for listen synthesis (provider-specific).
     pub listen_voice: String,
 
-    // ── STS conversation (issue #24) ─────────────────────────────────────
+    // ── STS conversation (issue #24) — legacy fields, Workbench P2 Task 9 ──
+    // The Talk page + STS walkie mode are retired; the hands-free call now
+    // lives in the `call.default` composite widget (`CallProps`) and the
+    // `wf.call` recipe. Most fields below are DEPRECATED: one-time-migrated by
+    // [`crate::workflow::migrate::migrate_legacy_call_triggers`] and then
+    // reset, with no live readers left. `sts_llm_profile` is the exception —
+    // see its doc comment.
 
-    /// Global hotkey: hold-to-talk conversation turn.
+    /// DEPRECATED (Workbench P2 Task 9): global hotkey for the retired
+    /// hold-to-talk conversation turn. One-time-migrated into a
+    /// `Trigger::Hotkey` chip on `wf.call` (where the same key now toggles a
+    /// hands-free call), then cleared. No remaining readers.
     pub hotkey_sts: String,
-    /// Persona / system prompt for the conversation chat stage.
+    /// DEPRECATED (Workbench P2 Task 9): persona / system prompt for the
+    /// conversation chat stage. A non-empty, non-default value is one-time
+    /// minted into a custom `llm` widget (「通话人格」, system = this field,
+    /// model_profile = `sts_llm_profile`) referenced by `call.default`'s
+    /// `llm_widget`; the default persona lives on as
+    /// `commands::call_widget`'s built-in fallback constant. Left in place
+    /// after migration (not cleared) so a hand-inspected config still shows
+    /// where the minted persona came from — same treatment as
+    /// `agent_system_prompt`.
     pub sts_persona: String,
-    /// LLM profile id for conversation; empty = fall back to `llm_profile`.
+    /// LLM profile id for the call's conversation stage; empty = fall back to
+    /// `llm_profile`. DEPRECATED but still LIVE-READ (Workbench P2 Task 9):
+    /// it names a model profile, not a widget, so — exactly like
+    /// `meeting_stt_profile`/`meeting_llm_profile` — there is no ref it can
+    /// faithfully become. It stays the middle rung of the call composite's
+    /// resolve-time fallback chain (`llm_widget` ref → this field → global
+    /// `"llm"`), a documented permanent exception to the "no readers after
+    /// migration" ideal.
     pub sts_llm_profile: String,
-    /// TTS profile id for the spoken reply; empty = fall back to `tts_profile`.
+    /// DEPRECATED (Workbench P2 Task 9): TTS profile id for the spoken reply.
+    /// One-time-migrated into `call.default`'s `voice_profile` prop, then
+    /// reset to its default. No remaining readers.
     pub sts_voice_profile: String,
-    /// Voice identifier for the spoken reply.
+    /// DEPRECATED (Workbench P2 Task 9): voice identifier for the spoken
+    /// reply. One-time-migrated into `call.default`'s `voice` prop, then
+    /// reset to its default. No remaining readers.
     pub sts_voice: String,
-    /// Conversation memory: max user/assistant turn pairs kept.
+    /// DEPRECATED (Workbench P2 Task 9): conversation memory (max
+    /// user/assistant turn pairs kept). One-time-migrated into
+    /// `call.default`'s `max_turns` prop, then reset to its default. No
+    /// remaining readers.
     pub sts_max_turns: usize,
-    /// Call-mode voice-activity sensitivity (0.0–1.0). Higher detects speech
-    /// more eagerly (ends turns sooner); lower waits for louder, clearer
-    /// speech. Default `0.5`.
+    /// DEPRECATED (Workbench P2 Task 9): call-mode voice-activity sensitivity
+    /// (0.0–1.0). One-time-migrated into `call.default`'s `vad_sensitivity`
+    /// prop, then reset to its default (`0.5`). No remaining readers.
     pub call_vad_sensitivity: f32,
-    /// Call mode: trailing silence (ms) that ends an utterance (500–2000).
+    /// DEPRECATED (Workbench P2 Task 9): trailing silence (ms) that ends an
+    /// utterance (500–2000). One-time-migrated into `call.default`'s
+    /// `vad_silence_ms` prop, then reset to its default (`800`). No remaining
+    /// readers.
     pub call_vad_silence_ms: u32,
-    /// Call mode: allow the user to interrupt (barge in on) the spoken reply by
-    /// speaking over it. When `false`, the mic stays closed during playback
-    /// (the original one-turn-at-a-time behavior). Default `true`.
+    /// DEPRECATED (Workbench P2 Task 9): allow the user to interrupt (barge
+    /// in on) the spoken reply by speaking over it. One-time-migrated into
+    /// `call.default`'s `barge_in` prop, then reset to its default (`true`).
+    /// No remaining readers.
     pub call_barge_in: bool,
 
     // ── Custom vocabulary ────────────────────────────────────────────────
@@ -312,6 +347,14 @@ pub struct AppConfig {
     /// See [`crate::workflow::migrate::migrate_legacy_meeting_triggers`].
     #[serde(default)]
     pub meeting_triggers_migration_done: bool,
+    /// One-shot migration sentinel: the legacy `hotkey_sts` folded into a
+    /// `Trigger::Hotkey` chip on the `wf.call` recipe, a non-default
+    /// `sts_persona` minted into a custom `llm` widget referenced by
+    /// `call.default`, and the legacy `sts_voice*`/`sts_max_turns`/`call_*`
+    /// tuning seeded into `call.default`'s props (Workbench P2 Task 9). See
+    /// [`crate::workflow::migrate::migrate_legacy_call_triggers`].
+    #[serde(default)]
+    pub call_triggers_migration_done: bool,
 }
 
 fn default_pill_hotkey_capture() -> String {
@@ -395,6 +438,7 @@ impl Default for AppConfig {
             pill_hotkey_migration_done: false,
             agent_triggers_migration_done: false,
             meeting_triggers_migration_done: false,
+            call_triggers_migration_done: false,
         }
     }
 }

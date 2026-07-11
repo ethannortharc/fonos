@@ -431,33 +431,10 @@ export async function testSkill(id: string, input: string): Promise<string> {
   return invoke<string>("test_skill", { id, input });
 }
 
-// ── STS conversation (issue #24) ──────────────────────────────────────────
-
-export async function stsPageStart(): Promise<void> {
-  return invoke<void>("sts_page_start");
-}
-
-export async function stsPageStop(persona?: string): Promise<string> {
-  return invoke<string>("sts_page_stop", { persona: persona ?? null });
-}
-
-export async function getStsHistory(): Promise<[string, string][]> {
-  return invoke<[string, string][]>("get_sts_history");
-}
-
-export async function resetStsSession(): Promise<void> {
-  return invoke<void>("reset_sts_session");
-}
-
-/** Start a hands-free call (listen → reply loop) until hung up. */
-export async function callStart(): Promise<void> {
-  return invoke<void>("call_start");
-}
-
-/** Hang up the hands-free call. Safe to call in any phase. */
-export async function callStop(): Promise<void> {
-  return invoke<void>("call_stop");
-}
+// The STS walkie / Talk-page API (stsPageStart/Stop, getStsHistory,
+// resetStsSession, callStart/callStop) was retired with the Talk page
+// (Workbench P2 Task 9): calls now start via the `call` composite widget and
+// the call-panel satellite window invokes call_stop/hide_call_panel directly.
 
 export async function listModelVoices(profileId: string): Promise<string[]> {
   return invoke<string[]>("list_model_voices", { profileId });

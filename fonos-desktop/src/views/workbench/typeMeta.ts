@@ -20,11 +20,9 @@ import type { WidgetRole } from "../../types";
 // role-keyed (not shelf-keyed) because it's the semantic source consumed by
 // pickers/validation (RecipesSection's new-widget picker, WidgetForm's
 // isNew type_tag <select>): those only ever need to know "what can this
-// role instantiate", never which shelf a tag renders on. call/agent/meeting
-// are listed here even though their backend factories don't land until
-// T6/T7/T9 — save_widget's known_type_tags check (workflow_cfg.rs) rejects
-// an attempt to create one with a clear "not a registered Output widget"
-// error in the meantime, which is an acceptable interim per the P2 plan.
+// role instantiate", never which shelf a tag renders on. All four session
+// composites (dialog/agent/meeting/call) now have registered backend
+// factories (T4/T6/T7/T9), so every tag here is creatable.
 export const TYPE_TAGS: Record<WidgetRole, string[]> = {
   source: ["microphone", "selection", "instant"],
   processor: ["stt", "llm"],
@@ -39,13 +37,10 @@ export const TYPE_TAGS: Record<WidgetRole, string[]> = {
 // names the "stt"-type widget it delegates to. usageCount (lib/triggers.ts)
 // reads this table to count a widget still embedded inside a composite as
 // "in use", even though no workflow's source/processors/outputs names it
-// directly (pierced usage). "dialog" is creatable today (T4's PropsForm
-// case + registered factory); call/agent/meeting are now in TYPE_TAGS (Task
-// 5) but have no PropsForm case or registered factory until T6/T7/T9 — the
-// backend's known_type_tags check rejects a creation attempt for those three
-// with a clear error in the meantime, so this table has no runtime effect
-// for them yet; it exists now so the two sides (Rust/TS) can't drift once
-// they do.
+// directly (pierced usage). All four composites now have PropsForm cases +
+// registered factories (dialog T4, agent T6, meeting T7, call T9), so every
+// row here is live; it mirrors fonos-core's widget_ref_props so the two
+// sides (Rust/TS) can't drift.
 export const WIDGET_REF_PROPS: Record<string, string[]> = {
   dialog: ["llm_widget"],
   call: ["stt_widget", "llm_widget"],

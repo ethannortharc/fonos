@@ -354,7 +354,7 @@ pub async fn stop_recording(app: tauri::AppHandle, state: tauri::State<'_, AppSt
         None => return Ok(empty_stt_result()),
     };
 
-    transcribe_samples(&app, state.inner(), all_samples, mode_override).await
+    transcribe_samples(&app, state.inner(), all_samples, mode_override, None).await
 }
 
 /// Stop the live capture and drain every buffered sample, flipping the
@@ -392,12 +392,17 @@ pub(crate) fn stop_and_drain(state: &AppState) -> Result<Option<Vec<i16>>, Strin
 /// and the hands-free call loop (which accumulates chunks itself while running
 /// VAD), so both take exactly the same STT + vocab + stats + storage path.
 /// `mode_override` selects the STT profile and gates the float-pill lifecycle
-/// just as before ("sts-page" and "agent" stay silent).
+/// just as before ("sts-page" and "agent" stay silent). `stt_profile_override`
+/// (Workbench P2 Task 9) is a highest-priority STT profile id — the call
+/// composite's resolved `stt_widget` ref — that beats the mode-based profile
+/// resolution when `Some`; every other caller passes `None` (unchanged
+/// behavior).
 pub(crate) async fn transcribe_samples(
     app: &tauri::AppHandle,
     state: &AppState,
     all_samples: Vec<i16>,
     mode_override: Option<String>,
+    stt_profile_override: Option<String>,
 ) -> Result<SttResult, String> {
     let stop_time = std::time::Instant::now();
 
@@ -422,7 +427,7 @@ pub(crate) async fn transcribe_samples(
         mode_has_llm,
         recording_duration,
         preprocess_metrics,
-    } = transcribe_core(app, state, all_samples, mode_override, true).await?;
+    } = transcribe_core(app, state, all_samples, mode_override, stt_profile_override, true).await?;
 
     let latency_ms = stop_time.elapsed().as_millis() as u64;
 
@@ -570,13 +575,16 @@ struct SttCore {
 /// No stats, storage, or float-pill side effects of its own; an STT *error* is
 /// still surfaced to the float pill for interactive modes (not "agent"/"sts-page"),
 /// exactly as before. `mode_override` selects the STT profile just as in
-/// [`transcribe_samples`]; `apply_vocab` runs the vocab rules (the verifier skips
-/// them for speed).
+/// [`transcribe_samples`]; `stt_profile_override` (Task 9, the call
+/// composite's resolved `stt_widget` ref — possibly the `"apple-speech"`
+/// sentinel) beats the mode-based resolution when `Some`; `apply_vocab` runs
+/// the vocab rules (the verifier skips them for speed).
 async fn transcribe_core(
     app: &tauri::AppHandle,
     state: &AppState,
     all_samples: Vec<i16>,
     mode_override: Option<String>,
+    stt_profile_override: Option<String>,
     apply_vocab: bool,
 ) -> Result<SttCore, String> {
     let recording_duration = all_samples.len() as f64 / 16000.0;
@@ -605,8 +613,23 @@ async fn transcribe_core(
     let vocab_refs: Vec<&fonos_core::vocab::VocabBook> = vocab_books.iter().collect();
     let vocab_terms = fonos_core::vocab::collect_terms(&vocab_refs);
 
-    // Read STT config — check for Apple Speech sentinel, then mode override, then global default
-    let stt = match current_mode {
+    // Read STT config — an explicit profile override (Task 9: the call
+    // composite's resolved stt_widget ref) wins outright, then the Apple
+    // Speech sentinel, then the mode override, then the global default.
+    let stt = match &stt_profile_override {
+        Some(profile) if profile == "apple-speech" => {
+            eprintln!("fonos: STT using Apple Speech on-device (override, mode={dictation_mode})");
+            super::ServiceConfig {
+                base_url: String::new(), api_key: String::new(),
+                model: "apple-speech".to_string(), provider: "apple".to_string(),
+                stt_api: "whisper".to_string(),
+            }
+        }
+        Some(profile) => {
+            eprintln!("fonos: STT using explicit override profile '{profile}' (mode={dictation_mode})");
+            super::get_service_config_for_profile(state, profile)
+        }
+        None => match current_mode {
         Some(mode) if mode.stt_model == "apple-speech" => {
             eprintln!("fonos: STT using Apple Speech on-device (mode={})", dictation_mode);
             super::ServiceConfig {
@@ -623,6 +646,7 @@ async fn transcribe_core(
             eprintln!("fonos: STT using global default profile (mode={})", dictation_mode);
             super::get_service_config(&state, "stt")
         }
+        },
     };
     eprintln!("fonos: STT provider={} endpoint={} model={}", stt.provider, stt.base_url, stt.model);
 
@@ -826,7 +850,8 @@ pub(crate) async fn transcribe_stt_only(
     if all_samples.is_empty() {
         return Ok(String::new());
     }
-    let core = transcribe_core(app, state, all_samples, Some("sts-page".to_string()), false).await?;
+    let core =
+        transcribe_core(app, state, all_samples, Some("sts-page".to_string()), None, false).await?;
     Ok(core.transcript)
 }
 

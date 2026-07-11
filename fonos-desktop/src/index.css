@@ -199,8 +199,8 @@ select:focus-visible {
   animation: mic-ambient-floor 1.7s cubic-bezier(.45, 0, .18, 1) infinite;
 }
 
-/* Shared voice-control button — the dictation mic button (Dictation.tsx) and the
-   call button (Conversation.tsx) are one family. Base = idle: the sheen/caustic
+/* Shared voice-control button family (MicButton.tsx; the Talk page's call
+   button, retired in Workbench P2 T9, shared it). Base = idle: the sheen/caustic
    pseudo-layers sit at their animation rest frame, static (no animation). The
    -live class turns the sheen/caustic animations on and adds the breathing halo;
    -idle gets the warm amber fill + hover lift; prefers-reduced-motion keeps
@@ -341,63 +341,6 @@ select:focus-visible {
   animation: voice-button-live-pulse 2.1s ease-in-out infinite;
 }
 
-.fonos-call-dock {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  background:
-    radial-gradient(ellipse 42% 115% at 50% -34%, rgba(255,207,112,0.12), rgba(225,144,40,0.035) 46%, transparent 72%),
-    linear-gradient(180deg, rgba(38,36,31,0.96), rgba(23,22,19,0.94));
-  border: 1px solid rgba(255,255,255,0.085);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.045),
-    inset 0 -1px 0 rgba(0,0,0,0.2),
-    0 18px 46px rgba(7,5,2,0.23);
-}
-
-.fonos-call-dock::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  top: 0;
-  left: 24%;
-  right: 24%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(244,193,96,0.52), transparent);
-}
-
-.fonos-call-dock::after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  left: 50%;
-  bottom: -34px;
-  width: 110px;
-  height: 54px;
-  border-radius: 50%;
-  transform: translateX(-50%);
-  background: rgba(216,137,34,0.09);
-  filter: blur(18px);
-  pointer-events: none;
-}
-
-.fonos-call-meter {
-  background: rgba(242,184,75,0.48);
-  box-shadow: 0 0 8px rgba(242,184,75,0.08);
-  transform-origin: center;
-}
-
-@keyframes call-meter-live {
-  0%, 100% { transform: scaleY(0.46); opacity: 0.42; }
-  48% { transform: scaleY(1); opacity: 0.95; }
-}
-
-.fonos-call-meter-live {
-  background: rgba(255,104,84,0.85);
-  box-shadow: 0 0 9px rgba(255,104,84,0.16);
-  animation: call-meter-live 0.82s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   /* Live-state selectors so these win over the -live animation rules above
      (same specificity, later in source). Idle already has no animation. */
@@ -406,6 +349,5 @@ select:focus-visible {
   .fonos-mic-ambient-live .fonos-mic-ambient-floor,
   .fonos-voice-button-live::before,
   .fonos-voice-button-live::after,
-  .fonos-voice-button-live,
-  .fonos-call-meter-live { animation: none; }
+  .fonos-voice-button-live { animation: none; }
 }

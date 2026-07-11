@@ -109,8 +109,8 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
         ),
         // `src.instant` has no acquisition step at all — it produces empty
         // text immediately (see `InstantSource::allows_empty`) and seeds
-        // "blank-open" session-composite recipes: `wf.agent` (Task 6) and
-        // `wf.meeting` (Task 7) so far; `call` (Task 9) still pending.
+        // "blank-open" session-composite recipes: `wf.agent` (Task 6),
+        // `wf.meeting` (Task 7), and `wf.call` (Task 9).
         widget("src.instant", Source, "instant", "即刻", "⚡", serde_json::json!({})),
         // ── Processors ───────────────────────────────────────────────────
         widget(
@@ -313,6 +313,32 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
                 "summary_prompt": "",
             }),
         ),
+        // Session composite (Workbench P2 Task 9): hands-free voice call —
+        // listen → transcribe → persona LLM → spoken reply, looping until
+        // hangup. `stt_widget` empty ⇒ the global `"stt"` profile (the
+        // retired sts-page transcribe path's behavior); `llm_widget` empty ⇒
+        // the legacy `sts_llm_profile`→`llm_profile` chain (still live-read —
+        // same id-space mismatch as the meeting profile fields) with the
+        // built-in call persona; `voice_profile` empty ⇒ the global `"tts"`
+        // profile. The tuning props mirror the legacy `sts_*`/`call_*` config
+        // defaults — see `commands::call_widget::CallProps`.
+        widget(
+            "call.default",
+            Output,
+            "call",
+            "通话",
+            "📞",
+            serde_json::json!({
+                "stt_widget": "",
+                "llm_widget": "",
+                "voice_profile": "",
+                "voice": "default",
+                "max_turns": 8,
+                "vad_sensitivity": 0.5,
+                "vad_silence_ms": 800,
+                "barge_in": true,
+            }),
+        ),
     ]
 }
 
@@ -374,6 +400,15 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
         // records its own meeting_session container/entries instead, exactly
         // as the legacy hotkey_meeting arm's start_meeting/stop_meeting did.
         workflow("wf.meeting", "会议", "🗓", "src.instant", &[], &["meeting.default"]),
+        // Session composite (Workbench P2 Task 9): blank-open toggle front for
+        // the call.default output — one recipe covers both halves of the call
+        // toggle (start a call when idle, hang up when one is live), the
+        // branch living inside `CallOutput::deliver` itself, exactly like
+        // wf.meeting's start/stop toggle. src.instant never records a
+        // top-level history entry (engine::run's empty-final-text skip) — the
+        // call's own turns are recorded by the shared transcribe path, as the
+        // retired Talk page's were.
+        workflow("wf.call", "通话", "📞", "src.instant", &[], &["call.default"]),
     ];
 
     // Workbench P1: every microphone-sourced builtin gets a pill-roller
@@ -660,6 +695,41 @@ mod tests {
         assert_eq!(voice.processors, vec!["stt.default".to_string()]);
         assert_eq!(voice.outputs, vec!["agent.default".to_string()]);
         assert!(voice.pill_order().is_some(), "mic-sourced builtin must carry a PillSlot");
+    }
+
+    /// Task 9: the call composite builtin + its blank-open toggle recipe
+    /// ship with the expected shape (mirrors `meeting_builtins_present_and_wired`).
+    /// The tuning props must mirror the legacy config defaults byte-for-byte
+    /// (`CallProps`' serde defaults on the desktop side assert the same).
+    #[test]
+    fn call_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let c = widgets.iter().find(|w| w.id == "call.default").expect("call.default");
+        assert_eq!(c.role, WidgetRole::Output);
+        assert_eq!(c.type_tag, "call");
+        assert_eq!(c.props["stt_widget"], "");
+        assert_eq!(c.props["llm_widget"], "");
+        assert_eq!(c.props["voice_profile"], "");
+        assert_eq!(c.props["voice"], "default");
+        assert_eq!(c.props["max_turns"], 8);
+        assert_eq!(c.props["vad_sensitivity"], 0.5);
+        assert_eq!(c.props["vad_silence_ms"], 800);
+        assert_eq!(c.props["barge_in"], true);
+
+        // The legacy config defaults the props were seeded from.
+        let cfg = AppConfig::default();
+        assert_eq!(c.props["voice"], cfg.sts_voice.as_str());
+        assert_eq!(c.props["max_turns"], cfg.sts_max_turns);
+        assert_eq!(c.props["vad_sensitivity"].as_f64().unwrap(), cfg.call_vad_sensitivity as f64);
+        assert_eq!(c.props["vad_silence_ms"], cfg.call_vad_silence_ms);
+        assert_eq!(c.props["barge_in"], cfg.call_barge_in);
+
+        let workflows = built_in_workflows();
+        let wf = workflows.iter().find(|w| w.id == "wf.call").expect("wf.call");
+        assert_eq!(wf.source, "src.instant");
+        assert!(wf.processors.is_empty());
+        assert_eq!(wf.outputs, vec!["call.default".to_string()]);
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
     }
 
     /// Task 7: the meeting composite builtin + its blank-open toggle recipe

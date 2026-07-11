@@ -24,7 +24,6 @@ import { pillWorkflows } from "../lib/triggers";
 import { rowToDef } from "./workbench/RecipesSection";
 
 const captureSelectClass = selectClass.replace("w-full ", "") + " w-auto";
-const kbd = "font-mono text-[10.5px] text-[var(--text-primary,#f5f3ef)] bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.075)] rounded-[5px] px-1.5 py-px";
 
 export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: string) => void }) {
   const t = useT();
@@ -96,18 +95,11 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   const presets = rows.filter((w) => w.builtin);
   const customs = rows.filter((w) => !w.builtin);
   const pill = pillWorkflows(rows);
-  // Agent's legacy row was removed here (Fix Round 1): config.hotkey_agent is
-  // now always empty post-migration (migrate_legacy_agent_triggers folds it
-  // into a wf.agent-voice/wf.agent Hotkey chip and clears the field), so this
-  // row would never render anyway — the filter below just made it silently
-  // vanish instead of being obviously dead code. Meeting's legacy row was
-  // removed the same way by Task 7 (config.hotkey_meeting is now always
-  // empty post-migration too — migrate_legacy_meeting_triggers folds it into
-  // wf.meeting's own Hotkey chip). STS stays legacy until T9 gives it its
-  // own composite recipe.
-  const legacy: { combo?: string; label: string }[] = [
-    { combo: config.hotkey_sts, label: "STS" },
-  ].filter((x) => !!x.combo);
+  // The legacy read-only hotkey rows are gone entirely: agent (Task 6 Fix
+  // Round 1), meeting (Task 7), and finally STS (Task 9 —
+  // migrate_legacy_call_triggers folds config.hotkey_sts into wf.call's own
+  // Hotkey chip and clears the field) each migrated into recipe trigger
+  // chips, so every trigger now renders through the table above.
 
   return (
     <div className="h-full flex flex-col">
@@ -187,23 +179,6 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
             ))}
           </div>
 
-          {/* Legacy rows — pre-workflow hotkeys (agent/meeting/sts), read-only. */}
-          {legacy.length > 0 && (
-            <table className="w-full border-collapse text-[11px] mt-1">
-              <tbody>
-                {legacy.map((l, i) => (
-                  <tr key={`legacy-${i}`} className="border-t border-[rgba(255,255,255,0.045)] text-[rgba(255,255,255,0.28)]">
-                    <td className="py-1.5 pr-2 w-[220px]"><span className={kbd}>{l.combo}</span></td>
-                    <td className="w-[30px] text-center">→</td>
-                    <td>
-                      {l.label}
-                      <span className="ml-1.5 rounded-[5px] border border-[rgba(255,255,255,0.09)] px-1.5 text-[9px]">{t("wb.overview.legacy")}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
     </div>

@@ -226,7 +226,7 @@ pub(crate) async fn run_agent_exchange(
     }
 
     #[cfg(target_os = "macos")]
-    super::move_agent_panel_to_cursor(app);
+    super::move_panel_to_cursor(app, "agent-panel", 340, 0, super::PanelAnchor::TopCenter);
     if let Some(panel) = app.get_webview_window("agent-panel") {
         let _ = panel.show();
         let _ = panel.set_focus();
@@ -414,7 +414,7 @@ impl Output for AgentOutput {
             // the user drives the rest via the panel's own commands, exactly
             // like the legacy "agent-panel" toggle arm's show branch.
             #[cfg(target_os = "macos")]
-            super::move_agent_panel_to_cursor(&self.app);
+            super::move_panel_to_cursor(&self.app, "agent-panel", 340, 0, super::PanelAnchor::TopCenter);
             if let Some(panel) = self.app.get_webview_window("agent-panel") {
                 let _ = panel.show();
                 let _ = panel.set_focus();

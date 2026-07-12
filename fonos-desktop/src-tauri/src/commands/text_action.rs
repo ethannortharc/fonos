@@ -41,14 +41,14 @@ pub(crate) async fn show_panel_at_cursor(handle: &tauri::AppHandle, w: u32, h: u
             w as f64, h as f64,
         )));
     }
-    // NOTE: `move_text_action_panel_to_cursor` lives in `commands/mod.rs`,
+    // NOTE: `move_panel_to_cursor` lives in `commands/mod.rs`,
     // not `crate::` (main.rs) as the task brief assumed — see the doc
     // comment on `commands::monitor_under_cursor` for why (main.rs and
     // lib.rs each declare their own independent `mod commands;`, and a
     // crate-root item defined only in main.rs isn't visible when this file
     // is compiled as part of the lib.rs crate root).
     #[cfg(target_os = "macos")]
-    super::move_text_action_panel_to_cursor(handle, w, h);
+    super::move_panel_to_cursor(handle, "text-action-panel", w, h, super::PanelAnchor::Cursor);
     if let Some(panel) = handle.get_webview_window("text-action-panel") {
         let _ = panel.show();
         let _ = panel.set_focus();

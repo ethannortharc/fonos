@@ -73,11 +73,11 @@ pub(crate) async fn show_dialog_at_cursor(handle: &tauri::AppHandle, w: u32, h: 
             w as f64, h as f64,
         )));
     }
-    // `move_dialog_panel_to_cursor` lives in `commands/mod.rs` (reachable via
+    // `move_panel_to_cursor` lives in `commands/mod.rs` (reachable via
     // `super::`) for the same lib.rs/main.rs module-split reason documented on
     // `commands::monitor_under_cursor`.
     #[cfg(target_os = "macos")]
-    super::move_dialog_panel_to_cursor(handle, w, h);
+    super::move_panel_to_cursor(handle, "dialog-panel", w, h, super::PanelAnchor::Cursor);
     if let Some(panel) = handle.get_webview_window("dialog-panel") {
         let _ = panel.show();
         let _ = panel.set_focus();

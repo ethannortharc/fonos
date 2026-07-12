@@ -342,7 +342,7 @@ impl Output for CallOutput {
         // tauri.conf.json). The panel is a pure sts:event consumer — no eval
         // handshake, so no settle sleep is needed before starting the loop.
         #[cfg(target_os = "macos")]
-        super::move_call_panel_to_cursor(&self.app, 380, 520);
+        super::move_panel_to_cursor(&self.app, "call-panel", 380, 520, super::PanelAnchor::Cursor);
         if let Some(panel) = self.app.get_webview_window("call-panel") {
             let _ = panel.show();
             let _ = panel.set_focus();

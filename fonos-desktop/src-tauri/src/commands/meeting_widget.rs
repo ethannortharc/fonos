@@ -352,7 +352,7 @@ impl MeetingOutput {
         };
 
         #[cfg(target_os = "macos")]
-        super::move_meeting_panel_to_cursor(&self.app);
+        super::move_panel_to_cursor(&self.app, "meeting-panel", 520, 0, super::PanelAnchor::BottomRight { top_margin: 80.0 });
         if let Some(panel) = self.app.get_webview_window("meeting-panel") {
             let _ = panel.show();
             let _ = panel.set_focus();

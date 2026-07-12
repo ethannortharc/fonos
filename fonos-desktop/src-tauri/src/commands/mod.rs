@@ -244,8 +244,8 @@ pub fn refresh_float_window(app: tauri::AppHandle) -> Result<(), String> {
 /// off every known display; `None` when no monitors are reported.
 ///
 /// Lives here (rather than in `main.rs`, where the sibling
-/// `move_*_panel_to_cursor` helpers are defined) so it — and
-/// [`move_text_action_panel_to_cursor`] below — are reachable via `super::`
+/// `move_*_panel_to_cursor` helpers used to be defined) so it — and
+/// [`move_panel_to_cursor`] below — are reachable via `super::`
 /// from `commands::text_action`. `main.rs` and `lib.rs` each declare their
 /// own independent `mod commands;`/`pub mod commands;` (the latter purely to
 /// re-export commands for integration tests), so a `crate::`-rooted item
@@ -281,177 +281,79 @@ pub(crate) fn monitor_under_cursor(
     Some((target, cursor))
 }
 
-/// Position the text-action panel near the mouse cursor, parameterized on the
-/// window's actual `(w, h)` (a panel's size comes from its `PanelSize` prop, not
-/// a fixed conf value). Below-right by default, flipped left/up when it would
-/// cross the monitor edge.
-#[cfg(target_os = "macos")]
-pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("text-action-panel") else { return };
-    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the panel's PanelSize
-    let offset = 12.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
-
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
+/// Anchor strategy for [`move_panel_to_cursor`]. The task-14 cleanup brief
+/// named this `Cursor | BottomRight`, but the agent panel's original
+/// placement (top-center, not offset from the cursor at all) is a genuinely
+/// third geometry — folding it into either existing variant would change its
+/// on-screen position, which the brief also requires to stay byte-identical.
+/// So this is `Cursor | TopCenter | BottomRight`, one variant per distinct
+/// placement strategy the five original `move_*_panel_to_cursor` functions
+/// implemented.
+pub(crate) enum PanelAnchor {
+    /// Below-right of the exact cursor position, flipped to the opposite
+    /// side when it would cross a monitor edge. Used by the text-action,
+    /// dialog, and call panels — `w`/`h` are the panel's actual current
+    /// size (its `PanelSize` prop, not a fixed conf value).
+    Cursor,
+    /// Horizontally centered near the top of the monitor under the cursor,
+    /// just below the macOS menu bar — doesn't otherwise use the cursor's
+    /// exact position. `w` is the panel's fixed width; `h` is unused.
+    TopCenter,
+    /// Flush with the monitor's right edge, `top_margin` down from the top —
+    /// a fixed corner so the panel doesn't obscure whatever app it's
+    /// annotating. `w` is the panel's fixed width; `h` is unused.
+    BottomRight { top_margin: f64 },
 }
 
-/// Position the dialog panel near the mouse cursor, parameterized on the
-/// window's actual `(w, h)` (a Dialog's size comes from its `PanelSize` prop,
-/// not a fixed conf value). Same below-right-then-flip logic as
-/// [`move_text_action_panel_to_cursor`], for the `"dialog-panel"` label.
+/// Position a satellite panel window relative to the monitor under the
+/// cursor. Parameterized on the window `label`, its current `(w, h)`
+/// (logical px — meaningless for the two fixed-geometry anchors, which still
+/// take `w` as their fixed width so callers don't need a separate constant),
+/// and an [`PanelAnchor`] picking which of the three placement strategies to
+/// use. Replaces five near-identical `move_{text_action,dialog,call,agent,
+/// meeting}_panel_to_cursor` copies (Workbench P2 Task 14); every call site
+/// now names its own window label and anchor directly instead of that being
+/// implied by which same-shaped function it happened to call.
 #[cfg(target_os = "macos")]
-pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
+pub(crate) fn move_panel_to_cursor(app: &tauri::AppHandle, label: &str, w: u32, h: u32, anchor: PanelAnchor) {
     use tauri::Manager;
-    let Some(panel) = app.get_webview_window("dialog-panel") else { return };
-    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the Dialog's PanelSize
-    let offset = 12.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
-
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
-/// Position the call panel near the mouse cursor, parameterized on the
-/// window's actual `(w, h)` — same below-right-then-flip logic as
-/// [`move_dialog_panel_to_cursor`], for the `"call-panel"` label. A call
-/// panel is anchored to the cursor (like Dialog) rather than a fixed corner
-/// (like Meeting): it's a peer to the Dialog panel's session-type surface,
-/// not a background recording indicator.
-///
-/// Called by `commands::call_widget::CallOutput::deliver` (Workbench P2
-/// Task 9) before showing the panel and starting the call loop.
-#[cfg(target_os = "macos")]
-pub(crate) fn move_call_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("call-panel") else { return };
+    let Some(panel) = app.get_webview_window(label) else { return };
     let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
     let (panel_w, panel_h) = (w as f64, h as f64);
-    let offset = 12.0_f64;
 
     let mon_x = target.position().x as f64 / scale;
     let mon_y = target.position().y as f64 / scale;
     let mon_w = target.size().width as f64 / scale;
     let mon_h = target.size().height as f64 / scale;
 
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
-/// Position the agent-panel window centered horizontally near the cursor,
-/// slightly above the vertical center of the screen. Unlike
-/// [`move_dialog_panel_to_cursor`]/[`move_text_action_panel_to_cursor`] this
-/// doesn't offset from the cursor's exact position — it only uses
-/// [`monitor_under_cursor`] to pick which monitor, then centers at a fixed
-/// top-of-screen position (below the macOS menu bar), matching the agent
-/// panel's original placement.
-///
-/// Moved here from `main.rs` (Workbench P2 Task 6, retiring the legacy agent
-/// hotkey arms) for the same reason [`move_dialog_panel_to_cursor`] lives
-/// here rather than in `main.rs`: `commands::agent_widget::run_agent_exchange`
-/// needs to call it, and only items under `commands/` are reachable from both
-/// the `main.rs` binary root and the `lib.rs` library root (see
-/// [`monitor_under_cursor`]'s doc comment).
-#[cfg(target_os = "macos")]
-pub(crate) fn move_agent_panel_to_cursor(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("agent-panel") else { return };
-    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let panel_w = 340.0; // logical pixels — matches tauri.conf.json width
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-
-    // Top-center: drops down from the menu bar area like a water drop
-    let x = mon_x + (mon_w - panel_w) / 2.0;
-    let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-}
-
-/// Position the meeting-panel window in the bottom-right corner of the active
-/// monitor, above the Dock — a fixed corner so it doesn't obscure the meeting
-/// app window.
-///
-/// Moved here from `main.rs` (Workbench P2 Task 7, retiring the legacy
-/// meeting hotkey arm) for the same reason [`move_agent_panel_to_cursor`]
-/// lives here rather than in `main.rs`: `commands::meeting_widget::MeetingOutput`
-/// needs to call it, and only items under `commands/` are reachable from both
-/// the `main.rs` binary root and the `lib.rs` library root (see
-/// [`monitor_under_cursor`]'s doc comment).
-#[cfg(target_os = "macos")]
-pub(crate) fn move_meeting_panel_to_cursor(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("meeting-panel") else { return };
-    let Some((target, _cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let panel_w = 520.0_f64;
-    let top_margin = 80.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-
-    // Right edge of panel flush with right edge of screen, near the top
-    let x = mon_x + mon_w - panel_w;
-    let y = mon_y + top_margin;
+    let (x, y) = match anchor {
+        PanelAnchor::Cursor => {
+            let offset = 12.0_f64;
+            // Below-right of the cursor; flip to the opposite side at monitor edges.
+            let mut x = cursor.x + offset;
+            let mut y = cursor.y + offset;
+            if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
+            if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
+            // Never leave the monitor; keep clear of the macOS menu bar.
+            x = x.max(mon_x);
+            y = y.max(mon_y + 28.0);
+            (x, y)
+        }
+        PanelAnchor::TopCenter => {
+            // Top-center: drops down from the menu bar area like a water drop.
+            let x = mon_x + (mon_w - panel_w) / 2.0;
+            let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
+            (x, y)
+        }
+        PanelAnchor::BottomRight { top_margin } => {
+            // Right edge of panel flush with right edge of screen, near the top.
+            let x = mon_x + mon_w - panel_w;
+            let y = mon_y + top_margin;
+            (x, y)
+        }
+    };
 
     let _ = panel.set_position(tauri::PhysicalPosition::new(
         (x * scale) as i32,

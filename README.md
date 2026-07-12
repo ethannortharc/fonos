@@ -1,218 +1,266 @@
 # Fonos
 
-**A hotkey-first voice terminal for dictation, listening, and spoken agents.**
-Inspired by Wispr Flow and Taplines, Fonos lets you press a shortcut, speak
-naturally, and send the result to the place you actually need it: the cursor,
-clipboard, notebook, meeting transcript, listen queue, or AI agent.
+**Turn speech and selected text into reusable recipes that run in any app.**
+
+Fonos is an open-source, hotkey-first personal productivity tool for voice and
+text workflows on macOS and Linux. It combines dictation, speech-to-text,
+prompt-driven LLM processing, text-to-speech, desktop delivery, and session
+tools in one local-first system.
+
+The point is not to add another chat window. It is to bring the voice and text
+operations you already use into the app where you are working, with your own
+prompts, vocabulary, models, hotkeys, and output behavior.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
 
-![Fonos hotkey-first voice workflow](assets/hero/fonos-hotkey-hero.png)
+![Fonos recipe workbench](assets/screenshots/v07-workbench-recipes.png)
 
-The main interaction is the shortcut surface, not the settings window: a
-dictation pill, mode roller, note panel, agent panel, meeting capture, and clean
-text landing back in the current app.
+_The real v0.7 desktop app. Each card is a runnable recipe; the screenshot
+shows one personal setup, and every trigger is remappable._
 
-Fonos is **open source, local-first, and provider-agnostic**. Bring your own
-OpenAI, OpenRouter, Anthropic, Google, OMLX, Ollama, LM Studio, vLLM, or
-OpenAI-compatible endpoint. Keys, transcripts, notebooks, meeting notes,
-latency stats, and configuration stay on your machine.
+## The Core Idea: Recipes
 
-## Why Fonos
+Most everyday voice and text tasks have the same shape:
 
-Most of the app is designed to stay out of the way. You use global hotkeys and
-small floating controls for the common paths, then open the full app only when
-you want history, setup, stats, or deeper editing.
+```text
+input -> processing steps -> one or more outputs
+```
 
-| Workflow | Shortcut | What happens |
-|---|---:|---|
-| Dictate anywhere | `Cmd+Shift+Space` | Hold to speak, release to transcribe, clean up, and paste at the cursor. |
-| Listen to selected text | `Option+L` | Summarize selected text, generate a title, synthesize speech, and save it to History. |
-| Talk with an agent | `Option+S` | Hold to talk, get a spoken reply, and keep short multi-turn memory. |
-| Capture notes | `Option+N` | Route speech into notebooks with custom prompts and quick notebook hotkeys. |
-| Capture meetings | `Cmd+Shift+M` | Record mic plus system audio, then generate transcripts, decisions, and action items. |
-| Fix recognition | History selection | Select a wrong word and turn the correction into a reusable vocab rule. |
+Fonos makes each part explicit and reusable.
 
-## Demo
+| Layer | Built-in building blocks |
+|---|---|
+| **Input** | Hold or toggle the microphone, use selected text, or start a session instantly. |
+| **Process** | Transcribe speech, polish writing, translate, summarize, explain, or run your own prompt. |
+| **Output** | Insert at the cursor, replace the selection, copy, show a popup or dialog, save to a notebook, speak, or start a session tool. |
+| **Trigger** | Attach global hotkeys, or place microphone recipes in the floating pill's roller. |
 
-Recorded from the real v0.3 desktop app window and lightly cropped for README
-readability: hold to dictate, release, run STT + Polish, then review the saved
-result in History.
-A launch-ready MP4 is also available at
-[`assets/demo/fonos-demo.mp4`](assets/demo/fonos-demo.mp4).
+A recipe can be as direct as:
 
-![Fonos demo](assets/demo/fonos-demo.gif)
+```text
+Mic (hold) -> Transcribe -> Insert at cursor
+```
 
-## Screenshots
+or more personal:
 
-Screenshots are shown full-width so hotkeys, model names, pipeline state, and
-result text stay readable on GitHub.
+```text
+Mic -> Transcribe with my vocabulary -> Polish with my prompt -> Insert
+Selection -> Translate to English -> Replace selection
+Selection -> Explain -> Dialog
+Selection -> Summarize -> Speak
+Mic -> Transcribe -> Save to project notebook
+```
 
-### Dictation pipeline
+Components are shared. Change a model, prompt, vocabulary book, voice, or
+delivery rule once, and every recipe that references it can use the update.
 
-Hold the shortcut, speak, release. Fonos shows recorded audio, STT, the selected
-mode, model metadata, latency, and the final text.
+## Why This Is Useful
 
-![Dictation pipeline](assets/screenshots/v03-dictation-result.png)
+Translation, rewriting, and summarization are not hard to find. The friction is
+leaving Teams, Mail, a browser, a PDF, or an editor; opening an AI tool; moving
+text back and forth; and repeating the same prompt and cleanup every time.
 
-### Unified History
+Fonos removes those transfer steps. The work happens where the text already is,
+and the result goes where it is needed.
 
-Recent, Search, Notes, Meetings, Listen, and Agent activity share one local
-timeline with type filters.
+| Everyday use | Example recipe | What happens |
+|---|---|---|
+| **Dictate anywhere** | `Mic -> STT -> Polish -> Insert` | Speak naturally; Fonos removes speech artifacts and writes at the cursor. |
+| **Improve recognition** | `Mic -> STT + vocabulary -> Insert` | Personal terms bias recognition, align LLM terminology, and apply deterministic corrections. |
+| **Understand what you read** | `Selection -> Explain -> Dialog` | Select a difficult passage in a browser, book, or PDF and open a focused explanation with follow-up. |
+| **Summarize in place** | `Selection -> Summarize -> Popup` | Get the key points without moving the source text into another app. |
+| **Work across languages** | `Selection -> Translate -> Replace` | Draft in the language that is fastest for you, then replace it with the target language inside Teams, Slack, or Mail. |
+| **Rewrite where you write** | `Selection -> Formalize -> Replace` | Refine an email or message without breaking concentration or losing formatting context. |
+| **Listen instead of reading** | `Selection -> Summarize -> Speak` | Turn selected text into a concise spoken briefing using the configured TTS voice. |
+| **Capture and continue** | `Mic -> STT -> Notebook` | Send an idea directly to a notebook while staying in the current app. |
 
-![Unified History](assets/screenshots/v03-history.png)
+Dictation and selection-based actions are the current center of gravity. Notes,
+meetings, spoken agents, and calls use the same recipe model and are being
+refined on top of it.
 
-### Shortcut-first setup
+## Hotkey First, Window Optional
 
-Scenarios save and restore models, dictation modes, speech voices, vocabulary
-mounts, and hotkeys as one working setup.
+<table align="center">
+  <tr>
+    <td rowspan="3" align="center" valign="top">
+      <img src="assets/screenshots/v07-pill-menu.png" width="168" alt="Fonos floating pill recipe selector"><br>
+      <sub>Click the pill to choose a microphone recipe</sub>
+    </td>
+    <td align="center">
+      <img src="assets/screenshots/v07-pill-recording.png" width="122" alt="Fonos recording state"><br>
+      <sub>Listening</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="assets/screenshots/v07-pill-processing.png" width="116" alt="Fonos processing state"><br>
+      <sub>Processing the recipe</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="assets/screenshots/v07-pill-done.png" width="98" alt="Fonos completed state"><br>
+      <sub>Delivered</sub>
+    </td>
+  </tr>
+</table>
 
-![Scenario setup](assets/screenshots/v03-scenarios.png)
+The normal interaction does not require opening the main window:
 
-### Setup Doctor
+- One global pill key runs the currently selected microphone recipe.
+- The pill roller can switch between dictation, notes, a voice agent, or any
+  other microphone recipe you add.
+- Any recipe can also have its own global hotkey, with hold or toggle capture
+  where microphone input is involved.
+- The main app is for configuring recipes, testing them, reviewing History,
+  managing models and vocabulary, and checking setup health.
 
-Endpoint probes, permissions, config lint, hotkey conflicts, and TTS speed checks
-are gathered in one place.
+![Fonos hotkeys and floating pill setup](assets/screenshots/v07-hotkeys.png)
 
-![Setup Doctor](assets/screenshots/v03-settings-general.png)
+_Real v0.7 floating windows and Home view. Shortcut combinations are
+user-configured and may differ after applying or importing a setup._
 
-### Vocabulary books
+## Make It Yours
 
-Terms, STT biasing, LLM glossary alignment, and deterministic correction rules
-can be mounted globally or on specific modes.
+Fonos is not limited to a fixed set of modes. Preset recipes are useful
+starting points, but the input, processing, delivery, and trigger layers remain
+independent. You can assemble a workflow around the way you read, write, speak,
+and use models.
 
-![Vocabulary books](assets/screenshots/v03-vocab.png)
+### Compose a recipe
 
-### Spoken conversation
+The Workbench exposes the same structure the runtime executes:
 
-`Option+S` turns the same pipeline into a hold-to-talk agent with short-term
-memory, persona overrides, and speech output.
+- **Recipes** connect one input, an ordered processing chain, and one or more
+  outputs. Outputs can fan out, so one run can insert text, copy it, speak it,
+  and save it.
+- **Widgets** are named, reusable configurations: an STT profile with a
+  vocabulary book, a translation prompt, a TTS voice, a popup size, an agent
+  persona, and so on.
+- The engine type-checks the chain. Audio must pass through speech-to-text
+  before text processors or text outputs can use it.
 
-![Spoken conversation](assets/screenshots/v03-talk.png)
+This makes different personal workflows variations of the same small model:
 
-### Usage and latency stats
+```text
+Microphone -> My STT + product vocabulary -> Concise rewrite -> Teams
+Selection  -> Explain with my learning prompt -> Follow-up dialog
+Selection  -> Translate -> Replace + Clipboard
+Selection  -> Summarize -> My reading voice
+```
 
-Fonos tracks real dictation latency, P50/P95, words, sessions, tokens, model
-breakdowns, and estimated time saved.
+Fonos includes preset recipes for Dictation, Translate popup, Summarize popup,
+Explain selection, Listen, Note, Agent, Voice agent, Meeting, and Call. Presets
+can be adapted, and custom recipes use the same runtime.
 
-![Usage and latency stats](assets/screenshots/v03-stats.png)
+### Tune and reuse building blocks
 
-## Feature Map
+![Fonos reusable widget catalog](assets/screenshots/v07-widgets.png)
 
-### Hotkey-first dictation
+_The real v0.7 Widgets catalog. Inputs are shown here; processors, delivery
+outputs, and session widgets continue below._
 
-- Press and hold `Cmd+Shift+Space`, speak, and release. Fonos records,
-  transcribes, optionally runs an LLM mode, and delivers the final text.
-- Built-in modes include Raw, Polish, Translate, Note, and custom modes with
-  their own prompt, STT profile, LLM profile, temperature, paste behavior, and
-  vocabulary mounts.
-- The float pill shows recording, processing, completion, and error states.
-  The app waits until the full pipeline is done before showing `Done`.
-- Text injection can use fast paste or direct typing, with per-app override
-  rules, failure detection, and reliable clipboard restoration.
-- STT, LLM, permission, and injection errors are surfaced where the user is
-  already looking: the floating control and the app activity feed.
+Widgets separate reusable capability from a one-off workflow. You can create
+multiple instances of the same type, such as:
 
-### Listen queue
+- a fast local STT widget and a more accurate cloud STT widget;
+- separate vocabulary-aware transcribers for coding, product names, or another
+  language;
+- several LLM processors with your own prompts, model, temperature, output
+  language, and glossary;
+- different popup, notebook, insertion, replacement, TTS voice, agent, meeting,
+  or call configurations.
 
-- Select text in any app, press `Option+L`, and Fonos creates a listenable
-  item: title, summary or rewrite, synthesized audio, and a History entry.
-- Conversation and Listen can use separate voice profiles, so fast
-  conversational voices do not have to be the same as long-form reading voices.
-- Voices are discovered dynamically from the configured TTS backend, with
-  preview support where the provider exposes it.
+The catalog shows which recipes use each widget. Editing a shared widget
+updates every recipe that references it, while a new widget gives one workflow
+an independent configuration.
 
-### Real-time conversation
+### Test privately before delivery
 
-- The Talk page and global `Option+S` hotkey turn Fonos into a spoken agent:
-  STT -> persona-aware LLM -> TTS.
-- Conversation keeps configurable short-term memory and supports persona
-  overrides.
-- TTS is paced by clauses. Slow voices get natural pauses; fast voices can
-  stream more continuously. Markdown and emoji are stripped before speech so
-  replies sound like speech, not chat output.
+![Fonos local Test Run workbench](assets/screenshots/v07-test-run.png)
 
-### Notes, meetings, and search
+_The real v0.7 Test Run bench. Desktop delivery is intercepted by default._
 
-- Notebooks can have their own prompts, STT/LLM model choices, and hotkey
-  bindings.
-- Meeting capture records mic and system audio as separate channels where the
-  platform supports it, then produces transcripts, summaries, decisions, and
-  action items.
-- History now unifies Recent, Search, Notes, Meetings, Listen, and Agent
-  activity in one view, with type filters and cards tailored to each item.
-- Full-text search supports the whole local capture history.
+Test Run is a local staging surface for a recipe or a single widget:
 
-### Vocabulary and correction
+- use mock selected text or live microphone input;
+- watch data move through the exact source, processors, and outputs that will
+  run from the hotkey;
+- inspect each step's preview, latency, interception state, and error;
+- edit a widget, rerun it, and compare the result without replacing text,
+  changing the clipboard, speaking aloud, or writing to another app;
+- enable **Deliver for real** only when the workflow is ready.
 
-- Vocabulary books combine domain terms, STT recognition bias, LLM glossary
-  alignment, and deterministic correction rules.
-- Rules support literal replacements and regular expressions.
-- Books can be mounted globally or attached to specific modes.
-- Correction grows from use: select a bad transcript span in History, correct
-  it, and save it as either a term or rule.
+With local STT, LLM, and TTS profiles, the whole test can stay on the machine.
+When a recipe uses a cloud profile, that model request still goes to its
+provider, but desktop outputs remain intercepted until explicitly enabled.
 
-### Setup and reliability
+## Core Capabilities
 
-- Scenario setup replaces a generic first-run wizard with ready-made model
-  stacks: local, cloud, or zero-cost. Scenarios can save and restore models,
-  dictation settings, speech settings, vocabulary, and hotkeys.
-- Local endpoints can be probed and classified automatically. Fonos can inspect
-  model names, assign STT/LLM/TTS roles, and benchmark TTS real-time factor.
-- Setup Doctor checks endpoint reachability, permissions, config references,
-  vocabulary mounts, hotkey conflicts, and TTS speed, then offers one-click
-  fixes for common problems.
-- Dictation latency is recorded per request. Stats show P50/P95, averages,
-  per-model breakdowns, words, sessions, tokens, and estimated time saved.
-- Local model warm-up reduces first-dictation cold starts.
+| Area | What is available |
+|---|---|
+| **Voice input** | Hold-to-talk and toggle capture, device selection, audio cleanup, Apple Speech, Whisper-compatible multipart STT, and audio-capable chat-completions STT. |
+| **Text processing** | Ordered LLM steps with custom system prompts, templates, model profiles, temperature, output language, and vocabulary mounts. |
+| **Vocabulary** | Domain terms, STT recognition bias, LLM glossary alignment, literal corrections, regex rules, and correction-to-rule from History. |
+| **Desktop delivery** | Insert or type at the cursor, replace a selection, restore the clipboard reliably, copy, show a resizable popup/dialog, save to a notebook, or fan out to multiple outputs. |
+| **Speech output** | OpenAI-compatible TTS, separate voices for reading and conversation, dynamic voice discovery, preview, cloned voice support, and clause-paced playback. |
+| **Sessions** | Follow-up dialogs, a skill-capable spoken agent, microphone plus system-audio meeting capture with speaker labeling, summaries, decisions, and action items, and hands-free calls with VAD and barge-in. |
+| **Local record** | Unified History, full-text search, notebooks, meeting records, per-run traces, latency P50/P95, usage breakdowns, and estimated time saved. |
+| **Setup and reliability** | Local/cloud/zero-cost scenarios, endpoint probing, model-role assignment, Setup Doctor, permission checks, hotkey conflict detection, local-model warm-up, and floating error states. |
+| **Safety** | Transformation prompts treat captured text as data rather than instructions; agent commands use allowlists, blocklists, timeouts, and visible execution state. |
 
-### Agent safety
+## Local First, Provider Agnostic
 
-- Voice can drive an AI agent, but command execution is guarded by allowlists,
-  blocklists, timeouts, and visible execution state.
-- Dictation content is treated as data, not as trusted instructions, in
-  transformation pipelines.
+Configuration, API keys, History, notebooks, meeting notes, statistics, and
+generated artifacts are stored locally. Audio or text leaves the machine only
+when a recipe uses a remote provider. A recipe can be fully local, fully cloud,
+or mix providers by role.
+
+Model profiles are assigned independently to STT, LLM, and TTS widgets instead
+of being tied to one vendor.
+
+| Provider or endpoint | Roles | Notes |
+|---|---|---|
+| Apple Speech | STT | Native speech recognition with on-device or server execution reported by the helper. |
+| OpenAI | STT, LLM, TTS | Whisper-style transcription, GPT models, and hosted voices. |
+| OpenRouter | STT, LLM | Audio-capable and text models through chat-completions. |
+| Anthropic | LLM | Claude models for transformation, dialog, meetings, and agents. |
+| Google | LLM | Gemini models through the Generative Language API. |
+| OMLX / vLLM / SGLang | STT, LLM, TTS | Self-hosted OpenAI-compatible stacks; available roles depend on the server. |
+| Ollama | LLM | Local models, typically on `localhost:11434`. |
+| LM Studio | LLM | Local OpenAI-compatible models, typically on `localhost:1234`. |
+| Custom | Any compatible role | Set an explicit base URL, model, credentials, and capabilities. |
+
+Fonos can probe compatible endpoints, discover models and voices, and assign
+roles based on reported or measured capabilities.
 
 ## Architecture
 
-Fonos uses a hexagonal architecture. The platform-neutral `fonos-core` crate
-owns pipeline events, provider clients, vocabulary, correction, storage,
-statistics, scenarios, setup checks, Listen, and speech-to-speech conversation.
-The desktop app is a Tauri shell that adapts audio capture, hotkeys, text
-injection, windows, permissions, and UI notifications.
+Fonos uses a typed, hexagonal workflow architecture:
 
 ```text
-audio or selected text
-  -> STT / Listen / Talk pipeline
-  -> vocabulary terms and deterministic rules
-  -> optional LLM mode or persona response
-  -> text injection, History, TTS, or floating UI event
+trigger
+  -> Source widget          Audio or Text
+  -> Processor widget(s)    Audio -> Text, or Text -> Text
+  -> Output widget(s)       delivery or session
+  -> local History + trace
 ```
 
-The same core can be embedded by other shells. See
-[`fonos-core/README.md`](fonos-core/README.md) and
-[`ARCHITECTURE.md`](ARCHITECTURE.md) for the interface guide.
+The platform-neutral `fonos-core` crate owns the recipe model, validation and
+execution engine, provider clients, vocabulary, storage, statistics, scenarios,
+meetings, and speech sessions. The Tauri desktop shell adapts microphone and
+system-audio capture, global hotkeys, text selection and injection, permissions,
+floating windows, and OS-level agent skills.
 
-## Providers
+Adding a new input, processor, or output does not require a new application
+mode. It implements the matching component contract, registers a widget type,
+and becomes available to recipes.
 
-Configure model profiles in **Settings -> Models**, then assign them globally,
-per mode, per notebook, or through saved scenarios.
-
-| Provider | Roles | Notes |
-|---|---|---|
-| OpenAI | STT, LLM, TTS | Whisper-style transcription, GPT models, and hosted voices. |
-| OpenRouter | STT, LLM | Audio-capable chat models through chat-completions. |
-| Anthropic | LLM | Claude models for transformation, notes, meetings, and agents. |
-| Google | LLM | Gemini models through the Generative Language API. |
-| OMLX / vLLM | STT, LLM, TTS | Local OpenAI-compatible stacks, including Qwen ASR and Kokoro-style voices. |
-| Ollama | LLM | Local chat models on `localhost:11434`. |
-| LM Studio | LLM | Local OpenAI-compatible chat on `localhost:1234`. |
-| Custom | Any | Any compatible endpoint with explicit base URL and model profile. |
-
-STT supports two API paths: Whisper-compatible multipart upload and
-chat-completions with base64 audio for multimodal models.
+See [`fonos-core/README.md`](fonos-core/README.md) and
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the core interfaces and repository
+architecture.
 
 ## Install
 
@@ -222,6 +270,10 @@ Download the latest `.dmg` from
 [Releases](https://github.com/ethannortharc/fonos/releases/latest), open it,
 and drag Fonos to Applications. Apple Silicon and macOS 13.0+ are the primary
 targets.
+
+Fonos needs Microphone permission for speech capture and Accessibility
+permission for selection capture, global interaction, and text delivery.
+Meeting system-audio capture may request Screen Recording permission.
 
 ### Linux
 
@@ -239,7 +291,8 @@ Text injection on Linux needs `xdotool`:
 sudo apt install xdotool
 ```
 
-On Wayland, paste-at-cursor works through XWayland.
+On Wayland, paste-at-cursor currently works through XWayland. Some
+platform-specific capture and session features remain more complete on macOS.
 
 ## Build From Source
 
@@ -248,8 +301,8 @@ On Wayland, paste-at-cursor works through XWayland.
 - [Rust](https://rustup.rs) stable and the Tauri CLI:
   `cargo install tauri-cli --version "^2"`
 - [Node.js](https://nodejs.org) 20+
-- macOS: Xcode Command Line Tools (`xcode-select --install`) for the Speech and
-  ScreenCaptureKit helpers
+- macOS: Xcode Command Line Tools (`xcode-select --install`) for the Speech,
+  voice-capture, diarization, and ScreenCaptureKit helpers
 - Linux: the system packages listed in
   [`.github/workflows/build-linux.yml`](.github/workflows/build-linux.yml)
 
@@ -268,50 +321,49 @@ cargo tauri dev
 cargo tauri build
 ```
 
-The compiled macOS helper binaries are checked in. To rebuild them after
-editing Swift sources:
+The compiled macOS helper binaries are checked in. Rebuild them after editing
+Swift sources:
 
 ```bash
 ./src-tauri/swift/build.sh
 ```
 
-## Keyboard Shortcuts
+## Direction
 
-All shortcuts are remappable in **Settings -> Hotkeys**.
+The recipe system is the product foundation. Near-term work is centered on:
 
-| Shortcut | Action |
-|---|---|
-| `Cmd+Shift+Space` | Hold-to-dictate |
-| `Cmd+Shift+D` | Toggle dictation |
-| `Option+L` | Listen to selected text |
-| `Option+S` | Hold-to-talk conversation |
-| `Cmd+Shift+S` | Text-to-speech |
-| `Cmd+Shift+A` | Agent speak |
-| `Cmd+Shift+G` | Toggle agent panel |
-| `Option+N` | Note panel |
-| `Option+1/2/3` | Quick notebooks |
-| `Cmd+Shift+M` | Meeting capture |
+- making notes, meetings, agents, and calls as configurable and dependable as
+  dictation and selection actions;
+- adding useful inputs, processors, outputs, and connectors without creating
+  one-off application modes;
+- improving Linux parity and cross-device use through the platform-neutral
+  core;
+- keeping agent actions explicit, observable, and bounded as their capabilities
+  grow.
+
+See [GitHub Issues](https://github.com/ethannortharc/fonos/issues) for active
+work and discussion.
 
 ## Repository Layout
 
 | Path | What it is |
 |---|---|
-| [`fonos-desktop/`](fonos-desktop) | Tauri desktop app: Rust backend plus React / TypeScript UI. |
-| [`fonos-core/`](fonos-core) | Platform-independent Rust core: pipelines, clients, vocab, storage, stats, scenarios, doctor, Listen, and Talk. |
-| [`assets/`](assets) | README hero, screenshots, and demo media. |
-| [`experiments/`](experiments) | Exploratory prototypes such as desktop companion experiments. |
+| [`fonos-desktop/`](fonos-desktop) | Tauri desktop app: Rust backend plus React and TypeScript UI. |
+| [`fonos-core/`](fonos-core) | Platform-independent Rust core: recipes, providers, vocabulary, storage, statistics, meetings, and sessions. |
+| [`assets/`](assets) | README screenshots and demo media. |
+| [`experiments/`](experiments) | Exploratory prototypes that are not part of the stable product surface. |
 
-The iOS companion app (SwiftUI app, dictation keyboard, widget, App Intents)
-lives in its own repository: [fonos-ios](https://github.com/ethannortharc/fonos-ios).
+The iOS companion app, dictation keyboard, widget, and App Intents live in a
+separate repository: [fonos-ios](https://github.com/ethannortharc/fonos-ios).
 
 ## Tech Stack
 
-Desktop: Tauri 2, Rust, React 19, TypeScript, Vite, Tailwind CSS, SQLite
-(`rusqlite`). macOS speech and system-audio capture use Swift helpers built on
-Speech and ScreenCaptureKit.
+Desktop: Tauri 2, Rust, React 19, TypeScript, Vite, Tailwind CSS, and SQLite
+(`rusqlite`). macOS native helpers use Speech, ScreenCaptureKit, and voice
+processing APIs.
 
-Core: Rust crates for STT, LLM, TTS, vocabulary, statistics, scenarios, setup
-validation, storage, and platform ports.
+Core: Rust crates for the workflow engine, STT, LLM, TTS, vocabulary, storage,
+statistics, meetings, setup validation, and platform ports.
 
 ## Contributing
 
@@ -323,9 +375,9 @@ cd fonos-desktop && npm run build
 cd fonos-desktop && npm run test:e2e
 ```
 
-Some desktop tests need microphone and Accessibility permissions. Please keep
-changes focused and match the surrounding style.
+Some desktop tests need Microphone, Accessibility, or Screen Recording
+permissions. Please keep changes focused and match the surrounding style.
 
 ## License
 
-[MIT](LICENSE) © Ethan
+[MIT](LICENSE) (c) Ethan

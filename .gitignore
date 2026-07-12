@@ -35,6 +35,14 @@ voice_refs/
 
 # Screenshots (binary)
 *.png
+!assets/screenshots/v07-workbench-recipes.png
+!assets/screenshots/v07-hotkeys.png
+!assets/screenshots/v07-pill-menu.png
+!assets/screenshots/v07-pill-recording.png
+!assets/screenshots/v07-pill-processing.png
+!assets/screenshots/v07-pill-done.png
+!assets/screenshots/v07-widgets.png
+!assets/screenshots/v07-test-run.png
 
 # Stray build artifacts (compiled binaries — never commit)
 /test_async2

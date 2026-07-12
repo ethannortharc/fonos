@@ -153,7 +153,11 @@ impl DiarizeSession {
                 Ok(None) if std::time::Instant::now() < deadline => {
                     std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-                _ => { let _ = self.child.kill(); return; }
+                _ => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait(); // reap — kill() alone leaves a zombie
+                    return;
+                }
             }
         }
     }

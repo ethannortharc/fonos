@@ -254,6 +254,7 @@ const en = {
   "meet.no-transcript": "No transcript entries",
   "meet.me": "Me",
   "meet.other": "Other",
+  "meet.speaker-n": "Speaker {n}",
   "meet.no-text": "(no text)",
   "meet.empty": "No meetings recorded yet. Press Option+M to start.",
 
@@ -997,6 +998,7 @@ const zh: Partial<Record<Key, string>> = {
   "meet.no-transcript": "暂无转录内容",
   "meet.me": "我",
   "meet.other": "对方",
+  "meet.speaker-n": "说话人 {n}",
   "meet.no-text": "（无文本）",
   "meet.empty": "还没有会议记录。按 Option+M 开始。",
 

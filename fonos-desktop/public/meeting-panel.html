@@ -241,6 +241,30 @@ var wfBars = document.querySelectorAll('#wf .wb');
 function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
 function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
 
+/* ── Tiny inline i18n (call-panel.html pattern, trimmed to this task's keys
+   only) ── This standalone webview can't import the main app's lib/i18n
+   (a React/TS module), so it owns a minimal STR dictionary covering just the
+   speaker-N label and the diarize degradation notices — everything else in
+   this panel stays hardcoded English (out of scope for this task; a future
+   pass can port the rest of call-panel's machinery if the panel gets fully
+   localized). Locale follows config.ui_language, resolved once at startup
+   (no live config:saved listener — this panel is short-lived per meeting). */
+var STR={
+  en:{ 'speaker-n':'Speaker {n}',
+       'diar-mono':'Speaker separation inactive: no system audio channel',
+       'diar-no-model':'Speaker separation inactive: model not downloaded',
+       'diar-spawn-failed':'Speaker separation failed to start',
+       'diar-died':'Speaker separation stopped — labels degraded' },
+  zh:{ 'speaker-n':'说话人 {n}',
+       'diar-mono':'说话人分离未生效：没有系统声道',
+       'diar-no-model':'说话人分离未生效：模型未下载',
+       'diar-spawn-failed':'说话人分离启动失败',
+       'diar-died':'说话人分离中断——标签已降级' }
+};
+var LOCALE='en';
+function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
+function applyLocale(s){ LOCALE=(s==='en'||s==='zh')?s:((navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en'); }
+
 /* ── Timer ── */
 function fmtTimer(ms){
   var total=Math.floor(ms/1000);
@@ -297,6 +321,8 @@ function speakerClass(speaker){
   var s=String(speaker).toLowerCase();
   if(s==='me') return 'sp-me';
   if(s==='others'||s==='other') return 'sp-others';
+  var ms=/^s(\d+)$/.exec(s||'');
+  if(ms) return 'sp-'+(((parseInt(ms[1],10)-1)%4)+1);
   if(speakerColors[s]) return speakerColors[s];
   var cls=colorClasses[speakerColorIdx%colorClasses.length];
   speakerColorIdx++;
@@ -312,7 +338,8 @@ function appendLine(text,speaker,tsMs){
 
   var spEl=document.createElement('span');
   spEl.className='tr-speaker '+speakerClass(speaker);
-  spEl.textContent=speaker||'';
+  var m=/^s(\d+)$/.exec(speaker||'');
+  spEl.textContent=m?L('speaker-n').replace('{n}',m[1]):(speaker||'');
 
   var tsEl=document.createElement('span');
   tsEl.className='tr-ts';
@@ -429,6 +456,27 @@ function recvMeetingError(msg){
   scrollHintEl.style.display='none';
 }
 
+/* Diarization degradation notice (Task 6): meeting.rs's start_meeting_with
+   calls this with exactly 'mono' | 'no-model' | 'spawn-failed' | 'died' —
+   every way a diarize session can fail to come up (or die mid-session)
+   without ever interrupting the meeting itself. Reuses #mb-status the same
+   one-shot way recvSummary does (amber rather than recvSummary's neutral
+   gray or recvMeetingError's red — this is a degradation, not a failure or
+   a normal "done" state), auto-clearing after 6s unless something else
+   already overwrote the status text in the meantime. */
+function recvDiarizeNotice(reason){
+  if (!statusEl) return;
+  statusEl.style.display='block';
+  statusEl.textContent=L('diar-'+reason);
+  statusEl.style.color='rgba(242,184,75,0.75)';
+  setTimeout(function(){
+    if(statusEl.textContent===L('diar-'+reason)){
+      statusEl.textContent='';
+      statusEl.style.display='none';
+    }
+  }, 6000);
+}
+
 function recvHide(){
   iv('hide_meeting_panel');
 }
@@ -462,6 +510,7 @@ function setup(){
     var p=e&&e.payload||{};
     recvUpdateLevel(typeof p==='number'?p:(p.level||0));
   });
+  iv('get_config').then(function(c){applyLocale(c&&c.ui_language);}).catch(function(){});
 }
 if(document.readyState==='loading'){
   document.addEventListener('DOMContentLoaded',function(){setTimeout(setup,40);});

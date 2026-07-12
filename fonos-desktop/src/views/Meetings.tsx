@@ -46,6 +46,19 @@ function formatDuration(startIso: string, endIso: string): string {
   }
 }
 
+/** Speaker hint stored in a meeting entry's metadata blob. `get_meeting_detail`
+ *  returns raw `Entry` rows (not a pre-mapped "speaker" field) — mic and
+ *  system-audio chunks both carry `role: "user"` (see meeting.rs's capture
+ *  loop), so the metadata hint is the only reliable signal for who's
+ *  speaking. Values come through lowercase (meeting.rs stores
+ *  `speaker.to_lowercase()`): `"me"`, a diarization machine tag (`"s1"`,
+ *  `"s2"`, …), or the flat `"audio"` catch-all when diarization is off/
+ *  degraded. `""` covers entries recorded before `speaker_hint` existed. */
+function speakerHintOf(entry: Entry): string {
+  const hint = entry.metadata["speaker_hint"];
+  return typeof hint === "string" ? hint : "";
+}
+
 function summaryPreview(text: string, maxLen = 100): string {
   const s = text?.trim() ?? "";
   // Empty string signals "no summary" — translated at render site.
@@ -728,9 +741,20 @@ export function MeetingDetailView({ meeting, onBack, onDeleted }: MeetingDetailV
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {transcriptEntries.map((entry) => {
-                    const isMe = entry.role === "user";
-                    const speakerColor = isMe ? "#4ade80" : "#c084fc";
-                    const speakerLabel = isMe ? t("meet.me") : t("meet.other");
+                    const speakerHint = speakerHintOf(entry);
+                    const m = /^s(\d+)$/.exec(speakerHint);
+                    // "me" (or, for pre-diarization entries with no stored
+                    // hint, falling back to role) → Me; a diarization tag
+                    // wins the "Speaker N" label; everything else (the flat
+                    // "audio" hint, or an unrecognized value) → Other.
+                    const isMe = !m && (speakerHint === "me" || (speakerHint === "" && entry.role === "user"));
+                    const palette = ["#c084fc", "#60a5fa", "#f472b6", "#fbbf24"];
+                    const speakerColor = m
+                      ? palette[(parseInt(m[1], 10) - 1) % palette.length]
+                      : isMe ? "#4ade80" : "#c084fc";
+                    const speakerLabel = m
+                      ? t("meet.speaker-n").replace("{n}", m[1])
+                      : isMe ? t("meet.me") : t("meet.other");
                     const text = entry.processed_text || entry.raw_text;
 
                     return (

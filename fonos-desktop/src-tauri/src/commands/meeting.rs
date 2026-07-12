@@ -438,6 +438,22 @@ pub(crate) async fn start_meeting_with(
             }
         }
 
+        // Notify panel that capture started. Deliberately BEFORE the
+        // diarization setup below (Task 6 fix): `recvStart` resets the whole
+        // panel (`resetState()`), including hiding `#mb-status` — any
+        // `recvDiarizeNotice` fired after a `recvStart` would have its
+        // display immediately clobbered back to hidden by that reset, since
+        // both evals run back-to-back with no yield in between. Ordering
+        // `recvStart` first means the mono/no-model/spawn-failed notices
+        // below land in an already-reset, already-visible-transcript panel
+        // and stay on screen for their intended ~6s (recvDiarizeNotice's
+        // setTimeout) instead of never rendering at all.
+        meeting_js(&app_handle, &format!(
+            "recvStart('{}', '{}')",
+            js_escape(&title),
+            if channel_mode == "dual" { "remote" } else { "in-person" },
+        ));
+
         // Diarization (opt-in via MeetingProps::diarize): every failure mode
         // here — mono capture, helper/models missing, spawn error — degrades
         // to `diar = None` (flat "Audio" labeling downstream) and a
@@ -469,13 +485,6 @@ pub(crate) async fn start_meeting_with(
         }
         let mut sys_total: u64 = 0; // 系统声道累计样本数 = 分离时间基准（16 样本/ms）
         let mut diar_notified_death = false;
-
-        // Notify panel that capture started
-        meeting_js(&app_handle, &format!(
-            "recvStart('{}', '{}')",
-            js_escape(&title),
-            if channel_mode == "dual" { "remote" } else { "in-person" },
-        ));
 
         // Accumulate small chunks (500ms each) into 10-second transcription segments.
         // Mic and system audio are transcribed SEPARATELY so transcripts stay clean:

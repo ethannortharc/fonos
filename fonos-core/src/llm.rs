@@ -40,6 +40,48 @@ pub struct ServiceConfig {
     pub stt_api: String,
 }
 
+/// Build the final user message: substitute `{target_lang}` from
+/// `translate_target` (defaulting to `"English"` when empty), then — if
+/// `output_language` is set and not `"auto"` — append an explicit
+/// "IMPORTANT: Output in {output_language}." instruction. Split out of
+/// [`process_text`] (Workbench P2 Task 14) so this pure string logic is
+/// testable without a network mock; behavior is unchanged.
+///
+/// Quirk, documented rather than fixed here: the output-language append's
+/// guard checks `template` for a literal `{target_lang}` *after* the
+/// substitution above already ran, and `.replace()` removes every instance
+/// of what it's asked to replace — so the guard is true whenever the
+/// substitution just fired, not only when the template never had
+/// `{target_lang}` to begin with. A template with both `{target_lang}` and a
+/// non-`"auto"` `output_language` gets BOTH transformations, not one instead
+/// of the other; see `build_user_message_applies_both_target_lang_and_output_language`.
+fn build_user_message(template: &str, output_language: &str, translate_target: &str) -> String {
+    let mut user_template_str = template.to_string();
+
+    // Substitute {target_lang} from config
+    if user_template_str.contains("{target_lang}") {
+        let target = if translate_target.is_empty() {
+            "English"
+        } else {
+            translate_target
+        };
+        user_template_str = user_template_str.replace("{target_lang}", target);
+    }
+
+    // If output_language is set (not "auto"), append a language instruction
+    if !output_language.is_empty()
+        && output_language != "auto"
+        && !user_template_str.contains("{target_lang}")
+    {
+        user_template_str = format!(
+            "{}\n\nIMPORTANT: Output in {}.",
+            user_template_str, output_language
+        );
+    }
+
+    user_template_str
+}
+
 /// Process `text` through an LLM using the given prompt configuration and `service`.
 ///
 /// Handles template substitution (`{text}`, `{target_lang}`), output language
@@ -78,30 +120,11 @@ pub async fn process_text(
     caps: Option<&ModelCaps>,
     translate_target: &str,
 ) -> Result<LlmResponse> {
-    let mut user_template_str = user_template
-        .ok_or_else(|| Error::Llm("no user_template".into()))?
-        .to_string();
-
-    // Substitute {target_lang} from config
-    if user_template_str.contains("{target_lang}") {
-        let target = if translate_target.is_empty() {
-            "English"
-        } else {
-            translate_target
-        };
-        user_template_str = user_template_str.replace("{target_lang}", target);
-    }
-
-    // If output_language is set (not "auto"), append a language instruction
-    if !output_language.is_empty()
-        && output_language != "auto"
-        && !user_template_str.contains("{target_lang}")
-    {
-        user_template_str = format!(
-            "{}\n\nIMPORTANT: Output in {}.",
-            user_template_str, output_language
-        );
-    }
+    let user_template_str = build_user_message(
+        user_template.ok_or_else(|| Error::Llm("no user_template".into()))?,
+        output_language,
+        translate_target,
+    );
 
     // Build messages array adapted to model capabilities
     let messages = crate::model_caps::build_messages(
@@ -510,5 +533,51 @@ mod tests {
         assert_eq!(contents.len(), 1);
         assert_eq!(contents[0]["role"], "model");
         assert_eq!(contents[0]["parts"][0]["text"], "hi there");
+    }
+
+    // ─── build_user_message ({target_lang} + output_language substitution) ──
+
+    #[test]
+    fn build_user_message_leaves_template_untouched_with_no_placeholders_and_auto_output() {
+        let out = build_user_message("Summarize: {text}", "auto", "");
+        assert_eq!(out, "Summarize: {text}");
+    }
+
+    #[test]
+    fn build_user_message_leaves_template_untouched_with_empty_output_language() {
+        let out = build_user_message("Summarize: {text}", "", "French");
+        assert_eq!(out, "Summarize: {text}");
+    }
+
+    #[test]
+    fn build_user_message_substitutes_target_lang_from_translate_target() {
+        let out = build_user_message("Translate to {target_lang}: {text}", "auto", "French");
+        assert_eq!(out, "Translate to French: {text}");
+    }
+
+    #[test]
+    fn build_user_message_substitutes_target_lang_defaulting_to_english_when_translate_target_empty() {
+        let out = build_user_message("Translate to {target_lang}: {text}", "auto", "");
+        assert_eq!(out, "Translate to English: {text}");
+    }
+
+    #[test]
+    fn build_user_message_appends_output_language_instruction_when_set_and_not_auto() {
+        let out = build_user_message("Summarize: {text}", "Spanish", "");
+        assert_eq!(out, "Summarize: {text}\n\nIMPORTANT: Output in Spanish.");
+    }
+
+    #[test]
+    fn build_user_message_applies_both_target_lang_and_output_language() {
+        // Documented quirk (see build_user_message's doc comment): the
+        // output_language append isn't skipped just because the template
+        // originally had {target_lang} — its guard runs against the
+        // already-substituted string, which no longer contains the literal
+        // placeholder either way. Pinning this as current, real behavior.
+        let out = build_user_message("Translate to {target_lang}: {text}", "Spanish", "French");
+        assert_eq!(
+            out,
+            "Translate to French: {text}\n\nIMPORTANT: Output in Spanish."
+        );
     }
 }

@@ -441,13 +441,18 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
 // localized name + the id into history metadata), `PanelOutput`, `dialog.rs`'s
 // title, and the meeting composite's default title.
 //
-// The EN column matches `fonos-desktop/src/lib/i18n.tsx`'s `builtin.*` keys
+// Both columns match `fonos-desktop/src/lib/i18n.tsx`'s `builtin.*` keys
 // verbatim (kept in sync by the coverage test below + code review — there is
-// no build-time link between the two crates). The ZH column matches this
-// module's own `name` literals above byte-for-byte — a few ids' names differ
-// slightly from `i18n.tsx`'s zh dictionary (e.g. `llm.formal`'s "正式" here vs
-// "正式化" there); this map deliberately mirrors *this file*, the actual
-// runtime value `wf.name`/`w.name` would otherwise surface.
+// no build-time link between the two crates). This module's own `name`
+// literals above are NOT the source of truth here and are free to differ:
+// `builtin_display_name` always wins over the raw `wf.name`/`w.name` at every
+// backend emission point listed above, so for a built-in id the raw literal
+// never actually surfaces to a user. (Workbench P2 Task 14: four ZH entries —
+// `llm.formal`, `llm.summarize`, `out.insert`, `out.panel` — used to
+// deliberately mirror this file's own `name` literals instead of i18n.tsx,
+// drifting from the frontend's builtinLabels.ts-driven Settings/Flows catalog
+// text for the same ids; realigned to i18n.tsx so a ZH-language user sees the
+// same wording in History/panel titles as in Settings.)
 
 /// UI language resolved for bilingual builtin display names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -495,11 +500,21 @@ fn resolve_lang_from_env_lang(env_lang: Option<String>) -> Lang {
 ///
 /// Coverage is asserted by `builtin_display_name_covers_every_builtin_id`
 /// below: every id in [`built_in_workflows`] + [`built_in_widgets`] must
-/// resolve `Some` for both langs.
+/// resolve `Some` for both langs. That test can't see migration-generated
+/// ids — ones `workflow::migrate` mints straight into `config.workflows`
+/// rather than ids born in [`built_in_workflows`]/[`built_in_widgets`], e.g.
+/// `wf.dictation-toggle` (a `builtin: false`, `src.mic-toggle`-sourced sibling
+/// of `wf.dictation`, minted only when `hotkey_dictation_toggle` was bound) —
+/// so those are hand-listed below, matching
+/// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` map 1:1; keep
+/// the two in sync by hand when either gains an entry.
 pub fn builtin_display_name(id: &str, lang: Lang) -> Option<&'static str> {
     let (en, zh) = match id {
         // ── workflows ────────────────────────────────────────────────────
         "wf.dictation" => ("Dictation", "听写"),
+        // Migration-generated (see this fn's doc comment), not a static
+        // built-in — hand-listed to match builtinLabels.ts.
+        "wf.dictation-toggle" => ("Dictation (toggle)", "听写·切换"),
         "wf.translate-pop" => ("Translate popup", "翻译弹框"),
         "wf.summarize-pop" => ("Summarize popup", "总结弹框"),
         "wf.explain" => ("Explain selection", "选中解释"),
@@ -517,16 +532,16 @@ pub fn builtin_display_name(id: &str, lang: Lang) -> Option<&'static str> {
         // ── processor widgets ────────────────────────────────────────────
         "stt.default" => ("Transcribe", "默认转写"),
         "llm.polish" => ("Polish", "润色"),
-        "llm.formal" => ("Formal", "正式"),
+        "llm.formal" => ("Formal", "正式化"),
         "llm.translate" => ("Translate", "翻译"),
-        "llm.summarize" => ("Summarize", "总结"),
+        "llm.summarize" => ("Summarize", "总结要点"),
         "llm.listen" => ("Listen briefing", "朗读摘要"),
         "llm.explain" => ("Explain", "解释"),
         // ── output widgets ───────────────────────────────────────────────
-        "out.insert" => ("Insert at cursor", "插入"),
+        "out.insert" => ("Insert at cursor", "插入光标"),
         "out.replace" => ("Replace selection", "替换选区"),
         "out.clipboard" => ("Clipboard", "剪贴板"),
-        "out.panel" => ("Popup panel", "悬浮板·默认"),
+        "out.panel" => ("Popup panel", "悬浮板"),
         "out.dialog" => ("Dialog", "对话框"),
         "out.speak" => ("Speak", "朗读"),
         "out.quicknote" => ("Quick note", "快速笔记"),
@@ -845,6 +860,17 @@ mod tests {
     fn builtin_display_name_none_for_custom_id() {
         assert_eq!(builtin_display_name("wf.custom-1700000000000", Lang::En), None);
         assert_eq!(builtin_display_name("wf.custom-1700000000000", Lang::Zh), None);
+    }
+
+    /// `wf.dictation-toggle` is migration-generated (see `builtin_display_name`'s
+    /// doc comment), not a member of `built_in_workflows`, so the coverage test
+    /// above can't see it — this pins its hand-listed entry directly, matching
+    /// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` values
+    /// byte-for-byte (Workbench P2 Task 14).
+    #[test]
+    fn builtin_display_name_covers_migration_generated_dictation_toggle() {
+        assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::En), Some("Dictation (toggle)"));
+        assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::Zh), Some("听写·切换"));
     }
 
     #[test]

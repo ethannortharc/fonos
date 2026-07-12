@@ -351,6 +351,7 @@ impl MeetingOutput {
             }
         };
 
+        #[cfg(target_os = "macos")]
         super::move_meeting_panel_to_cursor(&self.app);
         if let Some(panel) = self.app.get_webview_window("meeting-panel") {
             let _ = panel.show();

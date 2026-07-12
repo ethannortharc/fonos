@@ -225,6 +225,7 @@ pub(crate) async fn run_agent_exchange(
         let _ = super::tts::stop_playback(state);
     }
 
+    #[cfg(target_os = "macos")]
     super::move_agent_panel_to_cursor(app);
     if let Some(panel) = app.get_webview_window("agent-panel") {
         let _ = panel.show();
@@ -412,6 +413,7 @@ impl Output for AgentOutput {
             // Blank-open (wf.agent, src.instant): position + reveal only —
             // the user drives the rest via the panel's own commands, exactly
             // like the legacy "agent-panel" toggle arm's show branch.
+            #[cfg(target_os = "macos")]
             super::move_agent_panel_to_cursor(&self.app);
             if let Some(panel) = self.app.get_webview_window("agent-panel") {
                 let _ = panel.show();

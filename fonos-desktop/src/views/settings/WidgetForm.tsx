@@ -29,6 +29,7 @@
 // they still show the read-only type_tag/id/builtin badge row.
 
 import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { t, useT } from "../../lib/i18n";
 import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "../../types";
 import type { Container } from "../../lib/storage-api";
@@ -267,6 +268,47 @@ function AgentSkillsSection() {
   );
 }
 
+/** Speaker-separation toggle + "model not downloaded" hint for the "meeting"
+ *  PropsForm case (Task 5 of the diarization epic). Split into its own
+ *  component (same reason as AgentSkillsSection above): PropsForm's switch
+ *  renders a different case per render whenever `form.type_tag` changes (the
+ *  isNew type picker lets it), so a hook called directly inside one case's
+ *  branch would violate the rules of hooks. The one-shot diarize_check probe
+ *  (T4's command — `{available, models_present}`) lives here instead, and
+ *  defaults `modelsReady` to true so the hint doesn't flash on before the
+ *  probe resolves (mirrors the brief's "default 不吓人" note). */
+function MeetingDiarizeField({
+  checked, onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  const [modelsReady, setModelsReady] = useState(true);
+  useEffect(() => {
+    invoke<{ available: boolean; models_present: boolean }>("diarize_check")
+      .then((s) => setModelsReady(s.available && s.models_present))
+      .catch(() => setModelsReady(false));
+  }, []);
+  return (
+    <>
+      <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="accent-[var(--accent)]"
+        />
+        {t("widgets.field.meeting.diarize")}
+      </label>
+      {checked && !modelsReady && (
+        <div className="text-[11px] text-[rgba(242,184,75,0.7)]">
+          {t("widgets.field.meeting.diarize.no-model")}
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
@@ -502,6 +544,7 @@ function PropsForm({
           <Field label={t("widgets.field.meeting.summary_prompt")}>
             <textarea value={pStr(p, "summary_prompt")} onChange={(e) => set("summary_prompt", e.target.value)} rows={4} className={textareaClass} />
           </Field>
+          <MeetingDiarizeField checked={pBool(p, "diarize", false)} onChange={(v) => set("diarize", v)} />
         </div>
       );
     }

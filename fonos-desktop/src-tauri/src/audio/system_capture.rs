@@ -237,20 +237,28 @@ fn find_audio_capture_binary() -> Option<String> {
             // 2. macOS .app bundle: Contents/MacOS → Contents/Resources/
             if let Some(parent) = dir.parent() {
                 candidates.push(parent.join("Resources").join(name));
+                // 3. Tauri v2 actually nests bundled resources one level
+                // deeper: Contents/Resources/resources/ (verified on the
+                // installed .app).
+                candidates.push(parent.join("Resources").join("resources").join(name));
             }
         }
     }
 
-    // 3. Development paths relative to CWD (for `cargo test` / `cargo run`).
+    // 4. Development paths relative to CWD (for `cargo test` / `cargo run`).
     candidates.push(std::path::PathBuf::from(format!("src-tauri/resources/{name}")));
     candidates.push(std::path::PathBuf::from(format!(
-        "fonos-app/src-tauri/resources/{name}"
+        "fonos-desktop/src-tauri/resources/{name}"
     )));
-    // 4. Absolute path to the source resources dir (always works during development).
-    candidates.push(std::path::PathBuf::from(format!(
-        "{}/fonos-app/src-tauri/resources/{name}",
-        env!("CARGO_MANIFEST_DIR").trim_end_matches("/fonos-app/src-tauri")
-    )));
+    // 5. Absolute path into the source tree — always resolves under `cargo
+    // tauri dev` regardless of the working directory (CARGO_MANIFEST_DIR is
+    // this crate's dir, `.../fonos-desktop/src-tauri`). In a bundled release
+    // the baked-in build-machine path simply won't exist, so it's skipped.
+    candidates.push(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join(name),
+    );
 
     for c in &candidates {
         if c.exists() {

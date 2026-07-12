@@ -386,6 +386,22 @@ pub(crate) async fn start_meeting_with(
         let channel_mode = if capture.is_dual_channel() { "dual" } else { "mono" };
         eprintln!("fonos: meeting capture started, channel_mode={}", channel_mode);
 
+        // Reconcile the container's initial metadata (optimistically written
+        // as mic_only/mono in step 1, before capture negotiation completed)
+        // with the actual channel mode now that it's known.
+        if channel_mode == "dual" {
+            if let Ok(db) = db_arc.lock() {
+                let _ = db.execute(
+                    "UPDATE containers SET metadata = json_patch(metadata, ?2), updated_at = ?3 WHERE id = ?1",
+                    rusqlite::params![
+                        container_id,
+                        serde_json::json!({ "audio_source": "dual", "channel_mode": "dual" }).to_string(),
+                        now_iso8601(),
+                    ],
+                );
+            }
+        }
+
         // Notify panel that capture started
         meeting_js(&app_handle, &format!(
             "recvStart('{}', '{}')",

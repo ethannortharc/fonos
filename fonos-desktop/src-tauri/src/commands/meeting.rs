@@ -264,9 +264,12 @@ pub async fn start_meeting(
     state: tauri::State<'_, AppState>,
 ) -> Result<i64, String> {
     let stt_svc = super::get_service_config(&state, "stt");
-    let lang = {
-        let config = state.config.lock().map_err(|e| e.to_string())?;
-        fonos_core::workflow::builtin::resolve_lang(&config.ui_language)
+    // A poisoned lock degrades to resolve_lang("auto") rather than failing
+    // the whole command (same convention as dialog.rs/workflow_widgets.rs) —
+    // losing the language pick shouldn't block starting the meeting.
+    let lang = match state.config.lock() {
+        Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+        Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
     };
     let title = default_meeting_title(lang);
     start_meeting_with(&app, &state, stt_svc, title).await

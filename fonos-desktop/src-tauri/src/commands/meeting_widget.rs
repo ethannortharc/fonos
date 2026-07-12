@@ -364,10 +364,13 @@ impl MeetingOutput {
         // Workbench P2 Task 13: the title's "Meeting"/"会议" label follows
         // `config.ui_language` — a separate short-lived lock (dropped
         // immediately) rather than threading it through the `stt_svc` block
-        // above, which returns a `ServiceConfig`, not a `Lang`.
-        let lang = {
-            let config = state.config.lock().map_err(|e| e.to_string())?;
-            fonos_core::workflow::builtin::resolve_lang(&config.ui_language)
+        // above, which returns a `ServiceConfig`, not a `Lang`. A poisoned
+        // lock degrades to resolve_lang("auto") (Task 14 — same convention
+        // as dialog.rs/workflow_widgets.rs) rather than failing the whole
+        // deliver.
+        let lang = match state.config.lock() {
+            Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+            Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
         };
         let title = default_meeting_title(lang);
         match meeting::start_meeting_with(&self.app, state, stt_svc, title.clone()).await {

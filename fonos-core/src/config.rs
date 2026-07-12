@@ -392,6 +392,11 @@ pub struct AppConfig {
     #[serde(default)]
     pub active_voice_workflow: String,
 
+    /// HuggingFace endpoint override for diarization model downloads
+    /// (empty = official). E.g. "https://hf-mirror.com".
+    #[serde(default)]
+    pub diarization_hf_endpoint: String,
+
     // ── Pill hotkey (Workbench P1, spec §3c) ──────────────────────────────
 
     /// Global hotkey owned by the floating pill: pressing it runs the
@@ -505,6 +510,7 @@ impl Default for AppConfig {
             settings_inflow_migration_done: false,
             triggers_migration_done: false,
             active_voice_workflow: String::new(),
+            diarization_hf_endpoint: String::new(),
             pill_hotkey: String::new(),
             pill_hotkey_capture: default_pill_hotkey_capture(),
             pill_hotkey_migration_done: false,
@@ -611,5 +617,16 @@ mod tests {
         });
         assert!(!migrate_transform_to_text_actions(&mut existing));
         assert_eq!(existing.text_actions.len(), 1);
+    }
+
+    #[test]
+    fn diarization_hf_endpoint_defaults_empty_and_roundtrips() {
+        let c: AppConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(c.diarization_hf_endpoint, "");
+        let mut c2 = AppConfig::default();
+        c2.diarization_hf_endpoint = "https://hf-mirror.com".into();
+        let j = serde_json::to_string(&c2).unwrap();
+        let c3: AppConfig = serde_json::from_str(&j).unwrap();
+        assert_eq!(c3.diarization_hf_endpoint, "https://hf-mirror.com");
     }
 }

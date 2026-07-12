@@ -340,7 +340,20 @@ export default function TestRunSection({
           )}
         </div>
 
-        <div className="relative z-[1]">
+        {/* fonos-surface-opaque-fill: the z-0/z-[1] pairing above already paints
+            the mic's live-recording aura BEHIND this wrapper (correct paint
+            order) — but the first node's capsule is only 8% opaque
+            (BenchGraph.tsx), so the aura was bleeding THROUGH it rather than
+            being hidden by it. This gives the wrapper an opaque backdrop
+            (matching .fonos-surface's own composited tone, so the seam is
+            invisible) that fully occludes the aura here while leaving it free
+            to bloom in the input-row band above/around the mic. Empirically
+            verified (Playwright pixel sampling, Test Run Live-Aura Bleed
+            Fix) — the aura's visual reach fades out well above the node
+            editor/run-row below, and both are unreachable while a run (and
+            its live aura) is in flight anyway (onNodeClick is disabled while
+            running), so no further occlusion is needed there. */}
+        <div className="relative z-[1] fonos-surface-opaque-fill">
           <BenchGraph
             nodes={nodes}
             onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}

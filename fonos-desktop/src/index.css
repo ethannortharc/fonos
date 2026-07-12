@@ -82,6 +82,24 @@ select:focus-visible {
     0 12px 30px var(--accent-glow);
 }
 
+/* Opaque flattening of .fonos-surface's own background — not a new color,
+   just that gradient's visual result pre-baked as a solid fill (0.82-alpha
+   rgba(24,23,20) over --bg composites to exactly rgb(24,23,20), then the
+   linear-gradient white overlay on top only spans 4.5% -> 2.2%, an ~5-unit
+   RGB range — so a flat mid-gradient value reads as seamless anywhere in a
+   panel; empirically sampled via rendered-pixel comparison rather than
+   derived on paper, see Test Run Live-Aura Bleed Fix report).
+   Use where a sibling inside a .fonos-surface panel needs to fully occlude
+   whatever paints behind it — e.g. Test Run's BenchGraph wrapper, which
+   must stop the mic's live-recording aura (painted behind it, correctly, by
+   the z-0/z-[1] pairing above) from bleeding through: the node capsules are
+   only 8% opaque, so a merely-correctly-ordered aura still showed through
+   them. Pair with .fonos-surface (on an ancestor, not this element itself —
+   this is a flat fill, not the gradient). */
+.fonos-surface-opaque-fill {
+  background: #1f1e1b;
+}
+
 .fonos-eyebrow {
   color: var(--text-muted);
   font-size: 10px;

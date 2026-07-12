@@ -488,7 +488,6 @@ impl fonos_core::tts::PcmSink for HelperAudioOut {
     }
 
     fn push(&self, pcm: &[u8]) -> Result<(), String> {
-        eprintln!("fonos: HelperAudioOut::push entry, pcm_bytes={}", pcm.len());
         let (rate, channels) = *self.format.lock().map_err(|e| e.to_string())?;
         let mut samples: Vec<i16> = pcm
             .chunks_exact(2)
@@ -505,22 +504,10 @@ impl fonos_core::tts::PcmSink for HelperAudioOut {
         }
         let samples = fonos_core::audio::resample_i16(&samples, rate, 16_000);
         if samples.is_empty() {
-            eprintln!("fonos: HelperAudioOut::push -> Ok (resampled to 0 samples, nothing sent)");
             return Ok(());
         }
         let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-        let push_result = self.link.play_pcm(&bytes);
-        match &push_result {
-            Ok(()) => eprintln!(
-                "fonos: HelperAudioOut::push -> Ok, sent_bytes={}",
-                bytes.len()
-            ),
-            Err(e) => eprintln!(
-                "fonos: HelperAudioOut::push -> Err({e}) (helper stdin closed/dead? bytes={})",
-                bytes.len()
-            ),
-        }
-        push_result?;
+        self.link.play_pcm(&bytes)?;
         self.pushed_ms
             .fetch_add(samples.len() as u64 / 16, Ordering::SeqCst); // 16 samples/ms
         Ok(())
@@ -533,24 +520,14 @@ impl fonos_core::sts::AudioOut for HelperAudioOut {
         // Sane bound: everything pushed, plus headroom for scheduling latency.
         // (A barge flush clears `pending`, so an interrupted reply returns
         // immediately rather than waiting out the discarded tail.)
-        let pushed_ms = self.pushed_ms.load(Ordering::SeqCst);
-        let timeout = Duration::from_millis(pushed_ms + 5_000);
-        eprintln!(
-            "fonos: HelperAudioOut::finish entry, pushed_ms={pushed_ms}, timeout_ms={}",
-            timeout.as_millis()
-        );
+        let timeout = Duration::from_millis(self.pushed_ms.load(Ordering::SeqCst) + 5_000);
         let link = Arc::clone(&self.link);
         let drained = tokio::task::spawn_blocking(move || link.wait_drained(timeout))
             .await
             .map_err(|e| format!("drain wait task failed: {e}"))?;
-        eprintln!("fonos: HelperAudioOut::finish -> drained={drained}");
         if drained {
             Ok(())
         } else {
-            eprintln!(
-                "fonos: HelperAudioOut::finish -> Err(voice helper playback did not drain in time; \
-                 helper process may have exited mid-call)"
-            );
             Err("voice helper playback did not drain in time".to_string())
         }
     }

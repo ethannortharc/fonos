@@ -429,19 +429,11 @@ async fn run_call_turn(
 ) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     if let CallAudio::MacVoice(v) = audio {
-        eprintln!(
-            "fonos: call TTS audio path=HelperAudioOut (macOS voice helper), aec={}",
-            audio.is_aec()
-        );
         let out = v.audio_out();
         return super::sts::execute_turn_with_audio(app, transcript, call_cfg, bridge, &out).await;
     }
     #[cfg(not(target_os = "macos"))]
     let _ = audio; // only matched on macOS
-    eprintln!(
-        "fonos: call TTS audio path=PlaybackAudioOut (default rodio), aec={}",
-        audio.is_aec()
-    );
     execute_turn(app, transcript, call_cfg, bridge).await
 }
 

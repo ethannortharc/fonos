@@ -173,16 +173,10 @@ pub async fn run_turn(
         return Err(err);
     }
     sink.emit(TurnEvent::Reply(reply.clone()));
-    eprintln!("fonos: call reply generated, len={}", reply.len());
 
     // Speak a sanitized copy: emoji/markdown are stripped so the TTS never
     // reads symbols aloud; the Reply event above keeps the original text.
     let speech_text = crate::listen::sanitize_for_speech(&reply);
-    eprintln!(
-        "fonos: call speech_text len={} (empty={})",
-        speech_text.len(),
-        speech_text.is_empty()
-    );
     if speech_text.is_empty() {
         // Nothing speakable (reply was all symbols) — still a completed turn.
         session.history.push((transcript, reply.clone()));
@@ -204,20 +198,10 @@ pub async fn run_turn(
     // engine the queue never drains — seamless by construction.
     sink.emit(TurnEvent::SpeakingStarted);
     let mut began = false;
-    let mut chunk_idx: usize = 0;
     for chunk in crate::listen::split_for_speech(&speech_text) {
-        eprintln!("fonos: call TTS chunk[{}] len={}", chunk_idx, chunk.len());
         let wav = match tts.synthesize(&chunk).await {
-            Ok(w) => {
-                eprintln!(
-                    "fonos: call TTS chunk[{}] synthesize -> Ok, wav_bytes={}",
-                    chunk_idx,
-                    w.len()
-                );
-                w
-            }
+            Ok(w) => w,
             Err(e) => {
-                eprintln!("fonos: call TTS chunk[{}] synthesize -> Err({})", chunk_idx, e);
                 let e = format!("TTS failed: {e}");
                 sink.emit(TurnEvent::Failed(classify_error(&e)));
                 return Err(e);
@@ -227,22 +211,9 @@ pub async fn run_turn(
             let parsed = crate::listen::parse_wav(&wav)?;
             if !began {
                 let (rate, channels) = crate::tts::wav_fmt(parsed.fmt)?;
-                eprintln!("fonos: call audio.begin(rate={rate}, channels={channels})");
-                let begin_result = audio.begin(rate, channels);
-                match &begin_result {
-                    Ok(()) => eprintln!("fonos: call audio.begin -> Ok"),
-                    Err(e) => eprintln!("fonos: call audio.begin -> Err({e})"),
-                }
-                begin_result?;
+                audio.begin(rate, channels)?;
             }
-            let push_len = parsed.data.len();
-            eprintln!("fonos: call audio.push bytes={push_len}");
-            let push_result = audio.push(parsed.data);
-            match &push_result {
-                Ok(()) => eprintln!("fonos: call audio.push -> Ok"),
-                Err(e) => eprintln!("fonos: call audio.push -> Err({e})"),
-            }
-            push_result
+            audio.push(parsed.data)
         })();
         began = true;
         if let Err(e) = step {
@@ -250,15 +221,8 @@ pub async fn run_turn(
             sink.emit(TurnEvent::Failed(classify_error(&e)));
             return Err(e);
         }
-        chunk_idx += 1;
     }
-    eprintln!("fonos: call audio.finish() awaiting drain");
-    let finish_result = audio.finish().await;
-    match &finish_result {
-        Ok(()) => eprintln!("fonos: call audio.finish -> Ok"),
-        Err(e) => eprintln!("fonos: call audio.finish -> Err({e})"),
-    }
-    if let Err(e) = finish_result {
+    if let Err(e) = audio.finish().await {
         let e = format!("Playback failed: {e}");
         sink.emit(TurnEvent::Failed(classify_error(&e)));
         return Err(e);

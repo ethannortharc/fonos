@@ -35,6 +35,10 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "llm.summarize": "builtin.llm.summarize",
   "llm.listen": "builtin.llm.listen",
   "llm.explain": "builtin.llm.explain",
+  // Migration-generated (see builtin.rs's builtin_display_name doc comment),
+  // not a static built-in — minted only for a customized sts_persona by
+  // migrate::migrate_legacy_call_triggers (final review wave, M1).
+  "llm.call-persona": "builtin.llm.call-persona",
   // output widgets
   "out.insert": "builtin.out.insert",
   "out.replace": "builtin.out.replace",

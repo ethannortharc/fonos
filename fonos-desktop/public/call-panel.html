@@ -89,8 +89,9 @@ body{background:transparent;overflow:hidden}
   <div id="log"><div id="emptyHint"></div></div>
   <div id="ftr">
     <button id="hangup" onclick="iv('call_stop').catch(function(e){console.error(e);})">
-      <!-- Same handset glyph as Conversation.tsx's voice button, rotated to the
-           "held to ear" / live pose — recognizable "in a call, tap to hang up". -->
+      <!-- Same hand-drawn handset silhouette as WidgetIcon.tsx's "call" icon,
+           rotated to the "held to ear" / live pose — recognizable "in a call,
+           tap to hang up". -->
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"
            stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(135deg)">
         <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z"/>
@@ -100,12 +101,14 @@ body{background:transparent;overflow:hidden}
   </div>
 </div>
 <script>
-/* ── Tiny inline i18n (float.html pattern) ── The main app owns the full
-   dictionary (lib/i18n); this panel mirrors just the Conversation page's
-   conv.state.*/conv.call.* strings so the two surfaces read identically.
-   Locale follows config.ui_language ("auto"/"en"/"zh"), resolved the same way
-   as float.html (auto → system language), and live-updates on `config:saved`
-   without waiting for a restart. */
+/* ── Tiny inline i18n (float.html pattern) ── This standalone webview can't
+   import the main app's lib/i18n (a React/TS module), so it owns its own
+   small STR dictionary below, keyed by this panel's own turn-state names
+   (idle/listening/thinking/speaking — the same values handleStsEvent's
+   `setState` calls with) plus its own chip/button copy. Locale follows
+   config.ui_language ("auto"/"en"/"zh"), resolved the same way as float.html
+   (auto → system language), and live-updates on `config:saved` without
+   waiting for a restart. */
 var STR={
   en:{
     title:'Call',
@@ -181,7 +184,9 @@ function setState(s){
   stateDot.classList.toggle('live', s!=='idle');
 }
 
-/* ── AEC truth chip (mirrors Conversation.tsx's audioPath chip) ── */
+/* ── AEC truth chip: cosmetic UI reflecting the call's real audio path
+   ("aec"/"ec" vs "fallback"), as reported by call_started's payload.audio
+   over the sts:event contract (see handleStsEvent below) ── */
 function renderAecChip(){
   if(!inCall || !audioPath){ aecChip.style.display='none'; return; }
   var ok = audioPath==='aec' || audioPath==='ec';
@@ -226,7 +231,8 @@ function bubble(role,text){
   return b;
 }
 // Tag the most recent assistant bubble "interrupted" (idempotent — a second
-// barge on the same still-untagged bubble is a no-op, mirrors Conversation.tsx).
+// barge on the same still-untagged bubble is a no-op), invoked from the
+// sts:event contract's 'barge' case in handleStsEvent below.
 function tagLastAssistantInterrupted(){
   var bubbles=log.querySelectorAll('.ba');
   if(!bubbles.length) return;

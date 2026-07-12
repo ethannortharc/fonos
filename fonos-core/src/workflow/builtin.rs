@@ -501,13 +501,18 @@ fn resolve_lang_from_env_lang(env_lang: Option<String>) -> Lang {
 /// Coverage is asserted by `builtin_display_name_covers_every_builtin_id`
 /// below: every id in [`built_in_workflows`] + [`built_in_widgets`] must
 /// resolve `Some` for both langs. That test can't see migration-generated
-/// ids — ones `workflow::migrate` mints straight into `config.workflows`
-/// rather than ids born in [`built_in_workflows`]/[`built_in_widgets`], e.g.
-/// `wf.dictation-toggle` (a `builtin: false`, `src.mic-toggle`-sourced sibling
-/// of `wf.dictation`, minted only when `hotkey_dictation_toggle` was bound) —
-/// so those are hand-listed below, matching
-/// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` map 1:1; keep
-/// the two in sync by hand when either gains an entry.
+/// ids — ones `workflow::migrate` mints straight into `config.workflows`/
+/// `config.widgets` rather than ids born in [`built_in_workflows`]/
+/// [`built_in_widgets`], e.g. `wf.dictation-toggle` (a `builtin: false`,
+/// `src.mic-toggle`-sourced sibling of `wf.dictation`, minted only when
+/// `hotkey_dictation_toggle` was bound) and `llm.call-persona` (minted only
+/// for a customized, non-default `sts_persona` — see
+/// `migrate::migrate_legacy_call_triggers`) — so those are hand-listed below,
+/// each pinned by its own `builtin_display_name_covers_migration_generated_*`
+/// test (they can't be added to `built_in_widgets` — that would mint them
+/// into every config, not just upgrading ones with a customized value),
+/// matching `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` map
+/// 1:1; keep the two in sync by hand when either gains an entry.
 pub fn builtin_display_name(id: &str, lang: Lang) -> Option<&'static str> {
     let (en, zh) = match id {
         // ── workflows ────────────────────────────────────────────────────
@@ -537,6 +542,12 @@ pub fn builtin_display_name(id: &str, lang: Lang) -> Option<&'static str> {
         "llm.summarize" => ("Summarize", "总结要点"),
         "llm.listen" => ("Listen briefing", "朗读摘要"),
         "llm.explain" => ("Explain", "解释"),
+        // Migration-generated (see this fn's doc comment), not a static
+        // built-in — hand-listed to match builtinLabels.ts. Minted (with a
+        // raw Chinese-only `name`, 「通话人格」) only for a customized
+        // `sts_persona` by `migrate::migrate_legacy_call_triggers` (final
+        // review wave, M1).
+        "llm.call-persona" => ("Call persona", "通话人格"),
         // ── output widgets ───────────────────────────────────────────────
         "out.insert" => ("Insert at cursor", "插入光标"),
         "out.replace" => ("Replace selection", "替换选区"),
@@ -839,6 +850,13 @@ mod tests {
     /// builtin seeded here without a matching map entry would otherwise fall
     /// through to `None` and silently keep showing the raw Chinese `name`
     /// literal to EN-language users.
+    ///
+    /// This test iterates [`built_in_workflows`]/[`built_in_widgets`] only —
+    /// it CANNOT see ids `workflow::migrate` mints straight into a config
+    /// (e.g. `wf.dictation-toggle`, `llm.call-persona`). Those are hand-listed
+    /// directly in `builtin_display_name`'s match arms and each pinned by its
+    /// own dedicated `builtin_display_name_covers_migration_generated_*` test
+    /// below, so don't read this test's silence as coverage for them.
     #[test]
     fn builtin_display_name_covers_every_builtin_id() {
         let mut ids: Vec<String> = built_in_widgets().into_iter().map(|w| w.id).collect();
@@ -871,6 +889,20 @@ mod tests {
     fn builtin_display_name_covers_migration_generated_dictation_toggle() {
         assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::En), Some("Dictation (toggle)"));
         assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::Zh), Some("听写·切换"));
+    }
+
+    /// `llm.call-persona` is migration-generated (see `builtin_display_name`'s
+    /// doc comment) — minted only for a customized `sts_persona` by
+    /// `migrate::migrate_legacy_call_triggers`, so it's never a member of
+    /// `built_in_widgets` and the coverage test above can't see it. Pins its
+    /// hand-listed entry directly, matching
+    /// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` value
+    /// byte-for-byte (final review wave, M1 — same precedent as
+    /// `wf.dictation-toggle` above).
+    #[test]
+    fn builtin_display_name_covers_migration_generated_call_persona() {
+        assert_eq!(builtin_display_name("llm.call-persona", Lang::En), Some("Call persona"));
+        assert_eq!(builtin_display_name("llm.call-persona", Lang::Zh), Some("通话人格"));
     }
 
     #[test]

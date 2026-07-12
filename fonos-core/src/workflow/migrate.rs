@@ -1100,14 +1100,20 @@ pub const CALL_PERSONA_WIDGET_ID: &str = "llm.call-persona";
 ///
 /// 2. **Persona mint**: a `sts_persona` that is non-empty AND differs from the
 ///    built-in default is minted into a custom `llm` widget
-///    ([`CALL_PERSONA_WIDGET_ID`], name 「通话人格」, `system` = the persona,
-///    `model_profile` = `sts_llm_profile`, temperature/max_tokens = the call
-///    chat stage's fixed 0.4/512) and referenced from `call.default`'s
-///    `llm_widget` prop. The default persona is NOT minted — it lives on as
-///    the desktop resolver's built-in fallback constant
+///    ([`CALL_PERSONA_WIDGET_ID`], raw `name` 「通话人格」, `system` = the
+///    persona, `model_profile` = `sts_llm_profile`, temperature/max_tokens =
+///    the call chat stage's fixed 0.4/512) and referenced from
+///    `call.default`'s `llm_widget` prop. The default persona is NOT minted —
+///    it lives on as the desktop resolver's built-in fallback constant
 ///    (`commands::call_widget::DEFAULT_CALL_PERSONA`), so a default config
 ///    stays overlay-free. `sts_persona` itself is left in place (not cleared),
-///    mirroring `agent_system_prompt`'s treatment.
+///    mirroring `agent_system_prompt`'s treatment. The raw Chinese `name`
+///    literal is display-overridden bilingually for both EN and ZH users the
+///    same way `wf.dictation-toggle` (another migration-minted, non-`built_in_*`
+///    id) is: hand-listed in `builtin::builtin_display_name` ("Call persona" /
+///    「通话人格」) and `builtinLabels.ts`'s `BUILTIN_LABELS` map (final review
+///    wave, M1 — the raw literal itself is untouched, matching that
+///    precedent).
 ///
 /// 3. **Tuning seed**: `sts_voice_profile`/`sts_voice`/`sts_max_turns`/
 ///    `call_vad_sensitivity`/`call_vad_silence_ms`/`call_barge_in` are copied

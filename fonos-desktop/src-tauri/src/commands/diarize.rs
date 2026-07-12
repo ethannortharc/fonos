@@ -52,6 +52,7 @@ pub async fn diarize_download_models(
                 Some("error") => {
                     let msg = v.get("message").and_then(|m| m.as_str()).unwrap_or("download failed").to_string();
                     emit_download(&app2, serde_json::json!({"kind": "error", "message": msg.clone()}));
+                    let _ = child.wait(); // reap — early return must not skip this
                     return Err(msg);
                 }
                 _ => {}

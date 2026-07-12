@@ -2853,4 +2853,121 @@ mod tests {
         let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
         assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");
     }
+
+    /// T15: the companion to [`full_chain_v06_config_end_to_end`] above, for
+    /// the OTHER realistic upgrade path — a config that already went through
+    /// Workbench P1 (on a prior app version: `workflow_migration_done` /
+    /// `settings_inflow_migration_done` / `triggers_migration_done` /
+    /// `pill_hotkey_migration_done` all set, `pill_hotkey` already populated)
+    /// and is only now upgrading to a P2-carrying version. The three P2
+    /// migrations must layer cleanly onto that already-migrated shape without
+    /// needing (or disturbing) a second P1 pass. `hotkey_agent`/
+    /// `hotkey_meeting`/`hotkey_sts`/`sts_persona`/`agent_system_prompt`/
+    /// `meeting_summary_prompt` are legacy standalone fields P1 never reads —
+    /// they survive P1 untouched, which is exactly why P2 can still find them.
+    #[test]
+    fn full_chain_layers_cleanly_onto_a_p1_already_migrated_config() {
+        use crate::config::migrate_transform_to_text_actions;
+        use crate::workflow::engine::{effective_widgets, effective_workflows};
+
+        let mut cfg = AppConfig::default();
+
+        // Same style of v0.6.x customizations as the from-scratch test above.
+        cfg.hotkey_dictation = "cmd+shift+space".to_string();
+        cfg.stt_language = "Chinese".to_string();
+        cfg.agent_system_prompt = "You are Rex, a custom test agent.".to_string();
+        cfg.meeting_summary_prompt = "Summarize action items only.".to_string();
+        cfg.sts_persona = "You are Rex, a spoken pirate.".to_string();
+        cfg.sts_llm_profile = "tuned-call-llm".to_string();
+        cfg.sts_voice = "af_bella".to_string();
+        cfg.call_vad_silence_ms = 1200;
+
+        let custom_modes = BTreeMap::new();
+
+        // ── Stage 1: run ONLY the pre-P2 (Workflow P1/P2 + Workbench P1) chain,
+        // simulating a prior app version that shipped without any of Task
+        // 6/7/9's migrations. ──
+        assert!(migrate_transform_to_text_actions(&mut cfg));
+        assert!(migrate_to_workflows(&mut cfg, &custom_modes));
+        assert!(migrate_settings_into_flow(&mut cfg));
+        remap_renamed_builtins(&mut cfg);
+        assert!(migrate_hotkeys_to_triggers(&mut cfg));
+        assert!(migrate_primary_hotkey_to_pill(&mut cfg));
+
+        // Premise check: genuinely "P1 done, P2 not yet run" before continuing.
+        assert!(cfg.workflow_migration_done);
+        assert!(cfg.settings_inflow_migration_done);
+        assert!(cfg.triggers_migration_done);
+        assert!(cfg.pill_hotkey_migration_done);
+        assert!(!cfg.agent_triggers_migration_done, "premise: P2 hasn't run yet");
+        assert!(!cfg.meeting_triggers_migration_done, "premise: P2 hasn't run yet");
+        assert!(!cfg.call_triggers_migration_done, "premise: P2 hasn't run yet");
+        assert_eq!(cfg.pill_hotkey, "cmd+shift+space", "P1 already moved the primary hotkey to the pill");
+        // The P2-relevant legacy fields are untouched by the P1 chain — still
+        // sitting there for P2 to consume, same as on a real disk-loaded config.
+        assert_eq!(cfg.hotkey_agent, "cmd+shift+a");
+        assert_eq!(cfg.hotkey_agent_panel, "cmd+shift+g");
+        assert_eq!(cfg.hotkey_meeting, "option+m");
+        assert_eq!(cfg.hotkey_sts, "option+s");
+
+        // ── Stage 2: layer the P2 chain on top of the already-P1-migrated config ──
+        assert!(migrate_legacy_agent_triggers(&mut cfg), "agent-triggers migration runs");
+        assert!(migrate_legacy_meeting_triggers(&mut cfg), "meeting-triggers migration runs");
+        assert!(migrate_legacy_call_triggers(&mut cfg), "call-triggers migration runs");
+
+        // All sentinels set — P1's untouched, P2's freshly set.
+        assert!(cfg.workflow_migration_done);
+        assert!(cfg.settings_inflow_migration_done);
+        assert!(cfg.triggers_migration_done);
+        assert!(cfg.pill_hotkey_migration_done);
+        assert!(cfg.agent_triggers_migration_done);
+        assert!(cfg.meeting_triggers_migration_done);
+        assert!(cfg.call_triggers_migration_done);
+
+        // Legacy P2 hotkeys landed as chips on their composite recipes.
+        let effective = effective_workflows(&cfg);
+        for combo in ["cmd+shift+a", "cmd+shift+g", "option+m", "option+s"] {
+            assert!(
+                effective.iter().any(|wf| wf.hotkey_triggers().any(|(_, c, _)| c == combo)),
+                "legacy hotkey '{combo}' missing from effective workflows after P2 layered onto P1"
+            );
+        }
+
+        // Prompt/persona/tuning seeds landed on the same widget props the
+        // from-scratch test checks.
+        let agent_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "agent.default").expect("agent.default");
+        assert_eq!(agent_default.props["system"], "You are Rex, a custom test agent.");
+
+        let meeting_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "meeting.default").expect("meeting.default");
+        assert_eq!(meeting_default.props["summary_prompt"], "Summarize action items only.");
+
+        let minted = effective_widgets(&cfg).into_iter().find(|w| w.id == CALL_PERSONA_WIDGET_ID).expect("llm.call-persona");
+        assert_eq!(minted.props["system"], "You are Rex, a spoken pirate.");
+        assert_eq!(minted.props["model_profile"], "tuned-call-llm");
+        let call_default = effective_widgets(&cfg).into_iter().find(|w| w.id == "call.default").expect("call.default");
+        assert_eq!(call_default.props["llm_widget"], CALL_PERSONA_WIDGET_ID);
+        assert_eq!(call_default.props["voice"], "af_bella");
+        assert_eq!(call_default.props["vad_silence_ms"], 1200);
+        assert_eq!(cfg.sts_voice, AppConfig::default().sts_voice, "fully-migrated field reset");
+        assert_eq!(cfg.call_vad_silence_ms, AppConfig::default().call_vad_silence_ms, "fully-migrated field reset");
+
+        // Second pass over the whole chain (P1 fns included — every migration
+        // guards itself independently) is a byte-identical no-op.
+        let json_before = serde_json::to_string(&cfg).expect("serialize before second pass");
+        let r1 = migrate_transform_to_text_actions(&mut cfg);
+        let r2 = migrate_to_workflows(&mut cfg, &custom_modes);
+        let r3 = migrate_settings_into_flow(&mut cfg);
+        let r4 = remap_renamed_builtins(&mut cfg);
+        let r5 = migrate_hotkeys_to_triggers(&mut cfg);
+        let r6 = migrate_primary_hotkey_to_pill(&mut cfg);
+        let r7 = migrate_legacy_agent_triggers(&mut cfg);
+        let r8 = migrate_legacy_meeting_triggers(&mut cfg);
+        let r9 = migrate_legacy_call_triggers(&mut cfg);
+        assert!(
+            !r1 && !r2 && !r3 && !r4 && !r5 && !r6 && !r7 && !r8 && !r9,
+            "second pass through the full chain must report no changes (r1={r1} r2={r2} r3={r3} r4={r4} r5={r5} r6={r6} r7={r7} r8={r8} r9={r9})"
+        );
+        let json_after = serde_json::to_string(&cfg).expect("serialize after second pass");
+        assert_eq!(json_before, json_after, "second pass through the full chain must not mutate config");
+    }
 }

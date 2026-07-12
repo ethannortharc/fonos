@@ -289,6 +289,7 @@ pub(crate) fn monitor_under_cursor(
 /// So this is `Cursor | TopCenter | BottomRight`, one variant per distinct
 /// placement strategy the five original `move_*_panel_to_cursor` functions
 /// implemented.
+#[cfg(target_os = "macos")]
 pub(crate) enum PanelAnchor {
     /// Below-right of the exact cursor position, flipped to the opposite
     /// side when it would cross a monitor edge. Used by the text-action,

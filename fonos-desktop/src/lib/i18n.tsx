@@ -546,6 +546,7 @@ const en = {
 
   "scen.sum.mode": "Default mode",
   "scen.sum.custommodes": "{0} custom",
+  "scen.sum.customwidgets": "{0} custom",
   "scen.sum.translate": "Translate →",
   "scen.sum.listen": "Listen",
   "scen.sum.defaultvoice": "default voice",
@@ -1262,6 +1263,7 @@ const zh: Partial<Record<Key, string>> = {
 
   "scen.sum.mode": "默认模式",
   "scen.sum.custommodes": "{0} 个自定义",
+  "scen.sum.customwidgets": "{0} 个自定义",
   "scen.sum.translate": "翻译 →",
   "scen.sum.listen": "朗读",
   "scen.sum.defaultvoice": "默认音色",

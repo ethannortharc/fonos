@@ -175,7 +175,7 @@ function DictationSummary({
     <SummaryCard>
       <SummaryRow label={t("scen.sum.mode")} value={modeName} />
       <SummaryRow label={t("wb.seg.recipes")} value={td("scen.sum.custommodes", [String(workflowCount)])} />
-      <SummaryRow label={t("wb.seg.widgets")} value={td("scen.sum.custommodes", [String(widgetCount)])} />
+      <SummaryRow label={t("wb.seg.widgets")} value={td("scen.sum.customwidgets", [String(widgetCount)])} />
       {translateTarget && <SummaryRow label={t("scen.sum.translate")} value={translateTarget} />}
     </SummaryCard>
   );

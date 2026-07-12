@@ -21,3 +21,8 @@ echo "Building fonos-voice-capture..."
 swiftc -O -o ../resources/fonos-voice-capture voice_capture.swift \
     -framework AVFoundation -framework Foundation
 echo "Built: $(ls -lh ../resources/fonos-voice-capture | awk '{print $5}')"
+
+echo "Building fonos-diarize (SwiftPM + FluidAudio)..."
+(cd fonos-diarize && swift build -c release)
+cp fonos-diarize/.build/release/fonos-diarize ../resources/fonos-diarize
+echo "Built: $(ls -lh ../resources/fonos-diarize | awk '{print $5}')"

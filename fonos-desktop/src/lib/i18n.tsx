@@ -145,6 +145,12 @@ const en = {
   "models.notset": "Not set",
   "models.notconfigured": "Not configured",
   "models.nocap": "No models with {cap} capability",
+  "models.local.title": "Local models",
+  "models.local.diarize.name": "Meeting speaker-separation model (CoreML, on-device)",
+  "models.local.download": "Download",
+  "models.local.downloading": "Downloading… {n}%",
+  "models.local.ready": "Ready",
+  "models.local.mirror-ph": "HuggingFace mirror endpoint (optional, e.g. https://hf-mirror.com)",
 
   // hotkeys tab
   "hotkeys.presskeys": "Press hotkey...",
@@ -248,6 +254,7 @@ const en = {
   "meet.no-transcript": "No transcript entries",
   "meet.me": "Me",
   "meet.other": "Other",
+  "meet.speaker-n": "Speaker {n}",
   "meet.no-text": "(no text)",
   "meet.empty": "No meetings recorded yet. Press Option+M to start.",
 
@@ -663,6 +670,8 @@ const en = {
   "widgets.field.meeting.stt_widget": "STT widget",
   "widgets.field.meeting.llm_widget": "LLM widget",
   "widgets.field.meeting.summary_prompt": "Summary prompt",
+  "widgets.field.meeting.diarize": "Speaker separation",
+  "widgets.field.meeting.diarize.no-model": "Separation model not downloaded — see Models page",
   "widgets.field.call.stt_widget": "STT widget",
   "widgets.field.call.llm_widget": "LLM widget (model + persona)",
   "widgets.field.call.max_turns": "Memory (turn pairs)",
@@ -880,6 +889,12 @@ const zh: Partial<Record<Key, string>> = {
   "models.notset": "未设置",
   "models.notconfigured": "未配置",
   "models.nocap": "没有具备 {cap} 能力的模型",
+  "models.local.title": "本地模型",
+  "models.local.diarize.name": "会议说话人分离模型（CoreML，本机运行）",
+  "models.local.download": "下载",
+  "models.local.downloading": "下载中… {n}%",
+  "models.local.ready": "已就绪",
+  "models.local.mirror-ph": "HuggingFace 镜像地址（可选，如 https://hf-mirror.com）",
 
   // hotkeys tab
   "hotkeys.presskeys": "请按快捷键…",
@@ -983,6 +998,7 @@ const zh: Partial<Record<Key, string>> = {
   "meet.no-transcript": "暂无转录内容",
   "meet.me": "我",
   "meet.other": "对方",
+  "meet.speaker-n": "说话人 {n}",
   "meet.no-text": "（无文本）",
   "meet.empty": "还没有会议记录。按 Option+M 开始。",
 
@@ -1379,6 +1395,8 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.field.meeting.stt_widget": "STT 组件",
   "widgets.field.meeting.llm_widget": "LLM 组件",
   "widgets.field.meeting.summary_prompt": "摘要提示词",
+  "widgets.field.meeting.diarize": "说话人分离",
+  "widgets.field.meeting.diarize.no-model": "分离模型未下载——去模型页下载",
   "widgets.field.call.stt_widget": "STT 组件",
   "widgets.field.call.llm_widget": "LLM 组件（模型 + 人格）",
   "widgets.field.call.max_turns": "记忆（对话轮数）",

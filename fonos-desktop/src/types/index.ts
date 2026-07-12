@@ -109,6 +109,9 @@ export interface AppConfig {
   /** Id of the voice workflow the pill hotkey triggers; empty falls back to
    *  the built-in "wf.dictation". Set by the Dictation drum / float pill. */
   active_voice_workflow?: string;
+  /** HuggingFace endpoint override for diarization model downloads (empty =
+   *  official). E.g. "https://hf-mirror.com". */
+  diarization_hf_endpoint?: string;
   /** Global hotkey owned by the floating pill (Workbench P1, spec §3c):
    *  pressing it runs the pill roller's currently selected workflow
    *  (active_voice_workflow, falling back to wf.dictation). Empty = unset. */

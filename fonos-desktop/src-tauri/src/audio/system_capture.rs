@@ -226,53 +226,10 @@ fn reader_thread(mut stdout: ChildStdout, buffer: Arc<Mutex<CaptureBuffer>>) {
 // ---------------------------------------------------------------------------
 
 fn find_audio_capture_binary() -> Option<String> {
-    let name = "fonos-audio-capture";
-
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-
-    // 1. Next to current executable (covers `cargo run` / debug builds).
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join(name));
-            // 2. macOS .app bundle: Contents/MacOS → Contents/Resources/
-            if let Some(parent) = dir.parent() {
-                candidates.push(parent.join("Resources").join(name));
-                // 3. Tauri v2 actually nests bundled resources one level
-                // deeper: Contents/Resources/resources/ (verified on the
-                // installed .app).
-                candidates.push(parent.join("Resources").join("resources").join(name));
-            }
-        }
-    }
-
-    // 4. Development paths relative to CWD (for `cargo test` / `cargo run`).
-    candidates.push(std::path::PathBuf::from(format!("src-tauri/resources/{name}")));
-    candidates.push(std::path::PathBuf::from(format!(
-        "fonos-desktop/src-tauri/resources/{name}"
-    )));
-    // 5. Absolute path into the source tree — always resolves under `cargo
-    // tauri dev` regardless of the working directory (CARGO_MANIFEST_DIR is
-    // this crate's dir, `.../fonos-desktop/src-tauri`). In a bundled release
-    // the baked-in build-machine path simply won't exist, so it's skipped.
-    candidates.push(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("resources")
-            .join(name),
-    );
-
-    for c in &candidates {
-        if c.exists() {
-            eprintln!("fonos: found {} at {}", name, c.display());
-            return Some(c.to_string_lossy().to_string());
-        }
-    }
-
-    eprintln!(
-        "fonos: {} not found; searched: {:?}",
-        name,
-        candidates.iter().map(|c| c.display().to_string()).collect::<Vec<_>>()
-    );
-    None
+    // Six-candidate search (dev tree, `cargo test` CWD, and the packaged
+    // .app's Resources/resources nesting) shared with `fonos-diarize`'s
+    // finder — see `diarize::find_helper_binary`.
+    super::diarize::find_helper_binary("fonos-audio-capture")
 }
 
 // ---------------------------------------------------------------------------

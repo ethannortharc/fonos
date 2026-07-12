@@ -7,6 +7,7 @@ pub mod call;
 pub mod call_widget;
 pub mod config;
 pub mod dialog;
+pub mod diarize;
 pub mod dictation;
 pub mod doctor;
 pub mod llm;

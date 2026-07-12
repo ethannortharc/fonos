@@ -5,6 +5,7 @@ pub mod capture;
 pub mod playback;
 pub mod system_capture;
 pub mod dual_capture;
+pub mod diarize;
 
 /// Shared per-100ms playback-loudness timeline, used as the barge detector's
 /// live reference by both the rodio playback and the macOS helper link.

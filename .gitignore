@@ -44,3 +44,6 @@ voice_refs/
 
 # Internal planning docs — kept local, not published
 docs/
+
+fonos-desktop/src-tauri/resources/fonos-diarize
+fonos-desktop/src-tauri/swift/fonos-diarize/.build/

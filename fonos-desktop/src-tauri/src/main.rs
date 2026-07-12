@@ -544,6 +544,8 @@ fn main() {
             commands::meeting::hide_meeting_panel,
             commands::meeting::export_meeting_md,
             commands::meeting::export_meeting_json,
+            commands::diarize::diarize_check,
+            commands::diarize::diarize_download_models,
             // Workflow / widget CRUD commands (settings pages)
             commands::workflow_cfg::list_widgets,
             commands::workflow_cfg::list_workflows,

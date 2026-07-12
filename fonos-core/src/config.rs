@@ -7,8 +7,30 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::{Error, Result};
-use crate::modes::OutputTarget;
 use crate::workflow::model::{WidgetDef, WorkflowDef};
+
+/// Where a text-action's processed result is sent.
+///
+/// Formerly declared alongside the legacy `modes` system (deleted in
+/// Workbench P2 Task 12); moved here because [`TextActionBinding`] is its
+/// only remaining consumer (`modes::ContainerKind`, the other half of that
+/// system's v2 output shape, had none left and was dropped entirely).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputTarget {
+    /// Copy result to the system clipboard.
+    #[default]
+    Clipboard,
+    /// Type/paste result into the currently-focused text field.
+    ActiveTextField,
+    /// Append result as a new Entry in a Container (notebook/conversation).
+    AppendToContainer,
+    /// Show result in a floating popup panel near the mouse cursor.
+    /// Core only declares the intent — rendering is a desktop adapter concern.
+    FloatingPopup,
+    /// Discard output — entry is saved to DB but not sent anywhere.
+    None,
+}
 
 /// Per-app override for the text injection strategy.
 ///
@@ -30,7 +52,12 @@ pub struct InjectionAppOverride {
 pub struct TextActionBinding {
     /// Hotkey combo, e.g. "cmd+shift+t". Empty disables the binding.
     pub hotkey: String,
-    /// Mode id resolved via `modes::all_modes()` (e.g. "translate", "summarize").
+    /// Legacy mode id (e.g. "translate", "summarize"). Read only by
+    /// [`crate::workflow::migrate::migrate_to_workflows`]'s one-time
+    /// conversion into a `wf.ta-*` workflow referencing the matching
+    /// `llm.{mode_id}` processor widget — the modes system this once
+    /// resolved through (`modes::all_modes()`) was deleted in Workbench P2
+    /// Task 12.
     pub mode_id: String,
     /// Where the result is delivered. Bindings own the target so shared mode
     /// definitions (also used by dictation) keep their own behavior untouched.
@@ -65,7 +92,15 @@ pub struct AppConfig {
     /// Ping the configured local STT/LLM backend when recording starts so the
     /// first capture after idle doesn't pay a model cold start (issue #4).
     pub warmup_enabled: bool,
-    /// STT language hint (BCP-47 tag or `"auto"`).
+    /// DEPRECATED (Workbench P2 Task 12, audited alongside the legacy
+    /// `modes` system's deletion): STT language hint (BCP-47 tag or
+    /// `"auto"`). No remaining readers — `crate::workflow::migrate::migrate_settings_into_flow`
+    /// (Workflow P2) one-time-baked this into every `stt`-type widget's own
+    /// `language` prop (`stt.default`'s `SttProps::language`, read live by
+    /// `workflow_widgets::SttProcessor` and by `commands::dictation`'s
+    /// dictation-flow STT step, both of which read the widget prop, never
+    /// this field). Kept only for that one-time migration read and for
+    /// deserializing configs saved before it ran; do not add new readers.
     pub stt_language: String,
     /// Named model profiles: JSON array of `{id, name, provider, api_key, model, base_url, capabilities[]}`.
     pub model_profiles: Vec<serde_json::Value>,
@@ -79,7 +114,17 @@ pub struct AppConfig {
     pub clean_prompt: String,
     /// Source language for translation mode (`"auto"` = detect).
     pub translate_source: String,
-    /// Target language for translation mode.
+    /// DEPRECATED (Workbench P2 Task 12, audited alongside the legacy
+    /// `modes` system's deletion): target language for translation mode. No
+    /// remaining runtime readers — the `llm.translate` widget's own prompt
+    /// template carries the target now (`migrate_settings_into_flow` baked a
+    /// non-default value in once; `workflow_widgets::LlmProcessor` and
+    /// `commands::llm::run_dictation_llm_step` both pass `""` for
+    /// `translate_target` to `llm::process_text` unconditionally —
+    /// translation is prompt-based, not config-threaded, post-Workflow-P2).
+    /// Kept for that one-time migration read and for `SavedScenario`'s
+    /// dictation-section snapshot/restore (and deserializing configs saved
+    /// before this change); do not add new readers.
     pub translate_target: String,
 
     // ── Agent settings ────────────────────────────────────────────────────
@@ -185,6 +230,15 @@ pub struct AppConfig {
     /// Default text injection strategy: `"paste"` (clipboard + Cmd+V, fast but
     /// briefly occupies the clipboard) or `"type"` (simulated keystrokes,
     /// never touches the clipboard but is slower for long text).
+    ///
+    /// Audited alongside the legacy `modes` system's deletion (Workbench P2
+    /// Task 12) — unlike that task's other global settings fields, this one
+    /// is genuinely still live-read: `injection::resolve_strategy_for_app`
+    /// (used by the raw-dictation injection path) falls back to this field
+    /// when no per-app override matches. A widget-level default (`out.insert`'s
+    /// own `strategy` prop, resolved via `resolve_strategy_for_app_with_default`)
+    /// is a separate, narrower fallback tier for the engine's insert output —
+    /// this field stays the process-wide default beneath both.
     pub injection_strategy: String,
     /// Per-app overrides of the injection strategy, matched against the
     /// frontmost app's name. First match wins.
@@ -204,8 +258,8 @@ pub struct AppConfig {
     /// Global hotkey: capture the current selection into the Listen queue.
     pub hotkey_listen: String,
     /// DEPRECATED (Workbench P2 Task 10): mode id used to process captured
-    /// text. No longer read — `commands::listen::do_create` always resolves
-    /// the built-in `llm.listen` widget via
+    /// text. No longer read — the desktop shell's Listen command always
+    /// resolves the built-in `llm.listen` widget via
     /// [`crate::workflow::engine::effective_widgets`] instead (customization
     /// now happens by editing that widget, not by pointing Listen at a
     /// different mode id). A custom mode id parked here is NOT migrated onto
@@ -281,7 +335,8 @@ pub struct AppConfig {
     // ── Custom vocabulary ────────────────────────────────────────────────
 
     /// User-defined vocab books (terms + correction rules). Referenced by id
-    /// from `global_vocab_books` and per-mode `Mode.vocab_books`.
+    /// from `global_vocab_books` and per-widget `LlmProps.vocab_books` /
+    /// `SttProps.vocab_books`.
     pub vocab_books: Vec<crate::vocab::VocabBook>,
     /// Book ids applied to every dictation regardless of mode.
     pub global_vocab_books: Vec<String>,
@@ -527,7 +582,7 @@ mod tests {
         let b = &cfg.text_actions[0];
         assert_eq!(b.hotkey, "cmd+shift+t");
         assert_eq!(b.mode_id, "polish");
-        assert_eq!(b.output_target, crate::modes::OutputTarget::ActiveTextField);
+        assert_eq!(b.output_target, OutputTarget::ActiveTextField);
         assert!(cfg.hotkey_transform.is_empty());
         // Idempotent: second call is a no-op.
         assert!(!migrate_transform_to_text_actions(&mut cfg));
@@ -543,7 +598,7 @@ mod tests {
         existing.text_actions.push(TextActionBinding {
             hotkey: "cmd+shift+y".into(),
             mode_id: "translate".into(),
-            output_target: crate::modes::OutputTarget::FloatingPopup,
+            output_target: OutputTarget::FloatingPopup,
         });
         assert!(!migrate_transform_to_text_actions(&mut existing));
         assert_eq!(existing.text_actions.len(), 1);

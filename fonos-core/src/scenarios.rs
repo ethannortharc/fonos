@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
-use crate::modes::Mode;
+use crate::workflow::migrate::LegacyMode;
 use crate::workflow::model::{WidgetDef, WorkflowDef};
 
 // ── model classification ────────────────────────────────────────────────────
@@ -350,8 +350,8 @@ pub struct ModelsSection {
 ///
 /// Evolved from a `modes.json`-shaped snapshot into a workflows/widgets-shaped
 /// one (Workbench P2 Task 11 — the engine world superseded modes back in
-/// Workflow P1, but the scenario snapshot only caught up now, the last task
-/// before T12 deletes `modes.rs`):
+/// Workflow P1, but the scenario snapshot only caught up then; Task 12 has
+/// since deleted `modes.rs` entirely):
 ///
 /// * `user_workflows` / `user_widgets` — `config.workflows` / `config.widgets`
 ///   verbatim (the overlay list: custom entries plus built-in overrides,
@@ -361,7 +361,8 @@ pub struct ModelsSection {
 ///   onward; applied by upserting each entry into the live config by id
 ///   (never deleting unrelated ones — same convention as the `models`
 ///   section's profile upsert).
-/// * `user_modes` — DEPRECATED: the legacy `modes.json` map (id → Mode),
+/// * `user_modes` — DEPRECATED: the legacy `modes.json` map (id → mode,
+///   deserialized via [`crate::workflow::migrate::LegacyMode`]),
 ///   present only in scenarios saved *before* this task. New snapshots always
 ///   leave it `null` — [`snapshot_current`] no longer reads `modes.json` at
 ///   all. [`apply_saved`] still recognizes a non-null value here and converts
@@ -723,7 +724,7 @@ fn upsert_widget_overlay(config: &mut AppConfig, widget: WidgetDef) {
 /// anything (the scratch config's dictation/listen/text-action fields are all
 /// at their neutral defaults, so rules 2/4/5 never reference a custom mode),
 /// and only its `llm.{id}` widget outputs are pulled back out.
-fn widgets_from_legacy_modes(custom_modes: &BTreeMap<String, Mode>) -> Vec<WidgetDef> {
+fn widgets_from_legacy_modes(custom_modes: &BTreeMap<String, LegacyMode>) -> Vec<WidgetDef> {
     let mut scratch = AppConfig { workflow_migration_done: false, ..Default::default() };
     crate::workflow::migrate::migrate_to_workflows(&mut scratch, custom_modes);
     custom_modes
@@ -846,7 +847,7 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) {
         }
 
         if !d.user_modes.is_null() {
-            if let Ok(custom_modes) = serde_json::from_value::<BTreeMap<String, Mode>>(d.user_modes.clone())
+            if let Ok(custom_modes) = serde_json::from_value::<BTreeMap<String, LegacyMode>>(d.user_modes.clone())
             {
                 for w in widgets_from_legacy_modes(&custom_modes) {
                     upsert_widget_overlay(config, w);
@@ -1427,7 +1428,7 @@ mod tests {
         cfg.text_actions = vec![crate::config::TextActionBinding {
             hotkey: "cmd+shift+y".into(),
             mode_id: "translate".into(),
-            output_target: crate::modes::OutputTarget::FloatingPopup,
+            output_target: crate::config::OutputTarget::FloatingPopup,
         }];
 
         // An old saved scenario's hotkeys section, serialized before text_actions
@@ -1463,7 +1464,7 @@ mod tests {
         let b = &cfg.text_actions[0];
         assert_eq!(b.hotkey, "cmd+shift+t");
         assert_eq!(b.mode_id, "polish");
-        assert_eq!(b.output_target, crate::modes::OutputTarget::ActiveTextField);
+        assert_eq!(b.output_target, crate::config::OutputTarget::ActiveTextField);
         assert!(cfg.hotkey_transform.is_empty());
     }
 
@@ -1474,12 +1475,12 @@ mod tests {
             crate::config::TextActionBinding {
                 hotkey: "cmd+shift+y".into(),
                 mode_id: "translate".into(),
-                output_target: crate::modes::OutputTarget::FloatingPopup,
+                output_target: crate::config::OutputTarget::FloatingPopup,
             },
             crate::config::TextActionBinding {
                 hotkey: "cmd+shift+u".into(),
                 mode_id: "polish".into(),
-                output_target: crate::modes::OutputTarget::ActiveTextField,
+                output_target: crate::config::OutputTarget::ActiveTextField,
             },
         ];
 
@@ -1492,7 +1493,7 @@ mod tests {
         target.text_actions = vec![crate::config::TextActionBinding {
             hotkey: "existing".into(),
             mode_id: "old".into(),
-            output_target: crate::modes::OutputTarget::Clipboard,
+            output_target: crate::config::OutputTarget::Clipboard,
         }];
         target.hotkey_transform = "cmd+shift+t".into();
 

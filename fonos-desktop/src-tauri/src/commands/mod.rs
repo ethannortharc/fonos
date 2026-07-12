@@ -9,7 +9,6 @@ pub mod config;
 pub mod dialog;
 pub mod dictation;
 pub mod doctor;
-pub mod listen;
 pub mod llm;
 pub mod meeting;
 pub mod meeting_widget;
@@ -54,8 +53,6 @@ pub use tts::{synthesize_speech, generate_and_play, play_audio_file, play_speech
 pub use config::{get_config, save_config};
 #[allow(unused_imports)]
 pub use stats::{record_event, delete_event, get_stats, get_history, get_today};
-#[allow(unused_imports)]
-pub use llm::{process_with_llm, list_modes, save_custom_mode, delete_custom_mode};
 #[allow(unused_imports)]
 pub use agent::{agent_process, agent_reset, list_skills, toggle_skill, save_custom_skill, delete_custom_skill, test_skill};
 

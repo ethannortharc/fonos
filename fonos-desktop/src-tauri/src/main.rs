@@ -59,27 +59,21 @@ async fn stop_and_process_dictation(handle: tauri::AppHandle) {
     match commands::dictation::stop_recording(handle.clone(), state, None).await {
         Ok(result) => {
             if !result.text.is_empty() {
-                let mode = {
+                let (mode, llm_props) = {
                     let cfg = state2.config.lock().unwrap();
-                    cfg.dictation_mode.clone()
+                    let mode = cfg.dictation_mode.clone();
+                    let widgets = fonos_core::workflow::engine::effective_widgets(&cfg);
+                    let props = commands::dictation::dictation_mode_llm_props(&widgets, &mode);
+                    (mode, props)
                 };
-                let has_llm = {
-                    let all = fonos_core::modes::all_modes();
-                    all.get(&mode).map_or(false, |m| m.system.is_some() || m.user_template.is_some())
-                };
-                if has_llm {
+                if let Some(props) = llm_props {
                     // stop_recording already left the pill in the processing
                     // state for LLM modes; just run the LLM and emit the final
                     // float:stop/float:error below.
                     {
                         // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
                         // processed text, emit exactly one terminal pill event, classify errors.
-                        let llm_res = commands::llm::process_with_llm(state2, result.text, mode.clone()).await;
-                        let stage = llm_res.map(|l| fonos_core::pipeline::LlmStageOutput {
-                            processed: l.processed,
-                            auto_paste: l.auto_paste,
-                            auto_press_enter: l.auto_press_enter,
-                        });
+                        let stage = commands::llm::run_dictation_llm_step(&state2, result.text, &props).await;
                         let (events, text_sink) = {
                             let s: tauri::State<AppState> = handle.state();
                             (
@@ -251,10 +245,7 @@ fn main() {
     // → workflow engine (Workflow P1). Runs after the transform migration above
     // so the text_actions it produces are folded into `wf.ta-*` workflows here,
     // and before build_hotkey_configs reads the (now workflow-shaped) config.
-    if fonos_core::workflow::migrate::migrate_to_workflows(
-        &mut config,
-        &fonos_core::modes::load_custom_modes(),
-    ) {
+    if fonos_core::workflow::migrate::migrate_to_workflows_from_disk(&mut config) {
         match config.save() {
             Ok(()) => eprintln!("fonos: migrated dictation/note/listen/text-actions to workflows"),
             Err(e) => eprintln!("fonos: workflow migration save failed: {e}"),
@@ -466,8 +457,6 @@ fn main() {
             commands::scenarios::export_scenario,
             commands::scenarios::import_scenario,
             commands::scenarios::import_scenario_json,
-            // Permission commands
-            commands::listen::create_listen_from_text,
             // The STS walkie/Talk-page commands (sts_page_start/stop,
             // get_sts_history, reset_sts_session) and call_start are gone
             // (Workbench P2 Task 9): calls start via the `call` composite
@@ -507,12 +496,8 @@ fn main() {
             commands::dialog::dialog_save_notebook,
             commands::set_note_notebook,
             // LLM commands
-            commands::llm::process_with_llm,
             commands::llm::probe_model,
             commands::llm::list_provider_models,
-            commands::llm::list_modes,
-            commands::llm::save_custom_mode,
-            commands::llm::delete_custom_mode,
             // Stats & History commands
             commands::stats::record_event,
             commands::stats::delete_event,

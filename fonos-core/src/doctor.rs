@@ -111,8 +111,8 @@ impl Finding {
 /// (`config.workflows` / `config.widgets`, resolved through
 /// [`effective_workflows`] / [`effective_widgets`]) instead of the legacy
 /// `modes.json` map — the engine superseded modes back in Workflow P1, and
-/// this is the last task before T12 deletes `modes.rs` entirely, so
-/// `lint_config` no longer takes a `modes` parameter at all.
+/// Task 12 has since deleted `modes.rs` entirely, so `lint_config` no longer
+/// takes a `modes` parameter at all.
 ///
 /// Returns findings in display order: one [`Severity::Pass`] finding per
 /// healthy category, or one-or-more problem findings when a category has

@@ -209,98 +209,6 @@ const config = {
   ],
 };
 
-const modes = [
-  {
-    id: "raw",
-    name: "Raw",
-    description: "Verbatim transcription.",
-    icon: "mic",
-    system: null,
-    user_template: null,
-    temperature: 0,
-    model: "",
-    stt_model: "",
-    stt_prompt: "",
-    stt_temperature: 0,
-    max_tokens: 4096,
-    output_language: "auto",
-    auto_paste: true,
-    auto_press_enter: false,
-    builtin: true,
-  },
-  {
-    id: "polish",
-    name: "Polish",
-    description: "Turn rough speech into natural writing.",
-    icon: "sparkles",
-    system: "Rewrite the transcript into clear, natural writing.",
-    user_template: "{text}",
-    temperature: 0.2,
-    model: "openrouter-gemini",
-    stt_model: "",
-    stt_prompt: "",
-    stt_temperature: 0,
-    max_tokens: 4096,
-    output_language: "auto",
-    auto_paste: true,
-    auto_press_enter: false,
-    builtin: true,
-  },
-  {
-    id: "translate",
-    name: "Translate",
-    description: "Translate speech into English.",
-    icon: "languages",
-    system: "Translate the transcript while preserving intent.",
-    user_template: "{text}",
-    temperature: 0.1,
-    model: "openrouter-gemini",
-    stt_model: "",
-    stt_prompt: "",
-    stt_temperature: 0,
-    max_tokens: 4096,
-    output_language: "English",
-    auto_paste: true,
-    auto_press_enter: false,
-    builtin: true,
-  },
-  {
-    id: "note",
-    name: "Note",
-    description: "Save the result into a notebook.",
-    icon: "notebook",
-    system: "Convert the transcript into a concise note.",
-    user_template: "{text}",
-    temperature: 0.2,
-    model: "openrouter-gemini",
-    stt_model: "",
-    stt_prompt: "",
-    stt_temperature: 0,
-    max_tokens: 4096,
-    output_language: "auto",
-    auto_paste: false,
-    auto_press_enter: false,
-    builtin: true,
-  },
-  {
-    id: "terminal",
-    name: "Terminal",
-    description: "Convert speech into a shell-friendly command.",
-    icon: "terminal",
-    system: "Return a concise terminal command when possible.",
-    user_template: "{text}",
-    temperature: 0.1,
-    model: "ollama-local",
-    stt_model: "",
-    stt_prompt: "",
-    stt_temperature: 0,
-    max_tokens: 1024,
-    output_language: "auto",
-    auto_paste: false,
-    auto_press_enter: false,
-    builtin: false,
-  },
-];
 
 // Workflow P1 (Task 12): small static widget/workflow catalog so the Widgets
 // and Workflows settings tabs have something to render in the browser demo.
@@ -540,8 +448,6 @@ export function installDemoIpc() {
         return null;
       case "call_stop":
         return null;
-      case "create_listen_from_text":
-        return 99;
       case "has_microphone":
         return true;
       case "check_accessibility":
@@ -561,30 +467,15 @@ export function installDemoIpc() {
           noise_removed_pct: 3.8,
           gain_db: 1.4,
         };
-      case "process_with_llm":
-        return {
-          original: payload.text ?? "",
-          processed:
-            "Fonos lets you speak once, then route the result to dictation, translation, notes, meeting transcripts, or an AI agent without leaving the keyboard.",
-          mode: payload.mode ?? "polish",
-          mode_name: "Polish",
-          latency_ms: 612,
-          auto_paste: true,
-          auto_press_enter: false,
-        };
       case "get_config":
         return config;
       case "save_config":
-      case "save_custom_mode":
-      case "delete_custom_mode":
       case "update_entry":
       case "update_entry_text":
       case "delete_entry":
       case "delete_container":
       case "set_note_notebook":
         return null;
-      case "list_modes":
-        return modes;
       case "list_widgets":
         return widgets;
       case "list_workflows":

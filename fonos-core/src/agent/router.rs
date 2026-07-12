@@ -1,21 +1,24 @@
-//! Processor router — dispatches STT output to either the mode pipeline or the
-//! agent processor based on the active user selection.
+//! Processor router — dispatches STT output to either the agent processor or a
+//! raw pass-through, based on the active user selection.
 //!
 //! [`ProcessorRouter`] is the single entry point that bridges the voice
 //! transcription layer with the two processing paths in Fonos:
 //!
-//! * **Mode path** — single-pass LLM text transformation using a [`Mode`]
-//!   definition (e.g. "polish", "formal", "translate").  When the selected
-//!   mode has no prompts (e.g. "raw") the transcribed text is returned as-is.
 //! * **Agent path** — multi-step reasoning loop implemented by
 //!   [`AgentProcessor`].  The processor owns a persistent
 //!   [`ConversationContext`] so that follow-up utterances reference prior
 //!   exchanges.
+//! * **Raw path** — any selection other than `"agent"` returns the
+//!   transcribed text unchanged. (Prior to Workbench P2 Task 12 this branch
+//!   also covered a "mode" path — single-pass LLM text transformation via the
+//!   legacy `modes` system — deleted along with that system; single-pass LLM
+//!   transformation is now a `wf.*` workflow's own `llm` processor step, not
+//!   something this router dispatches.)
 //!
 //! # Context lifecycle
 //!
 //! Conversation context is preserved across selection changes.  Switching from
-//! "agent" to a mode (and back) does **not** reset the agent's history —
+//! "agent" to raw (and back) does **not** reset the agent's history —
 //! context is only cleared by an explicit call to [`ProcessorRouter::reset_agent`].
 
 use crate::{
@@ -25,8 +28,7 @@ use crate::{
         processor::{AgentProcessor, AgentResult, HttpLlmCaller, LlmCaller},
         registry::SkillRegistry,
     },
-    llm::{LlmResponse, ServiceConfig},
-    modes::built_in_modes,
+    llm::ServiceConfig,
     Result,
 };
 
@@ -35,20 +37,14 @@ use crate::{
 /// The outcome of a [`ProcessorRouter::route`] call.
 #[derive(Debug)]
 pub enum RouterResult {
-    /// The selection mapped to a mode that has LLM prompts; the text was
-    /// processed through the mode pipeline.
-    ModeResult {
-        /// The LLM response produced by the mode pipeline.
-        response: LlmResponse,
-    },
     /// The selection was `"agent"`; the text was processed by the agent
     /// reasoning loop.
     AgentResult {
         /// The result produced by the agent processor.
         response: AgentResult,
     },
-    /// The selection mapped to a mode with no prompts (e.g. `"raw"`); the
-    /// original transcribed text is returned unchanged.
+    /// Any other selection; the original transcribed text is returned
+    /// unchanged.
     RawText {
         /// The unmodified transcription text.
         text: String,
@@ -136,16 +132,14 @@ impl<C: LlmCaller> ProcessorRouter<C> {
     ///
     /// * `"agent"` — delegates to [`AgentProcessor::process`]; returns
     ///   [`RouterResult::AgentResult`].
-    /// * A recognised mode ID with LLM prompts — calls
-    ///   [`crate::llm::process_text`]; returns [`RouterResult::ModeResult`].
-    /// * A recognised mode ID with **no** prompts (e.g. `"raw"`) — returns
-    ///   the original text as [`RouterResult::RawText`].
-    /// * An unrecognised selection — treated the same as "raw" and returns
-    ///   [`RouterResult::RawText`].
+    /// * Any other selection — returns the original text as
+    ///   [`RouterResult::RawText`]. (Single-pass LLM transformation lives in
+    ///   the workflow engine's own `llm` processor step now, not here — see
+    ///   the module doc.)
     ///
     /// # Errors
     ///
-    /// Returns an error if the LLM call (mode or agent) fails.
+    /// Returns an error if the agent's LLM call fails.
     pub async fn route(
         &mut self,
         selection: &str,
@@ -157,24 +151,6 @@ impl<C: LlmCaller> ProcessorRouter<C> {
             return Ok(RouterResult::AgentResult { response: result });
         }
 
-        // Look up the mode in the built-in set.
-        let modes = built_in_modes();
-        if let Some(mode) = modes.get(selection) {
-            // A mode with neither a system prompt nor a user template passes
-            // text through unchanged (the "raw" mode).
-            if mode.system.is_none() && mode.user_template.is_none() {
-                return Ok(RouterResult::RawText {
-                    text: text.to_string(),
-                });
-            }
-
-            // Mode has prompts — run it through the LLM pipeline.
-            let response =
-                crate::llm::process_text(text, mode, llm_service, None, "").await?;
-            return Ok(RouterResult::ModeResult { response });
-        }
-
-        // Unknown selection — treat as raw pass-through.
         Ok(RouterResult::RawText {
             text: text.to_string(),
         })
@@ -286,21 +262,6 @@ mod test_processor_router {
             RouterResult::RawText { text } => assert_eq!(text, "hello world"),
             other => panic!("expected RawText, got {other:?}"),
         }
-    }
-
-    #[tokio::test]
-    async fn route_polish_returns_mode_result() {
-        // For "polish" the mock LLM would be called, but we're testing routing
-        // logic. Since process_text would make a real HTTP call, we verify the
-        // routing decision by checking that "polish" maps to a mode with prompts.
-        // We test the routing decision without actually calling process_text by
-        // inspecting the built-in modes directly.
-        let modes = built_in_modes();
-        let polish = modes.get("polish").expect("polish mode should exist");
-        assert!(
-            polish.system.is_some() || polish.user_template.is_some(),
-            "polish mode should have prompts — would route to ModeResult"
-        );
     }
 
     #[tokio::test]
@@ -420,57 +381,4 @@ mod test_processor_router {
         );
     }
 
-    // ── Built-in mode routing logic ──────────────────────────────────────────
-
-    #[test]
-    fn raw_mode_has_no_prompts() {
-        let modes = built_in_modes();
-        let raw = modes.get("raw").expect("raw mode should exist");
-        assert!(
-            raw.system.is_none() && raw.user_template.is_none(),
-            "raw mode should have no prompts — routes to RawText"
-        );
-    }
-
-    #[test]
-    fn polish_mode_has_prompts() {
-        let modes = built_in_modes();
-        let polish = modes.get("polish").expect("polish mode should exist");
-        assert!(
-            polish.system.is_some() || polish.user_template.is_some(),
-            "polish mode should have at least one prompt — routes to ModeResult"
-        );
-    }
-
-    #[test]
-    fn formal_mode_has_prompts() {
-        let modes = built_in_modes();
-        let formal = modes.get("formal").expect("formal mode should exist");
-        assert!(
-            formal.system.is_some() || formal.user_template.is_some(),
-            "formal mode should have at least one prompt — routes to ModeResult"
-        );
-    }
-
-    #[test]
-    fn all_built_in_modes_classified_correctly() {
-        // "raw" and modes with processor=="none" → RawText (no LLM post-processing).
-        // Everything else → ModeResult (requires LLM prompts).
-        let modes = built_in_modes();
-        for (id, mode) in &modes {
-            let has_prompts = mode.system.is_some() || mode.user_template.is_some();
-            let is_no_llm = id == "raw" || mode.processor == "none";
-            if is_no_llm {
-                assert!(
-                    !has_prompts,
-                    "mode '{id}' with processor='none' should have no LLM prompts"
-                );
-            } else {
-                assert!(
-                    has_prompts,
-                    "mode '{id}' should have at least one prompt"
-                );
-            }
-        }
-    }
 }

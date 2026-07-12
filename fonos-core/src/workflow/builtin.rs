@@ -8,10 +8,10 @@
 //! The LLM widgets (`llm.polish`, `llm.formal`, `llm.translate`,
 //! `llm.summarize`, `llm.listen`) each carry a literal `system` /
 //! `user_template` / `temperature`, inlined below so this module is
-//! self-contained and has no runtime dependency on the legacy mode system in
-//! `modes.rs`. The literals were seeded byte-for-byte from that system's
-//! built-in modes; a `#[cfg(test)]`-only regression test cross-checks them
-//! for drift and can be deleted once `modes.rs` goes away.
+//! self-contained. The literals were originally seeded byte-for-byte from the
+//! legacy `modes` system's built-in modes (a byte-lock regression test
+//! cross-checked them for drift until `modes.rs` was deleted in Workbench P2
+//! Task 12); this module is now the sole source of truth for them.
 
 use crate::workflow::model::{Trigger, WidgetDef, WidgetRole, WorkflowDef};
 
@@ -478,55 +478,6 @@ mod tests {
         let ut = w.props.get("user_template").and_then(|v| v.as_str()).unwrap();
         assert!(!ut.contains("{target_lang}"), "placeholder must be gone");
         assert!(ut.contains("English"), "concrete default language baked in");
-    }
-
-    /// Byte-lock the 5 built-in LLM widgets' inlined prompts against the
-    /// legacy mode system so the two independent copies can't silently
-    /// drift apart. Safe to delete once `modes.rs` is removed (P3) — at
-    /// that point `built_in_widgets` is the only source of truth.
-    #[test]
-    fn built_in_llm_widget_prompts_match_legacy_modes_byte_for_byte() {
-        let widgets = built_in_widgets();
-        let modes = crate::modes::built_in_modes();
-        let pairs = [
-            ("polish", "llm.polish"),
-            ("formal", "llm.formal"),
-            ("translate", "llm.translate"),
-            ("summarize", "llm.summarize"),
-            ("listen", "llm.listen"),
-        ];
-        for (mode_id, widget_id) in pairs {
-            let mode = modes
-                .get(mode_id)
-                .unwrap_or_else(|| panic!("legacy mode '{mode_id}' missing"));
-            let w = widgets
-                .iter()
-                .find(|w| w.id == widget_id)
-                .unwrap_or_else(|| panic!("widget '{widget_id}' missing"));
-            assert_eq!(
-                w.props["system"].as_str().unwrap(),
-                mode.system.as_deref().unwrap(),
-                "{widget_id} system drifted from mode '{mode_id}'"
-            );
-            // llm.translate intentionally diverges here: the workflow copy
-            // hardcodes "English" (translation is prompt-based now — see
-            // RunCtx::translate_target's removal), while the legacy
-            // `translate` mode still substitutes the user-configured
-            // `{target_lang}` for the separate, still-live text-action /
-            // dictation translate feature. Every other pair stays locked.
-            if widget_id != "llm.translate" {
-                assert_eq!(
-                    w.props["user_template"].as_str().unwrap(),
-                    mode.user_template.as_deref().unwrap(),
-                    "{widget_id} user_template drifted from mode '{mode_id}'"
-                );
-            }
-            assert_eq!(
-                w.props["temperature"].as_f64().unwrap(),
-                mode.temperature,
-                "{widget_id} temperature drifted from mode '{mode_id}'"
-            );
-        }
     }
 
     #[test]

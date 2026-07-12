@@ -8,9 +8,50 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::audio::capture::AudioCapture;
 use crate::injection::inject_text;
+use fonos_core::workflow::engine::effective_widgets;
+use fonos_core::workflow::llm_step::LlmProps;
+use fonos_core::workflow::model::WidgetDef;
 use tauri::{Emitter, Manager};
 
+use super::workflow_widgets::SttProps;
 use super::AppState;
+
+/// Resolve the [`LlmProps`] of the `llm.{mode_id}` processor widget backing a
+/// legacy dictation-mode id (`config.dictation_mode`, or a `mode_override`
+/// carrying one), if any — the engine-world replacement for the deleted
+/// `modes::all_modes()` "does this mode have LLM content" lookup (Workbench
+/// P2 Task 12). Mirrors [`crate::workflow::migrate::mode_resolves_to_llm_widget`]'s
+/// rule 2 (`"raw"` never has an LLM step) without needing that private
+/// function: any other id either resolves to a real widget with a prompt, or
+/// doesn't — an unresolved id (including one with no matching widget at all)
+/// is treated as content-less, matching `raw`'s behavior.
+pub(crate) fn dictation_mode_llm_props(widgets: &[WidgetDef], mode_id: &str) -> Option<LlmProps> {
+    if mode_id.is_empty() || mode_id == "raw" {
+        return None;
+    }
+    let widget_id = format!("llm.{mode_id}");
+    let props: LlmProps = widgets
+        .iter()
+        .find(|w| w.id == widget_id)
+        .and_then(|w| serde_json::from_value(w.props.clone()).ok())?;
+    if props.system.is_some() || props.user_template.is_some() {
+        Some(props)
+    } else {
+        None
+    }
+}
+
+/// Resolve the built-in `stt.default` widget's [`SttProps`] from `widgets`
+/// ([`effective_widgets`]'s result). Falls back to
+/// [`SttProps`]'s serde defaults if the widget is missing (shouldn't happen —
+/// built-ins are never deletable) or its props fail to deserialize.
+fn resolve_stt_default_props(widgets: &[WidgetDef]) -> SttProps {
+    widgets
+        .iter()
+        .find(|w| w.id == "stt.default")
+        .and_then(|w| serde_json::from_value(w.props.clone()).ok())
+        .unwrap_or_else(|| serde_json::from_value(serde_json::json!({})).unwrap())
+}
 
 /// Prevents duplicate start/stop calls from rapid hotkey events.
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
@@ -182,8 +223,8 @@ fn is_local_endpoint(base_url: &str) -> bool {
 /// loaded. Local endpoints only — cloud APIs don't cold-start and probes
 /// would cost money. Debounced to once per WARMUP_INTERVAL_SECS.
 fn spawn_backend_warmup(state: &tauri::State<'_, AppState>) {
-    let (enabled, mode_name) = match state.config.lock() {
-        Ok(cfg) => (cfg.warmup_enabled, cfg.dictation_mode.clone()),
+    let (enabled, mode_name, widgets) = match state.config.lock() {
+        Ok(cfg) => (cfg.warmup_enabled, cfg.dictation_mode.clone(), effective_widgets(&cfg)),
         Err(_) => return,
     };
     if !enabled {
@@ -200,10 +241,7 @@ fn spawn_backend_warmup(state: &tauri::State<'_, AppState>) {
 
     let stt = super::get_service_config(state, "stt");
     let llm = super::get_service_config(state, "llm");
-    let mode_has_llm = fonos_core::modes::all_modes()
-        .get(&mode_name)
-        .map(|m| m.system.is_some() || m.user_template.is_some())
-        .unwrap_or(false);
+    let mode_has_llm = dictation_mode_llm_props(&widgets, &mode_name).is_some();
 
     tauri::async_runtime::spawn(async move {
         if stt.provider != "apple" && !stt.base_url.trim().is_empty() && is_local_endpoint(&stt.base_url) {
@@ -213,7 +251,7 @@ fn spawn_backend_warmup(state: &tauri::State<'_, AppState>) {
             let _ = if stt.stt_api == "chat" {
                 transcribe_chat(&stt, &bytes, "", &[]).await
             } else {
-                transcribe_http(&stt, &bytes, &model, "", None, &[]).await
+                transcribe_http(&stt, &bytes, &model, "", "", 0.0, &[]).await
             };
         }
         if mode_has_llm && !llm.base_url.trim().is_empty() && is_local_endpoint(&llm.base_url) {
@@ -565,20 +603,30 @@ struct SttCore {
     preprocess_metrics: (f64, f64),
 }
 
-/// Resolve the STT profile from the (overridable) dictation mode, run the shared
-/// [`stt_transcribe`] core (preprocess + Apple/Whisper-HTTP/chat), and apply the
-/// deterministic vocab post-correction. This is the mode-based STT step shared by
-/// [`transcribe_samples`] (which then records stats, storage, and drives the
-/// float pill / injection) and the call-mode barge content verifier
-/// ([`transcribe_stt_only`], which wants only the transcript).
+/// Resolve the STT profile from the `stt.default` widget (overridable), run
+/// the shared [`stt_transcribe`] core (preprocess + Apple/Whisper-HTTP/chat),
+/// and apply the deterministic vocab post-correction. This is the STT step
+/// shared by [`transcribe_samples`] (which then records stats, storage, and
+/// drives the float pill / injection) and the call-mode barge content
+/// verifier ([`transcribe_stt_only`], which wants only the transcript).
+///
+/// STT configuration (model profile, whisper prompt, sampling temperature,
+/// language, extra vocab books) comes from the built-in `stt.default`
+/// processor widget — the same widget the engine's `SttProcessor` reads for
+/// every other mic-sourced workflow (Workbench P1 unified dictation onto one
+/// shared STT widget instead of a per-mode config; this function was the one
+/// remaining straggler still reading the legacy per-mode fields directly,
+/// cut over in Workbench P2 Task 12). `mode_override` / `config.dictation_mode`
+/// only decides the (separate) `llm.{mode}` widget used for the downstream
+/// LLM step — see [`dictation_mode_llm_props`].
 ///
 /// No stats, storage, or float-pill side effects of its own; an STT *error* is
 /// still surfaced to the float pill for interactive modes (not "agent"/"sts-page"),
-/// exactly as before. `mode_override` selects the STT profile just as in
+/// exactly as before. `mode_override` selects the LLM-step mode just as in
 /// [`transcribe_samples`]; `stt_profile_override` (Task 9, the call
 /// composite's resolved `stt_widget` ref — possibly the `"apple-speech"`
-/// sentinel) beats the mode-based resolution when `Some`; `apply_vocab` runs
-/// the vocab rules (the verifier skips them for speed).
+/// sentinel) beats `stt.default`'s own `model_profile` when `Some`;
+/// `apply_vocab` runs the vocab rules (the verifier skips them for speed).
 async fn transcribe_core(
     app: &tauri::AppHandle,
     state: &AppState,
@@ -589,23 +637,22 @@ async fn transcribe_core(
 ) -> Result<SttCore, String> {
     let recording_duration = all_samples.len() as f64 / 16000.0;
 
-    // Load config + mode to determine which STT profile to use
+    // Load config to resolve the effective dictation mode (for the LLM step)
+    // and the stt.default widget's props (for the STT step) in one lock scope.
     // mode_override (from Dictation view) takes precedence over config.dictation_mode (float pill)
-    let (dictation_mode, stt_language) = {
+    let (dictation_mode, stt_props, widgets) = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         let mode = mode_override.unwrap_or_else(|| config.dictation_mode.clone());
-        (mode, config.stt_language.clone())
+        let widgets = effective_widgets(&config);
+        let stt_props = resolve_stt_default_props(&widgets);
+        (mode, stt_props, widgets)
     };
-    let all_modes = fonos_core::modes::all_modes();
-    let current_mode = all_modes.get(&dictation_mode);
 
-    // Resolve effective vocab books for this dictation (global ∪ mode, issue #3).
+    // Resolve effective vocab books for this dictation (global ∪ stt.default's, issue #3).
     // Cloned out of the config lock so the books outlive the transcription awaits.
     let vocab_books: Vec<fonos_core::vocab::VocabBook> = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
-        let empty: &[String] = &[];
-        let mode_ids = current_mode.map(|m| m.vocab_books.as_slice()).unwrap_or(empty);
-        fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, mode_ids)
+        fonos_core::vocab::effective_books(&config.vocab_books, &config.global_vocab_books, &stt_props.vocab_books)
             .into_iter()
             .cloned()
             .collect()
@@ -615,7 +662,8 @@ async fn transcribe_core(
 
     // Read STT config — an explicit profile override (Task 9: the call
     // composite's resolved stt_widget ref) wins outright, then the Apple
-    // Speech sentinel, then the mode override, then the global default.
+    // Speech sentinel, then stt.default's own model_profile, then the global
+    // default. Mirrors `workflow_widgets::SttProcessor`'s resolution exactly.
     let stt = match &stt_profile_override {
         Some(profile) if profile == "apple-speech" => {
             eprintln!("fonos: STT using Apple Speech on-device (override, mode={dictation_mode})");
@@ -629,8 +677,7 @@ async fn transcribe_core(
             eprintln!("fonos: STT using explicit override profile '{profile}' (mode={dictation_mode})");
             super::get_service_config_for_profile(state, profile)
         }
-        None => match current_mode {
-        Some(mode) if mode.stt_model == "apple-speech" => {
+        None if stt_props.model_profile == "apple-speech" => {
             eprintln!("fonos: STT using Apple Speech on-device (mode={})", dictation_mode);
             super::ServiceConfig {
                 base_url: String::new(), api_key: String::new(),
@@ -638,22 +685,22 @@ async fn transcribe_core(
                 stt_api: "whisper".to_string(),
             }
         }
-        Some(mode) if !mode.stt_model.is_empty() => {
-            eprintln!("fonos: STT using mode override profile '{}' (mode={})", mode.stt_model, dictation_mode);
-            super::get_service_config_for_profile(&state, &mode.stt_model)
+        None if !stt_props.model_profile.is_empty() => {
+            eprintln!("fonos: STT using stt.default profile '{}' (mode={})", stt_props.model_profile, dictation_mode);
+            super::get_service_config_for_profile(state, &stt_props.model_profile)
         }
-        _ => {
+        None => {
             eprintln!("fonos: STT using global default profile (mode={})", dictation_mode);
-            super::get_service_config(&state, "stt")
+            super::get_service_config(state, "stt")
         }
-        },
     };
     eprintln!("fonos: STT provider={} endpoint={} model={}", stt.provider, stt.base_url, stt.model);
 
-    // Mode STT params handed to the shared core: the mode's own whisper prompt
-    // and sampling temperature (vocab biasing is merged in by the core itself).
-    let stt_prompt = current_mode.map(|m| m.stt_prompt.clone()).unwrap_or_default();
-    let stt_temperature = current_mode.map(|m| m.stt_temperature).unwrap_or(0.0);
+    // stt.default's own whisper prompt and sampling temperature (vocab biasing
+    // is merged in by the shared core itself).
+    let stt_prompt = stt_props.stt_prompt.clone();
+    let stt_temperature = stt_props.temperature;
+    let stt_language = stt_props.language.clone();
 
     // ── Shared "samples → transcript" STT core (Apple / Whisper-HTTP / chat) ──
     // Returns the raw transcript plus the byproducts this function surfaces
@@ -695,9 +742,7 @@ async fn transcribe_core(
         fonos_core::vocab::apply_rules(&transcript, &vocab_refs)
     };
 
-    let mode_has_llm = current_mode
-        .map(|m| m.system.is_some() || m.user_template.is_some())
-        .unwrap_or(false);
+    let mode_has_llm = dictation_mode_llm_props(&widgets, &dictation_mode).is_some();
 
     let stats_model = if stt.provider == "apple" {
         format!("Apple Speech ({})", if stt_engine.is_empty() { "server" } else { &stt_engine })
@@ -816,15 +861,7 @@ pub(crate) async fn stt_transcribe(
         eprintln!("fonos: STT via chat completions (base64 audio)");
         transcribe_chat(&svc, &file_bytes, &lang_code, &vocab_terms).await
     } else {
-        // `transcribe_http` reads only `stt_prompt` + `stt_temperature` from the
-        // mode it is handed; feed it a throwaway `Mode` carrying just those so
-        // this core stays mode-free while reusing the HTTP client unchanged.
-        let stt_mode = fonos_core::modes::Mode {
-            stt_prompt: prompt,
-            stt_temperature: temperature,
-            ..Default::default()
-        };
-        transcribe_http(&svc, &file_bytes, &model_name, &lang_code, Some(&stt_mode), &vocab_terms).await
+        transcribe_http(&svc, &file_bytes, &model_name, &lang_code, &prompt, temperature, &vocab_terms).await
     };
 
     // Non-Apple STT failures propagate as Err(raw); the caller surfaces them.
@@ -1043,7 +1080,7 @@ pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> 
     let result = if stt.stt_api == "chat" {
         transcribe_chat(&stt, &bytes, "", &[]).await
     } else {
-        transcribe_http(&stt, &bytes, &model_name, "", None, &[]).await
+        transcribe_http(&stt, &bytes, &model_name, "", "", 0.0, &[]).await
     };
 
     match result {

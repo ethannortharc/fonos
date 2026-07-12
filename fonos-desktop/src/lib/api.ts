@@ -9,10 +9,7 @@ import type {
   DailyStat,
   DoctorFinding,
   DoctorFix,
-  LlmResult,
-  ModeEntry,
   ModelCaps,
-  SaveModeOptions,
   SavedScenario,
   ScanResult,
   ScenarioProbe,
@@ -149,15 +146,7 @@ export async function recordVoiceSample(
   return invoke<string>("record_voice_sample", { durationSecs });
 }
 
-// ─── LLM & Modes ─────────────────────────────────────────────────────────────
-
-/** Process text through the configured LLM using the specified mode. */
-export async function processWithLlm(
-  text: string,
-  mode: string
-): Promise<LlmResult> {
-  return invoke<LlmResult>("process_with_llm", { text, mode });
-}
+// ─── LLM ──────────────────────────────────────────────────────────────────────
 
 /** List all available audio input devices. */
 export async function listAudioInputs(): Promise<string[]> {
@@ -178,38 +167,6 @@ export async function listProviderModels(baseUrl: string, apiKey: string): Promi
  *  message, or rejects with the endpoint error (404, auth, network, …). */
 export async function testStt(profileId: string): Promise<string> {
   return invoke<string>("test_stt", { profileId });
-}
-
-/** List all modes (built-in + custom). */
-export async function listModes(): Promise<ModeEntry[]> {
-  return invoke<ModeEntry[]>("list_modes");
-}
-
-/** Save a custom mode. */
-export async function saveCustomMode(opts: SaveModeOptions): Promise<void> {
-  return invoke<void>("save_custom_mode", {
-    id: opts.id,
-    name: opts.name,
-    description: opts.description ?? "",
-    icon: opts.icon ?? "",
-    system: opts.system ?? "",
-    userTemplate: opts.user_template ?? "",
-    temperature: opts.temperature ?? 0.1,
-    model: opts.model ?? "",
-    sttModel: opts.stt_model ?? "",
-    sttPrompt: opts.stt_prompt ?? "",
-    sttTemperature: opts.stt_temperature ?? 0,
-    maxTokens: opts.max_tokens ?? 4096,
-    outputLanguage: opts.output_language ?? "auto",
-    autoPaste: opts.auto_paste !== false,
-    autoPressEnter: opts.auto_press_enter === true,
-    vocabBooks: opts.vocab_books ?? [],
-  });
-}
-
-/** Delete a custom mode by ID. */
-export async function deleteCustomMode(id: string): Promise<void> {
-  return invoke<void>("delete_custom_mode", { id });
 }
 
 // ─── Setup Doctor (issue #30) ───────────────────────────────────────────────

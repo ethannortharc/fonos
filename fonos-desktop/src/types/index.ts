@@ -206,11 +206,15 @@ export interface ModelsSection {
  *  P2 Task 11: superseded the modes.json-shaped snapshot; the engine world
  *  has been the source of truth since Workflow P1). */
 export interface DictationSection {
-  /** DEPRECATED: id → Mode, exactly as persisted in the legacy modes.json.
-   *  `null` on every snapshot from this task onward — present only for
-   *  reading a pre-Task-11 scenario file, which the backend converts into
-   *  `llm.*` processor widgets on apply rather than writing it back. */
-  user_modes: Record<string, Mode> | null;
+  /** DEPRECATED: opaque legacy `modes.json`-shaped blob (id → mode), exactly
+   *  as persisted before Workbench P2 Task 11. `null` on every snapshot from
+   *  that task onward — present only for reading a pre-Task-11 scenario
+   *  file, which the backend converts into `llm.*` processor widgets on
+   *  apply rather than writing it back. The frontend never reads its
+   *  contents (the `Mode` shape it used to carry was deleted along with the
+   *  legacy `modes` system in Workbench P2 Task 12), so it's untyped JSON
+   *  here rather than a resurrected `Mode` interface. */
+  user_modes: Record<string, unknown> | null;
   /** User workflow overlays (config.workflows verbatim). */
   user_workflows: WorkflowDef[];
   /** User widget overlays (config.widgets verbatim). */
@@ -304,33 +308,6 @@ export interface DoctorFinding {
   message_key: string;
   message_params: string[];
   fix: DoctorFix | null;
-}
-
-// ─── Modes ────────────────────────────────────────────────────────────────────
-
-/** A processing mode that defines how spoken text is transformed by an LLM. */
-export interface Mode {
-  name: string;
-  description: string;
-  icon: string;
-  system: string | null;
-  user_template: string | null;
-  temperature: number;
-  model: string;
-  stt_model: string;
-  stt_prompt: string;
-  stt_temperature: number;
-  max_tokens: number;
-  output_language: string;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-  vocab_books?: string[];
-}
-
-/** A mode entry as returned by list_modes — includes id and builtin flag. */
-export interface ModeEntry extends Mode {
-  id: string;
-  builtin: boolean;
 }
 
 // ─── Workflow (Workflow P1) ─────────────────────────────────────────────────
@@ -466,19 +443,6 @@ export interface TodaySummary {
   tokens_total: number;
 }
 
-// ─── LLM ─────────────────────────────────────────────────────────────────────
-
-/** Result from process_with_llm command. */
-export interface LlmResult {
-  original: string;
-  processed: string;
-  mode: string;
-  mode_name: string;
-  latency_ms: number;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-}
-
 // ─── STT ─────────────────────────────────────────────────────────────────────
 
 /** Result from stop_recording command. */
@@ -544,26 +508,6 @@ export interface RecordEventOptions {
   tokens_in?: number | null;
   tokens_out?: number | null;
   session_id?: string | null;
-}
-
-/** Options for the save_custom_mode command. */
-export interface SaveModeOptions {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  system?: string;
-  user_template?: string;
-  temperature?: number;
-  model?: string;
-  stt_model?: string;
-  stt_prompt?: string;
-  stt_temperature?: number;
-  max_tokens?: number;
-  output_language?: string;
-  auto_paste?: boolean;
-  auto_press_enter?: boolean;
-  vocab_books?: string[];
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────

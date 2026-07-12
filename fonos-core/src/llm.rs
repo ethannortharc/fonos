@@ -7,7 +7,6 @@
 //! to [`process_text`].
 
 use crate::model_caps::ModelCaps;
-use crate::modes::Mode;
 use crate::{Error, Result};
 
 /// Result returned from any LLM API call: the generated text and token usage.
@@ -41,7 +40,7 @@ pub struct ServiceConfig {
     pub stt_api: String,
 }
 
-/// Process `text` through an LLM using the given `mode_def` and `service`.
+/// Process `text` through an LLM using the given prompt configuration and `service`.
 ///
 /// Handles template substitution (`{text}`, `{target_lang}`), output language
 /// enforcement, and capability-aware message construction before dispatching to
@@ -53,23 +52,34 @@ pub struct ServiceConfig {
 /// # Arguments
 ///
 /// * `text` — The input text to process (must not be empty).
-/// * `mode_def` — The [`Mode`] definition that provides system prompt and user template.
+/// * `system` — Optional system prompt.
+/// * `user_template` — User message template; must contain (or not) `{text}`/
+///   `{target_lang}` placeholders as described below. `None` is an error — the
+///   caller (e.g. [`crate::workflow::llm_step::run_llm_step`]) is expected to
+///   default an unset template to `Some("{text}")` before calling in.
+/// * `temperature` — LLM sampling temperature.
+/// * `max_tokens` — Maximum tokens to request from the LLM.
+/// * `output_language` — Desired output language; `"auto"` or empty preserves
+///   the input language.
 /// * `service` — Connection parameters for the LLM provider.
 /// * `caps` — Optional cached [`ModelCaps`]; `None` means the model has not been
 ///   probed yet (defaults to assuming system-prompt support).
 /// * `translate_target` — The target language string from application config (used to
 ///   resolve `{target_lang}` in templates). Pass an empty string to default to `"English"`.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_text(
     text: &str,
-    mode_def: &Mode,
+    system: Option<&str>,
+    user_template: Option<&str>,
+    temperature: f64,
+    max_tokens: u32,
+    output_language: &str,
     service: &ServiceConfig,
     caps: Option<&ModelCaps>,
     translate_target: &str,
 ) -> Result<LlmResponse> {
-    let mut user_template_str = mode_def
-        .user_template
-        .as_deref()
-        .ok_or_else(|| Error::Llm("Mode has no user_template".into()))?
+    let mut user_template_str = user_template
+        .ok_or_else(|| Error::Llm("no user_template".into()))?
         .to_string();
 
     // Substitute {target_lang} from config
@@ -83,28 +93,23 @@ pub async fn process_text(
     }
 
     // If output_language is set (not "auto"), append a language instruction
-    let output_lang = &mode_def.output_language;
-    if !output_lang.is_empty()
-        && output_lang != "auto"
+    if !output_language.is_empty()
+        && output_language != "auto"
         && !user_template_str.contains("{target_lang}")
     {
         user_template_str = format!(
             "{}\n\nIMPORTANT: Output in {}.",
-            user_template_str, output_lang
+            user_template_str, output_language
         );
     }
 
     // Build messages array adapted to model capabilities
     let messages = crate::model_caps::build_messages(
         text,
-        mode_def.system.as_deref(),
+        system,
         &user_template_str,
         caps,
     );
-
-    let temperature = mode_def.temperature;
-
-    let max_tokens = mode_def.max_tokens;
 
     match service.provider.as_str() {
         "anthropic" => call_anthropic(&service.api_key, &service.model, &messages, temperature, max_tokens).await,
@@ -162,31 +167,6 @@ pub async fn chat(
         }
     };
     result.map(|r| r.text).map_err(|e| e.to_string())
-}
-
-/// Build chat messages for applying `mode` to `text`.
-///
-/// Substitutes `{text}` and `{target_lang}` in the mode's user template
-/// (empty `translate_target` falls back to "English") and prepends the
-/// mode's system prompt when present.
-pub fn build_mode_messages(
-    mode: &crate::modes::Mode,
-    text: &str,
-    translate_target: &str,
-) -> Vec<serde_json::Value> {
-    let user_template = mode.user_template.as_deref().unwrap_or("{text}");
-    let mut user_text = user_template.replace("{text}", text);
-    if user_text.contains("{target_lang}") {
-        let target = if translate_target.is_empty() { "English" } else { translate_target };
-        user_text = user_text.replace("{target_lang}", target);
-    }
-
-    let mut messages = Vec::new();
-    if let Some(ref sys) = mode.system {
-        messages.push(serde_json::json!({"role": "system", "content": sys}));
-    }
-    messages.push(serde_json::json!({"role": "user", "content": user_text}));
-    messages
 }
 
 // ─── API callers ─────────────────────────────────────────────────────────────
@@ -492,34 +472,6 @@ mod tests {
         };
         assert_eq!(s.provider, "openai");
         assert_eq!(s.model, "gpt-4o");
-    }
-
-    #[test]
-    fn build_mode_messages_substitutes_text_and_target_lang() {
-        let mode = crate::modes::Mode {
-            system: Some("sys".into()),
-            user_template: Some("Translate to {target_lang}: {text}".into()),
-            ..Default::default()
-        };
-        let msgs = build_mode_messages(&mode, "hello", "Chinese");
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0]["role"], "system");
-        assert_eq!(msgs[1]["content"], "Translate to Chinese: hello");
-    }
-
-    #[test]
-    fn build_mode_messages_defaults_target_lang_and_template() {
-        let mode = crate::modes::Mode {
-            user_template: Some("To {target_lang}: {text}".into()),
-            ..Default::default()
-        };
-        let msgs = build_mode_messages(&mode, "hi", "");
-        assert_eq!(msgs.len(), 1); // no system prompt
-        assert_eq!(msgs[0]["content"], "To English: hi");
-
-        let bare = crate::modes::Mode::default(); // no user_template → raw {text}
-        let msgs2 = build_mode_messages(&bare, "raw text", "");
-        assert_eq!(msgs2[0]["content"], "raw text");
     }
 
     // ─── google_contents_from_messages (Gemini multi-turn conversion) ────────

@@ -12,7 +12,6 @@
 /// These tests are in the RED (failing) phase — the production code
 /// (note mode definition and export functions) does not exist yet.
 
-use fonos_core::modes::{built_in_modes, OutputTarget, ContainerKind};
 use fonos_core::config::AppConfig;
 use fonos_core::storage::{
     init_storage_db,
@@ -49,123 +48,14 @@ fn ts(offset_secs: i64) -> String {
 // ===========================================================================
 // C07 — Note mode configuration
 // ===========================================================================
-
-#[cfg(test)]
-mod c07_note_mode_config {
-    use super::*;
-
-    /// Unit: Note mode exists in built_in_modes().
-    #[test]
-    fn note_mode_exists_in_built_in_modes() {
-        let modes = built_in_modes();
-        assert!(
-            modes.contains_key("note"),
-            "built_in_modes() must contain a 'note' key"
-        );
-    }
-
-    /// Unit: Note mode has output_target = AppendToContainer.
-    #[test]
-    fn note_mode_output_target_is_append_to_container() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        assert!(
-            matches!(note.output_target, OutputTarget::AppendToContainer),
-            "note mode output_target should be AppendToContainer, got {:?}",
-            note.output_target
-        );
-    }
-
-    /// Unit: Note mode has container_type = Notebook.
-    #[test]
-    fn note_mode_container_type_is_notebook() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        assert!(
-            matches!(note.container_type, Some(ContainerKind::Notebook)),
-            "note mode container_type should be Some(Notebook), got {:?}",
-            note.container_type
-        );
-    }
-
-    /// Unit: Note mode has auto_container = true (pick mode).
-    #[test]
-    fn note_mode_auto_container_is_true() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        assert!(
-            note.auto_container,
-            "note mode auto_container should be true (pick mode)"
-        );
-    }
-
-    /// Unit: Note mode processor field is "light_polish".
-    #[test]
-    fn note_mode_processor_is_light_polish() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        // processor is either a dedicated field or expressed via user_template/system
-        // The spec says processor=light_polish — verify the mode name/description
-        // reflects this, OR that a dedicated `processor` field is set
-        assert!(
-            note.name.to_lowercase().contains("note") || !note.description.is_empty(),
-            "note mode should have a meaningful name and description"
-        );
-        // Verify the processor field if it exists
-        // If Mode has a `processor` field:
-        assert_eq!(
-            note.processor, "light_polish",
-            "note mode processor should be 'light_polish'"
-        );
-    }
-
-    /// Unit: Note mode save_audio field is configurable (default value exists).
-    #[test]
-    fn note_mode_save_audio_field_present() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        // save_audio should be a bool field; default value doesn't matter for compilation
-        let _save_audio: bool = note.save_audio;
-    }
-
-    /// Unit: Note mode does not interfere with existing mode configs.
-    #[test]
-    fn note_mode_does_not_shadow_existing_modes() {
-        let modes = built_in_modes();
-
-        // All pre-existing modes must still be present and unchanged
-        let raw = modes.get("raw").expect("raw must exist");
-        assert_eq!(raw.name, "Raw", "raw mode name unchanged");
-        assert!(!raw.auto_container, "raw mode auto_container still false");
-        assert!(
-            matches!(raw.output_target, OutputTarget::Clipboard) ||
-            matches!(raw.output_target, OutputTarget::ActiveTextField),
-            "raw mode output target unchanged"
-        );
-
-        let polish = modes.get("polish").expect("polish must exist");
-        assert_eq!(polish.name, "Polish", "polish mode name unchanged");
-
-        let translate = modes.get("translate").expect("translate must exist");
-        assert_eq!(translate.name, "Translate", "translate mode name unchanged");
-    }
-
-    /// Unit: Note mode icon is set to a non-empty string.
-    #[test]
-    fn note_mode_has_icon() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        assert!(!note.icon.is_empty(), "note mode icon should not be empty");
-    }
-
-    /// Unit: Note mode description is non-empty.
-    #[test]
-    fn note_mode_has_description() {
-        let modes = built_in_modes();
-        let note = modes.get("note").expect("note mode must exist");
-        assert!(!note.description.is_empty(), "note mode should have a description");
-    }
-}
+//
+// The legacy `modes` system's built-in "note" `Mode` (output_target/
+// container_type/processor/auto_container/save_audio/icon/description) was
+// deleted in Workbench P2 Task 12 — Note has run through the workflow
+// engine's `wf.note` recipe (STT-only, no LLM step) since Workflow P1. The
+// c07_note_mode_config module that used to regression-test that `Mode`
+// definition was removed along with it; C14's export tests below (which
+// exercise real storage, not the mode system) are unaffected.
 
 // ===========================================================================
 // C10 — Note hotkey (Option+N)

@@ -68,6 +68,11 @@ pub(crate) async fn execute_turn_with_audio(
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));
         return Err(e);
     }
+    eprintln!(
+        "fonos: call TTS base_url={} voice={:?}",
+        if call_cfg.tts.base_url.trim().is_empty() { "EMPTY" } else { "set" },
+        call_cfg.voice
+    );
     if call_cfg.tts.base_url.trim().is_empty() {
         let e = "No TTS profile configured — pick one in Settings > Speech.".to_string();
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));

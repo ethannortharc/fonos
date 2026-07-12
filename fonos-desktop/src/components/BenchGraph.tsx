@@ -18,7 +18,19 @@ export default function BenchGraph({
 }: { nodes: BenchNode[]; onNodeClick?: (id: string) => void }) {
   useT();
   return (
-    <div className={["flex items-start gap-2 overflow-x-auto px-0.5 pb-2", nodes.length === 1 ? "single" : ""].join(" ")}>
+    // pt-1: `overflow-x-auto` (horizontal scroll for long chains) forces
+    // overflow-y to compute to `auto` too — so this scroll container also clips
+    // vertically, at its PADDING box. The active/error node ring is an OUTER
+    // box-shadow (`0 0 0 2px …`, see the capsule below) that extends 2px beyond
+    // the capsule border box; with the capsules flush at the container's top
+    // (padding-top was 0, vs px-0.5/pb-2 elsewhere), that ring's top edge fell
+    // outside the clip region and was shaved off on every node — bottom/left/
+    // right survived on their existing padding. pt-1 (3px) extends the clip
+    // region just enough to admit the full 2px ring on top; the ~3px it nudges
+    // the graph down is imperceptible and it leaves the wrapper's opaque-fill
+    // aura occluder (TestRunSection, 58ecdab) untouched. Pixel-verified on
+    // first/middle/last nodes (see testrun-ring-fix-report.md).
+    <div className={["flex items-start gap-2 overflow-x-auto px-0.5 pt-1 pb-2", nodes.length === 1 ? "single" : ""].join(" ")}>
       {nodes.map((n, i) => {
         const rc = roleColor(n.role);
         return (

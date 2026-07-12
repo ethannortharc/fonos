@@ -588,6 +588,10 @@ fn find_voice_capture_binary() -> Option<String> {
             candidates.push(dir.join(name));
             if let Some(parent) = dir.parent() {
                 candidates.push(parent.join("Resources").join(name));
+                // Tauri v2 nests bundled resources one level deeper:
+                // Contents/Resources/resources/ (same fix as the
+                // fonos-audio-capture finder, d7978bc).
+                candidates.push(parent.join("Resources").join("resources").join(name));
             }
         }
     }

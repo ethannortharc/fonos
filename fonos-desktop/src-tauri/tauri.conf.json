@@ -162,6 +162,7 @@
       "resources/tray_icon.png",
       "resources/tray_icon_light.png",
       "resources/fonos-audio-capture",
+      "resources/fonos-voice-capture",
       "resources/fonos-stt-apple",
       "resources/fonos-diarize"
     ],

@@ -44,7 +44,16 @@
 //! error. `stop()` now degrades: it surfaces the error via `recvMeetingError`
 //! (same escape as `start()`) and still calls `stop_meeting_with` with the
 //! legacy fallback chain, so recording always flips and a summary is still
-//! attempted. See [`resolve_meeting_stop_llm_profile`].
+//! attempted. **Final review wave (Critical)**: the ref's own `model_profile`
+//! can itself be EMPTY (`llm.default`'s "use global" convention, same as
+//! `stt.default`'s above) — [`resolve_meeting_stop_llm_profile`] used to let
+//! that literal `""` win outright over the fallback chain, so a fresh
+//! `llm.default`-referencing meeting composite always resolved to an empty
+//! profile id and `resolve_llm_profile_service` hard-errored, breaking every
+//! summary. It now runs the same emptiness check [`meeting_stt_profile_usable`]
+//! applies to STT (see [`meeting_llm_profile_usable`]) before accepting the
+//! ref's profile id, falling through to `meeting_llm_profile`→`llm_profile`
+//! exactly like a wholly-absent ref. See [`resolve_meeting_stop_llm_profile`].
 //!
 //! Both legacy profile fields stay live-read (not one-time-migrated) because
 //! they name model profiles, not widgets — there is no ref they can become.
@@ -248,6 +257,18 @@ fn meeting_llm_fallback_profile(meeting_llm_profile: &str, llm_profile: &str) ->
     }
 }
 
+/// True when `profile_id` is a usable LLM profile tier for the meeting
+/// summary call — mirrors [`meeting_stt_profile_usable`]'s shape (there is no
+/// on-device sentinel to also reject here, unlike STT: any non-empty ref
+/// `model_profile` is a real `model_profiles` id the summary's raw-prompt
+/// completion can use). An EMPTY `model_profile` is `llm.default`'s own "use
+/// global" convention (Task 4's template) — final review wave Critical fix:
+/// a ref resolving to `""` must fall through to the legacy chain exactly like
+/// an absent ref, not win outright as an unusable empty profile id.
+pub(crate) fn meeting_llm_profile_usable(profile_id: &str) -> bool {
+    !profile_id.is_empty()
+}
+
 /// Decide the LLM profile id [`MeetingOutput::stop`] should pass to
 /// `stop_meeting_with`, from [`resolve_meeting_llm_widget_ref`]'s raw result —
 /// the pure decision behind `stop`'s "never block stopping" fix (review Fix
@@ -266,8 +287,8 @@ pub(crate) fn resolve_meeting_stop_llm_profile(
     llm_profile: &str,
 ) -> (String, Option<String>) {
     match ref_result {
-        Ok(Some(profile_id)) => (profile_id, None),
-        Ok(None) => (
+        Ok(Some(profile_id)) if meeting_llm_profile_usable(&profile_id) => (profile_id, None),
+        Ok(Some(_)) | Ok(None) => (
             meeting_llm_fallback_profile(meeting_llm_profile, llm_profile),
             None,
         ),
@@ -644,6 +665,39 @@ mod tests {
             "legacy-llm-profile",
         );
         assert_eq!(profile, "tuned-llm-profile");
+        assert_eq!(err, None);
+    }
+
+    // ── meeting_llm_profile_usable / empty-ref-model fall-through (final ────
+    // review wave Critical fix — mirrors meeting_stt_profile_usable's shape)
+
+    #[test]
+    fn meeting_llm_profile_usable_rejects_empty() {
+        assert!(!meeting_llm_profile_usable(""));
+        assert!(meeting_llm_profile_usable("tuned-llm-profile"));
+    }
+
+    #[test]
+    fn resolve_meeting_stop_llm_profile_ok_some_empty_falls_to_meeting_llm_profile() {
+        // The ref resolved (no dangling/type-mismatch error) but its own
+        // model_profile is empty — llm.default's "use global" convention,
+        // which every builtin llm widget ships with. Must fall through to the
+        // legacy chain exactly like an absent ref, not win outright as an
+        // unusable "" profile id (that used to hard-error every summary).
+        let (profile, err) = resolve_meeting_stop_llm_profile(
+            Ok(Some(String::new())),
+            "legacy-meeting-profile",
+            "legacy-llm-profile",
+        );
+        assert_eq!(profile, "legacy-meeting-profile");
+        assert_eq!(err, None);
+    }
+
+    #[test]
+    fn resolve_meeting_stop_llm_profile_ok_some_empty_and_empty_legacy_falls_to_llm_profile() {
+        let (profile, err) =
+            resolve_meeting_stop_llm_profile(Ok(Some(String::new())), "", "legacy-llm-profile");
+        assert_eq!(profile, "legacy-llm-profile");
         assert_eq!(err, None);
     }
 

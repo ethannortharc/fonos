@@ -136,11 +136,20 @@ pub struct AppConfig {
     /// request. Superseded by the per-widget `AgentProps::system` fallback
     /// (Workbench P2 Task 6 Fix Round 1 — mirrors `DialogProps`'s inline
     /// `system` field): `migrate_legacy_agent_triggers` copies a non-empty
-    /// value here into the `agent.default` widget's `props.system` once,
-    /// after which the agent exchange's resolution path never reads this
-    /// field again. Kept only for that one-time migration read and for
-    /// deserializing configs saved before this change; do not add new
-    /// readers.
+    /// value here into the `agent.default` widget's `props.system` once.
+    ///
+    /// That "no live readers left" framing was **false** until the final
+    /// review wave's I1 fix: `main.rs` cached this field ONCE at startup into
+    /// `commands::agent::AgentState.system_prompt`, and
+    /// `commands::agent::agent_process` (the shared agent panel's typed/mic
+    /// path) read that stale cache directly — so this field kept mattering,
+    /// silently, well past migration, for any user who edited the widget's
+    /// persona without restarting. I1 removed the cache entirely:
+    /// `agent_process` now resolves its persona the same way the widget
+    /// (voice) path does, via `commands::agent_widget::resolve_agent_default_persona`.
+    /// This field is now genuinely reader-free beyond the one-time migration
+    /// copy and deserializing configs saved before that migration ran; do not
+    /// add new readers.
     pub agent_system_prompt: String,
     /// Extra commands to allow beyond the built-in safety allowlist.
     pub agent_safety_allowlist: Vec<String>,

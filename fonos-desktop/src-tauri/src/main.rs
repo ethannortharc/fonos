@@ -393,14 +393,19 @@ fn main() {
 
         let context = ConversationContext::new(config.agent_max_turns);
         let fast_path = FastPathMatcher::new();
-        let system_prompt = config.agent_system_prompt.clone();
         let timeout_secs = config.agent_timeout_secs;
 
+        // No `config.agent_system_prompt` read here anymore (final review
+        // wave, I1): that startup-cached copy used to back `AgentState`'s now
+        // -removed `system_prompt` field, which `agent_process` alone
+        // consulted — it now resolves the persona fresh on every call via
+        // `commands::agent_widget::resolve_agent_default_persona`, the same
+        // way the voice/widget path already did. See `AgentState`'s doc
+        // comment and `config.agent_system_prompt`'s.
         AgentState::new(
             registry,
             context,
             fast_path,
-            system_prompt,
             timeout_secs,
             builtin_skill_names,
             Arc::clone(&safety),

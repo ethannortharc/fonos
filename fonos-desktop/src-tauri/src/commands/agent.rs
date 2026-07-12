@@ -61,8 +61,19 @@ pub struct SkillParamInfo {
 /// Mutable agent state held inside [`AppState`].
 ///
 /// The registry and context are stored separately so that the processor can be
-/// constructed on each call (it mutably borrows both).  The fast-path matcher
-/// and system-prompt string are cheap to clone and are stored for convenience.
+/// constructed on each call (it mutably borrows both). The fast-path matcher
+/// is cheap to clone and is stored for convenience.
+///
+/// **No `system_prompt` field** (final review wave, I1 — removed): it used to
+/// cache `config.agent_system_prompt` ONCE at startup (`main.rs`'s
+/// `AgentState::new` construction), so editing the `agent.default` widget's
+/// persona in the Workbench never reached [`agent_process`]'s typed/mic path
+/// — only the voice (`commands::agent_widget::run_agent_exchange`) path saw
+/// it, because that path always resolved its persona fresh per call. Both
+/// callers of [`run_agent_processor`] now resolve a fresh persona on every
+/// call (`agent_process` via
+/// `commands::agent_widget::resolve_agent_default_persona`), so there is no
+/// remaining reader for a cached copy.
 pub struct AgentState {
     /// The skill registry containing all registered built-in + custom skills.
     pub registry: SkillRegistry,
@@ -70,8 +81,6 @@ pub struct AgentState {
     pub context: ConversationContext,
     /// Fast-path matcher (re-used across calls; does not hold mutable state).
     pub fast_path: FastPathMatcher,
-    /// Cached system prompt from config (refreshed on each call).
-    pub system_prompt: String,
     /// Cached skill execution timeout from config.
     pub timeout_secs: u64,
     /// Names of skills that were registered from built-in desktop skill code
@@ -88,7 +97,6 @@ impl AgentState {
         registry: SkillRegistry,
         context: ConversationContext,
         fast_path: FastPathMatcher,
-        system_prompt: String,
         timeout_secs: u64,
         builtin_skill_names: Vec<String>,
         safety: Arc<CommandSafetyFilter>,
@@ -97,7 +105,6 @@ impl AgentState {
             registry,
             context,
             fast_path,
-            system_prompt,
             timeout_secs,
             builtin_skill_names,
             safety,
@@ -120,8 +127,11 @@ pub(crate) fn resolve_agent_llm_service(
     profile_id: &str,
 ) -> Result<ServiceConfig, String> {
     if profile_id.is_empty() {
+        // I2 fix (final review wave): the old copy pointed at "Settings >
+        // Agent", a page Workbench P2 deleted (AgentTab.tsx) — model
+        // selection now lives on the agent widget's own props form.
         return Err(
-            "No LLM profile configured for the agent. Go to Settings > Agent to select a model."
+            "No LLM profile configured for the agent. Configure the Agent widget's LLM / 在智能体组件中配置 LLM."
                 .to_string(),
         );
     }
@@ -144,19 +154,21 @@ pub(crate) fn resolve_agent_llm_service(
 /// `None` keeps using the shared state's own value, which is exactly
 /// [`agent_process`]'s prior (pre-extraction) behavior.
 ///
-/// `system_override` replaces `agent.system_prompt` for this call only when
-/// `Some` (Fix Round 1's `AgentProps::system` inline fallback, resolved by
-/// `commands::agent_widget::run_agent_exchange`); `None` keeps using the
-/// shared state's own value — [`agent_process`]'s only caller passes `None`,
-/// so its behavior (still sourced from the now-deprecated
-/// `config.agent_system_prompt`, cached in `agent.system_prompt` at startup)
-/// is unchanged by this parameter's addition.
+/// `system_prompt` is the already-resolved persona for this call — Fix Round
+/// 1 introduced this as `AgentProps::system`, resolved by
+/// `commands::agent_widget::run_agent_exchange` for the voice path; I1 (final
+/// review wave) closed the seam where [`agent_process`] instead used a
+/// startup-cached `AgentState.system_prompt` that never reflected later edits
+/// to the `agent.default` widget — both callers now resolve fresh every call
+/// (`agent_process` via
+/// `commands::agent_widget::resolve_agent_default_persona`), so this
+/// parameter is mandatory rather than an `Option` with a stale-state fallback.
 pub(crate) async fn run_agent_processor(
     state: &State<'_, AppState>,
     text: &str,
     llm_service: ServiceConfig,
     timeout_override: Option<u64>,
-    system_override: Option<String>,
+    system_prompt: String,
 ) -> Result<AgentResult, String> {
     // Lock the agent state (tokio mutex — safe to hold across .await).
     let mut agent = state.agent.lock().await;
@@ -171,7 +183,6 @@ pub(crate) async fn run_agent_processor(
     let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
     let context = std::mem::replace(&mut agent.context, context_placeholder);
     let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
-    let system_prompt = system_override.unwrap_or_else(|| agent.system_prompt.clone());
 
     let mut processor = AgentProcessor::<HttpLlmCaller>::new(
         registry,
@@ -201,6 +212,15 @@ pub(crate) async fn run_agent_processor(
 ///
 /// Reads the agent LLM profile from config, builds an [`AgentProcessor`] from
 /// the shared state, runs it, and returns the result.
+///
+/// The model resolution is unchanged (`agent_llm_profile`→`llm_profile`
+/// config chain). The persona (I1 fix, final review wave) now resolves the
+/// same way `commands::agent_widget::run_agent_exchange` does for a
+/// widget-sourced call — via
+/// `agent_widget::resolve_agent_default_persona` against the singleton
+/// `agent.default` widget — instead of the removed `AgentState.system_prompt`
+/// startup cache, so editing that widget's persona in the Workbench takes
+/// effect here immediately, without an app restart.
 #[tauri::command]
 pub async fn agent_process(
     state: State<'_, AppState>,
@@ -213,8 +233,9 @@ pub async fn agent_process(
         });
     }
 
-    // Snapshot the config and resolve the LLM service before taking the agent lock.
-    let llm_service = {
+    // Snapshot the config and resolve the LLM service + persona before taking
+    // the agent lock.
+    let (llm_service, system_prompt) = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         // Prefer the dedicated agent profile; fall back to the global LLM profile.
         let profile_id = if !config.agent_llm_profile.is_empty() {
@@ -222,10 +243,14 @@ pub async fn agent_process(
         } else {
             config.llm_profile.clone()
         };
-        resolve_agent_llm_service(&config, &profile_id)?
+        let llm_service = resolve_agent_llm_service(&config, &profile_id)?;
+
+        let widgets = fonos_core::workflow::engine::effective_widgets(&config);
+        let system_prompt = super::agent_widget::resolve_agent_default_persona(&widgets)?;
+        (llm_service, system_prompt)
     };
 
-    run_agent_processor(&state, &text, llm_service, None, None).await
+    run_agent_processor(&state, &text, llm_service, None, system_prompt).await
 }
 
 /// Reset the agent's conversation context.

@@ -72,13 +72,12 @@ pub struct MeetingDetail {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Escape a string for safe interpolation inside a JS single-quoted string.
-pub(crate) fn js_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('\n', "\\n")
-        .replace('\r', "")
-}
+/// [`js_escape`] moved to `commands::mod` (final review wave, I2) so
+/// `agent_widget.rs` could reuse it too instead of its own buggy manual
+/// escaping — re-exported here so this module's own call sites (and
+/// `meeting_widget.rs`'s existing `use super::meeting::{..., js_escape, ...}`
+/// import) keep working unchanged.
+pub(crate) use super::js_escape;
 
 /// Helper: evaluate JS in the meeting-panel webview.
 ///

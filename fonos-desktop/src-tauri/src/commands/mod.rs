@@ -362,6 +362,21 @@ pub(crate) fn move_panel_to_cursor(app: &tauri::AppHandle, label: &str, w: u32, 
     ));
 }
 
+/// Escape a string for safe interpolation inside a single-quoted JS string
+/// literal (`recvXxx('...')`-style panel `eval()` calls). Shared across every
+/// satellite panel bridge — originally `meeting.rs`'s own private helper,
+/// moved here (final review wave, I2) so `agent_widget.rs` could reuse it
+/// too instead of its own manual `replace('\\', ..).replace('\'', ..)` chain,
+/// which missed embedded newlines: a multi-line error produced an
+/// unterminated single-quoted JS string, leaving the panel stuck on its
+/// "thinking" indicator forever.
+pub(crate) fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "")
+}
+
 // Service resolution moved to fonos-core (issue #21); the unified
 // ServiceConfig lives in fonos_core::llm. These wrappers only add the
 // AppState config-lock handling.

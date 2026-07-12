@@ -60,17 +60,77 @@ body{background:transparent;overflow:hidden}
   white-space:pre-wrap;word-break:break-word;margin:0 auto;animation:msgIn .14s ease-out}
 .interrupted-tag{color:rgba(255,255,255,.32);font-style:italic}
 
-/* ── Footer: hang-up (red) + close ── */
-#ftr{display:flex;align-items:center;justify-content:space-between;
-  padding:9px 14px;border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
-#hangup{width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;
-  background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 0 10px rgba(239,68,68,.25);
-  display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
-#hangup:hover{box-shadow:0 0 16px rgba(239,68,68,.4);transform:scale(1.05)}
+/* ── Footer: hang-up only (Call Panel UX Pass — the X close button is gone;
+   hang-up is the sole exit, per the finalized spec: "挂断电话，整个儿也就
+   挂断了" — clicking it hangs up AND closes the whole panel). ── */
+#ftr{display:flex;align-items:center;justify-content:center;
+  padding:11px 14px;border-top:1px solid rgba(255,255,255,.04);flex-shrink:0}
+
+/* Hang-up button: the app's molten voice-button family (index.css's
+   .fonos-voice-button/-live + voice-button-live-pulse), copied inline verbatim
+   per this standalone panel's self-contained convention — the button lives in
+   its RESTING look (a static red gradient, no pulse) until a call is actually
+   active, at which point #hangup.fonos-voice-button-live takes over: the full
+   molten-red gradient + breathing pulse, toggled by setCallActive() below. */
+#hangup{width:52px;height:52px;border-radius:50%;border:0;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .12s,filter .12s;
+  background:linear-gradient(148deg,#f4503a 0%,#dc2626 60%,#b91c1c 100%);
+  box-shadow:0 10px 22px rgba(185,28,28,.32),0 3px 10px rgba(0,0,0,.28),
+    inset 0 1px 0 rgba(255,255,255,.14),inset 0 -6px 10px rgba(96,12,6,.28)}
+#hangup:hover{filter:brightness(1.06);transform:scale(1.04)}
 #hangup:active{transform:scale(.96)}
-#closeBtn{font-size:11px;color:rgba(255,255,255,.28);background:0;border:0;cursor:pointer;
-  padding:5px 8px;font-family:inherit}
-#closeBtn:hover{color:rgba(255,255,255,.6)}
+
+/* ── Copied verbatim from src/index.css (.fonos-voice-button family) so this
+   standalone webview (no Tailwind/React build) gets the identical molten-red
+   breathing treatment the rest of the app's live voice controls use. Trimmed
+   to just the pieces #hangup needs: the -live gradient/shadow/pulse, the
+   sheen/caustic pseudo-layers, and the engraved-glyph filter. The -idle
+   (amber) variant is deliberately NOT copied — this is always a hang-up
+   affordance, never a "start" one. ── */
+.fonos-voice-button{position:relative;isolation:isolate;overflow:hidden;
+  color:rgba(255,255,255,.94);border:0;background-clip:padding-box}
+.fonos-voice-button::before{content:"";position:absolute;z-index:0;inset:1px;border-radius:inherit;
+  background:radial-gradient(ellipse 34% 24% at 30% 16%,rgba(255,255,255,.44),rgba(255,255,255,.1) 52%,transparent 74%),
+    linear-gradient(155deg,rgba(255,255,255,.09),transparent 44%);
+  transform-origin:center;opacity:.5;transform:translate(-1px,-1px) scale(.97);pointer-events:none}
+.fonos-voice-button::after{content:"";position:absolute;z-index:0;inset:0;border-radius:inherit;
+  background:radial-gradient(circle at 76% 82%,rgba(255,122,96,.3),transparent 47%);
+  transform-origin:center;opacity:.52;transform:translate(2px,2px) scale(.94);pointer-events:none}
+.fonos-voice-button-live::before{animation:voice-control-sheen 6.2s cubic-bezier(.45,0,.2,1) infinite}
+.fonos-voice-button-live::after{animation:voice-control-caustic 5.1s cubic-bezier(.45,0,.2,1) infinite}
+@keyframes voice-control-sheen{
+  0%,100%{opacity:.5;transform:translate(-1px,-1px) scale(.97)}
+  50%{opacity:.82;transform:translate(1px,1px) scale(1.02)}
+}
+@keyframes voice-control-caustic{
+  0%,100%{opacity:.52;transform:translate(2px,2px) scale(.94)}
+  46%{opacity:.9;transform:translate(-2px,-1px) scale(1.07)}
+}
+.fonos-voice-glyph{filter:drop-shadow(0 1px 0 rgba(255,243,210,.38))}
+.fonos-voice-button-live .fonos-voice-glyph{filter:drop-shadow(0 1px 0 rgba(255,206,196,.3))}
+@keyframes voice-button-live-pulse{
+  0%,100%{box-shadow:0 14px 30px rgba(148,22,12,.38),0 6px 18px rgba(255,84,58,.26),
+    inset 0 1px 0 rgba(255,216,204,.36),inset 0 0 0 1px rgba(255,255,255,.09),
+    inset 0 -2px 4px rgba(96,12,6,.42),inset 0 -8px 14px rgba(112,18,10,.3),
+    0 0 0 0 rgba(255,96,70,0)}
+  50%{box-shadow:0 14px 30px rgba(148,22,12,.38),0 6px 18px rgba(255,84,58,.26),
+    inset 0 1px 0 rgba(255,216,204,.36),inset 0 0 0 1px rgba(255,255,255,.09),
+    inset 0 -2px 4px rgba(96,12,6,.42),inset 0 -8px 14px rgba(112,18,10,.3),
+    0 0 16px 4px rgba(255,96,70,.5)}
+}
+.fonos-voice-button-live{color:#4e130c;
+  background:radial-gradient(ellipse 11% 8% at 28% 13%,rgba(255,249,245,.82),rgba(255,241,235,.28) 55%,transparent 100%),
+    radial-gradient(ellipse 30% 21% at 32% 17%,rgba(255,225,213,.44),rgba(255,214,200,.13) 52%,transparent 74%),
+    radial-gradient(circle at 70% 78%,rgba(114,16,8,.38),transparent 54%),
+    linear-gradient(148deg,#ff7a5c 0%,#f4503a 46%,#e0352b 72%,#bd2018 100%);
+  box-shadow:0 14px 30px rgba(148,22,12,.38),0 6px 18px rgba(255,84,58,.26),
+    inset 0 1px 0 rgba(255,216,204,.36),inset 0 0 0 1px rgba(255,255,255,.09),
+    inset 0 -2px 4px rgba(96,12,6,.42),inset 0 -8px 14px rgba(112,18,10,.3);
+  animation:voice-button-live-pulse 2.1s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  .fonos-voice-button-live::before,.fonos-voice-button-live::after,.fonos-voice-button-live{animation:none}
+}
 </style>
 </head>
 <body>
@@ -88,16 +148,21 @@ body{background:transparent;overflow:hidden}
   </div>
   <div id="log"><div id="emptyHint"></div></div>
   <div id="ftr">
-    <button id="hangup" onclick="iv('call_stop').catch(function(e){console.error(e);})">
+    <button id="hangup" class="fonos-voice-button" onclick="hangupAndClose()">
       <!-- Same hand-drawn handset silhouette as WidgetIcon.tsx's "call" icon,
-           rotated to the "held to ear" / live pose — recognizable "in a call,
-           tap to hang up". -->
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(135deg)">
-        <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z"/>
+           rotated to the "held to ear" / live pose, PLUS a diagonal slash
+           overlay — the universal "off/end" mark (same convention as
+           mic-off/bell-off glyphs elsewhere: a straight stroke from the
+           top-right to the bottom-left corner, independent of the handset's
+           own rotation) so it reads unambiguously as "hang up", not "answer". -->
+      <svg class="fonos-voice-glyph" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff"
+           stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <g style="transform:rotate(135deg);transform-origin:12px 12px">
+          <path d="M3.6 16.1 C2.2 14.85 2 12.6 3.3 11.2 C5.2 8.6 8.4 7.2 12 7.2 C15.6 7.2 18.8 8.6 20.7 11.2 C22 12.6 21.8 14.85 20.4 16.1 C19.45 17 17.85 16.95 17.05 16 C16.45 15.25 16.35 14.2 16.9 13.4 C15.4 11.9 13.8 11.2 12 11.2 C10.2 11.2 8.6 11.9 7.1 13.4 C7.65 14.2 7.55 15.25 6.95 16 C6.15 16.95 4.55 17 3.6 16.1 Z"/>
+        </g>
+        <line x1="20" y1="4" x2="4" y2="20" stroke-width="2.1"/>
       </svg>
     </button>
-    <button id="closeBtn" onclick="closePanel()">&#10005;</button>
   </div>
 </div>
 <script>
@@ -158,6 +223,7 @@ var turnState='idle';   // idle | listening | thinking | speaking
 var inCall=false;
 var audioPath=null;     // null | "aec" | "ec" | "fallback"
 var timerInterval=null, callStartTs=0;
+var autoHideTimer=null; // pending auto-close after a self-ended call (call_ended, not manual hangup)
 var STATE_COLORS={idle:'#78716c',listening:'#f87171',thinking:'#fbbf24',speaking:'#4ade80'};
 
 /* ── Element refs ── */
@@ -182,6 +248,14 @@ function setState(s){
   stateDot.style.background=c;
   stateLabel.style.color=c;
   stateDot.classList.toggle('live', s!=='idle');
+}
+
+/* ── Hang-up button live state: the molten-red breathing look (copied
+   .fonos-voice-button-live family above) is on only while a call is actually
+   active; otherwise the button sits in its static resting-red gradient. ── */
+function setCallActive(active){
+  inCall=active;
+  hangup.classList.toggle('fonos-voice-button-live', active);
 }
 
 /* ── AEC truth chip: cosmetic UI reflecting the call's real audio path
@@ -245,12 +319,29 @@ function tagLastAssistantInterrupted(){
   last.appendChild(tag);
 }
 
-/* ── Close: hang up first if a call is active, then hide the window ── */
-function closePanel(){
-  if(inCall){ iv('call_stop').catch(function(e){console.error(e);}); }
+/* ── Hang-up: the ONLY exit (Call Panel UX Pass — the X close button is
+   gone). Always hangs up AND hides the window as one action — call_stop is
+   safe to call in any phase (call.rs), so this doesn't need to gate on
+   `inCall` first. Escape is bound to the same function as a keyboard alias
+   for the identical action, not a separate bypass. ── */
+function hangupAndClose(){
+  clearAutoHide();
+  iv('call_stop').catch(function(e){console.error(e);});
   iv('hide_call_panel').catch(function(e){console.error(e);});
 }
-window.addEventListener('keydown',function(e){ if(e.key==='Escape') closePanel(); });
+window.addEventListener('keydown',function(e){ if(e.key==='Escape') hangupAndClose(); });
+
+/* ── Auto-close timer: a call that ends on ITS OWN (timeout / backend stop —
+   the call_ended branch below) auto-hides the panel after a short beat so
+   the user sees the ended state land, rather than vanishing instantly. A
+   manual hangupAndClose() already hid the window immediately and clears any
+   pending timer; clearAutoHide() also runs on a fresh call_started/
+   call_listening so a stale timer from a PRIOR call can never hide a new one
+   mid-call. ── */
+var AUTO_HIDE_MS=1500;
+function clearAutoHide(){
+  if(autoHideTimer){ clearTimeout(autoHideTimer); autoHideTimer=null; }
+}
 
 /* ── config:saved / initial config load ── */
 function loadCfg(){
@@ -284,24 +375,34 @@ function handleStsEvent(payload){
       setState('idle');
       break;
     case 'call_started':
-      inCall=true;
+      setCallActive(true);
+      clearAutoHide();
       clearEmptyHint();
       if(audio==='aec'||audio==='ec'||audio==='fallback'){ audioPath=audio; }
       renderAecChip();
       startTimer();
       break;
     case 'call_listening':
-      inCall=true;
+      setCallActive(true);
+      clearAutoHide();
       clearEmptyHint();
       setState('listening');
       break;
     case 'call_ended':
-      inCall=false;
+      setCallActive(false);
       audioPath=null;
       renderAecChip();
       stopTimer();
       setState('idle');
       if(text==='timeout'){ bubble('error', L('timeout')); }
+      // The call ended on its own (not a manual hang-up click, which already
+      // closed the panel via hangupAndClose()) — let the user see the ended
+      // state land, then auto-close. Harmless no-op if the panel is already
+      // hidden (hide_call_panel just re-hides).
+      clearAutoHide();
+      autoHideTimer=setTimeout(function(){
+        iv('hide_call_panel').catch(function(e){console.error(e);});
+      }, AUTO_HIDE_MS);
       break;
     case 'error':
       bubble('error', text);

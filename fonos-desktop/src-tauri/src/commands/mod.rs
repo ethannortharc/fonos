@@ -288,13 +288,17 @@ pub(crate) fn monitor_under_cursor(
 /// on-screen position, which the brief also requires to stay byte-identical.
 /// So this is `Cursor | TopCenter | BottomRight`, one variant per distinct
 /// placement strategy the five original `move_*_panel_to_cursor` functions
-/// implemented.
+/// implemented. `TopRight` (Call Panel UX Pass) is a fourth, fixed-margin
+/// corner geometry for the call panel's default position — distinct from
+/// `BottomRight` in that both margins are fixed constants (no caller-supplied
+/// `top_margin`) and the right edge keeps a small margin rather than sitting
+/// flush.
 #[cfg(target_os = "macos")]
 pub(crate) enum PanelAnchor {
     /// Below-right of the exact cursor position, flipped to the opposite
-    /// side when it would cross a monitor edge. Used by the text-action,
-    /// dialog, and call panels — `w`/`h` are the panel's actual current
-    /// size (its `PanelSize` prop, not a fixed conf value).
+    /// side when it would cross a monitor edge. Used by the text-action and
+    /// dialog panels — `w`/`h` are the panel's actual current size (its
+    /// `PanelSize` prop, not a fixed conf value).
     Cursor,
     /// Horizontally centered near the top of the monitor under the cursor,
     /// just below the macOS menu bar — doesn't otherwise use the cursor's
@@ -304,6 +308,13 @@ pub(crate) enum PanelAnchor {
     /// a fixed corner so the panel doesn't obscure whatever app it's
     /// annotating. `w` is the panel's fixed width; `h` is unused.
     BottomRight { top_margin: f64 },
+    /// Fixed top-right corner: ~40px down from the top (clear of the macOS
+    /// menu bar, matching `TopCenter`'s 32px margin plus a little breathing
+    /// room) and ~16px in from the right edge. Used by the call panel, which
+    /// defaults to a corner rather than the cursor so it doesn't cover
+    /// whatever the user is doing while a call runs. `w` is the panel's fixed
+    /// width; `h` is unused.
+    TopRight,
 }
 
 /// Position a satellite panel window relative to the monitor under the
@@ -352,6 +363,14 @@ pub(crate) fn move_panel_to_cursor(app: &tauri::AppHandle, label: &str, w: u32, 
             // Right edge of panel flush with right edge of screen, near the top.
             let x = mon_x + mon_w - panel_w;
             let y = mon_y + top_margin;
+            (x, y)
+        }
+        PanelAnchor::TopRight => {
+            // Same flush-right-corner math as BottomRight, but with fixed
+            // margins on both edges instead of flush-right + caller-supplied
+            // top_margin — the call panel's default resting spot.
+            let x = mon_x + mon_w - panel_w - 16.0;
+            let y = mon_y + 40.0;
             (x, y)
         }
     };

@@ -341,8 +341,12 @@ impl Output for CallOutput {
         // Reveal the call-panel satellite (Task 8's window; 380×520 in
         // tauri.conf.json). The panel is a pure sts:event consumer — no eval
         // handshake, so no settle sleep is needed before starting the loop.
+        // Anchored to the screen's top-right corner (Call Panel UX Pass) —
+        // unlike the cursor-anchored dialog/text-action panels, a call runs
+        // hands-free for a while, so a fixed corner that doesn't jump around
+        // (or cover whatever's under the cursor at call-start) reads better.
         #[cfg(target_os = "macos")]
-        super::move_panel_to_cursor(&self.app, "call-panel", 380, 520, super::PanelAnchor::Cursor);
+        super::move_panel_to_cursor(&self.app, "call-panel", 380, 520, super::PanelAnchor::TopRight);
         if let Some(panel) = self.app.get_webview_window("call-panel") {
             let _ = panel.show();
             let _ = panel.set_focus();

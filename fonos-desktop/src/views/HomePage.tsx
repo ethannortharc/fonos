@@ -31,11 +31,13 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   const [rows, setRows] = useState<WorkflowRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
   // In-flight guard for trigger-chip saves (moved from RecipesSection, Task
-  // 16): holds the id of the workflow currently persisting a chip edit, so a
-  // second rapid edit on the same row can't fire before the first save's
+  // 16): holds the ids of the workflows currently persisting a chip edit, so
+  // a second rapid edit on the SAME row can't fire before its first save's
   // reload lands (which would otherwise compute its patch from stale
-  // wf.triggers).
-  const [chipsSaving, setChipsSaving] = useState<string | null>(null);
+  // wf.triggers). Per-row on purpose — editing row B while row A's save is
+  // in flight must not be blocked (Task 14 fix; a single scalar id used to
+  // reject every row's edits while any one row was saving).
+  const [chipsSaving, setChipsSaving] = useState<Set<string>>(new Set());
 
   const load = () => {
     listWorkflows().then(setRows).catch(() => { /* no backend / ignore */ });
@@ -80,13 +82,17 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
 
   /** Persist a trigger-chip edit (moved from RecipesSection's saveFlow). */
   const saveTriggers = async (wf: WorkflowRow, triggers: Trigger[]) => {
-    if (chipsSaving) return;
-    setChipsSaving(wf.id);
+    if (chipsSaving.has(wf.id)) return;
+    setChipsSaving((s) => new Set(s).add(wf.id));
     try {
       await saveWorkflow({ ...rowToDef(wf), triggers });
       load();
     } finally {
-      setChipsSaving(null);
+      setChipsSaving((s) => {
+        const next = new Set(s);
+        next.delete(wf.id);
+        return next;
+      });
     }
   };
 
@@ -157,7 +163,7 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
                 key={wf.id}
                 className={
                   "flex items-center gap-2.5 py-2 border-t border-[rgba(255,255,255,0.045)] first:border-t-0" +
-                  (chipsSaving === wf.id ? " opacity-60 pointer-events-none" : "")
+                  (chipsSaving.has(wf.id) ? " opacity-60 pointer-events-none" : "")
                 }
               >
                 {flowIcon(wf)}

@@ -10,25 +10,34 @@ import { HotkeyInput } from "./HotkeyInput";
 import { t, useT } from "../lib/i18n";
 import type { Trigger, WorkflowRow } from "../types";
 
+type TriggerChipsProps = {
+  wf: WorkflowRow;
+  isMic: boolean;
+  /** `order` to assign a newly-added pill-slot chip. Callers with visibility
+   *  across workflows should pass a value past the highest existing pill
+   *  `order` (cross-workflow collisions are otherwise possible since this
+   *  component only sees its own workflow's triggers); defaults to 1000. */
+  nextPillOrder?: number;
+} & (
+  | {
+      /** Read-only: chips render as static badges, no add/remove/edit. */
+      readOnly: true;
+      onChange?: undefined;
+    }
+  | {
+      readOnly?: false;
+      /** Called with the full next `triggers` array on every edit. */
+      onChange: (triggers: Trigger[]) => void;
+    }
+);
+
 export default function TriggerChips({
   wf,
   isMic,
   onChange,
   nextPillOrder = 1000,
   readOnly = false,
-}: {
-  wf: WorkflowRow;
-  isMic: boolean;
-  /** Required unless `readOnly` — read-only renders never call it. */
-  onChange?: (triggers: Trigger[]) => void;
-  /** `order` to assign a newly-added pill-slot chip. Callers with visibility
-   *  across workflows should pass a value past the highest existing pill
-   *  `order` (cross-workflow collisions are otherwise possible since this
-   *  component only sees its own workflow's triggers); defaults to 1000. */
-  nextPillOrder?: number;
-  /** Read-only: chips render as static badges, no add/remove/edit. */
-  readOnly?: boolean;
-}) {
+}: TriggerChipsProps) {
   useT();
   const [adding, setAdding] = useState(false);
   const triggers = wf.triggers ?? [];

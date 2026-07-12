@@ -153,6 +153,24 @@ pub(crate) fn speaker_display_hint(hint: &str) -> String {
     "Audio".to_string()
 }
 
+/// [`build_summary_prompt`]-only override of [`speaker_display_hint`]: the
+/// panel/detail views need the raw machine tag (`"s1"`, `"s2"`, …) verbatim
+/// — it's what they group entries by — but an LLM reads that tag as noise
+/// ("s2 said the deadline is Friday" reads worse than "Speaker 2 said..."),
+/// so the summary prompt gets a friendlier label instead. Reuses
+/// `speaker_display_hint` for the "me"/legacy-"audio"/malformed-tag
+/// collapsing (unchanged), then maps a passed-through `s(\d+)` tag to
+/// `Speaker N`. Storage and `speaker_display_hint` itself are untouched.
+fn summary_speaker_label(hint: &str) -> String {
+    let display = speaker_display_hint(hint);
+    if let Some(digits) = display.strip_prefix('s') {
+        if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+            return format!("Speaker {digits}");
+        }
+    }
+    display
+}
+
 /// Build the AI summary prompt from a list of transcript entries.
 ///
 /// `custom_instructions` replaces [`BUILTIN_SUMMARY_INSTRUCTIONS`] when
@@ -171,7 +189,7 @@ pub fn build_summary_prompt(entries: &[Entry], custom_instructions: &str) -> Str
                 .metadata
                 .get("speaker_hint")
                 .and_then(|v| v.as_str())
-                .map(speaker_display_hint)
+                .map(summary_speaker_label)
                 .unwrap_or_else(|| "Me".to_string());
             let ts = e
                 .metadata
@@ -553,20 +571,6 @@ pub(crate) async fn start_meeting_with(
             let _ = std::fs::create_dir_all(&audio_dir);
 
             for (chunk_samples, speaker, channel_tag, role, range) in ready {
-                // Dominant-speaker relabeling: when this chunk has a
-                // diarization range (system audio only) and a live session,
-                // ask the timeline for whichever speaker dominated that time
-                // range — falling back to the flat "Audio"/"Me" label
-                // whenever there's no range, no session, or no overlap
-                // recorded yet (`dominant` returning `None`). `.to_lowercase()`
-                // on a machine tag like "s1" is a no-op, so the existing
-                // `speaker_hint` storage/display path downstream is unchanged.
-                let speaker: String = match (range, diar.as_ref()) {
-                    (Some((s, e)), Some(d)) => d.dominant(s, e).unwrap_or_else(|| speaker.to_string()),
-                    _ => speaker.to_string(),
-                };
-                let speaker = speaker.as_str();
-
                 eprintln!(
                     "fonos: meeting chunk [{}] ready: {} samples",
                     speaker, chunk_samples.len()
@@ -616,6 +620,28 @@ pub(crate) async fn start_meeting_with(
                 };
 
                 if transcript.is_empty() { continue; }
+
+                // Dominant-speaker relabeling: deliberately done HERE, after
+                // `transcribe_http` returns, rather than at cut time (where
+                // this used to run, before the STT await) — STT is always
+                // slower than diarization (spec §4: "STT 一定比分离慢，块结果
+                // 返回时其时间范围的段落必然已知"), so by the time this chunk's
+                // transcript is back, the diarizer's timeline for its
+                // [start_ms, end_ms) range is fully populated. Querying at cut
+                // time would race the diarization stream for the chunk's tail
+                // segments. When this chunk has a diarization range (system
+                // audio only) and a live session, ask the timeline for
+                // whichever speaker dominated that time range — falling back
+                // to the flat "Audio"/"Me" label whenever there's no range,
+                // no session, or no overlap recorded yet (`dominant`
+                // returning `None`). `.to_lowercase()` on a machine tag like
+                // "s1" is a no-op, so the existing `speaker_hint`
+                // storage/display path downstream is unchanged.
+                let speaker: String = match (range, diar.as_ref()) {
+                    (Some((s, e)), Some(d)) => d.dominant(s, e).unwrap_or_else(|| speaker.to_string()),
+                    _ => speaker.to_string(),
+                };
+                let speaker = speaker.as_str();
 
                 eprintln!(
                     "fonos: [{}] chunk #{}: {}",
@@ -987,6 +1013,48 @@ mod tests {
         assert!(!prompt.contains(BUILTIN_SUMMARY_INSTRUCTIONS));
         assert!(prompt.contains("TRANSCRIPT:"));
         assert!(prompt.contains("hello"));
+    }
+
+    /// Final-review Fix 4: a diarization machine tag (`"s2"`) must render as
+    /// a human "Speaker N" label in the LLM-facing summary prompt, unlike
+    /// the panel/detail views which show the raw tag (`speaker_display_hint`
+    /// passthrough, unchanged — see that test coverage separately).
+    #[test]
+    fn build_summary_prompt_maps_machine_tags_to_speaker_labels() {
+        let entries = vec![Entry {
+            id: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            source_type: SourceType::Meeting,
+            role: EntryRole::User,
+            mode: "meeting".to_string(),
+            raw_text: "the deadline is Friday".to_string(),
+            processed_text: None,
+            container_id: Some(1),
+            audio_ref: None,
+            metadata: serde_json::json!({ "speaker_hint": "s2", "timestamp_in_session": "00:00:01" }),
+        }];
+        let prompt = build_summary_prompt(&entries, "");
+        assert!(prompt.contains("Speaker 2: the deadline is Friday"));
+        assert!(!prompt.contains("s2:"));
+    }
+
+    #[test]
+    fn build_summary_prompt_still_collapses_legacy_and_malformed_hints() {
+        let make = |hint: &str| Entry {
+            id: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            source_type: SourceType::Meeting,
+            role: EntryRole::User,
+            mode: "meeting".to_string(),
+            raw_text: "hi".to_string(),
+            processed_text: None,
+            container_id: Some(1),
+            audio_ref: None,
+            metadata: serde_json::json!({ "speaker_hint": hint, "timestamp_in_session": "00:00:01" }),
+        };
+        assert!(build_summary_prompt(&[make("audio")], "").contains("Audio: hi"));
+        assert!(build_summary_prompt(&[make("sx")], "").contains("Audio: hi"));
+        assert!(build_summary_prompt(&[make("me")], "").contains("Me: hi"));
     }
 
     #[test]

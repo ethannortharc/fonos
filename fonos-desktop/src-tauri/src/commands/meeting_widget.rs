@@ -129,6 +129,19 @@ pub struct MeetingProps {
     /// meeting widget starts with this blank.
     #[serde(default)]
     pub summary_prompt: String,
+    /// Opt-in speaker diarization (Workbench meeting-diarization epic, Task
+    /// 3): when true AND the capture negotiates dual-channel audio, the
+    /// system-audio channel is additionally fed to a `DiarizeSession`
+    /// (`crate::audio::diarize`) so remote-participant entries get labeled by
+    /// dominant speaker (`"s1"`, `"s2"`, …) instead of the flat `"Audio"`
+    /// hint. Defaults false (`#[serde(default)]`) so every persisted meeting
+    /// widget predating this field keeps its old mono-speaker behavior.
+    /// Every failure mode downstream (mono capture, helper/model missing,
+    /// spawn failure, mid-session death) degrades to the pre-diarization
+    /// behavior rather than interrupting the meeting — see
+    /// `meeting::start_meeting_with`.
+    #[serde(default)]
+    pub diarize: bool,
 }
 
 /// Resolve [`MeetingProps::stt_widget`] — Task 4's ref-resolution template
@@ -394,7 +407,7 @@ impl MeetingOutput {
             Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
         };
         let title = default_meeting_title(lang);
-        match meeting::start_meeting_with(&self.app, state, stt_svc, title.clone()).await {
+        match meeting::start_meeting_with(&self.app, state, stt_svc, title.clone(), self.props.diarize).await {
             Ok(_container_id) => {
                 let title_j = serde_json::to_string(&title).unwrap_or_default();
                 meeting_js(&self.app, &format!("recvStart({title_j}, '')"));
@@ -511,6 +524,7 @@ mod tests {
             stt_widget: "stt.tuned".into(),
             llm_widget: "llm.tuned".into(),
             summary_prompt: "Focus on decisions.".into(),
+            diarize: false,
         };
         let json = serde_json::to_value(&props).unwrap();
         let back: MeetingProps = serde_json::from_value(json).unwrap();

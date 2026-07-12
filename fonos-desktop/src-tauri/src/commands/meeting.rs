@@ -131,6 +131,28 @@ const BUILTIN_SUMMARY_INSTRUCTIONS: &str = concat!(
     "Output in clean Markdown. Do not wrap in a code block.",
 );
 
+/// Map a stored `speaker_hint` (`"me"`, a diarization machine tag like
+/// `"s1"`/`"s10"`, or the legacy `"audio"` catch-all) to the display label
+/// used both in the summary transcript ([`build_summary_prompt`]) and by the
+/// meeting-panel/detail UI (Task 6 depends on this exact behavior): `"me"` →
+/// `"Me"`; a diarization tag (`s` followed by one-or-more ASCII digits, e.g.
+/// `"s1"`/`"s10"`) passes through UNCHANGED (it's already the machine tag the
+/// UI groups by, not a display string to translate) so per-speaker labeling
+/// survives; anything else (the legacy `"audio"` hint, an empty string, or a
+/// malformed tail like `"sx"`) collapses to the pre-diarization `"Audio"`
+/// catch-all.
+pub(crate) fn speaker_display_hint(hint: &str) -> String {
+    if hint == "me" {
+        return "Me".to_string();
+    }
+    if let Some(rest) = hint.strip_prefix('s') {
+        if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+            return hint.to_string();
+        }
+    }
+    "Audio".to_string()
+}
+
 /// Build the AI summary prompt from a list of transcript entries.
 ///
 /// `custom_instructions` replaces [`BUILTIN_SUMMARY_INSTRUCTIONS`] when
@@ -149,8 +171,8 @@ pub fn build_summary_prompt(entries: &[Entry], custom_instructions: &str) -> Str
                 .metadata
                 .get("speaker_hint")
                 .and_then(|v| v.as_str())
-                .map(|s| if s == "me" { "Me" } else { "Audio" })
-                .unwrap_or("Me");
+                .map(speaker_display_hint)
+                .unwrap_or_else(|| "Me".to_string());
             let ts = e
                 .metadata
                 .get("timestamp_in_session")
@@ -271,7 +293,9 @@ pub async fn start_meeting(
         Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
     };
     let title = default_meeting_title(lang);
-    start_meeting_with(&app, &state, stt_svc, title).await
+    // Legacy command shell has no component props to carry a `diarize` flag
+    // — pass `false` (unchanged pre-diarization behavior for this caller).
+    start_meeting_with(&app, &state, stt_svc, title, false).await
 }
 
 /// Create a `meeting_session` container, set up dual-channel capture, and
@@ -290,12 +314,24 @@ pub async fn start_meeting(
 /// capture loop reaches its own (later, capture-outcome-accurate) `recvStart`
 /// call — see [`default_meeting_title`].
 ///
+/// `diarize` is [`super::meeting_widget::MeetingProps::diarize`] (`false` for
+/// the plain `start_meeting` command shell, which has no component props).
+/// When true AND capture negotiates dual-channel audio, a `DiarizeSession`
+/// (`crate::audio::diarize`) is spawned and fed the system-audio channel
+/// alongside transcription so remote-participant entries can be relabeled by
+/// dominant speaker. Every way this can fail to give a working session (mono
+/// capture, helper/models missing, spawn error, mid-session death) degrades
+/// to the pre-diarization flat `"Audio"` labeling — diarization never
+/// interrupts the meeting itself, only notifies the panel via
+/// `recvDiarizeNotice`.
+///
 /// Returns the container ID of the new meeting session.
 pub(crate) async fn start_meeting_with(
     app: &tauri::AppHandle,
     state: &AppState,
     stt_svc: ServiceConfig,
     title: String,
+    diarize: bool,
 ) -> Result<i64, String> {
     // Guard against double-start
     {
@@ -402,6 +438,38 @@ pub(crate) async fn start_meeting_with(
             }
         }
 
+        // Diarization (opt-in via MeetingProps::diarize): every failure mode
+        // here — mono capture, helper/models missing, spawn error — degrades
+        // to `diar = None` (flat "Audio" labeling downstream) and a
+        // `recvDiarizeNotice` so the panel can show why, rather than ever
+        // interrupting the meeting itself.
+        let mut diar: Option<crate::audio::diarize::DiarizeSession> = None;
+        if diarize {
+            if channel_mode != "dual" {
+                meeting_js(&app_handle, "recvDiarizeNotice('mono')");
+            } else {
+                let mdir = crate::audio::diarize::models_dir();
+                match crate::audio::diarize::check(&mdir) {
+                    Ok(st) if st.available && st.models_present => {
+                        match crate::audio::diarize::DiarizeSession::spawn(&mdir) {
+                            Ok(s) => { diar = Some(s); }
+                            Err(e) => {
+                                eprintln!("fonos: diarize spawn failed: {e}");
+                                meeting_js(&app_handle, "recvDiarizeNotice('spawn-failed')");
+                            }
+                        }
+                    }
+                    Ok(_) => meeting_js(&app_handle, "recvDiarizeNotice('no-model')"),
+                    Err(e) => {
+                        eprintln!("fonos: diarize check failed: {e}");
+                        meeting_js(&app_handle, "recvDiarizeNotice('no-model')");
+                    }
+                }
+            }
+        }
+        let mut sys_total: u64 = 0; // 系统声道累计样本数 = 分离时间基准（16 样本/ms）
+        let mut diar_notified_death = false;
+
         // Notify panel that capture started
         meeting_js(&app_handle, &format!(
             "recvStart('{}', '{}')",
@@ -439,6 +507,14 @@ pub(crate) async fn start_meeting_with(
                 mic_acc.extend_from_slice(&chunk.mic_samples);
                 if let Some(sys) = &chunk.system_samples {
                     sys_acc.extend_from_slice(sys);
+                    sys_total += sys.len() as u64;
+                    if let Some(d) = diar.as_mut() {
+                        d.feed(sys);
+                        if d.is_dead() && !diar_notified_death {
+                            diar_notified_death = true;
+                            meeting_js(&app_handle, "recvDiarizeNotice('died')");
+                        }
+                    }
                 }
             }
 
@@ -448,19 +524,40 @@ pub(crate) async fn start_meeting_with(
             }
 
             // Collect whichever channels are ready for independent transcription.
-            // Each entry: (samples, speaker_label, channel_tag, entry_role)
-            let mut ready: Vec<(Vec<i16>, &str, &str, EntryRole)> = Vec::new();
+            // Each entry: (samples, speaker_label, channel_tag, entry_role,
+            // sample-clock range) — the range is the [start_ms, end_ms) this
+            // chunk covers on the system-audio sample clock, used below to
+            // query the diarizer's timeline for the dominant speaker; mic
+            // audio has no diarization range (`None` — it's always "Me").
+            let mut ready: Vec<(Vec<i16>, &str, &str, EntryRole, Option<(u64, u64)>)> = Vec::new();
             if mic_acc.len() >= TARGET_SAMPLES {
-                ready.push((std::mem::take(&mut mic_acc), "Me", "mic", EntryRole::User));
+                ready.push((std::mem::take(&mut mic_acc), "Me", "mic", EntryRole::User, None));
             }
             if sys_acc.len() >= TARGET_SAMPLES {
-                ready.push((std::mem::take(&mut sys_acc), "Audio", "system", EntryRole::User));
+                let end_ms = sys_total / 16;
+                let start_ms = end_ms.saturating_sub(sys_acc.len() as u64 / 16);
+                ready.push((std::mem::take(&mut sys_acc), "Audio", "system", EntryRole::User,
+                            Some((start_ms, end_ms))));
             }
 
             let audio_dir = std::env::temp_dir().join("fonos_audio").join("meetings");
             let _ = std::fs::create_dir_all(&audio_dir);
 
-            for (chunk_samples, speaker, channel_tag, role) in ready {
+            for (chunk_samples, speaker, channel_tag, role, range) in ready {
+                // Dominant-speaker relabeling: when this chunk has a
+                // diarization range (system audio only) and a live session,
+                // ask the timeline for whichever speaker dominated that time
+                // range — falling back to the flat "Audio"/"Me" label
+                // whenever there's no range, no session, or no overlap
+                // recorded yet (`dominant` returning `None`). `.to_lowercase()`
+                // on a machine tag like "s1" is a no-op, so the existing
+                // `speaker_hint` storage/display path downstream is unchanged.
+                let speaker: String = match (range, diar.as_ref()) {
+                    (Some((s, e)), Some(d)) => d.dominant(s, e).unwrap_or_else(|| speaker.to_string()),
+                    _ => speaker.to_string(),
+                };
+                let speaker = speaker.as_str();
+
                 eprintln!(
                     "fonos: meeting chunk [{}] ready: {} samples",
                     speaker, chunk_samples.len()
@@ -574,6 +671,7 @@ pub(crate) async fn start_meeting_with(
         }
 
         capture.stop();
+        if let Some(d) = diar.take() { d.shutdown(); }
         eprintln!("fonos: meeting chunk loop exited");
     });
 
@@ -919,5 +1017,26 @@ mod tests {
         assert_eq!(svc.provider, "openai");
         assert_eq!(svc.model, "gpt-4o");
         assert_eq!(svc.api_key, "k");
+    }
+
+    // ── diarization wiring (Task 3) ───────────────────────────────────────────
+
+    #[test]
+    fn meeting_props_diarize_defaults_false() {
+        let p: super::super::meeting_widget::MeetingProps = serde_json::from_str(
+            r#"{"stt_widget":"","llm_widget":"","summary_prompt":""}"#,
+        )
+        .unwrap();
+        assert!(!p.diarize);
+    }
+
+    #[test]
+    fn speaker_display_hint_mapping() {
+        assert_eq!(speaker_display_hint("me"), "Me");
+        assert_eq!(speaker_display_hint("s1"), "s1");
+        assert_eq!(speaker_display_hint("s10"), "s10");
+        assert_eq!(speaker_display_hint("audio"), "Audio");
+        assert_eq!(speaker_display_hint("sx"), "Audio"); // 非法尾缀不透传
+        assert_eq!(speaker_display_hint(""), "Audio");
     }
 }

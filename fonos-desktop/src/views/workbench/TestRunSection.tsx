@@ -157,6 +157,13 @@ export default function TestRunSection({
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let disposed = false;
+    const release = async (un: () => void) => {
+      try {
+        await Promise.resolve(un());
+      } catch {
+        // The listener may already be gone during a StrictMode remount.
+      }
+    };
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const un = await listen<BenchEvent>("bench:event", (e) => {
@@ -196,10 +203,16 @@ export default function TestRunSection({
           setStatus(t("wb.bench.status-nospeech"));
         }
       });
-      if (disposed) un();
-      else unlisten = un;
+      if (disposed) {
+        await release(un);
+      } else {
+        unlisten = un;
+      }
     })();
-    return () => { disposed = true; unlisten?.(); };
+    return () => {
+      disposed = true;
+      if (unlisten) void release(unlisten);
+    };
   }, [audioInput]);
 
   const run = async () => {

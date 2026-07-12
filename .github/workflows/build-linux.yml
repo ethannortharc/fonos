@@ -57,6 +57,7 @@ jobs:
           # macOS Swift helpers — not needed on Linux, just need to exist for bundler
           touch fonos-desktop/src-tauri/resources/fonos-audio-capture
           touch fonos-desktop/src-tauri/resources/fonos-stt-apple
+          touch fonos-desktop/src-tauri/resources/fonos-diarize
           python3 -c "
           import struct, zlib, os
           def make_png(w, h):

@@ -6,8 +6,9 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
 pub fn models_dir() -> PathBuf {
@@ -54,6 +55,7 @@ impl SpeakerTimeline {
         self.segs.push(Seg { speaker: speaker.to_string(), start_ms, end_ms });
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize { self.segs.len() }
 
     /// [start_ms, end_ms) 内累计重叠时长最大的 speaker；平手取字典序小者；零重叠 None。
@@ -90,7 +92,10 @@ pub fn check(models_dir: &Path) -> Result<DiarizeStatus, String> {
 
 pub struct DiarizeSession {
     child: Child,
-    stdin: Option<ChildStdin>,
+    /// Bounded handoff to the writer thread spawned in [`Self::spawn`] — see
+    /// [`Self::feed`] for why this exists instead of writing the pipe
+    /// directly here.
+    tx: Option<SyncSender<Vec<i16>>>,
     timeline: Arc<Mutex<SpeakerTimeline>>,
     dead: Arc<AtomicBool>,
 }
@@ -123,19 +128,68 @@ impl DiarizeSession {
             }
             dd.store(true, Ordering::SeqCst); // stdout 关闭 = 进程退出
         });
-        Ok(Self { child, stdin: Some(stdin), timeline, dead })
+
+        // Writer thread: owns the actual pipe, off the capture task's
+        // critical path. The helper loads its CoreML model BEFORE reading
+        // stdin (can take seconds — worst case a mid-start network fetch),
+        // so writing the pipe directly from `feed()` (called from the
+        // capture task) risked the pipe filling and blocking the whole
+        // meeting loop, including mic transcription, on a slow/wedged
+        // helper. Bound is 600 ≈ 5 minutes of the 500ms chunks the meeting
+        // loop feeds — generous enough to absorb a slow model load without
+        // ever being reached in the common case.
+        let (tx, rx) = sync_channel::<Vec<i16>>(600);
+        let wdead = Arc::clone(&dead);
+        std::thread::spawn(move || {
+            let mut stdin = stdin;
+            loop {
+                match rx.recv() {
+                    Ok(samples) => {
+                        let mut bytes = Vec::with_capacity(samples.len() * 2);
+                        for s in &samples { bytes.extend_from_slice(&s.to_le_bytes()); }
+                        if stdin.write_all(&bytes).is_err() {
+                            eprintln!("fonos: fonos-diarize stdin write failed — degrading");
+                            wdead.store(true, Ordering::SeqCst);
+                            break;
+                        }
+                    }
+                    // Sender dropped (shutdown()) and channel drained — stop
+                    // the loop so `stdin` below is dropped (EOF).
+                    Err(_) => break,
+                }
+            }
+            drop(stdin); // EOF → helper flush 后退出
+        });
+
+        Ok(Self { child, tx: Some(tx), timeline, dead })
     }
 
+    /// Non-blocking: hands `samples` to the writer thread's bounded channel
+    /// rather than writing the pipe here, so a stalled/dead helper can never
+    /// stall the capture task (the feature's core mandate — diarization
+    /// failure must never interrupt the meeting).
+    ///
+    /// If the session is already dead this is a no-op. Otherwise `try_send`
+    /// either succeeds (samples queued, in feed order, for the writer
+    /// thread) or fails and the session is marked dead for good:
+    /// - `Full` — the writer thread hasn't drained fast enough (helper still
+    ///   loading its model, or wedged). 5 minutes of headroom means this
+    ///   should never trigger in the common case; if it does, the helper is
+    ///   unhealthy enough that further feeding wouldn't help.
+    /// - `Disconnected` — the writer thread already exited (e.g. after a
+    ///   write error).
+    ///
+    /// Either way this call's samples are dropped rather than retried. That
+    /// only discards *this* send because the session is dead for good
+    /// afterwards: the shared time-base (t0 = first fed sample) depends on
+    /// samples reaching the pipe in order with none dropped, but that
+    /// invariant only matters for segments the timeline will actually be
+    /// queried about, and once dead, `dominant()` stops receiving new
+    /// segments for any later range anyway (see the reader thread above and
+    /// meeting.rs's per-loop `is_dead()` check) — the timeline is simply
+    /// frozen at whatever it already has.
     pub fn feed(&mut self, samples: &[i16]) {
-        if self.is_dead() { return; }
-        let Some(stdin) = self.stdin.as_mut() else { return };
-        let mut bytes = Vec::with_capacity(samples.len() * 2);
-        for s in samples { bytes.extend_from_slice(&s.to_le_bytes()); }
-        if stdin.write_all(&bytes).is_err() {
-            eprintln!("fonos: fonos-diarize stdin write failed — degrading");
-            self.dead.store(true, Ordering::SeqCst);
-            self.stdin = None;
-        }
+        feed_via(&mut self.tx, &self.dead, samples);
     }
 
     pub fn is_dead(&self) -> bool { self.dead.load(Ordering::SeqCst) }
@@ -145,7 +199,12 @@ impl DiarizeSession {
     }
 
     pub fn shutdown(mut self) {
-        drop(self.stdin.take()); // EOF → helper flush 后退出
+        // Drop the sender first: the writer thread's `recv()` drains
+        // whatever's still queued, writes it, then itself errs and drops
+        // `stdin` (EOF → helper flush 后退出) — same end state the old
+        // direct `drop(self.stdin.take())` produced, just routed through the
+        // writer thread since it now owns `stdin`.
+        drop(self.tx.take());
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
             match self.child.try_wait() {
@@ -159,6 +218,28 @@ impl DiarizeSession {
                     return;
                 }
             }
+        }
+    }
+}
+
+/// Core of [`DiarizeSession::feed`], factored out into a free function so
+/// its Full/Disconnected degradation logic is unit-testable against a
+/// dummy `sync_channel` (see `tests::feed_degrades_*` below) without
+/// spawning a real helper process.
+fn feed_via(tx: &mut Option<SyncSender<Vec<i16>>>, dead: &AtomicBool, samples: &[i16]) {
+    if dead.load(Ordering::SeqCst) { return; }
+    let Some(sender) = tx.as_ref() else { return };
+    match sender.try_send(samples.to_vec()) {
+        Ok(()) => {}
+        Err(TrySendError::Full(_)) => {
+            eprintln!("fonos: fonos-diarize writer channel full (helper stalled) — degrading");
+            dead.store(true, Ordering::SeqCst);
+            *tx = None;
+        }
+        Err(TrySendError::Disconnected(_)) => {
+            eprintln!("fonos: fonos-diarize writer thread gone — degrading");
+            dead.store(true, Ordering::SeqCst);
+            *tx = None;
         }
     }
 }
@@ -253,5 +334,47 @@ mod tests {
         let d = models_dir();
         assert!(d.ends_with("models/diarization"));
         assert!(d.to_string_lossy().contains("com.fonos.app"));
+    }
+
+    #[test]
+    fn feed_succeeds_when_channel_has_room() {
+        let (tx, rx) = sync_channel::<Vec<i16>>(4);
+        let mut tx_opt = Some(tx);
+        let dead = AtomicBool::new(false);
+        feed_via(&mut tx_opt, &dead, &[1, 2, 3]);
+        assert!(!dead.load(Ordering::SeqCst));
+        assert!(tx_opt.is_some());
+        assert_eq!(rx.recv().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn feed_degrades_when_writer_channel_full() {
+        // Capacity-1 channel, never drained — first send fills it, second finds it Full.
+        let (tx, _rx) = sync_channel::<Vec<i16>>(1);
+        let mut tx_opt = Some(tx);
+        let dead = AtomicBool::new(false);
+        feed_via(&mut tx_opt, &dead, &[1, 2, 3]);
+        assert!(!dead.load(Ordering::SeqCst));
+        assert!(tx_opt.is_some());
+
+        feed_via(&mut tx_opt, &dead, &[4, 5, 6]);
+        assert!(dead.load(Ordering::SeqCst));
+        assert!(tx_opt.is_none());
+
+        // Once dead, further feeds are no-ops (no panic on the `None` sender).
+        feed_via(&mut tx_opt, &dead, &[7, 8, 9]);
+        assert!(dead.load(Ordering::SeqCst));
+        assert!(tx_opt.is_none());
+    }
+
+    #[test]
+    fn feed_degrades_when_writer_thread_gone() {
+        let (tx, rx) = sync_channel::<Vec<i16>>(600);
+        drop(rx); // simulate the writer thread having already exited
+        let mut tx_opt = Some(tx);
+        let dead = AtomicBool::new(false);
+        feed_via(&mut tx_opt, &dead, &[1, 2, 3]);
+        assert!(dead.load(Ordering::SeqCst));
+        assert!(tx_opt.is_none());
     }
 }

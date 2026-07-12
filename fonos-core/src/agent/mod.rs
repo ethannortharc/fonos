@@ -9,6 +9,5 @@ pub mod custom_loader;
 pub mod fast_path;
 pub mod processor;
 pub mod registry;
-pub mod router;
 pub mod safety;
 pub mod skill;

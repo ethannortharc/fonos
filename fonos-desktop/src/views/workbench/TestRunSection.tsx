@@ -20,7 +20,7 @@ import BenchGraph, { type BenchNode } from "../../components/BenchGraph";
 import MicButton from "../../components/MicButton";
 import WaveCanvas from "../../components/WaveCanvas";
 import WidgetForm, { widgetToForm } from "../settings/WidgetForm";
-import { ROLES, TYPE_TAGS, TYPE_META } from "./typeMeta";
+import { GROUPS, TYPE_META } from "./typeMeta";
 import type { BenchTarget } from "../Workbench";
 import type { Container } from "../../lib/storage-api";
 import type { AppConfig, WidgetDef, WorkflowRow } from "../../types";
@@ -257,7 +257,7 @@ export default function TestRunSection({
           <optgroup label={t("wb.seg.recipes")}>
             {rows.map((r) => <option key={r.id} value={`recipe:${r.id}`}>{workflowLabel(r)}</option>)}
           </optgroup>
-          {ROLES.flatMap(({ role }) => TYPE_TAGS[role])
+          {GROUPS.flatMap(({ tags }) => tags)
             .filter((tag) => tag !== "selection")
             .map((tag) => {
               const matches = widgets.filter((w) => w.type_tag === tag);
@@ -293,17 +293,29 @@ export default function TestRunSection({
       </div>
 
       <div className="fonos-surface rounded-[12px] px-[22px] py-5">
-        {/* Own (lower) stacking context: MicButton's VoiceAura extends well
-            beyond the 88px mic wrap (blur + breathing animation while
-            recording) — as a position:absolute, z-index:auto descendant with
-            no bounding stacking context, it would otherwise paint above the
-            graph/editor/run-row below it (positioned elements paint after
-            in-flow non-positioned content within their stacking context,
-            regardless of DOM order). `relative z-0` here + `z-[1]` on every
-            sibling below contains the aura's paint layer to this row alone,
-            without clipping it (no overflow:hidden) or touching the
-            animation. Aura layers are already pointer-events-none. */}
-        <div className={`relative z-0 ${audioInput ? "mb-10" : "mb-5"} flex items-center gap-[18px]`}>
+        {/* MicButton's own `isolate` + negative z-index only contains the aura
+            WITHIN MicButton's subtree (aura vs. its sibling <button>) — it does
+            NOT stop the MicButton root div itself from escaping. That root div
+            is `position: relative` (needed as the aura's containing block)
+            with z-index: auto, so it paints in the "z-index: 0" bucket, which
+            ALWAYS paints after in-flow non-positioned content of its nearest
+            ancestor stacking context, regardless of DOM order — without a
+            container of its own, this row (and MicButton's aura/blur/breathing
+            overflow along with it) would paint over the graph/editor/run-row
+            below despite coming first in the markup.
+            Empirically verified (real-browser Playwright repro, see P2 Task 1
+            fix-round-1 report): giving this row `isolate` alone does NOT fix
+            it — an isolated-but-unpositioned-z-index row is itself just
+            another auto-z-index escapee one level up, confirmed identical to
+            the unfixed baseline via both elementFromPoint and rendered-pixel
+            sampling. What DOES work (kept from Task 11): `relative z-0` here
+            + `relative z-[1]` on every sibling below (BenchGraph, the node
+            editor panel, the run row) pulls all of them out of the ambiguous
+            "positioned vs. non-positioned" comparison entirely and sorts them
+            by explicit z-index instead, so 0 always paints under 1 — this
+            pairing is the load-bearing containment, not `isolate`. Aura layers
+            are already pointer-events-none regardless. */}
+        <div className="relative z-0 mb-5 flex items-center gap-[18px]">
           {audioInput ? (
             <>
               <div className="relative h-[88px] w-[88px] flex-shrink-0 flex items-center justify-center">
@@ -328,7 +340,20 @@ export default function TestRunSection({
           )}
         </div>
 
-        <div className="relative z-[1]">
+        {/* fonos-surface-opaque-fill: the z-0/z-[1] pairing above already paints
+            the mic's live-recording aura BEHIND this wrapper (correct paint
+            order) — but the first node's capsule is only 8% opaque
+            (BenchGraph.tsx), so the aura was bleeding THROUGH it rather than
+            being hidden by it. This gives the wrapper an opaque backdrop
+            (matching .fonos-surface's own composited tone, so the seam is
+            invisible) that fully occludes the aura here while leaving it free
+            to bloom in the input-row band above/around the mic. Empirically
+            verified (Playwright pixel sampling, Test Run Live-Aura Bleed
+            Fix) — the aura's visual reach fades out well above the node
+            editor/run-row below, and both are unreachable while a run (and
+            its live aura) is in flight anyway (onNodeClick is disabled while
+            running), so no further occlusion is needed there. */}
+        <div className="relative z-[1] fonos-surface-opaque-fill">
           <BenchGraph
             nodes={nodes}
             onNodeClick={running ? undefined : (id) => setEditNode((cur) => (cur === id ? null : id))}
@@ -337,13 +362,14 @@ export default function TestRunSection({
 
         {editNode && wById(editNode) && (
           <div className="relative z-[1] mt-3.5 rounded-[12px] border border-[rgba(255,255,255,0.075)] bg-[rgba(255,255,255,0.02)] p-[15px]">
-            {usageCount(editNode, rows) > 0 && (
-              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows)))}</div>
+            {usageCount(editNode, rows, widgets) > 0 && (
+              <div className="mb-1.5 text-[10px] text-[rgba(242,184,75,0.8)]">{t("wb.widgets.share-warn").replace("{0}", String(usageCount(editNode, rows, widgets)))}</div>
             )}
             <WidgetForm
               value={widgetToForm(wById(editNode)!)}
               config={config}
               containers={containers}
+              widgets={widgets}
               onSave={async (w) => {
                 await saveWidget(w);
                 setWidgets(await listWidgets());

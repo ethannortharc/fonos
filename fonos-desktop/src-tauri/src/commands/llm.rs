@@ -1,128 +1,65 @@
 //! LLM commands — thin Tauri wrappers around fonos_core::llm and fonos_core::model_caps.
 
-use serde::Serialize;
 use super::AppState;
-use fonos_core::modes;
 use fonos_core::model_caps;
-use fonos_core::llm::{ServiceConfig, process_text};
+use fonos_core::pipeline::LlmStageOutput;
+use fonos_core::workflow::llm_step::{run_llm_step, LlmProps};
 
-#[derive(Serialize)]
-pub struct LlmResult {
-    pub original: String,
-    pub processed: String,
-    pub mode: String,
-    pub mode_name: String,
-    pub latency_ms: u64,
-    pub auto_paste: bool,
-    pub auto_press_enter: bool,
-}
-
-/// Process text through the configured LLM using the specified mode.
-#[tauri::command]
-pub async fn process_with_llm(
-    state: tauri::State<'_, AppState>,
+/// Run one LLM processor step for the Linux-only legacy dictation dispatch
+/// (`main.rs::stop_and_process_dictation`, the CGEventTap-free fallback for
+/// platforms without the macOS hotkey engine dispatch) from an
+/// already-resolved `llm.{mode_id}` widget's [`LlmProps`] — mirrors
+/// [`super::workflow_widgets::LlmProcessor::process`] (the engine's own LLM
+/// step) exactly: same service resolution, same glossary assembly, `""` for
+/// `translate_target` (translation is prompt-based now; see `LlmProps`'s own
+/// doc). No stats event is recorded — the engine's `LlmProcessor` doesn't
+/// record one either, so this stays platform-consistent rather than
+/// resurrecting the deleted `process_with_llm`'s per-call `"llm"` stats row.
+///
+/// `auto_paste` is always `true` and `auto_press_enter` is read from the live
+/// `out.insert` widget's `press_enter` prop — `wf.dictation`'s fixed output
+/// (see `workflow::migrate::migrate_to_workflows` rule 2) — since a `Mode`'s
+/// own per-mode `auto_paste`/`auto_press_enter` no longer exists.
+///
+/// Its only caller (`main.rs::stop_and_process_dictation`) is
+/// `#[cfg(target_os = "linux")]`, so this is unreachable — and clippy-flagged
+/// dead code — on every other target; unlike the deleted `process_with_llm`
+/// this isn't a `#[tauri::command]` kept alive by an unconditional
+/// `invoke_handler!` registration, so the lint needs an explicit nudge here.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) async fn run_dictation_llm_step(
+    state: &AppState,
     text: String,
-    mode: String,
-) -> Result<LlmResult, String> {
-    if text.is_empty() {
-        return Ok(LlmResult { original: text, processed: String::new(), mode, mode_name: String::new(), latency_ms: 0, auto_paste: true, auto_press_enter: false });
-    }
-
-    // Look up mode definition
-    let all_modes = modes::all_modes();
-    let mode_def = all_modes.get(&mode)
-        .ok_or_else(|| format!("Unknown mode: '{}'. Available: {}", mode, all_modes.keys().map(|k| k.as_str()).collect::<Vec<_>>().join(", ")))?;
-
-    // Raw mode — skip LLM
-    if mode_def.system.is_none() && mode_def.user_template.is_none() {
-        return Ok(LlmResult {
-            original: text.clone(), processed: text, mode,
-            mode_name: mode_def.name.clone(), latency_ms: 0,
-            auto_paste: mode_def.auto_paste, auto_press_enter: mode_def.auto_press_enter,
-        });
-    }
-
-    let config = state.config.lock().map_err(|e| e.to_string())?.clone();
-
-    // Check mode's LLM model override; fall back to global LLM profile
-    let profile_id = if !mode_def.model.is_empty() {
-        &mode_def.model
-    } else {
-        &config.llm_profile
-    };
-    if profile_id.is_empty() {
-        return Err("No LLM profile configured. Go to Settings > Model Registry to add one.".into());
-    }
-
-    let profile = config.model_profiles.iter()
-        .find(|p| p["id"].as_str() == Some(profile_id))
-        .ok_or_else(|| format!("LLM profile '{}' not found", profile_id))?
-        .clone();
-
-    let provider = profile["provider"].as_str().unwrap_or("openai").to_string();
-    let api_key = profile["api_key"].as_str().unwrap_or("").to_string();
-    let model = profile["model"].as_str().unwrap_or("gpt-4o").to_string();
-    let base_url = profile["base_url"].as_str().unwrap_or("").to_string();
-
-    if api_key.is_empty() && provider != "ollama" && provider != "omlx" {
-        return Err(format!("No API key in profile '{}'. Edit the profile in Settings.", profile_id));
-    }
-
-    let caps = model_caps::get_caps(&model);
-
-    eprintln!("fonos: LLM mode={} ({}) provider={} model={} caps={}",
-        mode, mode_def.name, provider, model,
-        caps.as_ref().map(|c| format!("sys:{} lang:{}", c.follows_system_prompt, c.preserves_language)).unwrap_or("unprobed".into()));
-
-    let service = ServiceConfig { provider, api_key, model: model.clone(), base_url, stt_api: String::new() };
-    let translate_target = config.translate_target.clone();
-
-    // ③ Vocabulary glossary (issue #3): append the effective books' terms to
-    // the mode's system prompt so the LLM output prefers canonical spellings.
-    let mode_with_glossary = {
-        let eff = fonos_core::vocab::effective_books(
+    props: &LlmProps,
+) -> Result<LlmStageOutput, String> {
+    let (service, glossary, press_enter) = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let service = if props.model_profile.is_empty() {
+            super::get_service_config(state, "llm")
+        } else {
+            super::get_service_config_for_profile(state, &props.model_profile)
+        };
+        let books = fonos_core::vocab::effective_books(
             &config.vocab_books,
             &config.global_vocab_books,
-            &mode_def.vocab_books,
+            &props.vocab_books,
         );
-        let terms = fonos_core::vocab::collect_terms(&eff);
-        fonos_core::vocab::build_glossary_block(&terms).map(|block| {
-            let mut m = mode_def.clone();
-            m.system = Some(match &m.system {
-                Some(sys) => format!("{sys}{block}"),
-                None => block.trim_start().to_string(),
-            });
-            m
-        })
+        let glossary = fonos_core::vocab::build_glossary_block(&fonos_core::vocab::collect_terms(&books));
+        let press_enter = fonos_core::workflow::engine::effective_widgets(&config)
+            .iter()
+            .find(|w| w.id == "out.insert")
+            .and_then(|w| w.props.get("press_enter"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        (service, glossary, press_enter)
     };
-    let mode_for_llm = mode_with_glossary.as_ref().unwrap_or(mode_def);
 
-    let t0 = std::time::Instant::now();
-    let resp = process_text(&text, mode_for_llm, &service, caps.as_ref(), &translate_target)
-        .await
-        .map_err(|e| e.to_string())?;
-    let latency_ms = t0.elapsed().as_millis() as u64;
+    let processed = run_llm_step(props, &text, &service, "", glossary.as_deref()).await?;
 
-    eprintln!("fonos: LLM response ({}ms, {}+{}tok): {}", latency_ms,
-        resp.tokens_in, resp.tokens_out, resp.text.chars().take(80).collect::<String>());
-
-    // Record LLM event to stats DB
-    if let Ok(db) = state.db.lock() {
-        let _ = fonos_core::stats::record_event(
-            &db, "llm", &text, &resp.text, 0.0,
-            latency_ms as i64, &mode, &model, "", "",
-            resp.tokens_in, resp.tokens_out, "",
-        );
-    }
-
-    Ok(LlmResult {
-        original: text,
-        processed: resp.text,
-        mode: mode.clone(),
-        mode_name: mode_def.name.clone(),
-        latency_ms,
-        auto_paste: mode_def.auto_paste,
-        auto_press_enter: mode_def.auto_press_enter,
+    Ok(LlmStageOutput {
+        processed,
+        auto_paste: true,
+        auto_press_enter: press_enter,
     })
 }
 
@@ -247,85 +184,4 @@ pub async fn list_provider_models(
 
     eprintln!("fonos: found {} models", models.len());
     Ok(models)
-}
-
-/// List all modes (built-in + custom).
-#[tauri::command]
-pub fn list_modes() -> Result<serde_json::Value, String> {
-    let all = modes::all_modes();
-    let built_in_keys: Vec<String> = modes::built_in_modes().keys().cloned().collect();
-
-    let list: Vec<serde_json::Value> = all.iter().map(|(id, m)| {
-        serde_json::json!({
-            "id": id,
-            "name": m.name,
-            "description": m.description,
-            "icon": m.icon,
-            "builtin": built_in_keys.contains(id),
-            "system": m.system,
-            "user_template": m.user_template,
-            "temperature": m.temperature,
-            "model": m.model,
-            "stt_model": m.stt_model,
-            "stt_prompt": m.stt_prompt,
-            "stt_temperature": m.stt_temperature,
-            "max_tokens": m.max_tokens,
-            "output_language": m.output_language,
-            "auto_paste": m.auto_paste,
-            "auto_press_enter": m.auto_press_enter,
-            "vocab_books": m.vocab_books,
-        })
-    }).collect();
-
-    Ok(serde_json::json!(list))
-}
-
-/// Save a custom mode.
-#[tauri::command]
-pub fn save_custom_mode(
-    id: String,
-    name: String,
-    description: String,
-    icon: String,
-    system: String,
-    user_template: String,
-    temperature: f64,
-    model: String,
-    stt_model: String,
-    stt_prompt: String,
-    stt_temperature: f64,
-    max_tokens: u32,
-    output_language: String,
-    auto_paste: bool,
-    auto_press_enter: bool,
-    vocab_books: Option<Vec<String>>,
-) -> Result<(), String> {
-    let mut custom = modes::load_custom_modes();
-    custom.insert(id, modes::Mode {
-        name,
-        description,
-        icon: if icon.is_empty() { "⚙️".into() } else { icon },
-        system: if system.is_empty() { None } else { Some(system) },
-        user_template: if user_template.is_empty() { None } else { Some(user_template) },
-        temperature,
-        model,
-        stt_model,
-        stt_prompt,
-        stt_temperature,
-        max_tokens: if max_tokens == 0 { 4096 } else { max_tokens },
-        output_language: if output_language.is_empty() { "auto".into() } else { output_language },
-        auto_paste,
-        auto_press_enter,
-        vocab_books: vocab_books.unwrap_or_default(),
-        ..Default::default()
-    });
-    modes::save_custom_modes(&custom).map_err(|e| e.to_string())
-}
-
-/// Delete a custom mode.
-#[tauri::command]
-pub fn delete_custom_mode(id: String) -> Result<(), String> {
-    let mut custom = modes::load_custom_modes();
-    custom.remove(&id);
-    modes::save_custom_modes(&custom).map_err(|e| e.to_string())
 }

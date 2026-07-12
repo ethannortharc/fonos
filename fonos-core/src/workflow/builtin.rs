@@ -8,10 +8,10 @@
 //! The LLM widgets (`llm.polish`, `llm.formal`, `llm.translate`,
 //! `llm.summarize`, `llm.listen`) each carry a literal `system` /
 //! `user_template` / `temperature`, inlined below so this module is
-//! self-contained and has no runtime dependency on the legacy mode system in
-//! `modes.rs`. The literals were seeded byte-for-byte from that system's
-//! built-in modes; a `#[cfg(test)]`-only regression test cross-checks them
-//! for drift and can be deleted once `modes.rs` goes away.
+//! self-contained. The literals were originally seeded byte-for-byte from the
+//! legacy `modes` system's built-in modes (a byte-lock regression test
+//! cross-checked them for drift until `modes.rs` was deleted in Workbench P2
+//! Task 12); this module is now the sole source of truth for them.
 
 use crate::workflow::model::{Trigger, WidgetDef, WidgetRole, WorkflowDef};
 
@@ -107,6 +107,11 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "🎙",
             serde_json::json!({ "capture": "toggle" }),
         ),
+        // `src.instant` has no acquisition step at all — it produces empty
+        // text immediately (see `InstantSource::allows_empty`) and seeds
+        // "blank-open" session-composite recipes: `wf.agent` (Task 6),
+        // `wf.meeting` (Task 7), and `wf.call` (Task 9).
+        widget("src.instant", Source, "instant", "即刻", "⚡", serde_json::json!({})),
         // ── Processors ───────────────────────────────────────────────────
         widget(
             "stt.default",
@@ -242,7 +247,11 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
                 "markdown": true,
                 "size": { "width": 420, "height": 320 },
                 "voice_input": false,
-                "engine": { "kind": "llm", "model_profile": "", "system": null }
+                "engine": { "kind": "llm", "model_profile": "", "system": null },
+                // Empty ⇒ inline `engine` fields above (unchanged default
+                // path). Workbench P2 Task 4, additive — see
+                // `workflow::dialog::DialogProps::llm_widget`.
+                "llm_widget": ""
             }),
         ),
         widget(
@@ -260,6 +269,75 @@ pub fn built_in_widgets() -> Vec<WidgetDef> {
             "快速笔记",
             "📓",
             serde_json::json!({ "container_id": 0 }),
+        ),
+        // Session composite (Workbench P2 Task 6): a skill-wielding chat
+        // assistant. `llm_widget` empty ⇒ the legacy `agent_llm_profile`→
+        // `llm_profile` config fallback chain (unchanged). `system` empty ⇒
+        // no system prompt at all (Fix Round 1: `migrate_legacy_agent_triggers`
+        // seeds this from the now-deprecated `config.agent_system_prompt` on
+        // upgrade, so a fresh builtin copy legitimately starts blank); the
+        // safety allow/blocklist stays global config, not props — see
+        // `commands::agent_widget::AgentProps`.
+        widget(
+            "agent.default",
+            Output,
+            "agent",
+            "智能体",
+            "🤖",
+            serde_json::json!({
+                "llm_widget": "",
+                "system": "",
+                "tts_enabled": false,
+                "voice_profile": "",
+                "voice": "default",
+                "timeout_secs": 30,
+                "max_turns": 20,
+            }),
+        ),
+        // Session composite (Workbench P2 Task 7): continuous meeting capture
+        // + AI summary. `stt_widget`/`llm_widget` empty ⇒ the legacy
+        // `meeting_stt_profile`/`meeting_llm_profile`→`llm_profile` config
+        // fallback chains (still live-read — see those fields' doc comments
+        // for why they can't be folded into refs the way `agent_system_prompt`
+        // was); `summary_prompt` empty ⇒ the built-in summary instructions
+        // literal — see `commands::meeting_widget::MeetingProps`.
+        widget(
+            "meeting.default",
+            Output,
+            "meeting",
+            "会议",
+            "🗓",
+            serde_json::json!({
+                "stt_widget": "",
+                "llm_widget": "",
+                "summary_prompt": "",
+            }),
+        ),
+        // Session composite (Workbench P2 Task 9): hands-free voice call —
+        // listen → transcribe → persona LLM → spoken reply, looping until
+        // hangup. `stt_widget` empty ⇒ the global `"stt"` profile (the
+        // retired sts-page transcribe path's behavior); `llm_widget` empty ⇒
+        // the legacy `sts_llm_profile`→`llm_profile` chain (still live-read —
+        // same id-space mismatch as the meeting profile fields) with the
+        // built-in call persona; `voice_profile` empty ⇒ the global `"tts"`
+        // profile. The tuning props mirror the legacy `sts_*`/`call_*` config
+        // defaults — see `commands::call_widget::CallProps`.
+        widget(
+            "call.default",
+            Output,
+            "call",
+            "通话",
+            "📞",
+            serde_json::json!({
+                "stt_widget": "",
+                "llm_widget": "",
+                "voice_profile": "",
+                "voice": "default",
+                "max_turns": 8,
+                "vad_sensitivity": 0.5,
+                "vad_silence_ms": 800,
+                "barge_in": true,
+            }),
         ),
     ]
 }
@@ -296,6 +374,41 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
         ),
         workflow("wf.listen", "朗读", "🎧", "src.selection", &["llm.summarize"], &["out.speak"]),
         workflow("wf.note", "记笔记", "📓", "src.mic-hold", &["stt.default"], &["out.quicknote"]),
+        // Session composites (Workbench P2 Task 6): "press to open" and
+        // "hold to speak" fronts for the agent.default output. `wf.agent`'s
+        // blank-open src.instant source never records a history entry (see
+        // engine::run's empty-final-text skip); `wf.agent-voice`'s STT
+        // transcript IS recorded like any other mic-sourced recipe, exactly
+        // as the legacy hotkey_agent arm's dictation half was.
+        workflow("wf.agent", "智能体", "🤖", "src.instant", &[], &["agent.default"]),
+        workflow(
+            "wf.agent-voice",
+            "语音智能体",
+            "🤖",
+            "src.mic-hold",
+            &["stt.default"],
+            &["agent.default"],
+        ),
+        // Session composite (Workbench P2 Task 7): blank-open toggle front for
+        // the meeting.default output — a single recipe covers both halves of
+        // the legacy hotkey_meeting toggle (start when not recording, stop
+        // when recording), the branch living inside `MeetingOutput::deliver`
+        // itself rather than in two separate recipes (unlike
+        // wf.agent/wf.agent-voice, which are genuinely different source
+        // shapes). src.instant never records a top-level history entry (see
+        // engine::run's empty-final-text skip) — the meeting composite
+        // records its own meeting_session container/entries instead, exactly
+        // as the legacy hotkey_meeting arm's start_meeting/stop_meeting did.
+        workflow("wf.meeting", "会议", "🗓", "src.instant", &[], &["meeting.default"]),
+        // Session composite (Workbench P2 Task 9): blank-open toggle front for
+        // the call.default output — one recipe covers both halves of the call
+        // toggle (start a call when idle, hang up when one is live), the
+        // branch living inside `CallOutput::deliver` itself, exactly like
+        // wf.meeting's start/stop toggle. src.instant never records a
+        // top-level history entry (engine::run's empty-final-text skip) — the
+        // call's own turns are recorded by the shared transcribe path, as the
+        // retired Talk page's were.
+        workflow("wf.call", "通话", "📞", "src.instant", &[], &["call.default"]),
     ];
 
     // Workbench P1: every microphone-sourced builtin gets a pill-roller
@@ -313,6 +426,145 @@ pub fn built_in_workflows() -> Vec<WorkflowDef> {
         }
     }
     v
+}
+
+// ── Bilingual builtin display names (Workbench P2 Task 13) ─────────────────
+//
+// Every built-in workflow/widget `name` above is a Chinese literal — fine for
+// the config file (it is never rendered raw there), but it leaks straight
+// through to EN-language users wherever a *recorded* name is surfaced at
+// runtime: the floating panel header, dialog/meeting titles, and History rows
+// all read `workflow_name` off DB metadata rather than going through the
+// React-side `lib/builtinLabels.ts` catalog localization (which only covers
+// the static Settings/Flows catalog, keyed by id). `builtin_display_name`
+// closes that gap for every backend emission point: `DbRecorder` (writes the
+// localized name + the id into history metadata), `PanelOutput`, `dialog.rs`'s
+// title, and the meeting composite's default title.
+//
+// Both columns match `fonos-desktop/src/lib/i18n.tsx`'s `builtin.*` keys
+// verbatim (kept in sync by the coverage test below + code review — there is
+// no build-time link between the two crates). This module's own `name`
+// literals above are NOT the source of truth here and are free to differ:
+// `builtin_display_name` always wins over the raw `wf.name`/`w.name` at every
+// backend emission point listed above, so for a built-in id the raw literal
+// never actually surfaces to a user. (Workbench P2 Task 14: four ZH entries —
+// `llm.formal`, `llm.summarize`, `out.insert`, `out.panel` — used to
+// deliberately mirror this file's own `name` literals instead of i18n.tsx,
+// drifting from the frontend's builtinLabels.ts-driven Settings/Flows catalog
+// text for the same ids; realigned to i18n.tsx so a ZH-language user sees the
+// same wording in History/panel titles as in Settings.)
+
+/// UI language resolved for bilingual builtin display names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lang {
+    /// English display names.
+    En,
+    /// Chinese (Simplified) display names.
+    Zh,
+}
+
+/// Resolve `config.ui_language` ("auto" | "en" | "zh") into a concrete
+/// [`Lang`]. Explicit `"en"`/`"zh"` win outright; `"auto"` (or any other
+/// unrecognized value) falls through to the process's `LANG` environment
+/// variable — a `"zh"` prefix resolves to [`Lang::Zh`], anything else
+/// (including unset) to [`Lang::En`]. This mirrors the desktop's own
+/// `resolveLocale` (`fonos-desktop/src/lib/i18n.tsx`), which follows
+/// `navigator.language` client-side; core has no such API; `LANG` stands in as
+/// the OS-level signal for backend-only emission points (panel/dialog/meeting
+/// titles) that never reach the browser layer.
+pub fn resolve_lang(ui_language: &str) -> Lang {
+    match ui_language {
+        "zh" => Lang::Zh,
+        "en" => Lang::En,
+        _ => resolve_lang_from_env_lang(std::env::var("LANG").ok()),
+    }
+}
+
+/// Pure `LANG`-prefix check, split out of [`resolve_lang`] so tests can drive
+/// it without mutating the process-wide `LANG` environment variable.
+fn resolve_lang_from_env_lang(env_lang: Option<String>) -> Lang {
+    if env_lang.map(|l| l.starts_with("zh")).unwrap_or(false) {
+        Lang::Zh
+    } else {
+        Lang::En
+    }
+}
+
+/// Bilingual display name for a built-in workflow or widget id — the single
+/// source of truth every backend emission point (`DbRecorder`, `PanelOutput`,
+/// `dialog.rs`, the meeting composite's default title) localizes through, so
+/// a builtin's Chinese-literal `name` never leaks to an EN-language user (nor
+/// a hardcoded English default to a ZH-language user). `None` for any id
+/// outside the built-in set — custom workflows/widgets keep their user-given
+/// name at every call site.
+///
+/// Coverage is asserted by `builtin_display_name_covers_every_builtin_id`
+/// below: every id in [`built_in_workflows`] + [`built_in_widgets`] must
+/// resolve `Some` for both langs. That test can't see migration-generated
+/// ids — ones `workflow::migrate` mints straight into `config.workflows`/
+/// `config.widgets` rather than ids born in [`built_in_workflows`]/
+/// [`built_in_widgets`], e.g. `wf.dictation-toggle` (a `builtin: false`,
+/// `src.mic-toggle`-sourced sibling of `wf.dictation`, minted only when
+/// `hotkey_dictation_toggle` was bound) and `llm.call-persona` (minted only
+/// for a customized, non-default `sts_persona` — see
+/// `migrate::migrate_legacy_call_triggers`) — so those are hand-listed below,
+/// each pinned by its own `builtin_display_name_covers_migration_generated_*`
+/// test (they can't be added to `built_in_widgets` — that would mint them
+/// into every config, not just upgrading ones with a customized value),
+/// matching `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` map
+/// 1:1; keep the two in sync by hand when either gains an entry.
+pub fn builtin_display_name(id: &str, lang: Lang) -> Option<&'static str> {
+    let (en, zh) = match id {
+        // ── workflows ────────────────────────────────────────────────────
+        "wf.dictation" => ("Dictation", "听写"),
+        // Migration-generated (see this fn's doc comment), not a static
+        // built-in — hand-listed to match builtinLabels.ts.
+        "wf.dictation-toggle" => ("Dictation (toggle)", "听写·切换"),
+        "wf.translate-pop" => ("Translate popup", "翻译弹框"),
+        "wf.summarize-pop" => ("Summarize popup", "总结弹框"),
+        "wf.explain" => ("Explain selection", "选中解释"),
+        "wf.listen" => ("Listen", "朗读"),
+        "wf.note" => ("Note", "记笔记"),
+        "wf.agent" => ("Agent", "智能体"),
+        "wf.agent-voice" => ("Voice agent", "语音智能体"),
+        "wf.meeting" => ("Meeting", "会议"),
+        "wf.call" => ("Call", "通话"),
+        // ── source widgets ───────────────────────────────────────────────
+        "src.selection" => ("Selection", "选区"),
+        "src.mic-hold" => ("Mic · hold", "麦克风·按住"),
+        "src.mic-toggle" => ("Mic · toggle", "麦克风·切换"),
+        "src.instant" => ("Instant", "即刻"),
+        // ── processor widgets ────────────────────────────────────────────
+        "stt.default" => ("Transcribe", "默认转写"),
+        "llm.polish" => ("Polish", "润色"),
+        "llm.formal" => ("Formal", "正式化"),
+        "llm.translate" => ("Translate", "翻译"),
+        "llm.summarize" => ("Summarize", "总结要点"),
+        "llm.listen" => ("Listen briefing", "朗读摘要"),
+        "llm.explain" => ("Explain", "解释"),
+        // Migration-generated (see this fn's doc comment), not a static
+        // built-in — hand-listed to match builtinLabels.ts. Minted (with a
+        // raw Chinese-only `name`, 「通话人格」) only for a customized
+        // `sts_persona` by `migrate::migrate_legacy_call_triggers` (final
+        // review wave, M1).
+        "llm.call-persona" => ("Call persona", "通话人格"),
+        // ── output widgets ───────────────────────────────────────────────
+        "out.insert" => ("Insert at cursor", "插入光标"),
+        "out.replace" => ("Replace selection", "替换选区"),
+        "out.clipboard" => ("Clipboard", "剪贴板"),
+        "out.panel" => ("Popup panel", "悬浮板"),
+        "out.dialog" => ("Dialog", "对话框"),
+        "out.speak" => ("Speak", "朗读"),
+        "out.quicknote" => ("Quick note", "快速笔记"),
+        "agent.default" => ("Agent", "智能体"),
+        "meeting.default" => ("Meeting", "会议"),
+        "call.default" => ("Call", "通话"),
+        _ => return None,
+    };
+    Some(match lang {
+        Lang::En => en,
+        Lang::Zh => zh,
+    })
 }
 
 #[cfg(test)]
@@ -341,6 +593,18 @@ mod tests {
         }
     }
 
+    /// Task 2: `src.instant` ships as a builtin source with no props,
+    /// resolving to the `instant` type_tag — the blank-open source later
+    /// session-composite recipes wire in as their `source`.
+    #[test]
+    fn instant_source_builtin_present_with_no_props() {
+        let w = built_in_widgets().into_iter().find(|w| w.id == "src.instant").unwrap();
+        assert_eq!(w.role, WidgetRole::Source);
+        assert_eq!(w.type_tag, "instant");
+        assert_eq!(w.props, serde_json::json!({}));
+        assert!(w.builtin);
+    }
+
     #[test]
     fn stt_default_has_language_prop() {
         let w = built_in_widgets().into_iter().find(|w| w.id == "stt.default").unwrap();
@@ -353,55 +617,6 @@ mod tests {
         let ut = w.props.get("user_template").and_then(|v| v.as_str()).unwrap();
         assert!(!ut.contains("{target_lang}"), "placeholder must be gone");
         assert!(ut.contains("English"), "concrete default language baked in");
-    }
-
-    /// Byte-lock the 5 built-in LLM widgets' inlined prompts against the
-    /// legacy mode system so the two independent copies can't silently
-    /// drift apart. Safe to delete once `modes.rs` is removed (P3) — at
-    /// that point `built_in_widgets` is the only source of truth.
-    #[test]
-    fn built_in_llm_widget_prompts_match_legacy_modes_byte_for_byte() {
-        let widgets = built_in_widgets();
-        let modes = crate::modes::built_in_modes();
-        let pairs = [
-            ("polish", "llm.polish"),
-            ("formal", "llm.formal"),
-            ("translate", "llm.translate"),
-            ("summarize", "llm.summarize"),
-            ("listen", "llm.listen"),
-        ];
-        for (mode_id, widget_id) in pairs {
-            let mode = modes
-                .get(mode_id)
-                .unwrap_or_else(|| panic!("legacy mode '{mode_id}' missing"));
-            let w = widgets
-                .iter()
-                .find(|w| w.id == widget_id)
-                .unwrap_or_else(|| panic!("widget '{widget_id}' missing"));
-            assert_eq!(
-                w.props["system"].as_str().unwrap(),
-                mode.system.as_deref().unwrap(),
-                "{widget_id} system drifted from mode '{mode_id}'"
-            );
-            // llm.translate intentionally diverges here: the workflow copy
-            // hardcodes "English" (translation is prompt-based now — see
-            // RunCtx::translate_target's removal), while the legacy
-            // `translate` mode still substitutes the user-configured
-            // `{target_lang}` for the separate, still-live text-action /
-            // dictation translate feature. Every other pair stays locked.
-            if widget_id != "llm.translate" {
-                assert_eq!(
-                    w.props["user_template"].as_str().unwrap(),
-                    mode.user_template.as_deref().unwrap(),
-                    "{widget_id} user_template drifted from mode '{mode_id}'"
-                );
-            }
-            assert_eq!(
-                w.props["temperature"].as_f64().unwrap(),
-                mode.temperature,
-                "{widget_id} temperature drifted from mode '{mode_id}'"
-            );
-        }
     }
 
     #[test]
@@ -498,6 +713,8 @@ mod tests {
             serde_json::from_value(d.props.clone()).expect("out.dialog props are DialogProps");
         assert!(dp.markdown);
         assert!(matches!(dp.engine, crate::workflow::dialog::DialogEngine::Llm { .. }));
+        // Task 4: default (no override) is the inline `engine` path above.
+        assert_eq!(dp.llm_widget, "");
         assert!(built_in_workflows().iter().any(|w| w.id == "wf.explain"));
 
         // Chain type-check: src.selection (Text) → llm.explain (Text→Text) →
@@ -540,5 +757,166 @@ mod tests {
         let mut sorted = orders.clone();
         sorted.sort();
         assert_eq!(orders, sorted, "pill orders follow list order");
+    }
+
+    /// Task 6: the agent composite builtin + its two "press to open" /
+    /// "hold to speak" recipes ship with the expected shape.
+    #[test]
+    fn agent_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let a = widgets.iter().find(|w| w.id == "agent.default").expect("agent.default");
+        assert_eq!(a.role, WidgetRole::Output);
+        assert_eq!(a.type_tag, "agent");
+        assert_eq!(a.props["llm_widget"], "");
+        assert_eq!(a.props["system"], "");
+        assert_eq!(a.props["tts_enabled"], false);
+        assert_eq!(a.props["timeout_secs"], 30);
+        assert_eq!(a.props["max_turns"], 20);
+
+        let workflows = built_in_workflows();
+        let blank_open = workflows.iter().find(|w| w.id == "wf.agent").expect("wf.agent");
+        assert_eq!(blank_open.source, "src.instant");
+        assert!(blank_open.processors.is_empty());
+        assert_eq!(blank_open.outputs, vec!["agent.default".to_string()]);
+        assert!(blank_open.pill_order().is_none(), "src.instant is not a mic source");
+
+        let voice = workflows.iter().find(|w| w.id == "wf.agent-voice").expect("wf.agent-voice");
+        assert_eq!(voice.source, "src.mic-hold");
+        assert_eq!(voice.processors, vec!["stt.default".to_string()]);
+        assert_eq!(voice.outputs, vec!["agent.default".to_string()]);
+        assert!(voice.pill_order().is_some(), "mic-sourced builtin must carry a PillSlot");
+    }
+
+    /// Task 9: the call composite builtin + its blank-open toggle recipe
+    /// ship with the expected shape (mirrors `meeting_builtins_present_and_wired`).
+    /// The tuning props must mirror the legacy config defaults byte-for-byte
+    /// (`CallProps`' serde defaults on the desktop side assert the same).
+    #[test]
+    fn call_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let c = widgets.iter().find(|w| w.id == "call.default").expect("call.default");
+        assert_eq!(c.role, WidgetRole::Output);
+        assert_eq!(c.type_tag, "call");
+        assert_eq!(c.props["stt_widget"], "");
+        assert_eq!(c.props["llm_widget"], "");
+        assert_eq!(c.props["voice_profile"], "");
+        assert_eq!(c.props["voice"], "default");
+        assert_eq!(c.props["max_turns"], 8);
+        assert_eq!(c.props["vad_sensitivity"], 0.5);
+        assert_eq!(c.props["vad_silence_ms"], 800);
+        assert_eq!(c.props["barge_in"], true);
+
+        // The legacy config defaults the props were seeded from.
+        let cfg = AppConfig::default();
+        assert_eq!(c.props["voice"], cfg.sts_voice.as_str());
+        assert_eq!(c.props["max_turns"], cfg.sts_max_turns);
+        assert_eq!(c.props["vad_sensitivity"].as_f64().unwrap(), cfg.call_vad_sensitivity as f64);
+        assert_eq!(c.props["vad_silence_ms"], cfg.call_vad_silence_ms);
+        assert_eq!(c.props["barge_in"], cfg.call_barge_in);
+
+        let workflows = built_in_workflows();
+        let wf = workflows.iter().find(|w| w.id == "wf.call").expect("wf.call");
+        assert_eq!(wf.source, "src.instant");
+        assert!(wf.processors.is_empty());
+        assert_eq!(wf.outputs, vec!["call.default".to_string()]);
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
+    }
+
+    /// Task 7: the meeting composite builtin + its blank-open toggle recipe
+    /// ship with the expected shape (mirrors `agent_builtins_present_and_wired`).
+    #[test]
+    fn meeting_builtins_present_and_wired() {
+        let widgets = built_in_widgets();
+        let m = widgets.iter().find(|w| w.id == "meeting.default").expect("meeting.default");
+        assert_eq!(m.role, WidgetRole::Output);
+        assert_eq!(m.type_tag, "meeting");
+        assert_eq!(m.props["stt_widget"], "");
+        assert_eq!(m.props["llm_widget"], "");
+        assert_eq!(m.props["summary_prompt"], "");
+
+        let workflows = built_in_workflows();
+        let wf = workflows.iter().find(|w| w.id == "wf.meeting").expect("wf.meeting");
+        assert_eq!(wf.source, "src.instant");
+        assert!(wf.processors.is_empty());
+        assert_eq!(wf.outputs, vec!["meeting.default".to_string()]);
+        assert!(wf.pill_order().is_none(), "src.instant is not a mic source");
+    }
+
+    // ── Task 13: bilingual builtin display names ────────────────────────────
+
+    /// Every builtin workflow AND widget id must resolve a display name in
+    /// both langs — the coverage guarantee `builtin_display_name`'s callers
+    /// (`DbRecorder`, `PanelOutput`, dialog/meeting titles) rely on: a new
+    /// builtin seeded here without a matching map entry would otherwise fall
+    /// through to `None` and silently keep showing the raw Chinese `name`
+    /// literal to EN-language users.
+    ///
+    /// This test iterates [`built_in_workflows`]/[`built_in_widgets`] only —
+    /// it CANNOT see ids `workflow::migrate` mints straight into a config
+    /// (e.g. `wf.dictation-toggle`, `llm.call-persona`). Those are hand-listed
+    /// directly in `builtin_display_name`'s match arms and each pinned by its
+    /// own dedicated `builtin_display_name_covers_migration_generated_*` test
+    /// below, so don't read this test's silence as coverage for them.
+    #[test]
+    fn builtin_display_name_covers_every_builtin_id() {
+        let mut ids: Vec<String> = built_in_widgets().into_iter().map(|w| w.id).collect();
+        ids.extend(built_in_workflows().into_iter().map(|w| w.id));
+        assert!(!ids.is_empty());
+        for id in ids {
+            assert!(
+                builtin_display_name(&id, Lang::En).is_some(),
+                "missing EN builtin_display_name for {id}"
+            );
+            assert!(
+                builtin_display_name(&id, Lang::Zh).is_some(),
+                "missing ZH builtin_display_name for {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_display_name_none_for_custom_id() {
+        assert_eq!(builtin_display_name("wf.custom-1700000000000", Lang::En), None);
+        assert_eq!(builtin_display_name("wf.custom-1700000000000", Lang::Zh), None);
+    }
+
+    /// `wf.dictation-toggle` is migration-generated (see `builtin_display_name`'s
+    /// doc comment), not a member of `built_in_workflows`, so the coverage test
+    /// above can't see it — this pins its hand-listed entry directly, matching
+    /// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` values
+    /// byte-for-byte (Workbench P2 Task 14).
+    #[test]
+    fn builtin_display_name_covers_migration_generated_dictation_toggle() {
+        assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::En), Some("Dictation (toggle)"));
+        assert_eq!(builtin_display_name("wf.dictation-toggle", Lang::Zh), Some("听写·切换"));
+    }
+
+    /// `llm.call-persona` is migration-generated (see `builtin_display_name`'s
+    /// doc comment) — minted only for a customized `sts_persona` by
+    /// `migrate::migrate_legacy_call_triggers`, so it's never a member of
+    /// `built_in_widgets` and the coverage test above can't see it. Pins its
+    /// hand-listed entry directly, matching
+    /// `fonos-desktop/src/lib/builtinLabels.ts`'s `BUILTIN_LABELS` value
+    /// byte-for-byte (final review wave, M1 — same precedent as
+    /// `wf.dictation-toggle` above).
+    #[test]
+    fn builtin_display_name_covers_migration_generated_call_persona() {
+        assert_eq!(builtin_display_name("llm.call-persona", Lang::En), Some("Call persona"));
+        assert_eq!(builtin_display_name("llm.call-persona", Lang::Zh), Some("通话人格"));
+    }
+
+    #[test]
+    fn resolve_lang_explicit_setting_wins_over_auto() {
+        assert_eq!(resolve_lang("zh"), Lang::Zh);
+        assert_eq!(resolve_lang("en"), Lang::En);
+    }
+
+    #[test]
+    fn resolve_lang_from_env_lang_checks_zh_prefix() {
+        assert_eq!(resolve_lang_from_env_lang(Some("zh_CN.UTF-8".to_string())), Lang::Zh);
+        assert_eq!(resolve_lang_from_env_lang(Some("zh".to_string())), Lang::Zh);
+        assert_eq!(resolve_lang_from_env_lang(Some("en_US.UTF-8".to_string())), Lang::En);
+        assert_eq!(resolve_lang_from_env_lang(Some("fr_FR.UTF-8".to_string())), Lang::En);
+        assert_eq!(resolve_lang_from_env_lang(None), Lang::En);
     }
 }

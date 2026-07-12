@@ -42,6 +42,19 @@ body{background:transparent;overflow:hidden}
 .bu{max-width:80%;border-radius:14px 14px 4px 14px;padding:7px 12px;font-size:11px;line-height:1.5;color:#fafaf9;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.08);animation:msgIn .14s ease-out;white-space:pre-wrap}
 .ba{max-width:84%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11px;line-height:1.5;color:rgba(255,255,255,.7);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);animation:msgIn .14s ease-out;white-space:pre-wrap}
 .be{max-width:84%;border-radius:14px 14px 14px 4px;padding:7px 12px;font-size:11px;color:rgba(239,68,68,.8);background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.08);white-space:pre-wrap}
+.ba code{font-family:'SF Mono',ui-monospace,monospace;font-size:10px;background:rgba(255,255,255,.08);border-radius:4px;padding:1px 4px}
+.ba pre{background:rgba(255,255,255,.06);border-radius:6px;padding:6px 8px;margin:3px 0;overflow-x:auto;white-space:pre}
+.ba pre code{background:none;padding:0;display:block}
+.ba strong{font-weight:600;color:#fff}
+.ba em{font-style:italic}
+.ba .mdH{display:block;margin:4px 0 2px;font-size:12px}
+.ba ul{margin:2px 0 2px 16px}
+.ba ol{margin:2px 0 2px 16px}
+.ba li{margin:1px 0}
+.ba .mdTblWrap{overflow-x:auto;max-width:100%;margin:3px 0;white-space:normal}
+.ba table{border-collapse:collapse;width:auto;font-size:10px}
+.ba th,.ba td{border:1px solid rgba(255,255,255,.08);padding:3px 8px;text-align:left;white-space:nowrap;word-break:normal}
+.ba th{color:#fff;font-weight:500;background:rgba(255,255,255,.05)}
 .bs{max-width:80%;border-radius:8px;padding:5px 10px;font-size:9px;line-height:1.4;color:rgba(255,255,255,.3);background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.04);animation:msgIn .14s ease-out}
 .bs .sl{font-size:7px;color:rgba(255,255,255,.15);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:2px}
 .bs .st{color:rgba(255,255,255,.35);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
@@ -99,6 +112,89 @@ var cv=document.getElementById('cv'),es=document.getElementById('es'),rb=documen
 function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
 function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
 
+/* ── Minimal, injection-safe markdown (escape first, then a tiny subset) ──── */
+/* Copied verbatim from dialog-panel.html's renderer — these panels are
+   self-contained HTML with no shared module. Pass order: escape -> fenced
+   code (placeholdered) -> inline code -> bold -> italic -> links -> line
+   pass (headings/ol/ul) -> restore fenced code. Applied to assistant
+   response bubbles only; user/error bubbles stay plain-text (textContent). */
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+/* GFM pipe-table helpers: split a row into trimmed cells (stripping optional
+   outer pipes) and read an alignment colon pair from a separator cell. */
+function tblCells(line){
+  var s=line.trim();
+  if(s.charAt(0)==='|') s=s.slice(1);
+  if(s.length&&s.charAt(s.length-1)==='|') s=s.slice(0,-1);
+  return s.split('|').map(function(c){return c.trim()});
+}
+function tblAlign(cell){
+  var l=cell.charAt(0)===':', r=cell.length>0&&cell.charAt(cell.length-1)===':';
+  if(l&&r)return 'center'; if(r)return 'right'; if(l)return 'left'; return '';
+}
+function md(t){
+  var e=esc(t);
+  var fb=[]; // fenced code blocks, restored after line pass so their content
+             // is never mistaken for list/heading markup
+  var M1=String.fromCharCode(1), M2=String.fromCharCode(2); // ASCII placeholder delimiters (unlikely in prose)
+  e=e.replace(/```([^\n`]*)\n([\s\S]*?)```/g,function(_,lang,code){
+    fb.push('<pre><code>'+code.replace(/\n$/,'')+'</code></pre>');
+    return M1+(fb.length-1)+M2;
+  });
+  e=e.replace(/`([^`]+)`/g,'<code>$1</code>');
+  e=e.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  e=e.replace(/\*([^*\n]+)\*/g,'<em>$1</em>');
+  e=e.replace(/\[([^\]]+)\]\([^)]*\)/g,'<em>$1</em>'); // no nav in these panels: text only
+  var lines=e.split('\n'), out=[], inUl=false, inOl=false;
+  var sepCellRe=/^:?-+:?$/;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    // Table: a row with >=1 '|' immediately followed by a |---|:---:|---:| style
+    // separator row (same cell count). Lines with '|' but no separator row
+    // underneath (e.g. "a | b" prose) fall through untouched.
+    if(line.indexOf('|')!==-1 && i+1<lines.length){
+      var sepCells=tblCells(lines[i+1]);
+      var isSep=sepCells.length>0 && sepCells.every(function(c){return sepCellRe.test(c);});
+      var headCells=isSep?tblCells(line):null;
+      if(isSep && headCells.length===sepCells.length){
+        var align=sepCells.map(tblAlign);
+        var rows=[], j=i+2;
+        while(j<lines.length && lines[j].trim()!==''&&lines[j].indexOf('|')!==-1){
+          rows.push(tblCells(lines[j])); j++;
+        }
+        if(inUl){out.push('</ul>');inUl=false;}
+        if(inOl){out.push('</ol>');inOl=false;}
+        var thr='<tr>'+headCells.map(function(c,ci){
+          var a=align[ci]; return '<th'+(a?' style="text-align:'+a+'"':'')+'>'+c+'</th>';
+        }).join('')+'</tr>';
+        var tbr=rows.map(function(r){
+          return '<tr>'+headCells.map(function(_,ci){
+            var c=r[ci]!==undefined?r[ci]:''; var a=align[ci];
+            return '<td'+(a?' style="text-align:'+a+'"':'')+'>'+c+'</td>';
+          }).join('')+'</tr>';
+        }).join('');
+        out.push('<div class="mdTblWrap"><table><thead>'+thr+'</thead><tbody>'+tbr+'</tbody></table></div>');
+        i=j-1;
+        continue;
+      }
+    }
+    var h=line.match(/^#{1,3}\s+(.*)$/);
+    var o=!h&&line.match(/^\s*\d+[.)]\s+(.*)$/);
+    var u=!h&&!o&&line.match(/^\s*[-*]\s+(.*)$/);
+    if(o){ if(inUl){out.push('</ul>');inUl=false;} if(!inOl){out.push('<ol>');inOl=true;} out.push('<li>'+o[1]+'</li>'); }
+    else if(u){ if(inOl){out.push('</ol>');inOl=false;} if(!inUl){out.push('<ul>');inUl=true;} out.push('<li>'+u[1]+'</li>'); }
+    else {
+      if(inUl){out.push('</ul>');inUl=false;}
+      if(inOl){out.push('</ol>');inOl=false;}
+      out.push(h?'<div class="mdH"><strong>'+h[1]+'</strong></div>':line);
+    }
+  }
+  if(inUl)out.push('</ul>');
+  if(inOl)out.push('</ol>');
+  e=out.join('\n');
+  e=e.replace(new RegExp(M1+'(\\d+)'+M2,'g'),function(_,idx){return fb[idx];});
+  return e;
+}
+
 function rz(){
   var t=$t();if(!t)return;
   var d=window.devicePixelRatio||2,el=document.getElementById('drop');
@@ -130,7 +226,7 @@ function mk(m){
   else if(m.t==='a'){
     w.className='ra';
     var col=document.createElement('div');col.style.cssText='max-width:84%;display:flex;flex-direction:column;gap:3px';
-    var b=document.createElement('div');b.className='ba';b.textContent=m.x;
+    var b=document.createElement('div');b.className='ba';b.innerHTML=md(m.x);
     col.appendChild(b);
     var btns=document.createElement('div');btns.className='rb';
     var cpb=document.createElement('button');cpb.className='rc';cpb.textContent='Copy';
@@ -158,7 +254,14 @@ function show(p){P=!!p;hd.classList.toggle('on',P);mf.classList.toggle('on',P);r
 function hide(){iv('hide_agent_panel')}
 function clearC(){M=[];hideTk();hideRec();render();iv('agent_reset')}
 function chip(b){proc(b.textContent)}
-function proc(x){M.push({t:'u',x:x});render();showTk();iv('agent_process',{text:x}).catch(function(e){hideTk();M.push({t:'e',x:String(e)});render()})}
+function proc(x){M.push({t:'u',x:x});render();showTk();iv('agent_process',{text:x}).then(function(a){
+    if(!a)return;
+    if(a.skill_executions)a.skill_executions.forEach(function(ex){
+      var ps=typeof ex.params==='object'?Object.values(ex.params||{}).slice(0,2).map(String).join(' '):String(ex.params||'');
+      recvSkillExec(ex.skill_name,ps,ex.latency_ms,ex.blocked);
+    });
+    if(a.response_text)recvResponse(a.response_text);
+  }).catch(function(e){recvError(String(e))})}
 function mic(){
   if(!$t())return;
   if(ma){

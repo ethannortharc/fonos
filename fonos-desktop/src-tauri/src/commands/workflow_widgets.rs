@@ -1,8 +1,13 @@
 //! Desktop adapters that bridge the platform-independent workflow component
 //! traits ([`Source`], [`Processor`], [`Output`]) to real macOS behavior: the
-//! selection grabber, the two-phase microphone source, the STT / LLM
-//! processors, and the six terminal outputs (insert / replace / clipboard /
-//! notebook / speak / panel).
+//! selection grabber, the blank-open instant source, the two-phase microphone
+//! source, the STT / LLM processors, the six terminal outputs (insert /
+//! replace / clipboard / notebook / speak / panel), and the four session
+//! composites registered here but implemented in their own modules — `dialog`
+//! ([`super::dialog::DialogOutput`]), `agent`
+//! ([`super::agent_widget::AgentOutput`]), `meeting`
+//! ([`super::meeting_widget::MeetingOutput`]), and `call`
+//! ([`super::call_widget::CallOutput`]).
 //!
 //! These are the concrete widgets a workflow's `type_tag`s resolve to.
 //! [`build_registry`] wires every factory into one [`Registry`], which the
@@ -86,6 +91,31 @@ impl Source for SelectionSource {
 
         // Empty selection is returned as-is; the engine maps empty text to NoSpeech.
         Ok(Data::Text(selection.text))
+    }
+}
+
+// ─── Instant source ──────────────────────────────────────────────────────────
+
+/// Source with no acquisition step at all: it produces empty text
+/// immediately and opts into [`Source::allows_empty`], so the engine's
+/// empty-text `NoSpeech` short-circuit does not fire. Backs `src.instant`,
+/// the blank-open source for "press-to-open" session-composite recipes
+/// (call/agent/meeting) — they want to open their session with no first
+/// turn rather than requiring one before anything appears.
+pub struct InstantSource;
+
+#[async_trait::async_trait]
+impl Source for InstantSource {
+    fn output_kind(&self) -> DataKind {
+        DataKind::Text
+    }
+
+    async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+        Ok(Data::Text(String::new()))
+    }
+
+    fn allows_empty(&self) -> bool {
+        true
     }
 }
 
@@ -605,20 +635,51 @@ impl Output for PanelOutput {
         };
 
         // Header name = the recorded run's workflow name (mirrors dialog.rs's
-        // title lookup: read `metadata.workflow_name` off the history entry).
-        // All rusqlite work stays in a scoped std-mutex block dropped before the
-        // await below; entry_id <= 0 or a failed lookup falls back to "".
+        // title lookup: read `metadata.workflow_id`/`workflow_name` off the
+        // history entry). Workbench P2 Task 13: prefer localizing
+        // `metadata.workflow_id` through the builtin display map AT EMISSION
+        // TIME (this panel's own `config.ui_language`, resolved fresh here
+        // rather than trusting whatever language the recorder happened to
+        // localize `workflow_name` to) — falls back to the stored
+        // `workflow_name` (already localized by `DbRecorder`, or a custom
+        // recipe's own name) when the id is missing or not a builtin.
+        //
+        // Two separate scoped locks (db, then config), each dropped before
+        // the next is taken — never held simultaneously, so this can't
+        // invert lock order against any other call site — and both dropped
+        // before the await below. entry_id <= 0 or a failed lookup falls
+        // back to "".
         let wf_name = if entry_id > 0 {
             let state = self.app.state::<AppState>();
-            let db = state.db.lock().map_err(|e| e.to_string())?;
-            match fonos_core::storage::get_entry(&db, entry_id) {
-                Ok(e) => e
-                    .metadata
-                    .get("workflow_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                Err(_) => String::new(),
+            let stored = {
+                let db = state.db.lock().map_err(|e| e.to_string())?;
+                fonos_core::storage::get_entry(&db, entry_id).ok().map(|e| {
+                    let name = e
+                        .metadata
+                        .get("workflow_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let id = e
+                        .metadata
+                        .get("workflow_id")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    (id, name)
+                })
+            };
+            match stored {
+                Some((Some(id), stored_name)) => {
+                    let lang = match state.config.lock() {
+                        Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+                        Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
+                    };
+                    fonos_core::workflow::builtin::builtin_display_name(&id, lang)
+                        .map(str::to_string)
+                        .unwrap_or(stored_name)
+                }
+                Some((None, stored_name)) => stored_name,
+                None => String::new(),
             }
         } else {
             String::new()
@@ -651,9 +712,10 @@ impl Output for PanelOutput {
 // ─── Registry assembly ────────────────────────────────────────────────────────
 
 /// Build the workflow [`Registry`] with every desktop factory registered by
-/// `type_tag`: the sources (`selection`, `microphone`), processors (`stt`,
-/// `llm`), and the six terminal outputs (`insert`, `replace`, `clipboard`,
-/// `notebook`, `speak`, `panel`).
+/// `type_tag`: the sources (`selection`, `instant`, `microphone`), processors
+/// (`stt`, `llm`), the six terminal outputs (`insert`, `replace`,
+/// `clipboard`, `notebook`, `speak`, `panel`), and the session composites
+/// (`dialog`, `agent`, `meeting`, `call`).
 ///
 /// Each factory closure captures `app.clone()` and re-clones per instantiation
 /// so a widget can be built many times. The `uppercase` processor (Task 16's
@@ -666,6 +728,10 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
     reg.register_source(
         "selection",
         Box::new(|_props| Ok(Arc::new(SelectionSource) as Arc<dyn Source>)),
+    );
+    reg.register_source(
+        "instant",
+        Box::new(|_props| Ok(Arc::new(InstantSource) as Arc<dyn Source>)),
     );
     {
         let app = app.clone();
@@ -812,6 +878,48 @@ pub fn build_registry(app: tauri::AppHandle) -> Registry {
                     serde_json::from_value(props.clone())
                         .map_err(|e| format!("dialog props: {e}"))?;
                 Ok(Arc::new(super::dialog::DialogOutput {
+                    app: app.clone(),
+                    props,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "agent",
+            Box::new(move |props| {
+                let props: super::agent_widget::AgentProps = serde_json::from_value(props.clone())
+                    .map_err(|e| format!("agent props: {e}"))?;
+                Ok(Arc::new(super::agent_widget::AgentOutput {
+                    app: app.clone(),
+                    props,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "meeting",
+            Box::new(move |props| {
+                let props: super::meeting_widget::MeetingProps = serde_json::from_value(props.clone())
+                    .map_err(|e| format!("meeting props: {e}"))?;
+                Ok(Arc::new(super::meeting_widget::MeetingOutput {
+                    app: app.clone(),
+                    props,
+                }) as Arc<dyn Output>)
+            }),
+        );
+    }
+    {
+        let app = app.clone();
+        reg.register_output(
+            "call",
+            Box::new(move |props| {
+                let props: super::call_widget::CallProps = serde_json::from_value(props.clone())
+                    .map_err(|e| format!("call props: {e}"))?;
+                Ok(Arc::new(super::call_widget::CallOutput {
                     app: app.clone(),
                     props,
                 }) as Arc<dyn Output>)

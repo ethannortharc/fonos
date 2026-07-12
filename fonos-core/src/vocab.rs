@@ -7,9 +7,10 @@
 //! standalone entities referenced by id from two places:
 //!
 //! * `AppConfig.global_vocab_books` — applied to every dictation
-//! * `Mode.vocab_books` — extra books mounted by a specific mode
+//! * `LlmProps.vocab_books` / `SttProps.vocab_books` — extra books mounted by
+//!   a specific `llm`/`stt` processor widget
 //!
-//! The effective set for a dictation is `global ∪ mode`, order-preserving
+//! The effective set for a dictation is `global ∪ widget`, order-preserving
 //! and deduplicated. One book feeds three pipeline stages: STT prompt
 //! biasing ([`build_stt_prompt`]), deterministic correction
 //! ([`apply_rules`]), and LLM system-prompt glossaries
@@ -57,7 +58,7 @@ impl Default for VocabRule {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VocabBook {
-    /// Stable identifier referenced from config / modes.
+    /// Stable identifier referenced from config / widget props.
     pub id: String,
     /// Display name.
     pub name: String,

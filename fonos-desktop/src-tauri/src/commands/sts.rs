@@ -1,125 +1,45 @@
-//! STS conversation commands (issue #24): hold-to-talk → transcript →
+//! STS conversation-turn executor (issue #24): transcript →
 //! core::sts::run_turn (vocab + chat stages) → spoken reply. The pipeline
-//! lives in fonos-core; this module resolves config and provides adapters.
+//! lives in fonos-core; this module provides the desktop turn executor the
+//! hands-free call loop drives.
+//!
+//! Workbench P2 Task 9 retired the walkie mode (the ⌥S hold-to-talk hotkey
+//! arm, the Talk page's `sts_page_start`/`sts_page_stop` commands, and the
+//! page-persona override) along with the `get_sts_history`/
+//! `reset_sts_session` commands (the call-panel satellite consumes only
+//! `sts:event`). What remains — [`execute_turn`]/[`execute_turn_with_audio`]
+//! — no longer reads `cfg.sts_*` at all: every formerly-config-sourced value
+//! (persona, LLM/TTS services, voice, max_turns) arrives pre-resolved in a
+//! [`super::call_widget::ResolvedCallCfg`], whose single constructor is
+//! `CallOutput::deliver`. Only the vocab books stay live-read per turn
+//! (unchanged behavior: mid-call vocab edits keep applying).
+//!
+//! **AUDIO RED LINE:** the stage chain, its tuning (temperature 0.4,
+//! max_tokens 512), the empty-service error surfacing, and the
+//! `run_turn` call are byte-preserved from the pre-Task-9 code — only the
+//! sourcing of the values changed.
 
-use super::AppState;
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 
-/// One conversation turn at a time; hotkey autorepeat and double-taps are
-/// dropped while a turn is in flight.
-static TURN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+use super::call_widget::ResolvedCallCfg;
+use super::AppState;
 
-/// Whether a conversation turn is currently running (hotkey key-down checks
-/// this so it never starts a second recording mid-turn — the abandoned
-/// recording used to corrupt the pill's state display).
-pub fn turn_in_flight() -> bool {
-    TURN_IN_FLIGHT.load(Ordering::SeqCst)
-}
-
-/// Hotkey key-up entry point: stop recording, transcribe, run one turn with
-/// pill progress.
-pub async fn run_sts_turn(app: tauri::AppHandle) -> Result<String, String> {
-    finish_turn(app, None, false).await
-}
-
-/// Conversation-page entry: start recording (no float pill).
-#[tauri::command]
-pub async fn sts_page_start(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    super::dictation::start_recording(app, state, Some(true)).await
-}
-
-/// Conversation-page entry: stop, transcribe, run the turn. `persona`
-/// overrides the configured system prompt for this and future turns from the
-/// page (page-local; config is untouched).
-#[tauri::command]
-pub async fn sts_page_stop(
-    app: tauri::AppHandle,
-    persona: Option<String>,
-) -> Result<String, String> {
-    finish_turn(app, persona, true).await
-}
-
-/// The session transcript so the page can render history on mount.
-#[tauri::command]
-pub async fn get_sts_history(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<(String, String)>, String> {
-    Ok(state.sts_session.lock().await.history.clone())
-}
-
-async fn finish_turn(
-    app: tauri::AppHandle,
-    persona_override: Option<String>,
-    from_page: bool,
-) -> Result<String, String> {
-    if TURN_IN_FLIGHT.swap(true, Ordering::SeqCst) {
-        return Err("conversation turn already running".to_string());
-    }
-    let result = run_sts_turn_inner(app, persona_override, from_page).await;
-    TURN_IN_FLIGHT.store(false, Ordering::SeqCst);
-    result
-}
-
-async fn run_sts_turn_inner(
-    app: tauri::AppHandle,
-    persona_override: Option<String>,
-    from_page: bool,
-) -> Result<String, String> {
-    // The bridge exists before anything can fail so every error — including
-    // recording/STT failures — reaches the page as an sts:event.
-    let sink = crate::adapters::TurnEventBridge::new(app.clone(), !from_page);
-
-    // agent/sts-page overrides: no injection, no float lifecycle from
-    // stop_recording — the TurnSink owns rendering from here. "sts-page"
-    // additionally suppresses the pill entirely (in-app turns).
-    let mode = if from_page { "sts-page" } else { "agent" };
-    let state: tauri::State<'_, AppState> = app.state();
-    let result =
-        match super::dictation::stop_recording(app.clone(), state, Some(mode.to_string())).await {
-            Ok(r) => r,
-            Err(e) => {
-                use fonos_core::sts::TurnSink;
-                sink.emit(fonos_core::sts::TurnEvent::Failed(
-                    fonos_core::error_class::classify_error(&e),
-                ));
-                return Err(e);
-            }
-        };
-
-    // Accidental tap: a near-zero recording with no speech. On the page path
-    // reset the UI quietly instead of surfacing "No speech detected" — the
-    // press was almost certainly a mis-detected click, not a real attempt.
-    if from_page && result.duration_secs < 0.4 && result.text.trim().is_empty() {
-        use fonos_core::sts::TurnSink;
-        sink.emit(fonos_core::sts::TurnEvent::TurnDone);
-        return Ok(String::new());
-    }
-
-    execute_turn(&app, result.text, persona_override, &sink).await
-}
-
-/// Resolve the configured conversation pipeline (vocab corrections → persona
-/// LLM → voice) and run one turn for an already-transcribed utterance. Shared
-/// by the hold-to-talk path (page + hotkey, via [`run_sts_turn_inner`]) and the
-/// hands-free call loop, so the stage chain and config resolution live in one
-/// place. Config/profile errors are surfaced through `sink` before returning.
+/// Run one conversation turn for an already-transcribed utterance, playing
+/// the reply through the default speaker path
+/// ([`crate::adapters::PlaybackAudioOut`] on the shared rodio playback).
+/// Callers that need the reply routed elsewhere (call mode's
+/// voice-processing helper) use [`execute_turn_with_audio`].
 ///
-/// Plays through the default speaker path ([`crate::adapters::PlaybackAudioOut`]
-/// on the shared rodio playback); callers that need the reply routed elsewhere
-/// (call mode's voice-processing helper) use [`execute_turn_with_audio`].
+/// Config/profile errors are surfaced through `sink` before returning.
 pub(crate) async fn execute_turn(
     app: &tauri::AppHandle,
     transcript: String,
-    persona_override: Option<String>,
+    call_cfg: &ResolvedCallCfg,
     sink: &dyn fonos_core::sts::TurnSink,
 ) -> Result<String, String> {
     let state: tauri::State<'_, AppState> = app.state();
     let audio = crate::adapters::PlaybackAudioOut::new(state.audio_playback.clone());
-    execute_turn_with_audio(app, transcript, persona_override, sink, &audio).await
+    execute_turn_with_audio(app, transcript, call_cfg, sink, &audio).await
 }
 
 /// [`execute_turn`] with a caller-supplied speaker port. Call mode on macOS
@@ -130,41 +50,25 @@ pub(crate) async fn execute_turn(
 pub(crate) async fn execute_turn_with_audio(
     app: &tauri::AppHandle,
     transcript: String,
-    persona_override: Option<String>,
+    call_cfg: &ResolvedCallCfg,
     sink: &dyn fonos_core::sts::TurnSink,
     audio: &dyn fonos_core::sts::AudioOut,
 ) -> Result<String, String> {
     let state: tauri::State<'_, AppState> = app.state();
 
-    let (persona, llm_profile, voice_profile, voice, max_turns, global_books, books) = {
+    // Vocab books stay live-read from config, per turn (unchanged behavior —
+    // everything else comes pre-resolved in `call_cfg`).
+    let (global_books, books) = {
         let cfg = state.config.lock().map_err(|e| e.to_string())?;
-        (
-            cfg.sts_persona.clone(),
-            cfg.sts_llm_profile.clone(),
-            cfg.sts_voice_profile.clone(),
-            cfg.sts_voice.clone(),
-            cfg.sts_max_turns,
-            cfg.global_vocab_books.clone(),
-            cfg.vocab_books.clone(),
-        )
+        (cfg.global_vocab_books.clone(), cfg.vocab_books.clone())
     };
 
-    let llm = if !llm_profile.is_empty() {
-        super::get_service_config_for_profile(&state, &llm_profile)
-    } else {
-        super::get_service_config(&state, "llm")
-    };
-    let tts_svc = if !voice_profile.is_empty() {
-        super::get_service_config_for_profile(&state, &voice_profile)
-    } else {
-        super::get_service_config(&state, "tts")
-    };
-    if llm.base_url.trim().is_empty() {
+    if call_cfg.llm.base_url.trim().is_empty() {
         let e = "No LLM profile configured — pick one in Settings > Models.".to_string();
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));
         return Err(e);
     }
-    if tts_svc.base_url.trim().is_empty() {
+    if call_cfg.tts.base_url.trim().is_empty() {
         let e = "No TTS profile configured — pick one in Settings > Speech.".to_string();
         sink.emit(fonos_core::sts::TurnEvent::Failed(fonos_core::error_class::classify_error(&e)));
         return Err(e);
@@ -178,8 +82,8 @@ pub(crate) async fn execute_turn_with_audio(
     let stages: Vec<Box<dyn fonos_core::sts::TextStage>> = vec![
         Box::new(fonos_core::sts::VocabStage { books: vocab_books }),
         Box::new(fonos_core::sts::ChatStage {
-            service: llm,
-            system: persona_override.filter(|p| !p.trim().is_empty()).unwrap_or(persona),
+            service: call_cfg.llm.clone(),
+            system: call_cfg.persona_system.clone(),
             use_history: true,
             temperature: 0.4,
             max_tokens: 512,
@@ -187,20 +91,12 @@ pub(crate) async fn execute_turn_with_audio(
     ];
 
     let tts = fonos_core::tts::HttpTts {
-        service: tts_svc,
-        voice: super::tts::resolve_voice(&voice),
+        service: call_cfg.tts.clone(),
+        voice: super::tts::resolve_voice(&call_cfg.voice),
         speed: 1.0,
     };
 
     let mut session = state.sts_session.lock().await;
-    session.max_turns = max_turns;
+    session.max_turns = call_cfg.max_turns;
     fonos_core::sts::run_turn(&mut session, transcript, &stages, &tts, audio, sink).await
-}
-
-/// Clear the conversation memory.
-#[tauri::command]
-pub async fn reset_sts_session(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let mut session = state.sts_session.lock().await;
-    session.history.clear();
-    Ok(())
 }

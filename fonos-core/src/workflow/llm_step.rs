@@ -60,39 +60,29 @@ fn default_lang() -> String {
     "auto".to_string()
 }
 
-/// Build the temporary [`crate::modes::Mode`] that [`run_llm_step`] hands to
-/// [`crate::llm::process_text`]: maps `props`' fields onto the matching
-/// `Mode` fields, and appends `glossary` to the system prompt using the same
-/// concatenation convention as the legacy dictation path
-/// (`commands/llm.rs::process_with_llm`): `glossary` is expected to already
-/// carry its own leading blank line (see
-/// [`crate::vocab::build_glossary_block`]), so when `props.system` is `None`
-/// the leading whitespace is trimmed instead of leaving a dangling blank
-/// line at the start of the prompt.
-fn props_to_mode(props: &LlmProps, glossary: Option<&str>) -> crate::modes::Mode {
-    let system = match (props.system.as_deref(), glossary) {
+/// Merge `glossary` into `props.system`, the same assembly
+/// [`run_llm_step`] hands to [`crate::llm::process_text`]'s `system`
+/// argument, using the same concatenation convention as the legacy
+/// dictation path (`commands/llm.rs::process_with_llm`, deleted in Workbench
+/// P2 Task 12): `glossary` is expected to already carry its own leading
+/// blank line (see [`crate::vocab::build_glossary_block`]), so when
+/// `props.system` is `None` the leading whitespace is trimmed instead of
+/// leaving a dangling blank line at the start of the prompt.
+fn merged_system(props: &LlmProps, glossary: Option<&str>) -> Option<String> {
+    match (props.system.as_deref(), glossary) {
         (Some(sys), Some(block)) => Some(format!("{sys}{block}")),
         (None, Some(block)) => Some(block.trim_start().to_string()),
         (Some(sys), None) => Some(sys.to_string()),
         (None, None) => None,
-    };
-    crate::modes::Mode {
-        system,
-        user_template: props.user_template.clone(),
-        temperature: props.temperature,
-        max_tokens: props.max_tokens,
-        output_language: props.output_language.clone(),
-        vocab_books: props.vocab_books.clone(),
-        ..Default::default()
     }
 }
 
-/// Run one LLM processor step: build the [`crate::modes::Mode`] `props`
-/// describes (with `glossary` appended to the system prompt, if given), send
-/// `text` through [`crate::llm::process_text`], and return the trimmed
-/// response text.
+/// Run one LLM processor step: merge `glossary` into `props.system` (see
+/// [`merged_system`]), send `text` through [`crate::llm::process_text`] with
+/// the rest of `props`' fields passed straight through, and return the
+/// trimmed response text.
 ///
-/// Prompt assembly is delegated to [`props_to_mode`] (unit tested directly);
+/// Prompt assembly is delegated to [`merged_system`] (unit tested directly);
 /// this function's own untested surface is the network call itself. Returns
 /// `Err` if the LLM call fails or returns an empty response.
 pub async fn run_llm_step(
@@ -102,10 +92,20 @@ pub async fn run_llm_step(
     translate_target: &str,
     glossary: Option<&str>,
 ) -> Result<String, String> {
-    let mode = props_to_mode(props, glossary);
-    let resp = crate::llm::process_text(text, &mode, service, None, translate_target)
-        .await
-        .map_err(|e| e.to_string())?;
+    let system = merged_system(props, glossary);
+    let resp = crate::llm::process_text(
+        text,
+        system.as_deref(),
+        props.user_template.as_deref(),
+        props.temperature,
+        props.max_tokens,
+        &props.output_language,
+        service,
+        None,
+        translate_target,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     if resp.text.is_empty() {
         return Err("llm step: empty response".to_string());
     }
@@ -151,50 +151,40 @@ mod tests {
     }
 
     #[test]
-    fn props_to_mode_maps_user_template_and_sampling_fields() {
+    fn merged_system_without_glossary_passes_system_through() {
         let props = base_props();
-        let mode = props_to_mode(&props, None);
-        assert_eq!(mode.user_template.as_deref(), Some("<<<\n{text}\n>>>"));
-        assert_eq!(mode.temperature, 0.4);
-        assert_eq!(mode.max_tokens, 1234);
-        assert_eq!(mode.output_language, "English");
+        let system = merged_system(&props, None);
+        assert_eq!(system.as_deref(), Some("You are a polish assistant."));
     }
 
     #[test]
-    fn props_to_mode_without_glossary_passes_system_through() {
-        let props = base_props();
-        let mode = props_to_mode(&props, None);
-        assert_eq!(mode.system.as_deref(), Some("You are a polish assistant."));
-    }
-
-    #[test]
-    fn props_to_mode_appends_glossary_to_existing_system() {
+    fn merged_system_appends_glossary_to_existing_system() {
         let props = base_props();
         let block = "\n\nDomain vocabulary: Kubernetes, gRPC.";
-        let mode = props_to_mode(&props, Some(block));
+        let system = merged_system(&props, Some(block));
         assert_eq!(
-            mode.system.as_deref(),
+            system.as_deref(),
             Some("You are a polish assistant.\n\nDomain vocabulary: Kubernetes, gRPC.")
         );
     }
 
     #[test]
-    fn props_to_mode_glossary_with_no_system_trims_leading_blank_line() {
+    fn merged_system_glossary_with_no_system_trims_leading_blank_line() {
         let mut props = base_props();
         props.system = None;
         let block = "\n\nDomain vocabulary: Kubernetes, gRPC.";
-        let mode = props_to_mode(&props, Some(block));
+        let system = merged_system(&props, Some(block));
         assert_eq!(
-            mode.system.as_deref(),
+            system.as_deref(),
             Some("Domain vocabulary: Kubernetes, gRPC.")
         );
     }
 
     #[test]
-    fn props_to_mode_no_system_no_glossary_is_none() {
+    fn merged_system_no_system_no_glossary_is_none() {
         let mut props = base_props();
         props.system = None;
-        let mode = props_to_mode(&props, None);
-        assert_eq!(mode.system, None);
+        let system = merged_system(&props, None);
+        assert_eq!(system, None);
     }
 }

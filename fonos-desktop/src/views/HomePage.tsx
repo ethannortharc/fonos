@@ -24,7 +24,6 @@ import { pillWorkflows } from "../lib/triggers";
 import { rowToDef } from "./workbench/RecipesSection";
 
 const captureSelectClass = selectClass.replace("w-full ", "") + " w-auto";
-const kbd = "font-mono text-[10.5px] text-[var(--text-primary,#f5f3ef)] bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.075)] rounded-[5px] px-1.5 py-px";
 
 export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: string) => void }) {
   const t = useT();
@@ -32,11 +31,13 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   const [rows, setRows] = useState<WorkflowRow[]>([]);
   const [widgets, setWidgets] = useState<WidgetDef[]>([]);
   // In-flight guard for trigger-chip saves (moved from RecipesSection, Task
-  // 16): holds the id of the workflow currently persisting a chip edit, so a
-  // second rapid edit on the same row can't fire before the first save's
+  // 16): holds the ids of the workflows currently persisting a chip edit, so
+  // a second rapid edit on the SAME row can't fire before its first save's
   // reload lands (which would otherwise compute its patch from stale
-  // wf.triggers).
-  const [chipsSaving, setChipsSaving] = useState<string | null>(null);
+  // wf.triggers). Per-row on purpose — editing row B while row A's save is
+  // in flight must not be blocked (Task 14 fix; a single scalar id used to
+  // reject every row's edits while any one row was saving).
+  const [chipsSaving, setChipsSaving] = useState<Set<string>>(new Set());
 
   const load = () => {
     listWorkflows().then(setRows).catch(() => { /* no backend / ignore */ });
@@ -81,13 +82,17 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
 
   /** Persist a trigger-chip edit (moved from RecipesSection's saveFlow). */
   const saveTriggers = async (wf: WorkflowRow, triggers: Trigger[]) => {
-    if (chipsSaving) return;
-    setChipsSaving(wf.id);
+    if (chipsSaving.has(wf.id)) return;
+    setChipsSaving((s) => new Set(s).add(wf.id));
     try {
       await saveWorkflow({ ...rowToDef(wf), triggers });
       load();
     } finally {
-      setChipsSaving(null);
+      setChipsSaving((s) => {
+        const next = new Set(s);
+        next.delete(wf.id);
+        return next;
+      });
     }
   };
 
@@ -96,11 +101,11 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
   const presets = rows.filter((w) => w.builtin);
   const customs = rows.filter((w) => !w.builtin);
   const pill = pillWorkflows(rows);
-  const legacy: { combo?: string; label: string }[] = [
-    { combo: config.hotkey_agent, label: "Agent" },
-    { combo: config.hotkey_meeting, label: "Meeting" },
-    { combo: config.hotkey_sts, label: "STS" },
-  ].filter((x) => !!x.combo);
+  // The legacy read-only hotkey rows are gone entirely: agent (Task 6 Fix
+  // Round 1), meeting (Task 7), and finally STS (Task 9 —
+  // migrate_legacy_call_triggers folds config.hotkey_sts into wf.call's own
+  // Hotkey chip and clears the field) each migrated into recipe trigger
+  // chips, so every trigger now renders through the table above.
 
   return (
     <div className="h-full flex flex-col">
@@ -158,7 +163,7 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
                 key={wf.id}
                 className={
                   "flex items-center gap-2.5 py-2 border-t border-[rgba(255,255,255,0.045)] first:border-t-0" +
-                  (chipsSaving === wf.id ? " opacity-60 pointer-events-none" : "")
+                  (chipsSaving.has(wf.id) ? " opacity-60 pointer-events-none" : "")
                 }
               >
                 {flowIcon(wf)}
@@ -180,23 +185,6 @@ export default function HomePage({ onJumpToRecipe }: { onJumpToRecipe: (id: stri
             ))}
           </div>
 
-          {/* Legacy rows — pre-workflow hotkeys (agent/meeting/sts), read-only. */}
-          {legacy.length > 0 && (
-            <table className="w-full border-collapse text-[11px] mt-1">
-              <tbody>
-                {legacy.map((l, i) => (
-                  <tr key={`legacy-${i}`} className="border-t border-[rgba(255,255,255,0.045)] text-[rgba(255,255,255,0.28)]">
-                    <td className="py-1.5 pr-2 w-[220px]"><span className={kbd}>{l.combo}</span></td>
-                    <td className="w-[30px] text-center">→</td>
-                    <td>
-                      {l.label}
-                      <span className="ml-1.5 rounded-[5px] border border-[rgba(255,255,255,0.09)] px-1.5 text-[9px]">{t("wb.overview.legacy")}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
     </div>

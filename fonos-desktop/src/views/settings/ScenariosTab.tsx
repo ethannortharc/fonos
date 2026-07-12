@@ -14,11 +14,11 @@ import { t, td, useT, type TKey } from "../../lib/i18n";
 import type {
   AppConfig,
   HotkeysSection,
-  ModeEntry,
   ModelProfile,
   SavedScenario,
   ScenarioAssignments,
   VocabBook,
+  WorkflowRow,
 } from "../../types";
 import {
   saveScenario,
@@ -28,6 +28,7 @@ import {
   importScenario,
   importScenarioJson,
 } from "../../lib/api";
+import { workflowLabel } from "../../lib/builtinLabels";
 import Scenarios, {
   PreviewRow,
   KEY_PROVIDERS,
@@ -119,24 +120,22 @@ function formatCombo(combo: string): string {
     .join("");
 }
 
-/** The (label, combo) pairs to preview for a hotkeys section, non-empty only. */
+/** The (label, combo) pairs to preview for a hotkeys section, non-empty only.
+ *  `hotkey_agent`/`hotkey_agent_panel`/`hotkey_meeting`/`hotkey_sts` are gone
+ *  (Workbench P2 Task 11 — folded into recipe trigger chips, no reader left). */
 function hotkeyItems(h: HotkeysSection): { label: string; combo: string }[] {
   const raw: [string, string][] = [
     [t("hotkeys.dictation"), h.hotkey_dictation],
     [t("hotkeys.dictationtoggle"), h.hotkey_dictation_toggle],
     ["TTS", h.hotkey_tts],
-    [t("hotkeys.agentspeak"), h.hotkey_agent],
-    [t("hotkeys.agentpanel"), h.hotkey_agent_panel],
     [t("hotkeys.notepanel"), h.hotkey_note],
     [`${t("hotkeys.shortcut")} 1`, h.hotkey_note_1],
     [`${t("hotkeys.shortcut")} 2`, h.hotkey_note_2],
     [`${t("hotkeys.shortcut")} 3`, h.hotkey_note_3],
-    [t("hotkeys.meeting"), h.hotkey_meeting],
     // "hotkeys.transform" i18n key was removed with the Quick Transform UI (superseded by
     // text actions); this label is legacy scenario read-compat only, so it's hardcoded.
     ["Transform", h.hotkey_transform],
     [t("scen.sum.listen"), h.hotkey_listen],
-    [t("scen.sum.convo"), h.hotkey_sts],
   ];
   return raw.filter(([, c]) => c && c.trim()).map(([label, combo]) => ({ label, combo }));
 }
@@ -156,54 +155,41 @@ function SectionBadges({ sections }: { sections: string[] }) {
   );
 }
 
-const personaSnippet = (s?: string) => {
-  const p = (s ?? "").trim();
-  return p.length > 60 ? `${p.slice(0, 60)}…` : p;
-};
-
 // ── dictation / speech summaries (reused by overview + saved rows) ────────────
 
+/** `modeName`, `workflowCount`, and `widgetCount` are pre-resolved by the
+ *  caller (differently for the live overview vs. a saved scenario — see
+ *  their call sites) so this component stays presentation-only. */
 function DictationSummary({
   modeName,
-  customCount,
+  workflowCount,
+  widgetCount,
   translateTarget,
 }: {
   modeName: string;
-  customCount: number;
+  workflowCount: number;
+  widgetCount: number;
   translateTarget: string;
 }) {
   return (
     <SummaryCard>
       <SummaryRow label={t("scen.sum.mode")} value={modeName} />
-      <SummaryRow label={t("scen.sum.custom")} value={td("scen.sum.custommodes", [String(customCount)])} />
+      <SummaryRow label={t("wb.seg.recipes")} value={td("scen.sum.custommodes", [String(workflowCount)])} />
+      <SummaryRow label={t("wb.seg.widgets")} value={td("scen.sum.customwidgets", [String(widgetCount)])} />
       {translateTarget && <SummaryRow label={t("scen.sum.translate")} value={translateTarget} />}
     </SummaryCard>
   );
 }
 
-function SpeechSummary({
-  listenMode,
-  listenVoice,
-  persona,
-  convVoice,
-  turns,
-}: {
-  listenMode: string;
-  listenVoice: string;
-  persona: string;
-  convVoice: string;
-  turns: number;
-}) {
-  const listen = [listenMode, listenVoice && listenVoice !== "default" ? listenVoice : ""]
-    .filter(Boolean)
-    .join(" · ");
+/** Listen's voice only — the STS/call persona/voice/turns rows were retired
+ *  along with the standalone Conversation settings UI (Workbench P2 Task 9);
+ *  those fields are frozen and no longer user-editable anywhere. */
+function SpeechSummary({ listenVoice }: { listenVoice: string }) {
   return (
     <SummaryCard>
-      {listen && <SummaryRow label={t("scen.sum.listen")} value={listen} />}
-      {persona && <SummaryRow label={t("scen.sum.persona")} value={persona} />}
       <SummaryRow
-        label={t("scen.sum.convo")}
-        value={[convVoice && convVoice !== "default" ? convVoice : t("scen.sum.defaultvoice"), td("scen.sum.turns", [String(turns)])].join(" · ")}
+        label={t("scen.sum.listen")}
+        value={listenVoice && listenVoice !== "default" ? listenVoice : t("scen.sum.defaultvoice")}
       />
     </SummaryCard>
   );
@@ -257,7 +243,7 @@ function HotkeysSummary({ hotkeys }: { hotkeys: HotkeysSection }) {
 
 // ── overview card (live config) ───────────────────────────────────────────────
 
-function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[] }) {
+function OverviewCard({ config, workflows }: { config: AppConfig; workflows: WorkflowRow[] }) {
   const liveAssign: ScenarioAssignments = {
     stt_profile: config.stt_profile,
     llm_profile: config.llm_profile,
@@ -269,16 +255,25 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
   };
   const rows = buildRoleRows(config.model_profiles ?? [], liveAssign);
 
-  const defaultMode = config.dictation_mode || "raw";
-  const modeName = modes.find((m) => m.id === defaultMode)?.name ?? defaultMode;
-  const customCount = modes.filter((m) => !m.builtin).length;
+  // The pill-followed recipe: active_voice_workflow's row if it matches one,
+  // else wf.dictation's row, else the raw id — same resolution HomePage.tsx
+  // uses for its own "currently following" label (Workbench P2 Task 11).
+  const activeId = config.active_voice_workflow;
+  const activeRow = activeId ? workflows.find((w) => w.id === activeId) : undefined;
+  const dictationRow = workflows.find((w) => w.id === "wf.dictation");
+  const modeName = activeRow
+    ? workflowLabel(activeRow)
+    : dictationRow
+      ? workflowLabel(dictationRow)
+      : activeId || "wf.dictation";
+
+  const workflowCount = (config.workflows ?? []).length;
+  const widgetCount = (config.widgets ?? []).length;
 
   const liveHotkeys: HotkeysSection = {
     hotkey_dictation: config.hotkey_dictation ?? "",
     hotkey_dictation_toggle: config.hotkey_dictation_toggle ?? "",
     hotkey_tts: config.hotkey_tts ?? "",
-    hotkey_agent: config.hotkey_agent ?? "",
-    hotkey_agent_panel: config.hotkey_agent_panel ?? "",
     hotkey_note: config.hotkey_note ?? "",
     hotkey_note_1: config.hotkey_note_1 ?? "",
     hotkey_note_2: config.hotkey_note_2 ?? "",
@@ -286,10 +281,8 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
     notebook_hotkey_1: config.notebook_hotkey_1 ?? 0,
     notebook_hotkey_2: config.notebook_hotkey_2 ?? 0,
     notebook_hotkey_3: config.notebook_hotkey_3 ?? 0,
-    hotkey_meeting: config.hotkey_meeting ?? "",
     hotkey_transform: config.hotkey_transform ?? "",
     hotkey_listen: config.hotkey_listen ?? "",
-    hotkey_sts: config.hotkey_sts ?? "",
     text_actions: config.text_actions ?? [],
   };
 
@@ -314,7 +307,8 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
           </span>
           <DictationSummary
             modeName={modeName}
-            customCount={customCount}
+            workflowCount={workflowCount}
+            widgetCount={widgetCount}
             translateTarget={config.translate_target}
           />
         </div>
@@ -322,13 +316,7 @@ function OverviewCard({ config, modes }: { config: AppConfig; modes: ModeEntry[]
           <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
             {t("scen.section.speech")}
           </span>
-          <SpeechSummary
-            listenMode={config.listen_mode ?? "listen"}
-            listenVoice={config.listen_voice ?? "default"}
-            persona={personaSnippet(config.sts_persona)}
-            convVoice={config.sts_voice ?? "default"}
-            turns={config.sts_max_turns ?? 0}
-          />
+          <SpeechSummary listenVoice={config.listen_voice ?? "default"} />
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-[9px] uppercase tracking-wider text-[rgba(255,255,255,0.25)]">
@@ -379,7 +367,8 @@ function SavedRow({
     : [];
 
   const dict = scenario.dictation;
-  const dictCustomCount = dict ? Object.keys(dict.user_modes ?? {}).length : 0;
+  const dictWorkflowCount = dict?.user_workflows?.length ?? 0;
+  const dictWidgetCount = dict?.user_widgets?.length ?? 0;
   const speech = scenario.speech;
 
   const doExport = async () => {
@@ -434,20 +423,13 @@ function SavedRow({
           {dict && (
             <DictationSummary
               modeName={dict.dictation_mode || "raw"}
-              customCount={dictCustomCount}
+              workflowCount={dictWorkflowCount}
+              widgetCount={dictWidgetCount}
               translateTarget={dict.translate_target}
             />
           )}
 
-          {speech && (
-            <SpeechSummary
-              listenMode={speech.listen_mode || "listen"}
-              listenVoice={speech.listen_voice || "default"}
-              persona={personaSnippet(speech.sts_persona)}
-              convVoice={speech.sts_voice || "default"}
-              turns={speech.sts_max_turns}
-            />
-          )}
+          {speech && <SpeechSummary listenVoice={speech.listen_voice || "default"} />}
 
           {scenario.vocab && <VocabSummary books={scenario.vocab.vocab_books ?? []} />}
 
@@ -685,12 +667,12 @@ function SaveCurrent({
 
 export default function ScenariosTab({
   config,
-  modes,
+  workflows,
   onReload,
   setError,
 }: {
   config: AppConfig;
-  modes: ModeEntry[];
+  workflows: WorkflowRow[];
   onReload: () => void;
   setError: (e: string) => void;
 }) {
@@ -705,7 +687,7 @@ export default function ScenariosTab({
     setApplied("");
     try {
       await applySavedScenario(id);
-      // Refetch config + modes so dictation-dependent UI reflects the new modes.
+      // Refetch config + workflows so dictation-dependent UI reflects the change.
       onReload();
       setApplied(td("scen.saved.applied", [name]));
     } catch (e) {
@@ -726,7 +708,7 @@ export default function ScenariosTab({
       )}
 
       {/* a. Current configuration overview */}
-      <OverviewCard config={config} modes={modes} />
+      <OverviewCard config={config} workflows={workflows} />
 
       {/* b. Saved scenarios */}
       <div className="flex flex-col gap-2.5">

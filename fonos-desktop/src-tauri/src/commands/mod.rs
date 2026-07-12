@@ -1,15 +1,17 @@
 //! Tauri command handlers exposed to the frontend via invoke().
 
 pub mod agent;
+pub mod agent_widget;
 pub mod bench;
 pub mod call;
+pub mod call_widget;
 pub mod config;
 pub mod dialog;
 pub mod dictation;
 pub mod doctor;
-pub mod listen;
 pub mod llm;
 pub mod meeting;
+pub mod meeting_widget;
 pub mod permissions;
 pub mod scenarios;
 pub mod selection;
@@ -51,8 +53,6 @@ pub use tts::{synthesize_speech, generate_and_play, play_audio_file, play_speech
 pub use config::{get_config, save_config};
 #[allow(unused_imports)]
 pub use stats::{record_event, delete_event, get_stats, get_history, get_today};
-#[allow(unused_imports)]
-pub use llm::{process_with_llm, list_modes, save_custom_mode, delete_custom_mode};
 #[allow(unused_imports)]
 pub use agent::{agent_process, agent_reset, list_skills, toggle_skill, save_custom_skill, delete_custom_skill, test_skill};
 
@@ -244,8 +244,8 @@ pub fn refresh_float_window(app: tauri::AppHandle) -> Result<(), String> {
 /// off every known display; `None` when no monitors are reported.
 ///
 /// Lives here (rather than in `main.rs`, where the sibling
-/// `move_*_panel_to_cursor` helpers are defined) so it — and
-/// [`move_text_action_panel_to_cursor`] below — are reachable via `super::`
+/// `move_*_panel_to_cursor` helpers used to be defined) so it — and
+/// [`move_panel_to_cursor`] below — are reachable via `super::`
 /// from `commands::text_action`. `main.rs` and `lib.rs` each declare their
 /// own independent `mod commands;`/`pub mod commands;` (the latter purely to
 /// re-export commands for integration tests), so a `crate::`-rooted item
@@ -281,33 +281,99 @@ pub(crate) fn monitor_under_cursor(
     Some((target, cursor))
 }
 
-/// Position the text-action panel near the mouse cursor, parameterized on the
-/// window's actual `(w, h)` (a panel's size comes from its `PanelSize` prop, not
-/// a fixed conf value). Below-right by default, flipped left/up when it would
-/// cross the monitor edge.
+/// Anchor strategy for [`move_panel_to_cursor`]. The task-14 cleanup brief
+/// named this `Cursor | BottomRight`, but the agent panel's original
+/// placement (top-center, not offset from the cursor at all) is a genuinely
+/// third geometry — folding it into either existing variant would change its
+/// on-screen position, which the brief also requires to stay byte-identical.
+/// So this is `Cursor | TopCenter | BottomRight`, one variant per distinct
+/// placement strategy the five original `move_*_panel_to_cursor` functions
+/// implemented. `TopRight` (Call Panel UX Pass) is a fourth, fixed-margin
+/// corner geometry for the call panel's default position — distinct from
+/// `BottomRight` in that both margins are fixed constants (no caller-supplied
+/// `top_margin`) and the right edge keeps a small margin rather than sitting
+/// flush.
 #[cfg(target_os = "macos")]
-pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
+pub(crate) enum PanelAnchor {
+    /// Below-right of the exact cursor position, flipped to the opposite
+    /// side when it would cross a monitor edge. Used by the text-action and
+    /// dialog panels — `w`/`h` are the panel's actual current size (its
+    /// `PanelSize` prop, not a fixed conf value).
+    Cursor,
+    /// Horizontally centered near the top of the monitor under the cursor,
+    /// just below the macOS menu bar — doesn't otherwise use the cursor's
+    /// exact position. `w` is the panel's fixed width; `h` is unused.
+    TopCenter,
+    /// Flush with the monitor's right edge, `top_margin` down from the top —
+    /// a fixed corner so the panel doesn't obscure whatever app it's
+    /// annotating. `w` is the panel's fixed width; `h` is unused.
+    BottomRight { top_margin: f64 },
+    /// Fixed top-right corner: ~40px down from the top (clear of the macOS
+    /// menu bar, matching `TopCenter`'s 32px margin plus a little breathing
+    /// room) and ~16px in from the right edge. Used by the call panel, which
+    /// defaults to a corner rather than the cursor so it doesn't cover
+    /// whatever the user is doing while a call runs. `w` is the panel's fixed
+    /// width; `h` is unused.
+    TopRight,
+}
+
+/// Position a satellite panel window relative to the monitor under the
+/// cursor. Parameterized on the window `label`, its current `(w, h)`
+/// (logical px — meaningless for the two fixed-geometry anchors, which still
+/// take `w` as their fixed width so callers don't need a separate constant),
+/// and an [`PanelAnchor`] picking which of the three placement strategies to
+/// use. Replaces five near-identical `move_{text_action,dialog,call,agent,
+/// meeting}_panel_to_cursor` copies (Workbench P2 Task 14); every call site
+/// now names its own window label and anchor directly instead of that being
+/// implied by which same-shaped function it happened to call.
+#[cfg(target_os = "macos")]
+pub(crate) fn move_panel_to_cursor(app: &tauri::AppHandle, label: &str, w: u32, h: u32, anchor: PanelAnchor) {
     use tauri::Manager;
-    let Some(panel) = app.get_webview_window("text-action-panel") else { return };
+    let Some(panel) = app.get_webview_window(label) else { return };
     let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
 
     let scale = target.scale_factor();
-    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the panel's PanelSize
-    let offset = 12.0_f64;
+    let (panel_w, panel_h) = (w as f64, h as f64);
 
     let mon_x = target.position().x as f64 / scale;
     let mon_y = target.position().y as f64 / scale;
     let mon_w = target.size().width as f64 / scale;
     let mon_h = target.size().height as f64 / scale;
 
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
+    let (x, y) = match anchor {
+        PanelAnchor::Cursor => {
+            let offset = 12.0_f64;
+            // Below-right of the cursor; flip to the opposite side at monitor edges.
+            let mut x = cursor.x + offset;
+            let mut y = cursor.y + offset;
+            if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
+            if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
+            // Never leave the monitor; keep clear of the macOS menu bar.
+            x = x.max(mon_x);
+            y = y.max(mon_y + 28.0);
+            (x, y)
+        }
+        PanelAnchor::TopCenter => {
+            // Top-center: drops down from the menu bar area like a water drop.
+            let x = mon_x + (mon_w - panel_w) / 2.0;
+            let y = mon_y + 32.0; // Just below the macOS menu bar (28pt)
+            (x, y)
+        }
+        PanelAnchor::BottomRight { top_margin } => {
+            // Right edge of panel flush with right edge of screen, near the top.
+            let x = mon_x + mon_w - panel_w;
+            let y = mon_y + top_margin;
+            (x, y)
+        }
+        PanelAnchor::TopRight => {
+            // Same flush-right-corner math as BottomRight, but with fixed
+            // margins on both edges instead of flush-right + caller-supplied
+            // top_margin — the call panel's default resting spot.
+            let x = mon_x + mon_w - panel_w - 16.0;
+            let y = mon_y + 40.0;
+            (x, y)
+        }
+    };
 
     let _ = panel.set_position(tauri::PhysicalPosition::new(
         (x * scale) as i32,
@@ -315,38 +381,19 @@ pub(crate) fn move_text_action_panel_to_cursor(app: &tauri::AppHandle, w: u32, h
     ));
 }
 
-/// Position the dialog panel near the mouse cursor, parameterized on the
-/// window's actual `(w, h)` (a Dialog's size comes from its `PanelSize` prop,
-/// not a fixed conf value). Same below-right-then-flip logic as
-/// [`move_text_action_panel_to_cursor`], for the `"dialog-panel"` label.
-#[cfg(target_os = "macos")]
-pub(crate) fn move_dialog_panel_to_cursor(app: &tauri::AppHandle, w: u32, h: u32) {
-    use tauri::Manager;
-    let Some(panel) = app.get_webview_window("dialog-panel") else { return };
-    let Some((target, cursor)) = monitor_under_cursor(&panel) else { return };
-
-    let scale = target.scale_factor();
-    let (panel_w, panel_h) = (w as f64, h as f64); // logical px — the Dialog's PanelSize
-    let offset = 12.0_f64;
-
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
-
-    // Below-right of the cursor; flip to the opposite side at monitor edges.
-    let mut x = cursor.x + offset;
-    let mut y = cursor.y + offset;
-    if x + panel_w > mon_x + mon_w { x = cursor.x - panel_w - offset; }
-    if y + panel_h > mon_y + mon_h { y = cursor.y - panel_h - offset; }
-    // Never leave the monitor; keep clear of the macOS menu bar.
-    x = x.max(mon_x);
-    y = y.max(mon_y + 28.0);
-
-    let _ = panel.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
+/// Escape a string for safe interpolation inside a single-quoted JS string
+/// literal (`recvXxx('...')`-style panel `eval()` calls). Shared across every
+/// satellite panel bridge — originally `meeting.rs`'s own private helper,
+/// moved here (final review wave, I2) so `agent_widget.rs` could reuse it
+/// too instead of its own manual `replace('\\', ..).replace('\'', ..)` chain,
+/// which missed embedded newlines: a multi-line error produced an
+/// unterminated single-quoted JS string, leaving the panel stuck on its
+/// "thinking" indicator forever.
+pub(crate) fn js_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "")
 }
 
 // Service resolution moved to fonos-core (issue #21); the unified
@@ -387,8 +434,6 @@ pub struct AppState {
     /// Target notebook for note mode. Set by the note panel when user selects a notebook.
     /// None = Quick Note (no container). Some(id) = specific notebook.
     pub note_target: Arc<Mutex<Option<i64>>>,
-    /// Stashed selection context grabbed on agent hotkey key-down, consumed on key-up.
-    pub agent_selection: Arc<tokio::sync::Mutex<Option<selection::SelectionContext>>>,
     /// STS conversation memory (issue #24), reset when the app restarts.
     pub sts_session: Arc<tokio::sync::Mutex<fonos_core::sts::StsSession>>,
     /// Active Dialog follow-up session (session-type output). Set by

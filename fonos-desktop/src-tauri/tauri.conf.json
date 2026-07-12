@@ -111,6 +111,20 @@
         "resizable": true,
         "skipTaskbar": true,
         "center": false
+      },
+      {
+        "label": "call-panel",
+        "title": "",
+        "url": "call-panel.html",
+        "width": 380,
+        "height": 520,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "center": false
       }
     ],
     "trayIcon": {

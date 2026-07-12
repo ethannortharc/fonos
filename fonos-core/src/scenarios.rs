@@ -25,6 +25,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
+use crate::workflow::migrate::LegacyMode;
+use crate::workflow::model::{WidgetDef, WorkflowDef};
 
 // ── model classification ────────────────────────────────────────────────────
 
@@ -343,15 +345,44 @@ pub struct ModelsSection {
     pub assignments: ScenarioAssignments,
 }
 
-/// The **dictation** section of a saved scenario: the user's custom modes (as
-/// stored verbatim in `modes.json`) plus the two config fields that drive
-/// dictation behaviour. Applied by writing modes.json (shell) + config fields
-/// (core).
+/// The **dictation** section of a saved scenario: the user's workflow-engine
+/// overlays plus the two config fields that drive dictation behaviour.
+///
+/// Evolved from a `modes.json`-shaped snapshot into a workflows/widgets-shaped
+/// one (Workbench P2 Task 11 — the engine world superseded modes back in
+/// Workflow P1, but the scenario snapshot only caught up then; Task 12 has
+/// since deleted `modes.rs` entirely):
+///
+/// * `user_workflows` / `user_widgets` — `config.workflows` / `config.widgets`
+///   verbatim (the overlay list: custom entries plus built-in overrides,
+///   exactly the shape [`crate::workflow::engine::effective_workflows`] /
+///   [`effective_widgets`](crate::workflow::engine::effective_widgets)
+///   overlay onto the built-ins). Populated by every snapshot from this task
+///   onward; applied by upserting each entry into the live config by id
+///   (never deleting unrelated ones — same convention as the `models`
+///   section's profile upsert).
+/// * `user_modes` — DEPRECATED: the legacy `modes.json` map (id → mode,
+///   deserialized via [`crate::workflow::migrate::LegacyMode`]),
+///   present only in scenarios saved *before* this task. New snapshots always
+///   leave it `null` — [`snapshot_current`] no longer reads `modes.json` at
+///   all. [`apply_saved`] still recognizes a non-null value here and converts
+///   its content-bearing custom modes into `llm.*` processor widgets via the
+///   same conversion [`crate::workflow::migrate::migrate_to_workflows`] uses
+///   (a scratch config, so the live config's already-migrated workflows/
+///   triggers are never touched), rather than writing them back to
+///   `modes.json` (which T12 deletes). Kept only for that one-time import
+///   read and to deserialize pre-Task-11 scenario files without error.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DictationSection {
-    /// The user-modes map exactly as persisted in `modes.json` (id → Mode).
+    /// DEPRECATED — see struct doc. Import-compat only.
     pub user_modes: serde_json::Value,
+    /// User workflow overlays (`config.workflows` verbatim).
+    #[serde(default)]
+    pub user_workflows: Vec<WorkflowDef>,
+    /// User widget overlays (`config.widgets` verbatim).
+    #[serde(default)]
+    pub user_widgets: Vec<WidgetDef>,
     /// Default dictation mode id.
     pub dictation_mode: String,
     /// Target language for translation mode.
@@ -360,25 +391,32 @@ pub struct DictationSection {
 
 /// The **speech** section of a saved scenario: the Listen queue + STS
 /// conversation configuration (voice output pipelines).
+///
+/// Audited for Workbench P2 Task 11 against each field's actual live readers
+/// (not just its config.rs doc-comment claim, which for a couple of these
+/// fields turned out to be stale): `listen_mode` and `sts_persona` /
+/// `sts_max_turns` have no reader anywhere in the app anymore and are no
+/// longer snapshotted. `sts_llm_profile` remains — it's the `call.default`
+/// composite's documented live-read fallback rung.
+///
+/// `sts_voice_profile` / `sts_voice` were dropped in Workbench P2 Task 14:
+/// Task 11's audit kept them here because `commands::doctor::
+/// check_conversation_rtf` still read them directly, but Task 14 repointed
+/// that probe at `call.default`'s own `CallProps` (mirroring
+/// `resolve_call_cfg`'s TTS branch), so these two config fields are now
+/// zero-reader outside the one-time migration that seeded `call.default`
+/// from them — restoring them via a scenario would no longer do anything.
+/// (`ScenarioAssignments.sts_voice_profile`/`.sts_voice`, the **models**
+/// section's copies, are a separate concern — untouched.)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpeechSection {
-    /// Mode id used to process captured Listen text.
-    pub listen_mode: String,
     /// TTS profile id for Listen synthesis.
     pub listen_voice_profile: String,
     /// Voice identifier for Listen synthesis.
     pub listen_voice: String,
-    /// Persona / system prompt for the conversation stage.
-    pub sts_persona: String,
     /// LLM profile id for conversation.
     pub sts_llm_profile: String,
-    /// TTS profile id for the spoken reply.
-    pub sts_voice_profile: String,
-    /// Voice identifier for the spoken reply.
-    pub sts_voice: String,
-    /// Conversation memory: max user/assistant turn pairs kept.
-    pub sts_max_turns: usize,
 }
 
 /// The **vocab** section of a saved scenario: the user's custom vocabulary
@@ -396,6 +434,19 @@ pub struct VocabSection {
 /// The **hotkeys** section of a saved scenario: every global-hotkey binding plus
 /// the three notebook-shortcut bindings. Pure config fields; applying them takes
 /// effect live once the hotkey manager re-registers (the shell emits the reload).
+///
+/// Audited for Workbench P2 Task 11 (the "T6 mandate": old scenarios must not
+/// write back dead hotkey fields): `hotkey_agent` / `hotkey_agent_panel`
+/// (Task 6), `hotkey_meeting` (Task 7), and `hotkey_sts` (Task 9) are each
+/// one-time-folded into a `Trigger::Hotkey` chip on the matching recipe and
+/// then cleared, with no reader left anywhere — restoring them from an old
+/// scenario would silently resurrect a field nothing dispatches on anymore.
+/// Dropped from the section entirely rather than merely left unapplied, so a
+/// pre-Task-11 scenario's stale values are also ignored on import (unknown
+/// JSON keys deserialize away quietly). `hotkey_transform` stays: unlike the
+/// others it still drives a real reconciliation
+/// ([`crate::config::migrate_transform_to_text_actions`]) that [`apply_saved`]
+/// runs on every hotkeys-section apply.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HotkeysSection {
@@ -405,10 +456,6 @@ pub struct HotkeysSection {
     pub hotkey_dictation_toggle: String,
     /// TTS playback combo.
     pub hotkey_tts: String,
-    /// Press-and-hold agent voice combo.
-    pub hotkey_agent: String,
-    /// Toggle agent panel combo.
-    pub hotkey_agent_panel: String,
     /// Toggle note panel combo.
     pub hotkey_note: String,
     /// Notebook shortcut 1 combo.
@@ -423,14 +470,10 @@ pub struct HotkeysSection {
     pub notebook_hotkey_2: i64,
     /// Container id bound to notebook shortcut 3 (0 = unbound).
     pub notebook_hotkey_3: i64,
-    /// Toggle meeting-mode combo.
-    pub hotkey_meeting: String,
     /// Quick-transform combo.
     pub hotkey_transform: String,
     /// Capture-into-Listen-queue combo.
     pub hotkey_listen: String,
-    /// Hold-to-talk conversation combo.
-    pub hotkey_sts: String,
     /// Text-action bindings snapshot. `None` = scenario predates text actions
     /// (apply leaves the live config's bindings untouched); `Some` = apply verbatim.
     #[serde(default)]
@@ -572,15 +615,16 @@ fn referenced_profiles(config: &AppConfig) -> Vec<serde_json::Value> {
 /// capturing only the sections whose `include_*` flag is set.
 ///
 /// * **models** — the referenced model profiles + the default role assignments.
-/// * **dictation** — `user_modes` (the modes.json map, supplied by the shell)
-///   plus the dictation-mode / translate-target config fields.
+/// * **dictation** — `config.workflows` / `config.widgets` verbatim (the
+///   user's engine-world overlays) plus the dictation-mode / translate-target
+///   config fields. `user_modes` is always left `null` — modes.json hasn't
+///   been the source of truth since Workflow P1 (Workbench P2 Task 11).
 /// * **speech** — the Listen + STS conversation configuration.
 /// * **vocab** — the custom vocabulary books + globally-applied book ids.
 /// * **hotkeys** — every global + notebook hotkey binding.
 pub fn snapshot_current(
     config: &AppConfig,
     name: &str,
-    user_modes: serde_json::Value,
     include_models: bool,
     include_dictation: bool,
     include_speech: bool,
@@ -600,19 +644,16 @@ pub fn snapshot_current(
         },
     });
     let dictation = include_dictation.then(|| DictationSection {
-        user_modes,
+        user_modes: serde_json::Value::Null,
+        user_workflows: config.workflows.clone(),
+        user_widgets: config.widgets.clone(),
         dictation_mode: config.dictation_mode.clone(),
         translate_target: config.translate_target.clone(),
     });
     let speech = include_speech.then(|| SpeechSection {
-        listen_mode: config.listen_mode.clone(),
         listen_voice_profile: config.listen_voice_profile.clone(),
         listen_voice: config.listen_voice.clone(),
-        sts_persona: config.sts_persona.clone(),
         sts_llm_profile: config.sts_llm_profile.clone(),
-        sts_voice_profile: config.sts_voice_profile.clone(),
-        sts_voice: config.sts_voice.clone(),
-        sts_max_turns: config.sts_max_turns,
     });
     let vocab = include_vocab.then(|| VocabSection {
         vocab_books: config.vocab_books.clone(),
@@ -622,8 +663,6 @@ pub fn snapshot_current(
         hotkey_dictation: config.hotkey_dictation.clone(),
         hotkey_dictation_toggle: config.hotkey_dictation_toggle.clone(),
         hotkey_tts: config.hotkey_tts.clone(),
-        hotkey_agent: config.hotkey_agent.clone(),
-        hotkey_agent_panel: config.hotkey_agent_panel.clone(),
         hotkey_note: config.hotkey_note.clone(),
         hotkey_note_1: config.hotkey_note_1.clone(),
         hotkey_note_2: config.hotkey_note_2.clone(),
@@ -631,10 +670,8 @@ pub fn snapshot_current(
         notebook_hotkey_1: config.notebook_hotkey_1,
         notebook_hotkey_2: config.notebook_hotkey_2,
         notebook_hotkey_3: config.notebook_hotkey_3,
-        hotkey_meeting: config.hotkey_meeting.clone(),
         hotkey_transform: config.hotkey_transform.clone(),
         hotkey_listen: config.hotkey_listen.clone(),
-        hotkey_sts: config.hotkey_sts.clone(),
         text_actions: Some(config.text_actions.clone()),
     });
     SavedScenario {
@@ -647,6 +684,55 @@ pub fn snapshot_current(
         vocab,
         hotkeys,
     }
+}
+
+/// Insert `workflow` into `config.workflows`, replacing any existing entry
+/// with the same id — same upsert convention as the `models` section's
+/// profile restore (never deletes unrelated entries).
+fn upsert_workflow_overlay(config: &mut AppConfig, workflow: WorkflowDef) {
+    match config.workflows.iter_mut().find(|w| w.id == workflow.id) {
+        Some(slot) => *slot = workflow,
+        None => config.workflows.push(workflow),
+    }
+}
+
+/// Insert `widget` into `config.widgets`, replacing any existing entry with
+/// the same id — see [`upsert_workflow_overlay`].
+fn upsert_widget_overlay(config: &mut AppConfig, widget: WidgetDef) {
+    match config.widgets.iter_mut().find(|w| w.id == widget.id) {
+        Some(slot) => *slot = widget,
+        None => config.widgets.push(widget),
+    }
+}
+
+/// Convert a pre-Task-11 scenario's legacy `user_modes` map into the `llm.*`
+/// processor widgets its content-bearing custom modes would have become,
+/// using the exact same rule
+/// [`crate::workflow::migrate::migrate_to_workflows`]'s rule 1 applies to
+/// `modes.json` at startup — but run against a throwaway, freshly-defaulted
+/// scratch config rather than the live one.
+///
+/// This matters: the live config has long since finished its own one-time
+/// migration (`workflow_migration_done` is set), and `migrate_to_workflows`
+/// is a whole-config migration — rules 2/4/5 rebuild `wf.dictation` /
+/// `wf.note*` / `wf.listen` / `wf.ta-*` from the live legacy hotkey/mode
+/// fields (mostly blanked by now) and would clobber their already-migrated
+/// `triggers` (Hotkey/PillSlot chips added by later migrations), which
+/// `upsert_workflow` replaces wholesale. Running the real function against an
+/// isolated scratch config sidesteps that entirely: only rule 1 can produce
+/// anything (the scratch config's dictation/listen/text-action fields are all
+/// at their neutral defaults, so rules 2/4/5 never reference a custom mode),
+/// and only its `llm.{id}` widget outputs are pulled back out.
+fn widgets_from_legacy_modes(custom_modes: &BTreeMap<String, LegacyMode>) -> Vec<WidgetDef> {
+    let mut scratch = AppConfig { workflow_migration_done: false, ..Default::default() };
+    crate::workflow::migrate::migrate_to_workflows(&mut scratch, custom_modes);
+    custom_modes
+        .keys()
+        .filter_map(|mode_id| {
+            let widget_id = format!("llm.{mode_id}");
+            scratch.widgets.iter().find(|w| w.id == widget_id).cloned()
+        })
+        .collect()
 }
 
 /// Apply a [`SavedScenario`] to `config`, restoring **only the sections that are
@@ -664,12 +750,15 @@ pub fn snapshot_current(
 ///   legacy `hotkey_transform` combo is reconciled afterward — migrated into a
 ///   binding if the binding list is empty, else cleared — so it can never
 ///   survive as a dead key that nothing registers.
-/// * **dictation** — set the dictation-mode / translate-target config fields
-///   here; the custom-modes map is **returned** for the shell to persist into
-///   `modes.json` (core cannot touch that file).
-///
-/// Returns `Some(user_modes)` when a dictation section was applied, else `None`.
-pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<serde_json::Value> {
+/// * **dictation** — set the dictation-mode / translate-target config fields;
+///   upsert `user_workflows` / `user_widgets` into `config.workflows` /
+///   `config.widgets` by id (never deleting unrelated overlays — same
+///   convention as `models`). A non-null legacy `user_modes` (a pre-Task-11
+///   scenario) is additionally converted into `llm.*` processor widgets via
+///   [`widgets_from_legacy_modes`] and upserted the same way, so an old
+///   scenario's custom modes still land somewhere real instead of being
+///   silently dropped, without ever touching `modes.json`.
+pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) {
     if let Some(m) = &scenario.models {
         for p in &m.profiles {
             let pid = p["id"].as_str().unwrap_or("");
@@ -701,17 +790,10 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
     }
 
     if let Some(s) = &scenario.speech {
-        config.listen_mode = s.listen_mode.clone();
         config.listen_voice_profile = s.listen_voice_profile.clone();
-        config.sts_persona = s.sts_persona.clone();
         config.sts_llm_profile = s.sts_llm_profile.clone();
-        config.sts_voice_profile = s.sts_voice_profile.clone();
-        config.sts_max_turns = s.sts_max_turns;
         if !s.listen_voice.trim().is_empty() {
             config.listen_voice = s.listen_voice.clone();
-        }
-        if !s.sts_voice.trim().is_empty() {
-            config.sts_voice = s.sts_voice.clone();
         }
     }
 
@@ -724,8 +806,6 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
         config.hotkey_dictation = h.hotkey_dictation.clone();
         config.hotkey_dictation_toggle = h.hotkey_dictation_toggle.clone();
         config.hotkey_tts = h.hotkey_tts.clone();
-        config.hotkey_agent = h.hotkey_agent.clone();
-        config.hotkey_agent_panel = h.hotkey_agent_panel.clone();
         config.hotkey_note = h.hotkey_note.clone();
         config.hotkey_note_1 = h.hotkey_note_1.clone();
         config.hotkey_note_2 = h.hotkey_note_2.clone();
@@ -733,10 +813,8 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
         config.notebook_hotkey_1 = h.notebook_hotkey_1;
         config.notebook_hotkey_2 = h.notebook_hotkey_2;
         config.notebook_hotkey_3 = h.notebook_hotkey_3;
-        config.hotkey_meeting = h.hotkey_meeting.clone();
         config.hotkey_transform = h.hotkey_transform.clone();
         config.hotkey_listen = h.hotkey_listen.clone();
-        config.hotkey_sts = h.hotkey_sts.clone();
 
         if let Some(ref ta) = h.text_actions {
             config.text_actions = ta.clone();
@@ -755,9 +833,23 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) -> Option<s
     if let Some(d) = &scenario.dictation {
         config.dictation_mode = d.dictation_mode.clone();
         config.translate_target = d.translate_target.clone();
-        return Some(d.user_modes.clone());
+
+        for wf in d.user_workflows.iter().cloned() {
+            upsert_workflow_overlay(config, wf);
+        }
+        for w in d.user_widgets.iter().cloned() {
+            upsert_widget_overlay(config, w);
+        }
+
+        if !d.user_modes.is_null() {
+            if let Ok(custom_modes) = serde_json::from_value::<BTreeMap<String, LegacyMode>>(d.user_modes.clone())
+            {
+                for w in widgets_from_legacy_modes(&custom_modes) {
+                    upsert_widget_overlay(config, w);
+                }
+            }
+        }
     }
-    None
 }
 
 /// Parse and validate an imported scenario JSON string, returning it with a
@@ -939,13 +1031,41 @@ mod tests {
         c.stt_profile = "stt1".into();
         c.llm_profile = "llm1".into();
         c.tts_profile = String::new();
-        c.sts_voice_profile = String::new();
-        c.listen_voice_profile = String::new();
         c.dictation_mode = "polish".into();
         c.translate_target = "German".into();
-        c.listen_mode = "listen".into();
-        c.sts_persona = "Be terse.".into();
-        c.sts_max_turns = 5;
+        // Still-live speech field: listen voice + sts_llm_profile (the
+        // call.default composite's fallback rung). sts_voice_profile/
+        // sts_voice are set too (still real AppConfig fields, still captured
+        // by ScenarioAssignments/the models section below) but are no longer
+        // SpeechSection-snapshotted as of Task 14 — see SpeechSection's doc
+        // comment.
+        c.listen_voice_profile = "listen-profile".into();
+        c.listen_voice = "listen-voice".into();
+        c.sts_llm_profile = "convo-llm-profile".into();
+        c.sts_voice_profile = "convo-voice-profile".into();
+        c.sts_voice = "convo-voice".into();
+        // Workflow-engine overlays (Task 11: these are what the dictation
+        // section now snapshots instead of modes.json).
+        c.workflows = vec![WorkflowDef {
+            id: "wf.custom-1".into(),
+            name: "My Recipe".into(),
+            icon: "✨".into(),
+            hotkey: String::new(),
+            triggers: Vec::new(),
+            source: "src.selection".into(),
+            processors: Vec::new(),
+            outputs: vec!["out.clipboard".into()],
+            builtin: false,
+        }];
+        c.widgets = vec![WidgetDef {
+            id: "llm.custom-1".into(),
+            role: crate::workflow::model::WidgetRole::Processor,
+            type_tag: "llm".into(),
+            name: "My Widget".into(),
+            icon: String::new(),
+            props: json!({ "system": "Be terse." }),
+            builtin: false,
+        }];
         // Custom vocabulary.
         c.vocab_books = vec![crate::vocab::VocabBook {
             id: "vb1".into(),
@@ -962,15 +1082,10 @@ mod tests {
         c
     }
 
-    /// A user-modes map as it would appear in modes.json.
-    fn user_modes() -> serde_json::Value {
-        json!({ "my-mode": { "name": "My Mode", "icon": "🔧", "temperature": 0.2 } })
-    }
-
     #[test]
     fn snapshot_captures_referenced_profiles_and_assignments() {
         let c = cfg_with_profiles();
-        let snap = snapshot_current(&c, "My Local", json!(null), true, false, false, false, false);
+        let snap = snapshot_current(&c, "My Local", true, false, false, false, false);
         assert_eq!(snap.name, "My Local");
         assert!(snap.id.starts_with("saved-my-local-"));
         let m = snap.models.as_ref().expect("models section present");
@@ -985,24 +1100,30 @@ mod tests {
     fn snapshot_is_section_selective() {
         let c = cfg_with_profiles();
         // Models only.
-        let s = snapshot_current(&c, "M", json!(null), true, false, false, false, false);
+        let s = snapshot_current(&c, "M", true, false, false, false, false);
         assert!(s.models.is_some() && s.dictation.is_none() && s.speech.is_none());
         assert_eq!(s.sections(), vec!["models"]);
-        // Dictation only — carries the user-modes map + config fields.
-        let s = snapshot_current(&c, "D", user_modes(), false, true, false, false, false);
+        // Dictation only — carries the workflow/widget overlays + config
+        // fields; `user_modes` is always null on a new snapshot.
+        let s = snapshot_current(&c, "D", false, true, false, false, false);
         assert_eq!(s.sections(), vec!["dictation"]);
         let d = s.dictation.unwrap();
         assert_eq!(d.dictation_mode, "polish");
         assert_eq!(d.translate_target, "German");
-        assert_eq!(d.user_modes["my-mode"]["name"], "My Mode");
-        // Speech only.
-        let s = snapshot_current(&c, "S", json!(null), false, false, true, false, false);
+        assert!(d.user_modes.is_null());
+        assert_eq!(d.user_workflows.len(), 1);
+        assert_eq!(d.user_workflows[0].id, "wf.custom-1");
+        assert_eq!(d.user_widgets.len(), 1);
+        assert_eq!(d.user_widgets[0].id, "llm.custom-1");
+        // Speech only — the still-live fields.
+        let s = snapshot_current(&c, "S", false, false, true, false, false);
         assert_eq!(s.sections(), vec!["speech"]);
         let sp = s.speech.unwrap();
-        assert_eq!(sp.sts_persona, "Be terse.");
-        assert_eq!(sp.sts_max_turns, 5);
+        assert_eq!(sp.listen_voice_profile, "listen-profile");
+        assert_eq!(sp.listen_voice, "listen-voice");
+        assert_eq!(sp.sts_llm_profile, "convo-llm-profile");
         // All five.
-        let s = snapshot_current(&c, "All", user_modes(), true, true, true, true, true);
+        let s = snapshot_current(&c, "All", true, true, true, true, true);
         assert_eq!(s.sections(), vec!["models", "dictation", "speech", "vocab", "hotkeys"]);
     }
 
@@ -1010,14 +1131,14 @@ mod tests {
     fn snapshot_vocab_and_hotkeys_selective() {
         let c = cfg_with_profiles();
         // Vocab only — captures books + global ids, nothing else.
-        let s = snapshot_current(&c, "V", json!(null), false, false, false, true, false);
+        let s = snapshot_current(&c, "V", false, false, false, true, false);
         assert_eq!(s.sections(), vec!["vocab"]);
         let v = s.vocab.unwrap();
         assert_eq!(v.vocab_books.len(), 1);
         assert_eq!(v.vocab_books[0].id, "vb1");
         assert_eq!(v.global_vocab_books, vec!["vb1".to_string()]);
         // Hotkeys only — captures every binding.
-        let s = snapshot_current(&c, "H", json!(null), false, false, false, false, true);
+        let s = snapshot_current(&c, "H", false, false, false, false, true);
         assert_eq!(s.sections(), vec!["hotkeys"]);
         let h = s.hotkeys.unwrap();
         assert_eq!(h.hotkey_dictation, "option+space");
@@ -1042,17 +1163,23 @@ mod tests {
     #[test]
     fn snapshot_then_apply_all_sections_round_trips() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Full", user_modes(), true, true, true, true, true);
+        let snap = snapshot_current(&source, "Full", true, true, true, true, true);
 
         let mut target = AppConfig::default();
-        let returned = apply_saved(&mut target, &snap).expect("dictation returns user modes");
+        apply_saved(&mut target, &snap);
         // Models restored.
         assert_eq!(target.stt_profile, "stt1");
         assert_eq!(target.llm_profile, "llm1");
         assert!(target.model_profiles.iter().any(|p| p["id"].as_str() == Some("stt1")));
-        // Speech restored.
-        assert_eq!(target.sts_persona, "Be terse.");
-        assert_eq!(target.sts_max_turns, 5);
+        // Speech restored (the still-live fields).
+        assert_eq!(target.listen_voice_profile, "listen-profile");
+        assert_eq!(target.listen_voice, "listen-voice");
+        assert_eq!(target.sts_llm_profile, "convo-llm-profile");
+        // sts_voice_profile/sts_voice are restored here too, but via the
+        // *models* section's ScenarioAssignments (included in this "all
+        // sections" snapshot) — Task 14 dropped them from SpeechSection.
+        assert_eq!(target.sts_voice_profile, "convo-voice-profile");
+        assert_eq!(target.sts_voice, "convo-voice");
         // Vocab restored.
         assert_eq!(target.vocab_books.len(), 1);
         assert_eq!(target.vocab_books[0].id, "vb1");
@@ -1061,10 +1188,11 @@ mod tests {
         assert_eq!(target.hotkey_dictation, "option+space");
         assert_eq!(target.hotkey_listen, "option+l");
         assert_eq!(target.notebook_hotkey_1, 42);
-        // Dictation config restored + user modes handed back.
+        // Dictation config + workflow/widget overlays restored.
         assert_eq!(target.dictation_mode, "polish");
         assert_eq!(target.translate_target, "German");
-        assert_eq!(returned["my-mode"]["name"], "My Mode");
+        assert!(target.workflows.iter().any(|w| w.id == "wf.custom-1"));
+        assert!(target.widgets.iter().any(|w| w.id == "llm.custom-1"));
     }
 
     #[test]
@@ -1072,19 +1200,18 @@ mod tests {
         let source = cfg_with_profiles();
 
         // Vocab-only apply overwrites vocab, leaves models + hotkeys untouched.
-        let vocab = snapshot_current(&source, "Vocab", json!(null), false, false, false, true, false);
+        let vocab = snapshot_current(&source, "Vocab", false, false, false, true, false);
         let mut target = AppConfig::default();
         target.stt_profile = "keep-stt".into();
         let default_hotkey = target.hotkey_dictation.clone();
-        let modes = apply_saved(&mut target, &vocab);
-        assert!(modes.is_none(), "vocab-only apply returns no user modes");
+        apply_saved(&mut target, &vocab);
         assert_eq!(target.stt_profile, "keep-stt", "vocab apply leaves models untouched");
         assert_eq!(target.hotkey_dictation, default_hotkey, "vocab apply leaves hotkeys untouched");
         assert_eq!(target.vocab_books.len(), 1);
         assert_eq!(target.global_vocab_books, vec!["vb1".to_string()]);
 
         // Hotkeys-only apply overwrites bindings, leaves vocab untouched.
-        let hotkeys = snapshot_current(&source, "Keys", json!(null), false, false, false, false, true);
+        let hotkeys = snapshot_current(&source, "Keys", false, false, false, false, true);
         let mut target = AppConfig::default();
         target.global_vocab_books = vec!["keep-book".into()];
         apply_saved(&mut target, &hotkeys);
@@ -1096,7 +1223,7 @@ mod tests {
     #[test]
     fn apply_saved_upserts_without_deleting_unrelated() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Local", json!(null), true, false, false, false, false);
+        let snap = snapshot_current(&source, "Local", true, false, false, false, false);
 
         // A different machine: only has an unrelated profile + a stale stt1.
         let mut target = AppConfig::default();
@@ -1105,8 +1232,7 @@ mod tests {
             json!({ "id": "stt1", "name": "STALE", "provider": "omlx", "model": "old", "base_url": "http://localhost:9999", "capabilities": ["stt"] }),
         ];
 
-        let modes = apply_saved(&mut target, &snap);
-        assert!(modes.is_none(), "models-only apply returns no user modes");
+        apply_saved(&mut target, &snap);
 
         // stt1 upserted (replaced), llm1 appended, keepme untouched.
         let by_id = |id: &str| target.model_profiles.iter().find(|p| p["id"].as_str() == Some(id)).cloned();
@@ -1122,29 +1248,145 @@ mod tests {
         let source = cfg_with_profiles();
 
         // Speech-only scenario must not clear the target's model assignments.
-        let speech = snapshot_current(&source, "Speech", json!(null), false, false, true, false, false);
+        let speech = snapshot_current(&source, "Speech", false, false, true, false, false);
         let mut target = AppConfig::default();
         target.stt_profile = "keep-stt".into();
         target.llm_profile = "keep-llm".into();
         apply_saved(&mut target, &speech);
         assert_eq!(target.stt_profile, "keep-stt", "speech apply leaves models untouched");
         assert_eq!(target.llm_profile, "keep-llm");
-        assert_eq!(target.sts_persona, "Be terse.");
-        assert_eq!(target.sts_max_turns, 5);
+        assert_eq!(target.sts_llm_profile, "convo-llm-profile");
+        // sts_voice_profile is a *models*-section (ScenarioAssignments)
+        // field now (Task 14) — a speech-only apply must leave it alone.
+        assert_eq!(target.sts_voice_profile, "", "speech apply no longer touches sts_voice_profile");
 
-        // Dictation apply sets config fields and returns the user-modes map.
-        let dict = snapshot_current(&source, "Dict", user_modes(), false, true, false, false, false);
+        // Dictation apply sets config fields and upserts the workflow/widget
+        // overlays, leaving unrelated existing overlays alone.
+        let dict = snapshot_current(&source, "Dict", false, true, false, false, false);
         let mut target = AppConfig::default();
-        let returned = apply_saved(&mut target, &dict).expect("dictation returns user modes");
+        target.workflows = vec![WorkflowDef {
+            id: "wf.other".into(),
+            name: "Other".into(),
+            icon: String::new(),
+            hotkey: String::new(),
+            triggers: Vec::new(),
+            source: "src.selection".into(),
+            processors: Vec::new(),
+            outputs: vec!["out.clipboard".into()],
+            builtin: false,
+        }];
+        apply_saved(&mut target, &dict);
         assert_eq!(target.dictation_mode, "polish");
         assert_eq!(target.translate_target, "German");
-        assert_eq!(returned["my-mode"]["name"], "My Mode");
+        assert!(target.workflows.iter().any(|w| w.id == "wf.other"), "unrelated workflow survives");
+        assert!(target.workflows.iter().any(|w| w.id == "wf.custom-1"), "snapshot's workflow lands");
+    }
+
+    #[test]
+    fn snapshot_v2_dictation_roundtrip_never_writes_user_modes() {
+        let source = cfg_with_profiles();
+        let snap = snapshot_current(&source, "V2", false, true, false, false, false);
+        let d = snap.dictation.as_ref().unwrap();
+        assert!(d.user_modes.is_null(), "new snapshots never populate the legacy user_modes field");
+
+        // Round-trips through JSON exactly as saved-scenario storage does.
+        let text = serde_json::to_string(&snap).unwrap();
+        let back: SavedScenario = serde_json::from_str(&text).unwrap();
+        let d2 = back.dictation.unwrap();
+        assert_eq!(d2.user_workflows, d.user_workflows);
+        assert_eq!(d2.user_widgets, d.user_widgets);
+    }
+
+    #[test]
+    fn dictation_section_without_v2_keys_deserializes_to_empty_overlays() {
+        // A pre-Task-11 scenario's dictation section carries no
+        // user_workflows/user_widgets keys at all.
+        let json = r#"{"user_modes": null, "dictation_mode": "raw", "translate_target": "English"}"#;
+        let d: DictationSection = serde_json::from_str(json).unwrap();
+        assert!(d.user_workflows.is_empty());
+        assert!(d.user_widgets.is_empty());
+    }
+
+    #[test]
+    fn old_snapshot_user_modes_converts_to_llm_widget_via_migration() {
+        // A pre-Task-11 scenario: modes.json-shaped user_modes, no
+        // user_workflows/user_widgets.
+        let legacy_modes = json!({
+            "my-custom-mode": {
+                "name": "My Custom Mode",
+                "icon": "🔧",
+                "system": "You write concise bug reports.",
+                "user_template": "{text}",
+                "temperature": 0.2,
+            },
+            // A content-less custom mode (no system/user_template) must NOT
+            // produce a widget — mirrors migrate_to_workflows rule 1.
+            "blank-mode": { "name": "Blank" },
+        });
+        let scenario = SavedScenario {
+            dictation: Some(DictationSection {
+                user_modes: legacy_modes,
+                user_workflows: Vec::new(),
+                user_widgets: Vec::new(),
+                dictation_mode: "polish".into(),
+                translate_target: "English".into(),
+            }),
+            ..Default::default()
+        };
+
+        let mut target = AppConfig::default();
+        apply_saved(&mut target, &scenario);
+
+        assert_eq!(target.dictation_mode, "polish");
+        let widget = target
+            .widgets
+            .iter()
+            .find(|w| w.id == "llm.my-custom-mode")
+            .expect("content-bearing custom mode becomes an llm.* widget");
+        assert_eq!(widget.props["system"], "You write concise bug reports.");
+        assert!(
+            !target.widgets.iter().any(|w| w.id == "llm.blank-mode"),
+            "content-less mode produces no widget"
+        );
+        // The live config's own migration state is untouched — conversion ran
+        // against a throwaway scratch config, not the real one.
+        assert!(!target.workflow_migration_done);
+    }
+
+    #[test]
+    fn old_snapshot_apply_never_resurrects_dead_hotkey_fields() {
+        // A pre-Task-11 scenario's hotkeys section, serialized when
+        // hotkey_agent/hotkey_agent_panel/hotkey_meeting/hotkey_sts were still
+        // part of the schema.
+        let json = r#"{
+            "hotkey_dictation": "cmd+shift+d",
+            "hotkey_agent": "cmd+shift+a",
+            "hotkey_agent_panel": "cmd+shift+g",
+            "hotkey_meeting": "option+m",
+            "hotkey_sts": "option+s"
+        }"#;
+        let h: HotkeysSection = serde_json::from_str(json).unwrap();
+        // The dead fields simply aren't part of the struct anymore.
+        let scenario = SavedScenario { hotkeys: Some(h), ..Default::default() };
+
+        let mut target = AppConfig::default();
+        target.hotkey_agent = "".into();
+        target.hotkey_agent_panel = "".into();
+        target.hotkey_meeting = "".into();
+        target.hotkey_sts = "".into();
+        apply_saved(&mut target, &scenario);
+
+        assert_eq!(target.hotkey_dictation, "cmd+shift+d", "the surviving field still applies");
+        assert_eq!(target.hotkey_agent, "", "hotkey_agent cannot be resurrected — dropped from the schema");
+        assert_eq!(target.hotkey_agent_panel, "");
+        assert_eq!(target.hotkey_meeting, "");
+        assert_eq!(target.hotkey_sts, "");
     }
 
     #[test]
     fn parse_saved_scenario_validates_shape_and_refreshes_id() {
         let source = cfg_with_profiles();
-        let snap = snapshot_current(&source, "Shareable", json!(null), true, false, false, false, false);
+        let snap = snapshot_current(&source, "Shareable", true, false, false, false, false);
         let mut value = serde_json::to_value(&snap).unwrap();
         value["id"] = json!("original-id-should-be-replaced");
         let text = serde_json::to_string(&value).unwrap();
@@ -1187,7 +1429,7 @@ mod tests {
         cfg.text_actions = vec![crate::config::TextActionBinding {
             hotkey: "cmd+shift+y".into(),
             mode_id: "translate".into(),
-            output_target: crate::modes::OutputTarget::FloatingPopup,
+            output_target: crate::config::OutputTarget::FloatingPopup,
         }];
 
         // An old saved scenario's hotkeys section, serialized before text_actions
@@ -1223,7 +1465,7 @@ mod tests {
         let b = &cfg.text_actions[0];
         assert_eq!(b.hotkey, "cmd+shift+t");
         assert_eq!(b.mode_id, "polish");
-        assert_eq!(b.output_target, crate::modes::OutputTarget::ActiveTextField);
+        assert_eq!(b.output_target, crate::config::OutputTarget::ActiveTextField);
         assert!(cfg.hotkey_transform.is_empty());
     }
 
@@ -1234,16 +1476,16 @@ mod tests {
             crate::config::TextActionBinding {
                 hotkey: "cmd+shift+y".into(),
                 mode_id: "translate".into(),
-                output_target: crate::modes::OutputTarget::FloatingPopup,
+                output_target: crate::config::OutputTarget::FloatingPopup,
             },
             crate::config::TextActionBinding {
                 hotkey: "cmd+shift+u".into(),
                 mode_id: "polish".into(),
-                output_target: crate::modes::OutputTarget::ActiveTextField,
+                output_target: crate::config::OutputTarget::ActiveTextField,
             },
         ];
 
-        let snap = snapshot_current(&source, "TA", json!(null), false, false, false, false, true);
+        let snap = snapshot_current(&source, "TA", false, false, false, false, true);
         // Round-trip through JSON, exactly as saved-scenario storage does.
         let text = serde_json::to_string(&snap).unwrap();
         let deserialized: SavedScenario = serde_json::from_str(&text).unwrap();
@@ -1252,7 +1494,7 @@ mod tests {
         target.text_actions = vec![crate::config::TextActionBinding {
             hotkey: "existing".into(),
             mode_id: "old".into(),
-            output_target: crate::modes::OutputTarget::Clipboard,
+            output_target: crate::config::OutputTarget::Clipboard,
         }];
         target.hotkey_transform = "cmd+shift+t".into();
 

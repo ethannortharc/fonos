@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use fonos_core::llm::ServiceConfig;
-use fonos_core::modes::{self, Mode};
 use fonos_core::scenarios::{self, ClassifiedModels, ModelPlan, SavedScenario};
 
 use super::AppState;
@@ -150,8 +149,10 @@ fn save_config(state: &AppState) -> Result<(), String> {
 
 /// Snapshot the live config into a new sectioned [`SavedScenario`], append it,
 /// and persist. The `include_*` flags choose which sections are captured; the
-/// dictation section (when included) reads the user's custom modes from
-/// `modes.json`.
+/// dictation section (when included) now carries `config.workflows` /
+/// `config.widgets` verbatim (Workbench P2 Task 11) rather than reading
+/// `modes.json` — the engine-world overlays are the user's real customization
+/// footprint, and modes.json hasn't been read at snapshot time since.
 #[tauri::command]
 pub fn save_scenario(
     state: tauri::State<'_, AppState>,
@@ -162,18 +163,11 @@ pub fn save_scenario(
     include_vocab: bool,
     include_hotkeys: bool,
 ) -> Result<SavedScenario, String> {
-    // Read the user-modes map (modes.json) so a dictation section can carry it.
-    let user_modes = if include_dictation {
-        serde_json::to_value(modes::load_custom_modes()).unwrap_or(serde_json::Value::Null)
-    } else {
-        serde_json::Value::Null
-    };
     let scenario = {
         let mut guard = state.config.lock().map_err(|e| e.to_string())?;
         let scenario = scenarios::snapshot_current(
             &guard,
             name.trim(),
-            user_modes,
             include_models,
             include_dictation,
             include_speech,
@@ -188,18 +182,20 @@ pub fn save_scenario(
 }
 
 /// Apply a saved scenario by id: restore the sections it carries. Core mutates
-/// the config (profiles/assignments + speech + vocab + hotkeys + dictation config
-/// fields); when a dictation section is present its custom-modes map is written
-/// back to `modes.json` here (replacing the user modes wholesale — built-ins are
-/// code). When a hotkeys section is applied we emit `hotkey:reload` so the global
-/// hotkey manager re-registers the new bindings live (same path Settings uses).
+/// the config in full — profiles/assignments + speech + vocab + hotkeys +
+/// dictation config fields, upserting `user_workflows`/`user_widgets` (and
+/// converting a legacy `user_modes` map, if the scenario predates Workbench
+/// P2 Task 11, into `llm.*` processor widgets) into `config.workflows` /
+/// `config.widgets` — `modes.json` is never touched here. When a hotkeys
+/// section is applied we emit `hotkey:reload` so the global hotkey manager
+/// re-registers the new bindings live (same path Settings uses).
 #[tauri::command]
 pub fn apply_saved_scenario(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
-    let (user_modes, hotkeys_applied) = {
+    let hotkeys_applied = {
         let mut guard = state.config.lock().map_err(|e| e.to_string())?;
         let scenario = guard
             .saved_scenarios
@@ -208,19 +204,10 @@ pub fn apply_saved_scenario(
             .cloned()
             .ok_or_else(|| format!("saved scenario '{id}' not found"))?;
         let hotkeys_applied = scenario.hotkeys.is_some();
-        (scenarios::apply_saved(&mut guard, &scenario), hotkeys_applied)
+        scenarios::apply_saved(&mut guard, &scenario);
+        hotkeys_applied
     };
     save_config(&state)?;
-
-    if let Some(modes_value) = user_modes {
-        let custom: std::collections::BTreeMap<String, Mode> = if modes_value.is_null() {
-            std::collections::BTreeMap::new()
-        } else {
-            serde_json::from_value(modes_value)
-                .map_err(|e| format!("invalid modes in scenario: {e}"))?
-        };
-        modes::save_custom_modes(&custom).map_err(|e| e.to_string())?;
-    }
 
     // Re-register global hotkeys if the applied scenario carried a hotkeys
     // section (config fields are already saved above).

@@ -8,7 +8,10 @@
 //! Every run that reaches [`Source::acquire`] emits **exactly one** terminal
 //! event:
 //!
-//! * [`PipelineEvent::NoSpeech`] — the source produced empty text.
+//! * [`PipelineEvent::NoSpeech`] — the source produced empty text and
+//!   [`Source::allows_empty`] is false (the default; a source like
+//!   `src.instant` that opts in with `allows_empty() == true` skips this and
+//!   proceeds instead, for "blank-open" composites).
 //! * [`PipelineEvent::Failed`] — the source, a processor, the recorder, or an
 //!   output failed (the raw error is run through [`classify_error`]).
 //! * [`PipelineEvent::Delivered`] — every output accepted the final text.
@@ -34,7 +37,10 @@
 //! intercepts output delivery — each output's `StepFinished` is emitted with
 //! `intercepted: true` and `ms: 0` instead of calling [`Output::deliver`] — and
 //! skips the history recorder; `Processing` / `Delivered` are still emitted as
-//! usual.
+//! usual. The recorder is also skipped (independent of `dry_run`) whenever
+//! `final_text` is empty — an instant→composite run's blank open has nothing
+//! worth a top-level history entry; the composite's own session widgets
+//! record their own containers.
 
 use std::sync::Arc;
 
@@ -42,7 +48,7 @@ use crate::config::AppConfig;
 use crate::error_class::classify_error;
 use crate::pipeline::{EventSink, PipelineEvent};
 use crate::workflow::builtin::{built_in_widgets, built_in_workflows};
-use crate::workflow::model::{Data, DataKind, WidgetDef, WorkflowDef};
+use crate::workflow::model::{widget_ref_props, Data, DataKind, WidgetDef, WorkflowDef};
 use crate::workflow::registry::{Output, Processor, Registry, RunCtx, Source};
 
 /// The result of a successful [`run`].
@@ -108,11 +114,18 @@ pub fn resolve_trigger_target(label: &str) -> String {
 }
 
 /// The **names** of every workflow in `workflows` that references `widget_id`
-/// in its source, processors, or outputs. The settings layer uses this to
-/// refuse deleting a widget a workflow still depends on, listing the referrers
-/// by name. Returns an empty vec when nothing references the id.
-pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef]) -> Vec<String> {
-    workflows
+/// in its source, processors, or outputs, plus every widget in `widgets`
+/// whose [`widget_ref_props`] point at it (a composite like `call` naming it
+/// as its `stt_widget`/`llm_widget`) — pierced usage, so a capability widget
+/// embedded only inside a composite isn't reported as unused. Widget
+/// referrers are suffixed `" (widget)"` so the settings layer's referrer list
+/// can tell the two kinds apart at a glance (this suffix is English-only;
+/// the delete-error surface as a whole isn't localized yet). The settings
+/// layer uses this to refuse deleting a widget something still depends on,
+/// listing the referrers by name. Returns an empty vec when nothing
+/// references the id.
+pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef], widgets: &[WidgetDef]) -> Vec<String> {
+    let mut names: Vec<String> = workflows
         .iter()
         .filter(|wf| {
             wf.source == widget_id
@@ -120,7 +133,21 @@ pub fn widget_referenced_by(widget_id: &str, workflows: &[WorkflowDef]) -> Vec<S
                 || wf.outputs.iter().any(|o| o == widget_id)
         })
         .map(|wf| wf.name.clone())
-        .collect()
+        .collect();
+
+    names.extend(
+        widgets
+            .iter()
+            .filter(|w| w.id != widget_id)
+            .filter(|w| {
+                widget_ref_props(&w.type_tag)
+                    .iter()
+                    .any(|prop| w.props.get(*prop).and_then(|v| v.as_str()) == Some(widget_id))
+            })
+            .map(|w| format!("{} (widget)", w.name)),
+    );
+
+    names
 }
 
 /// The live components a workflow resolves to: its source, its processors (in
@@ -266,9 +293,10 @@ fn step_done(
 /// this module.
 ///
 /// The sequence is: instantiate + check the chain (fail fast, no event) →
-/// `acquire` (or substitute [`RunCtx::mock_text`]; empty text ⇒ `NoSpeech`) →
-/// emit `Processing` → run processors (capturing the first text as
-/// `raw_text`) → record to history (skipped when [`RunCtx::dry_run`]) →
+/// `acquire` (or substitute [`RunCtx::mock_text`]; empty text ⇒ `NoSpeech`,
+/// unless [`Source::allows_empty`] is true) → emit `Processing` → run
+/// processors (capturing the first text as `raw_text`) → record to history
+/// (skipped when [`RunCtx::dry_run`], or when `final_text` is empty) →
 /// deliver to every output in declared order (intercepted when `dry_run`) →
 /// emit `Delivered`. The first failure at or after `acquire` emits
 /// `Failed(classify_error(err))` and returns `Err`; delivery stops at the
@@ -334,7 +362,7 @@ pub async fn run(
         false,
     );
     if let Data::Text(text) = &current {
-        if text.is_empty() {
+        if text.is_empty() && !source.allows_empty() {
             ctx.events.emit(PipelineEvent::NoSpeech);
             return Err("empty input".to_string());
         }
@@ -403,10 +431,13 @@ pub async fn run(
     let raw_text = raw_text.unwrap_or_else(|| final_text.clone());
 
     // 5. Record to history between processing and delivery — skipped
-    //    entirely in a dry run. A recorder failure is terminal, consistent
-    //    with the other post-acquire steps.
+    //    entirely in a dry run, and also skipped when `final_text` is empty
+    //    (a blank-open instant→composite run: session widgets record their
+    //    own containers, so an empty top-level entry would just be litter).
+    //    A recorder failure is terminal, consistent with the other
+    //    post-acquire steps.
     let mut entry_id = None;
-    if !ctx.dry_run {
+    if !ctx.dry_run && !final_text.is_empty() {
         if let Some(recorder) = &ctx.recorder {
             // Contract: a RunRecorder that returns Err fails the run (single
             // terminal Failed). Recorders whose write is non-essential (e.g.
@@ -507,6 +538,23 @@ mod tests {
         }
         async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
             Ok(Data::Text(self.0.clone()))
+        }
+    }
+
+    /// A text source that always yields empty text and opts into
+    /// [`Source::allows_empty`] — stands in for `src.instant` (Task 2's
+    /// blank-open support) without pulling in the desktop-side registry.
+    struct AllowEmptyText;
+    #[async_trait::async_trait]
+    impl Source for AllowEmptyText {
+        fn output_kind(&self) -> DataKind {
+            DataKind::Text
+        }
+        async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+            Ok(Data::Text(String::new()))
+        }
+        fn allows_empty(&self) -> bool {
+            true
         }
     }
 
@@ -685,6 +733,7 @@ mod tests {
             "failing_source",
             Box::new(|_| Ok(Arc::new(FailingSource) as Arc<dyn Source>)),
         );
+        reg.register_source("instant", Box::new(|_| Ok(Arc::new(AllowEmptyText) as Arc<dyn Source>)));
         reg.register_processor("upper", Box::new(|_| Ok(Arc::new(Upper) as Arc<dyn Processor>)));
         reg.register_processor(
             "cjk_flood",
@@ -747,6 +796,10 @@ mod tests {
         assert_eq!(ev.len(), 2);
     }
 
+    /// A source that does not override `allows_empty` (the default `false`,
+    /// same as the real `microphone` / `selection` adapters) still yields
+    /// `NoSpeech` on empty text — Task 2's `allows_empty` opt-in must not
+    /// weaken this default.
     #[tokio::test]
     async fn empty_text_source_emits_no_speech_only() {
         let (reg, widgets, wf, sink) = setup("");
@@ -771,6 +824,75 @@ mod tests {
         assert_eq!(ev.len(), 1);
         assert!(matches!(ev[0], PipelineEvent::NoSpeech));
         assert!(sink.0.lock().unwrap().is_empty(), "nothing should be delivered");
+    }
+
+    /// Task 2: an `allows_empty` source (standing in for `src.instant`) with
+    /// empty text runs the chain to completion — no `NoSpeech` short-circuit
+    /// — and delivers the empty text to its output. This is the "blank-open"
+    /// contract that later session-composite recipes (call/agent/meeting via
+    /// `src.instant`) depend on.
+    #[tokio::test]
+    async fn allows_empty_source_runs_to_delivered_with_empty_text() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.instant", WidgetRole::Source, "instant", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.instant", &[], &["out.sink"]);
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: None,
+            dry_run: false,
+        };
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(out.final_text, "");
+        let ev: Vec<_> = cap
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| !matches!(e, PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. }))
+            .cloned()
+            .collect();
+        assert_eq!(ev.len(), 2, "no NoSpeech; Processing then Delivered");
+        assert!(matches!(ev[0], PipelineEvent::Processing));
+        assert!(matches!(&ev[1], PipelineEvent::Delivered { final_text, .. } if final_text.is_empty()));
+        assert_eq!(sink.0.lock().unwrap().as_slice(), [""], "empty text is still delivered");
+    }
+
+    /// Task 2: an instant→composite run whose `final_text` is empty must not
+    /// create a History entry — session-composite widgets (call/agent/
+    /// meeting) record their own containers, so a top-level empty entry
+    /// would just be litter. Proven independent of `dry_run` (which is
+    /// false here) by asserting the recorder itself was never invoked.
+    #[tokio::test]
+    async fn instant_chain_with_empty_final_text_skips_recorder() {
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let reg = registry(sink.clone());
+        let widgets = vec![
+            widget("src.instant", WidgetRole::Source, "instant", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.instant", &[], &["out.sink"]);
+        let rec = Arc::new(Rec(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: Arc::new(Capture(Mutex::new(vec![]))),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: Some(rec.clone()),
+            mock_text: None,
+            dry_run: false,
+        };
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(out.entry_id, None, "recorder must be skipped for an empty final_text");
+        assert!(rec.0.lock().unwrap().is_empty(), "recorder must not be called");
+        assert!(
+            ctx.meta.lock().unwrap().get("entry_id").is_none(),
+            "no entry_id written to meta when the recorder is skipped"
+        );
     }
 
     #[tokio::test]
@@ -908,10 +1030,44 @@ mod tests {
         ];
         // Referenced in the source, a processor, or an output → the workflow's
         // name is returned; the workflow that never mentions it is excluded.
-        let refs = engine::widget_referenced_by("w.target", &workflows);
+        let refs = engine::widget_referenced_by("w.target", &workflows, &[]);
         assert_eq!(refs, vec!["as_source", "as_processor", "as_output"]);
         // A widget nothing references yields an empty list.
-        assert!(engine::widget_referenced_by("w.nobody", &workflows).is_empty());
+        assert!(engine::widget_referenced_by("w.nobody", &workflows, &[]).is_empty());
+    }
+
+    /// A composite widget's ref props (per [`widget_ref_props`]) are pierced:
+    /// a `call` widget naming `w.target` as its `stt_widget` or `llm_widget`
+    /// is reported as a referrer, suffixed `" (widget)"` to distinguish it
+    /// from workflow referrers. A non-ref prop (or a non-composite type)
+    /// holding the same string is NOT a match — only declared ref props count.
+    #[test]
+    fn widget_referenced_by_pierces_composite_ref_props() {
+        let mk_widget = |id: &str, type_tag: &str, props: serde_json::Value| -> WidgetDef {
+            WidgetDef {
+                id: id.to_string(),
+                role: WidgetRole::Processor,
+                type_tag: type_tag.to_string(),
+                name: id.to_string(),
+                icon: String::new(),
+                props,
+                builtin: false,
+            }
+        };
+        let widgets = vec![
+            mk_widget("call.session", "call", serde_json::json!({ "stt_widget": "w.target", "llm_widget": "" })),
+            mk_widget("agent.session", "agent", serde_json::json!({ "llm_widget": "w.target" })),
+            mk_widget("stt.other", "stt", serde_json::json!({ "some_field": "w.target" })), // not a ref prop for "stt"
+            mk_widget("call.unrelated", "call", serde_json::json!({ "stt_widget": "w.other", "llm_widget": "w.other" })),
+        ];
+        let refs = engine::widget_referenced_by("w.target", &[], &widgets);
+        assert_eq!(refs, vec!["call.session (widget)", "agent.session (widget)"]);
+
+        // A widget referencing itself doesn't count (defensive; shouldn't
+        // arise since save_widget rejects composite→composite, but
+        // widget_referenced_by shouldn't blow up on it either).
+        let self_ref = vec![mk_widget("call.self", "call", serde_json::json!({ "stt_widget": "call.self" }))];
+        assert!(engine::widget_referenced_by("call.self", &[], &self_ref).is_empty());
     }
 
     #[tokio::test]
@@ -1120,5 +1276,66 @@ mod tests {
             assert_eq!(preview.chars().count(), 4000, "preview must be capped at 4000 chars");
             assert!(preview.chars().all(|c| c == '字'), "preview content must still be valid CJK text");
         }
+    }
+
+    #[tokio::test]
+    async fn silent_dictation_take_records_nothing() {
+        // Product decision (P2): empty transcripts are non-events everywhere (agent/call/meeting precedent) — History gets no empty rows.
+        /// A processor that returns empty text from audio input.
+        struct EmptyTextFromAudio;
+        #[async_trait::async_trait]
+        impl Processor for EmptyTextFromAudio {
+            fn input_kind(&self) -> DataKind {
+                DataKind::Audio
+            }
+            fn output_kind(&self) -> DataKind {
+                DataKind::Text
+            }
+            async fn process(&self, i: Data, _: &RunCtx) -> Result<Data, String> {
+                i.into_audio()?;
+                Ok(Data::Text(String::new()))
+            }
+        }
+
+        // Set up: audio source → empty-text processor → output sink, with recorder
+        let sink = Arc::new(Sink(Mutex::new(vec![]), Mutex::new(None)));
+        let mut reg = registry(sink.clone());
+        reg.register_processor(
+            "empty_text",
+            Box::new(|_| Ok(Arc::new(EmptyTextFromAudio) as Arc<dyn Processor>)),
+        );
+
+        let widgets = vec![
+            widget("src.audio", WidgetRole::Source, "audio", serde_json::Value::Null),
+            widget("p.empty", WidgetRole::Processor, "empty_text", serde_json::Value::Null),
+            widget("out.sink", WidgetRole::Output, "sink", serde_json::Value::Null),
+        ];
+        let wf = workflow("src.audio", &["p.empty"], &["out.sink"]);
+
+        let rec = Arc::new(Rec(Mutex::new(vec![])));
+        let cap = Arc::new(Capture(Mutex::new(vec![])));
+        let ctx = RunCtx {
+            events: cap.clone(),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: Some(rec.clone()),
+            mock_text: None,
+            dry_run: false,
+        };
+
+        let out = engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+
+        // Assert: recorder was NOT invoked
+        assert!(rec.0.lock().unwrap().is_empty(), "silent take should not invoke recorder");
+        // Assert: Delivered event was emitted with empty final_text
+        let ev = cap.0.lock().unwrap();
+        assert!(
+            ev.iter().any(|e| matches!(
+                e,
+                PipelineEvent::Delivered { raw: _, final_text, workflow }
+                    if final_text.is_empty()
+            )),
+            "should emit Delivered with empty final_text"
+        );
+        assert_eq!(out.entry_id, None, "no recorder invocation, so no entry_id");
     }
 }

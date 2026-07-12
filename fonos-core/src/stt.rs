@@ -6,15 +6,19 @@
 //! live in the shells as adapters.
 
 use crate::llm::ServiceConfig;
-use crate::modes::Mode;
 
 /// Transcribe via HTTP POST to an OpenAI-compatible /v1/audio/transcriptions endpoint.
+///
+/// `stt_prompt`/`stt_temperature` are the widget-level STT hints (formerly
+/// carried on a legacy `modes::Mode`, deleted in Workbench P2 Task 12) — pass
+/// `""`/`0.0` when the caller has none.
 pub async fn transcribe_http(
     stt: &ServiceConfig,
     file_bytes: &[u8],
     model_name: &str,
     lang_code: &str,
-    current_mode: Option<&Mode>,
+    stt_prompt: &str,
+    stt_temperature: f64,
     vocab_terms: &[String],
 ) -> Result<String, String> {
     let url = format!("{}/v1/audio/transcriptions", stt.base_url);
@@ -29,21 +33,18 @@ pub async fn transcribe_http(
         .part("file", part)
         .text("model", model_name.to_string());
 
-    // Apply mode STT params. The mode's own stt_prompt and the vocabulary
-    // glossary are merged into one Whisper prompt (budget-capped).
-    let base_prompt = current_mode.map(|m| m.stt_prompt.as_str()).unwrap_or("");
+    // Apply the widget's own stt_prompt merged with the vocabulary glossary
+    // into one Whisper prompt (budget-capped).
     let prompt = crate::vocab::build_stt_prompt(
-        base_prompt,
+        stt_prompt,
         vocab_terms,
         crate::vocab::STT_PROMPT_BUDGET_CHARS,
     );
     if !prompt.is_empty() {
         form = form.text("prompt", prompt);
     }
-    if let Some(mode) = current_mode {
-        if mode.stt_temperature > 0.0 {
-            form = form.text("temperature", mode.stt_temperature.to_string());
-        }
+    if stt_temperature > 0.0 {
+        form = form.text("temperature", stt_temperature.to_string());
     }
 
     if !lang_code.is_empty() {

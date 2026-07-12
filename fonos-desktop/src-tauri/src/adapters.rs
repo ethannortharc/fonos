@@ -71,9 +71,11 @@ impl TextSink for InjectionTextSink {
 use fonos_core::sts::{AudioOut, TurnEvent, TurnSink};
 use std::sync::{Arc, Mutex};
 
-/// Bridges STS turn events to renderers: always mirrors them onto the main
-/// window as `sts:event` (the Conversation page subscribes), and — for
-/// hotkey-initiated turns — also drives the float pill lifecycle.
+/// Bridges STS turn events to renderers: always mirrors them app-wide as
+/// `sts:event` (the call-panel satellite subscribes), and — for
+/// hotkey-initiated turns — also drives the float pill lifecycle (`pill:
+/// true` has no live caller since the walkie mode's retirement, Workbench P2
+/// Task 9; the call loop always constructs this with `pill: false`).
 pub struct TurnEventBridge {
     app: tauri::AppHandle,
     pill: bool,
@@ -84,8 +86,8 @@ pub struct TurnEventBridge {
 }
 
 impl TurnEventBridge {
-    /// `pill: true` for hotkey turns (pill shows progress); `false` for turns
-    /// started from the in-app Conversation page.
+    /// `pill: true` for hotkey turns (pill shows progress); `false` for
+    /// call-loop turns (the call panel renders progress instead).
     pub fn new(app: tauri::AppHandle, pill: bool) -> Self {
         Self { app, pill, reply: Arc::new(Mutex::new(String::new())) }
     }

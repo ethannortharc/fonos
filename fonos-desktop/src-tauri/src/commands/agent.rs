@@ -61,8 +61,19 @@ pub struct SkillParamInfo {
 /// Mutable agent state held inside [`AppState`].
 ///
 /// The registry and context are stored separately so that the processor can be
-/// constructed on each call (it mutably borrows both).  The fast-path matcher
-/// and system-prompt string are cheap to clone and are stored for convenience.
+/// constructed on each call (it mutably borrows both). The fast-path matcher
+/// is cheap to clone and is stored for convenience.
+///
+/// **No `system_prompt` field** (final review wave, I1 — removed): it used to
+/// cache `config.agent_system_prompt` ONCE at startup (`main.rs`'s
+/// `AgentState::new` construction), so editing the `agent.default` widget's
+/// persona in the Workbench never reached [`agent_process`]'s typed/mic path
+/// — only the voice (`commands::agent_widget::run_agent_exchange`) path saw
+/// it, because that path always resolved its persona fresh per call. Both
+/// callers of [`run_agent_processor`] now resolve a fresh persona on every
+/// call (`agent_process` via
+/// `commands::agent_widget::resolve_agent_default_persona`), so there is no
+/// remaining reader for a cached copy.
 pub struct AgentState {
     /// The skill registry containing all registered built-in + custom skills.
     pub registry: SkillRegistry,
@@ -70,8 +81,6 @@ pub struct AgentState {
     pub context: ConversationContext,
     /// Fast-path matcher (re-used across calls; does not hold mutable state).
     pub fast_path: FastPathMatcher,
-    /// Cached system prompt from config (refreshed on each call).
-    pub system_prompt: String,
     /// Cached skill execution timeout from config.
     pub timeout_secs: u64,
     /// Names of skills that were registered from built-in desktop skill code
@@ -88,7 +97,6 @@ impl AgentState {
         registry: SkillRegistry,
         context: ConversationContext,
         fast_path: FastPathMatcher,
-        system_prompt: String,
         timeout_secs: u64,
         builtin_skill_names: Vec<String>,
         safety: Arc<CommandSafetyFilter>,
@@ -97,7 +105,6 @@ impl AgentState {
             registry,
             context,
             fast_path,
-            system_prompt,
             timeout_secs,
             builtin_skill_names,
             safety,
@@ -105,10 +112,98 @@ impl AgentState {
     }
 }
 
-// commands::ServiceConfig and llm::ServiceConfig are the same type now
-// (unified in fonos-core, issue #21) — the old conversion is a clone.
-fn to_llm_service(sc: &super::ServiceConfig) -> ServiceConfig {
-    sc.clone()
+// ─── Shared helpers (also used by commands::agent_widget's composite path) ────
+
+/// Resolve `profile_id` into a concrete LLM [`ServiceConfig`], with the
+/// agent's own user-facing error copy for the two ways this can fail: no
+/// profile configured at all, or a configured id that no longer exists among
+/// `config.model_profiles`. Shared by [`agent_process`]'s config-only
+/// resolution (`agent_llm_profile`→`llm_profile`) and
+/// `commands::agent_widget::run_agent_exchange`'s ref-or-fallback resolution
+/// (Workbench P2 Task 6), so both paths report the same two failure modes
+/// identically.
+pub(crate) fn resolve_agent_llm_service(
+    config: &fonos_core::config::AppConfig,
+    profile_id: &str,
+) -> Result<ServiceConfig, String> {
+    if profile_id.is_empty() {
+        // I2 fix (final review wave): the old copy pointed at "Settings >
+        // Agent", a page Workbench P2 deleted (AgentTab.tsx) — model
+        // selection now lives on the agent widget's own props form.
+        return Err(
+            "No LLM profile configured for the agent. Configure the Agent widget's LLM / 在智能体组件中配置 LLM."
+                .to_string(),
+        );
+    }
+    let profile = config
+        .model_profiles
+        .iter()
+        .find(|p| p["id"].as_str() == Some(profile_id))
+        .ok_or_else(|| format!("Agent LLM profile '{}' not found", profile_id))?
+        .clone();
+    Ok(super::config_from_profile(&profile))
+}
+
+/// Run the agent's skill loop over `text` using `llm_service`, swapping the
+/// shared [`AgentState`]'s registry/context/fast_path out for the duration of
+/// the call and back in afterward (so `processor` can own them mutably), then
+/// returning the result.
+///
+/// `timeout_override` replaces `agent.timeout_secs` for this call only when
+/// `Some` — Workbench P2 Task 6's per-widget `AgentProps::timeout_secs`;
+/// `None` keeps using the shared state's own value, which is exactly
+/// [`agent_process`]'s prior (pre-extraction) behavior.
+///
+/// `system_prompt` is the already-resolved persona for this call — Fix Round
+/// 1 introduced this as `AgentProps::system`, resolved by
+/// `commands::agent_widget::run_agent_exchange` for the voice path; I1 (final
+/// review wave) closed the seam where [`agent_process`] instead used a
+/// startup-cached `AgentState.system_prompt` that never reflected later edits
+/// to the `agent.default` widget — both callers now resolve fresh every call
+/// (`agent_process` via
+/// `commands::agent_widget::resolve_agent_default_persona`), so this
+/// parameter is mandatory rather than an `Option` with a stale-state fallback.
+pub(crate) async fn run_agent_processor(
+    state: &State<'_, AppState>,
+    text: &str,
+    llm_service: ServiceConfig,
+    timeout_override: Option<u64>,
+    system_prompt: String,
+) -> Result<AgentResult, String> {
+    // Lock the agent state (tokio mutex — safe to hold across .await).
+    let mut agent = state.agent.lock().await;
+
+    let timeout_secs = timeout_override.unwrap_or(agent.timeout_secs);
+
+    // Extract the components we need to build the processor.
+    // We swap out the registry, context, and fast_path so that `processor`
+    // owns them, then swap them back after the call completes.
+    let registry = std::mem::replace(&mut agent.registry, SkillRegistry::new());
+    // Read timeout_secs before the second replace to avoid borrow conflict.
+    let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
+    let context = std::mem::replace(&mut agent.context, context_placeholder);
+    let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
+
+    let mut processor = AgentProcessor::<HttpLlmCaller>::new(
+        registry,
+        context,
+        fast_path,
+        system_prompt,
+        timeout_secs,
+    );
+
+    let result = processor
+        .process(text, &llm_service)
+        .await
+        .map_err(|e| e.to_string());
+
+    // Move the (potentially mutated) components back into the state.
+    let (registry_back, context_back, fast_path_back) = processor.into_parts();
+    agent.registry = registry_back;
+    agent.context = context_back;
+    agent.fast_path = fast_path_back;
+
+    result
 }
 
 // ─── Tauri commands ───────────────────────────────────────────────────────────
@@ -117,6 +212,15 @@ fn to_llm_service(sc: &super::ServiceConfig) -> ServiceConfig {
 ///
 /// Reads the agent LLM profile from config, builds an [`AgentProcessor`] from
 /// the shared state, runs it, and returns the result.
+///
+/// The model resolution is unchanged (`agent_llm_profile`→`llm_profile`
+/// config chain). The persona (I1 fix, final review wave) now resolves the
+/// same way `commands::agent_widget::run_agent_exchange` does for a
+/// widget-sourced call — via
+/// `agent_widget::resolve_agent_default_persona` against the singleton
+/// `agent.default` widget — instead of the removed `AgentState.system_prompt`
+/// startup cache, so editing that widget's persona in the Workbench takes
+/// effect here immediately, without an app restart.
 #[tauri::command]
 pub async fn agent_process(
     state: State<'_, AppState>,
@@ -129,8 +233,9 @@ pub async fn agent_process(
         });
     }
 
-    // Snapshot the config and resolve the LLM service before taking the agent lock.
-    let llm_service = {
+    // Snapshot the config and resolve the LLM service + persona before taking
+    // the agent lock.
+    let (llm_service, system_prompt) = {
         let config = state.config.lock().map_err(|e| e.to_string())?;
         // Prefer the dedicated agent profile; fall back to the global LLM profile.
         let profile_id = if !config.agent_llm_profile.is_empty() {
@@ -138,60 +243,14 @@ pub async fn agent_process(
         } else {
             config.llm_profile.clone()
         };
-        if profile_id.is_empty() {
-            return Err(
-                "No LLM profile configured for the agent. Go to Settings > Agent to select a model."
-                    .to_string(),
-            );
-        }
-        let profile = config
-            .model_profiles
-            .iter()
-            .find(|p| p["id"].as_str() == Some(&profile_id))
-            .ok_or_else(|| format!("Agent LLM profile '{}' not found", profile_id))?
-            .clone();
-        super::config_from_profile(&profile)
+        let llm_service = resolve_agent_llm_service(&config, &profile_id)?;
+
+        let widgets = fonos_core::workflow::engine::effective_widgets(&config);
+        let system_prompt = super::agent_widget::resolve_agent_default_persona(&widgets)?;
+        (llm_service, system_prompt)
     };
 
-    let llm_service_core = to_llm_service(&llm_service);
-
-    // Lock the agent state (tokio mutex — safe to hold across .await).
-    let mut agent = state.agent.lock().await;
-
-    // Extract the components we need to build the processor.
-    // We swap out the registry, context, and fast_path so that `processor`
-    // owns them, then swap them back after the call completes.
-    let timeout_secs = agent.timeout_secs;
-    let max_turns = timeout_secs as usize; // reuse timeout_secs as placeholder size
-    let _ = max_turns; // suppress unused warning
-
-    let registry = std::mem::replace(&mut agent.registry, SkillRegistry::new());
-    // Read timeout_secs before the second replace to avoid borrow conflict.
-    let context_placeholder = ConversationContext::new(agent.timeout_secs as usize);
-    let context = std::mem::replace(&mut agent.context, context_placeholder);
-    let fast_path = std::mem::replace(&mut agent.fast_path, FastPathMatcher::new());
-    let system_prompt = agent.system_prompt.clone();
-
-    let mut processor = AgentProcessor::<HttpLlmCaller>::new(
-        registry,
-        context,
-        fast_path,
-        system_prompt,
-        timeout_secs,
-    );
-
-    let result = processor
-        .process(&text, &llm_service_core)
-        .await
-        .map_err(|e| e.to_string());
-
-    // Move the (potentially mutated) components back into the state.
-    let (registry_back, context_back, fast_path_back) = processor.into_parts();
-    agent.registry = registry_back;
-    agent.context = context_back;
-    agent.fast_path = fast_path_back;
-
-    result
+    run_agent_processor(&state, &text, llm_service, None, system_prompt).await
 }
 
 /// Reset the agent's conversation context.

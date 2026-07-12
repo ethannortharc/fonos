@@ -40,7 +40,6 @@ use fonos_core::storage::{
     ContainerType,
     EntryFilter,
 };
-use fonos_core::modes::{built_in_modes, Mode, OutputTarget};
 use rusqlite::Connection;
 use std::time::Instant;
 
@@ -955,93 +954,12 @@ mod c04_migration {
 // ===========================================================================
 // C05 — Mode definition extensions
 // ===========================================================================
-
-#[cfg(test)]
-mod c05_mode_extensions {
-    use super::*;
-
-    /// Static: Mode struct compiles with new v2 fields.
-    #[test]
-    fn mode_struct_has_new_fields() {
-        let mode = Mode {
-            name: "test".to_string(),
-            // existing fields
-            description: String::new(),
-            icon: "📝".to_string(),
-            system: None,
-            user_template: None,
-            temperature: 0.1,
-            model: String::new(),
-            stt_model: String::new(),
-            stt_prompt: String::new(),
-            stt_temperature: 0.0,
-            max_tokens: 4096,
-            output_language: "auto".to_string(),
-            auto_paste: true,
-            auto_press_enter: false,
-            // new v2 fields
-            output_target: OutputTarget::Clipboard,
-            container_type: None,
-            auto_container: false,
-            save_audio: false,
-            processor: String::new(),
-            vocab_books: Vec::new(),
-        };
-
-        assert!(matches!(mode.output_target, OutputTarget::Clipboard));
-        assert!(mode.container_type.is_none());
-        assert!(!mode.auto_container);
-        assert!(!mode.save_audio);
-    }
-
-    /// Unit: Existing built-in modes have correct default values for new fields.
-    #[test]
-    fn existing_modes_have_backward_compatible_defaults() {
-        let modes = built_in_modes();
-
-        // raw mode
-        let raw = modes.get("raw").expect("raw mode must exist");
-        assert!(
-            matches!(raw.output_target, OutputTarget::Clipboard) || matches!(raw.output_target, OutputTarget::ActiveTextField),
-            "raw mode should have a clipboard or text-field output target"
-        );
-        assert!(!raw.auto_container, "raw mode auto_container should default to false");
-        assert!(!raw.save_audio, "raw mode save_audio should default to false");
-        assert!(raw.container_type.is_none(), "raw mode container_type should be None");
-
-        // polish mode
-        let polish = modes.get("polish").expect("polish mode must exist");
-        assert!(!polish.auto_container, "polish auto_container default false");
-        assert!(!polish.save_audio, "polish save_audio default false");
-
-        // translate mode
-        let translate = modes.get("translate").expect("translate mode must exist");
-        assert!(!translate.auto_container, "translate auto_container default false");
-
-        // All existing modes must still exist
-        assert!(modes.contains_key("raw"), "raw must exist");
-        assert!(modes.contains_key("polish"), "polish must exist");
-        assert!(modes.contains_key("translate"), "translate must exist");
-    }
-
-    /// Unit: OutputTarget variants compile.
-    #[test]
-    fn output_target_variants() {
-        let _clipboard = OutputTarget::Clipboard;
-        let _text_field = OutputTarget::ActiveTextField;
-        let _container = OutputTarget::AppendToContainer;
-        let _none = OutputTarget::None;
-    }
-
-    /// Unit: Mode default() has correct new field defaults.
-    #[test]
-    fn mode_default_new_fields() {
-        let mode = Mode::default();
-        assert!(!mode.auto_container, "default auto_container is false");
-        assert!(!mode.save_audio, "default save_audio is false");
-        assert!(mode.container_type.is_none(), "default container_type is None");
-    }
-}
+//
+// The legacy `modes` system's `Mode` struct (and its `OutputTarget`/
+// `ContainerKind` v2 output-routing fields) was deleted in Workbench P2 Task
+// 12 — dictation/note/listen/text-actions have run through the workflow
+// engine's widgets since Workflow P1. The c05_mode_extensions module that
+// regression-tested that struct's fields/defaults was removed along with it.
 
 // ===========================================================================
 // C06 — Unified input pipeline writes entries

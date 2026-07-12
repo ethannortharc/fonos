@@ -18,7 +18,7 @@
 use tauri::Manager;
 
 use fonos_core::storage::{Container, ContainerType, Entry, EntryRole, SourceType};
-use fonos_core::workflow::dialog::{DialogEngine, DialogProps, DialogSession};
+use fonos_core::workflow::dialog::{DialogProps, DialogSession};
 use fonos_core::workflow::model::{Data, DataKind};
 use fonos_core::workflow::registry::{Output, RunCtx};
 
@@ -73,11 +73,11 @@ pub(crate) async fn show_dialog_at_cursor(handle: &tauri::AppHandle, w: u32, h: 
             w as f64, h as f64,
         )));
     }
-    // `move_dialog_panel_to_cursor` lives in `commands/mod.rs` (reachable via
+    // `move_panel_to_cursor` lives in `commands/mod.rs` (reachable via
     // `super::`) for the same lib.rs/main.rs module-split reason documented on
     // `commands::monitor_under_cursor`.
     #[cfg(target_os = "macos")]
-    super::move_dialog_panel_to_cursor(handle, w, h);
+    super::move_panel_to_cursor(handle, "dialog-panel", w, h, super::PanelAnchor::Cursor);
     if let Some(panel) = handle.get_webview_window("dialog-panel") {
         let _ = panel.show();
         let _ = panel.set_focus();
@@ -103,12 +103,20 @@ impl Output for DialogOutput {
     }
 
     async fn deliver(&self, result: &Data, ctx: &RunCtx) -> Result<(), String> {
-        // P2 only wires the plain-LLM engine; the placeholders open no window.
-        let (model_profile, system) = match &self.props.engine {
-            DialogEngine::Llm { model_profile, system } => (model_profile.clone(), system.clone()),
-            DialogEngine::Agent {} | DialogEngine::Sts {} | DialogEngine::Workflow { .. } => {
-                return Err("dialog engine not implemented in P2".to_string());
-            }
+        // Resolve which (model_profile, system) pair drives follow-up turns.
+        // Workbench P2 Task 4 (additive): `self.props.llm_widget` wins when
+        // non-empty — resolved against the effective widget set inside a
+        // scoped config lock, dropped before any await below (the registry
+        // factory that built `self.props` only ever receives raw props, not
+        // the widget list, so this can't be resolved any earlier than here).
+        // Empty `llm_widget` falls back to the inline `engine` fields exactly
+        // as before Task 4; P2's non-`Llm` engine placeholders still error
+        // when there's no ref to fall back on instead.
+        let (model_profile, system) = {
+            let state = self.app.state::<AppState>();
+            let config = state.config.lock().map_err(|e| e.to_string())?;
+            let widgets = fonos_core::workflow::engine::effective_widgets(&config);
+            fonos_core::workflow::dialog::resolve_llm_engine(&self.props, &widgets)?
         };
 
         let final_text = match result {
@@ -125,33 +133,69 @@ impl Output for DialogOutput {
             .and_then(|m| m.get("entry_id").and_then(|v| v.as_i64()))
             .unwrap_or(0);
 
-        // All rusqlite work in one scoped block, dropped before any await:
-        // read the raw source text + workflow name off the recorded entry,
-        // create the Conversation container, and write the two seed turns.
-        let (raw_text, title, cid) = {
+        // Read the raw source text + workflow id/name off the recorded entry,
+        // in its own scoped db-lock block (dropped before the config lock
+        // below is taken — never held simultaneously, so this can't invert
+        // lock order against any other call site).
+        //
+        // The recorder's entry has raw_text = the original source text and
+        // metadata.workflow_id/workflow_name for the title. entry_id <= 0
+        // (recorder failed / no id) ⇒ fall back to `final` for the user turn
+        // and a plain "Dialog" title.
+        let (raw_text, wf_id, stored_name) = {
             let state = self.app.state::<AppState>();
             let db = state.db.lock().map_err(|e| e.to_string())?;
-
-            // The recorder's entry has raw_text = the original source text and
-            // metadata.workflow_name for the title. entry_id <= 0 (recorder
-            // failed / no id) ⇒ fall back to `final` for the user turn and a
-            // plain title.
-            let (raw_text, wf_name) = if entry_id > 0 {
+            if entry_id > 0 {
                 match fonos_core::storage::get_entry(&db, entry_id) {
                     Ok(e) => {
-                        let name = e
+                        let stored_name = e
                             .metadata
                             .get("workflow_name")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Dialog")
                             .to_string();
-                        (e.raw_text, name)
+                        let wf_id = e
+                            .metadata
+                            .get("workflow_id")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        (e.raw_text, wf_id, stored_name)
                     }
-                    Err(_) => (final_text.clone(), "Dialog".to_string()),
+                    Err(_) => (final_text.clone(), None, "Dialog".to_string()),
                 }
             } else {
-                (final_text.clone(), "Dialog".to_string())
-            };
+                (final_text.clone(), None, "Dialog".to_string())
+            }
+        };
+
+        // Workbench P2 Task 13: prefer localizing `workflow_id` through the
+        // builtin display map AT EMISSION TIME (this panel's own
+        // `config.ui_language`, resolved fresh here rather than trusting
+        // whatever language the recorder happened to localize
+        // `workflow_name` to) — falls back to the stored `workflow_name`
+        // (already localized by `DbRecorder`, a custom recipe's own name, or
+        // the "Dialog" default above) when the id is missing or not a
+        // builtin.
+        let wf_name = match &wf_id {
+            Some(id) => {
+                let state = self.app.state::<AppState>();
+                let lang = match state.config.lock() {
+                    Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+                    Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
+                };
+                fonos_core::workflow::builtin::builtin_display_name(id, lang)
+                    .map(str::to_string)
+                    .unwrap_or(stored_name)
+            }
+            None => stored_name,
+        };
+
+        // All remaining rusqlite work in one scoped block, dropped before any
+        // await: create the Conversation container and write the two seed
+        // turns.
+        let (raw_text, title, cid) = {
+            let state = self.app.state::<AppState>();
+            let db = state.db.lock().map_err(|e| e.to_string())?;
 
             let now = super::storage::now_iso8601();
             let title = format!("{wf_name} · {now}");

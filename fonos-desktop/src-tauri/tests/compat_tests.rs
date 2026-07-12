@@ -9,107 +9,19 @@
 ///   cargo test -p fonos-app --test compat_tests
 
 use fonos_core::config::AppConfig;
-use fonos_core::modes::built_in_modes;
 use fonos_core::stats::{init_db, record_event, get_history, get_today, get_daily_stats};
 use rusqlite::Connection;
 
 // ===========================================================================
 // C15 — Backward compatibility — Existing mode configs
 // ===========================================================================
-
-#[cfg(test)]
-mod c15_existing_mode_configs {
-    use super::*;
-
-    /// Unit: raw mode config is unchanged after v2 migration.
-    #[test]
-    fn raw_mode_unchanged() {
-        let modes = built_in_modes();
-        let raw = modes.get("raw").expect("raw mode must exist");
-
-        assert_eq!(raw.name, "Raw");
-        assert_eq!(raw.description, "No processing, direct STT output");
-        assert_eq!(raw.icon, "📝");
-        assert!(raw.system.is_none(), "raw mode has no system prompt");
-        assert!(raw.user_template.is_none(), "raw mode has no user_template");
-        assert_eq!(raw.temperature, 0.0);
-        assert!(raw.auto_paste, "raw mode auto_paste should be true");
-        assert!(!raw.auto_press_enter, "raw mode auto_press_enter should be false");
-        assert_eq!(raw.output_language, "auto");
-        assert_eq!(raw.max_tokens, 4096);
-    }
-
-    /// Unit: polish mode config is unchanged after v2 migration.
-    #[test]
-    fn polish_mode_unchanged() {
-        let modes = built_in_modes();
-        let polish = modes.get("polish").expect("polish mode must exist");
-
-        assert_eq!(polish.name, "Polish");
-        assert_eq!(polish.icon, "✨");
-        assert!(polish.system.is_some(), "polish has system prompt");
-        assert!(polish.user_template.is_some(), "polish has user_template");
-        assert!(
-            polish.user_template.as_ref().unwrap().contains("{text}"),
-            "polish user_template must contain {{text}} placeholder"
-        );
-        assert_eq!(polish.temperature, 0.1);
-        assert!(polish.auto_paste, "polish mode auto_paste should be true");
-    }
-
-    /// Unit: translate mode config is unchanged after v2 migration.
-    #[test]
-    fn translate_mode_unchanged() {
-        let modes = built_in_modes();
-        let translate = modes.get("translate").expect("translate mode must exist");
-
-        assert_eq!(translate.name, "Translate");
-        assert_eq!(translate.icon, "🌐");
-        assert!(translate.system.is_some(), "translate has system prompt");
-        assert!(translate.user_template.is_some(), "translate has user_template");
-        assert_eq!(translate.temperature, 0.3);
-    }
-
-    /// Unit: formal mode config is unchanged after v2 migration.
-    #[test]
-    fn formal_mode_unchanged() {
-        let modes = built_in_modes();
-        let formal = modes.get("formal").expect("formal mode must exist");
-
-        assert_eq!(formal.name, "Formal");
-        assert_eq!(formal.icon, "👔");
-        assert!(formal.system.is_some());
-        assert!(formal.user_template.is_some());
-        assert_eq!(formal.temperature, 0.2);
-    }
-
-    /// Unit: Mode count includes the new note mode but not fewer than before.
-    #[test]
-    fn mode_count_not_reduced() {
-        let modes = built_in_modes();
-        assert!(
-            modes.len() >= 5,
-            "built_in_modes should have at least 5 modes after v2 (had 4 before), got {}",
-            modes.len()
-        );
-    }
-
-    /// Unit: No existing mode gains auto_container=true accidentally.
-    #[test]
-    fn existing_modes_do_not_gain_auto_container() {
-        let modes = built_in_modes();
-        let should_not_auto_container = ["raw", "polish", "formal", "translate"];
-
-        for key in &should_not_auto_container {
-            let mode = modes.get(*key).expect("mode must exist");
-            assert!(
-                !mode.auto_container,
-                "mode '{}' should not have auto_container=true",
-                key
-            );
-        }
-    }
-}
+//
+// The legacy `modes` system's built-in mode catalog (`built_in_modes()`) was
+// deleted in Workbench P2 Task 12 — dictation's built-in "raw"/"polish"/
+// "translate"/"formal" prompts now live on `fonos_core::workflow::builtin`'s
+// `llm.*` widgets instead (see that module's own regression coverage). The
+// c15_existing_mode_configs module that regression-tested the old catalog's
+// contents was removed along with it.
 
 // ===========================================================================
 // C15 — Backward compatibility — AppConfig fields
@@ -293,10 +205,6 @@ mod c15_tauri_commands {
         get_stats,
         get_history,
         get_today,
-        // Mode commands (existing)
-        list_modes,
-        save_custom_mode,
-        delete_custom_mode,
         // Agent commands (existing)
         agent_process,
         agent_reset,
@@ -330,7 +238,6 @@ mod c15_tauri_commands {
             stop_playback, pause_playback, resume_playback,
             get_config, save_config,
             record_event, delete_event, get_stats, get_history, get_today,
-            list_modes, save_custom_mode, delete_custom_mode,
             agent_process, agent_reset, list_skills, toggle_skill,
             save_custom_skill, delete_custom_skill, test_skill,
             resize_float,

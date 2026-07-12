@@ -18,8 +18,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
-use crate::modes::Mode;
 use crate::vocab;
+use crate::workflow::engine::{effective_widgets, effective_workflows};
+use crate::workflow::llm_step::LlmProps;
+use crate::workflow::model::{WidgetDef, WorkflowDef};
 
 /// How serious a [`Finding`] is. Drives the row's status circle in the UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,10 +38,14 @@ pub enum Severity {
 
 /// A one-click remediation for a [`Finding`].
 ///
-/// Config-only variants are applied by [`apply_config_fix`]. `PointModeModelToDefault`
-/// mutates a custom mode (handled by the shell, which owns `modes.json`), and
-/// `OpenSettingsPane` is an OS deep-link (handled by the frontend / permissions
-/// command) rather than a config mutation.
+/// Config-only variants are applied by [`apply_config_fix`]; `OpenSettingsPane`
+/// is an OS deep-link (handled by the frontend / permissions command) rather
+/// than a config mutation.
+///
+/// `ResetListenMode` and `PointModeModelToDefault` were retired in Workbench
+/// P2 Task 11 along with the checks that produced them (`listen_mode_unknown`,
+/// `mode_model_missing`) — both were mode-system checks, and `lint_config` no
+/// longer takes a `modes` map at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FixAction {
@@ -50,17 +56,12 @@ pub enum FixAction {
     },
     /// Clear a dangling top-level profile reference (set the field to `""`, which
     /// makes it fall back to the default profile). `field` is one of
-    /// `listen_voice_profile`, `sts_llm_profile`, `sts_voice_profile`.
+    /// `listen_voice_profile`, `sts_llm_profile` (`sts_voice_profile`'s
+    /// dangling-ref check was retired in Workbench P2 Task 14 — see
+    /// `check_workflow_refs_over`'s doc comment).
     ClearProfileRef {
         /// The `AppConfig` field name to clear.
         field: String,
-    },
-    /// Reset `AppConfig.listen_mode` to the built-in `"listen"` mode.
-    ResetListenMode,
-    /// Clear a custom mode's `model` override (empty = use the configured LLM profile).
-    PointModeModelToDefault {
-        /// Id of the custom mode whose `model` override should be cleared.
-        mode_id: String,
     },
     /// Switch a TTS model profile to a faster model discovered on the server.
     SwitchTtsModel {
@@ -106,18 +107,24 @@ impl Finding {
     }
 }
 
-/// Run every pure config-lint check over `config` + the resolved `modes` map.
+/// Run every pure config-lint check over `config`.
 ///
-/// `modes` should be the merged built-in + custom map from
-/// [`crate::modes::all_modes`]. Returns findings in display order: one
-/// [`Severity::Pass`] finding per healthy category, or one-or-more problem
-/// findings when a category has issues.
-pub fn lint_config(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Finding> {
+/// Workbench P2 Task 11: every check now speaks the workflow-engine world
+/// (`config.workflows` / `config.widgets`, resolved through
+/// [`effective_workflows`] / [`effective_widgets`]) instead of the legacy
+/// `modes.json` map — the engine superseded modes back in Workflow P1, and
+/// Task 12 has since deleted `modes.rs` entirely, so `lint_config` no longer
+/// takes a `modes` parameter at all.
+///
+/// Returns findings in display order: one [`Severity::Pass`] finding per
+/// healthy category, or one-or-more problem findings when a category has
+/// issues.
+pub fn lint_config(config: &AppConfig) -> Vec<Finding> {
     let mut out = Vec::new();
     out.extend(check_hotkeys(config));
-    out.extend(check_vocab(config, modes));
-    out.extend(check_model_refs(config, modes));
-    out.extend(check_llm_configured(config, modes));
+    out.extend(check_vocab(config));
+    out.extend(check_workflow_refs(config));
+    out.extend(check_llm_configured(config));
     out
 }
 
@@ -200,13 +207,21 @@ fn check_hotkeys(config: &AppConfig) -> Vec<Finding> {
 
 // ── vocabulary attachment + budget ──────────────────────────────────────────
 
-/// Every book id referenced by any mode's `vocab_books`.
-fn mode_book_ids(modes: &BTreeMap<String, Mode>) -> Vec<String> {
+/// Every book id referenced by any `llm.*` widget's `vocab_books` prop — the
+/// engine-world equivalent of the retired per-mode `vocab_books` (Workbench
+/// P2 Task 11). Widgets whose `props` don't deserialize as [`LlmProps`] are
+/// skipped rather than treated as an error; a malformed widget is its own,
+/// separate problem.
+fn widget_book_ids(config: &AppConfig) -> Vec<String> {
     let mut ids = Vec::new();
-    for mode in modes.values() {
-        for id in &mode.vocab_books {
-            if !ids.contains(id) {
-                ids.push(id.clone());
+    for w in effective_widgets(config) {
+        if w.type_tag != "llm" {
+            continue;
+        }
+        let Ok(props) = serde_json::from_value::<LlmProps>(w.props) else { continue };
+        for id in props.vocab_books {
+            if !ids.contains(&id) {
+                ids.push(id);
             }
         }
     }
@@ -214,16 +229,16 @@ fn mode_book_ids(modes: &BTreeMap<String, Mode>) -> Vec<String> {
 }
 
 /// Vocab books enabled but attached nowhere, plus the STT prompt-budget check.
-fn check_vocab(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Finding> {
+fn check_vocab(config: &AppConfig) -> Vec<Finding> {
     let enabled: Vec<&vocab::VocabBook> =
         config.vocab_books.iter().filter(|b| b.enabled).collect();
     if enabled.is_empty() {
         return Vec::new();
     }
 
-    let mode_ids = mode_book_ids(modes);
+    let widget_ids = widget_book_ids(config);
     let is_attached = |id: &str| {
-        config.global_vocab_books.iter().any(|g| g == id) || mode_ids.iter().any(|m| m == id)
+        config.global_vocab_books.iter().any(|g| g == id) || widget_ids.iter().any(|m| m == id)
     };
 
     let mut problems: Vec<Finding> = Vec::new();
@@ -242,7 +257,7 @@ fn check_vocab(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Findin
 
     // Budget: the effective set of attached, enabled books whose terms feed the
     // STT prompt. Over budget ⇒ trailing terms are silently dropped.
-    let effective = vocab::effective_books(&config.vocab_books, &config.global_vocab_books, &mode_ids);
+    let effective = vocab::effective_books(&config.vocab_books, &config.global_vocab_books, &widget_ids);
     let terms = vocab::collect_terms(&effective);
     let total_chars: usize = terms.join(", ").chars().count();
     if total_chars > vocab::STT_PROMPT_BUDGET_CHARS {
@@ -262,7 +277,7 @@ fn check_vocab(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Findin
     }
 }
 
-// ── dangling model / profile / mode references ──────────────────────────────
+// ── dangling model / profile / widget references ────────────────────────────
 
 /// Ids of all configured model profiles.
 fn profile_ids(config: &AppConfig) -> Vec<String> {
@@ -273,21 +288,55 @@ fn profile_ids(config: &AppConfig) -> Vec<String> {
         .collect()
 }
 
-/// Listen mode, listen/STS profile refs, and per-mode model/vocab refs that
-/// point at something that no longer exists.
-fn check_model_refs(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Finding> {
-    let ids = profile_ids(config);
-    let is_profile = |id: &str| ids.iter().any(|p| p == id);
+/// The engine-world equivalents of the retired per-mode reference checks
+/// (Workbench P2 Task 11):
+///
+/// * `llm.listen` must resolve — Listen always reads this widget directly by
+///   id ([`crate::workflow::engine::effective_widgets`], Workbench P2 Task
+///   10), replacing the old `listen_mode`-must-resolve check now that
+///   `listen_mode` has no reader left anywhere.
+/// * Dangling profile references — `listen_voice_profile` / `sts_llm_profile`
+///   are still genuinely live-read (Listen synthesis and the `call.default`
+///   composite's fallback chain, respectively) so these two checks are kept.
+///   `sts_voice_profile`'s twin check was retired in Workbench P2 Task 14:
+///   `commands::doctor::check_conversation_rtf`'s RTF probe — its only
+///   remaining live reader — was repointed at `call.default`'s own
+///   `CallProps` instead, so a dangling `sts_voice_profile` no longer breaks
+///   anything a doctor check should warn about.
+/// * Dangling widget refs in workflows — every effective workflow's source /
+///   processor / output ids must resolve to an effective widget, the
+///   structural equivalent of a mode pointing at a missing model profile.
+/// * Dangling widget-level refs — an `llm.*` widget's own `model_profile` or
+///   `vocab_books` pointing at something that no longer exists, the
+///   per-widget equivalent of the old per-mode `mode_model_missing` /
+///   `mode_vocab_missing` checks.
+fn check_workflow_refs(config: &AppConfig) -> Vec<Finding> {
+    check_workflow_refs_over(config, &effective_widgets(config), &effective_workflows(config))
+}
+
+/// [`check_workflow_refs`]'s body, taking the effective widget/workflow lists
+/// as parameters so tests can exercise cases the real built-ins can never
+/// produce (e.g. `llm.listen` absent — every real `effective_widgets` output
+/// includes it, since built-ins are the overlay's base and are never removed
+/// by it).
+fn check_workflow_refs_over(
+    config: &AppConfig,
+    widgets: &[WidgetDef],
+    workflows: &[WorkflowDef],
+) -> Vec<Finding> {
+    let profile_ids = profile_ids(config);
+    let is_profile = |id: &str| profile_ids.iter().any(|p| p == id);
+    let is_widget = |id: &str| widgets.iter().any(|w| w.id == id);
     let mut problems: Vec<Finding> = Vec::new();
 
-    // listen_mode must resolve to a known mode.
-    if !config.listen_mode.trim().is_empty() && !modes.contains_key(config.listen_mode.trim()) {
+    // llm.listen must resolve.
+    if !is_widget("llm.listen") {
         problems.push(Finding {
-            id: "listen_mode_unknown".to_string(),
+            id: "llm_listen_missing".to_string(),
             severity: Severity::Warn,
-            message_key: "doctor.listen_mode_unknown".to_string(),
-            message_params: vec![config.listen_mode.clone()],
-            fix: Some(FixAction::ResetListenMode),
+            message_key: "doctor.llm_listen_missing".to_string(),
+            message_params: Vec::new(),
+            fix: None,
         });
     }
 
@@ -296,7 +345,6 @@ fn check_model_refs(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<F
     for (field, value, key) in [
         ("listen_voice_profile", &config.listen_voice_profile, "doctor.dangling_listen_voice"),
         ("sts_llm_profile", &config.sts_llm_profile, "doctor.dangling_sts_llm"),
-        ("sts_voice_profile", &config.sts_voice_profile, "doctor.dangling_sts_voice"),
     ] {
         if !value.trim().is_empty() && !is_profile(value.trim()) {
             problems.push(Finding {
@@ -309,24 +357,47 @@ fn check_model_refs(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<F
         }
     }
 
-    // Per-mode references.
-    for (mode_id, mode) in modes {
-        if !mode.model.trim().is_empty() && !is_profile(mode.model.trim()) {
+    // Dangling widget refs: every workflow's source/processors/outputs id
+    // must resolve to an effective widget.
+    for wf in workflows {
+        let mut refs: Vec<&str> = vec![wf.source.as_str()];
+        refs.extend(wf.processors.iter().map(String::as_str));
+        refs.extend(wf.outputs.iter().map(String::as_str));
+        for id in refs {
+            if !is_widget(id) {
+                problems.push(Finding {
+                    id: format!("dangling_widget_ref:{}:{}", wf.id, id),
+                    severity: Severity::Warn,
+                    message_key: "doctor.dangling_widget_ref".to_string(),
+                    message_params: vec![wf.name.clone(), id.to_string()],
+                    fix: None,
+                });
+            }
+        }
+    }
+
+    // Per-widget references (llm widgets only).
+    for w in widgets {
+        if w.type_tag != "llm" {
+            continue;
+        }
+        let Ok(props) = serde_json::from_value::<LlmProps>(w.props.clone()) else { continue };
+        if !props.model_profile.trim().is_empty() && !is_profile(props.model_profile.trim()) {
             problems.push(Finding {
-                id: format!("mode_model_missing:{mode_id}"),
+                id: format!("widget_model_missing:{}", w.id),
                 severity: Severity::Warn,
-                message_key: "doctor.mode_model_missing".to_string(),
-                message_params: vec![mode.name.clone(), mode.model.clone()],
-                fix: Some(FixAction::PointModeModelToDefault { mode_id: mode_id.clone() }),
+                message_key: "doctor.widget_model_missing".to_string(),
+                message_params: vec![w.name.clone(), props.model_profile.clone()],
+                fix: None,
             });
         }
-        for book_id in &mode.vocab_books {
+        for book_id in &props.vocab_books {
             if !config.vocab_books.iter().any(|b| &b.id == book_id) {
                 problems.push(Finding {
-                    id: format!("mode_vocab_missing:{mode_id}:{book_id}"),
+                    id: format!("widget_vocab_missing:{}:{book_id}", w.id),
                     severity: Severity::Warn,
-                    message_key: "doctor.mode_vocab_missing".to_string(),
-                    message_params: vec![mode.name.clone(), book_id.clone()],
+                    message_key: "doctor.widget_vocab_missing".to_string(),
+                    message_params: vec![w.name.clone(), book_id.clone()],
                     fix: None,
                 });
             }
@@ -340,23 +411,28 @@ fn check_model_refs(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<F
     }
 }
 
-// ── LLM configured for prompted modes ───────────────────────────────────────
+// ── LLM configured for prompted widgets ─────────────────────────────────────
 
-/// Warn when LLM-prompted modes exist but no LLM profile can serve them.
-fn check_llm_configured(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> Vec<Finding> {
-    let has_prompted = modes
-        .values()
-        .any(|m| m.system.is_some() || m.user_template.is_some());
+/// Warn when LLM-prompted `llm.*` widgets exist but no LLM profile can serve
+/// them — the engine-world equivalent of the old prompted-modes check
+/// (Workbench P2 Task 11).
+fn check_llm_configured(config: &AppConfig) -> Vec<Finding> {
+    let llm_props: Vec<LlmProps> = effective_widgets(config)
+        .into_iter()
+        .filter(|w| w.type_tag == "llm")
+        .filter_map(|w| serde_json::from_value(w.props).ok())
+        .collect();
+    let has_prompted = llm_props.iter().any(|p| p.system.is_some() || p.user_template.is_some());
     if !has_prompted {
         return Vec::new();
     }
 
-    // A prompted mode works if the global LLM profile is set, or the mode carries
-    // its own model override. Problem only when neither holds for some mode.
+    // A prompted widget works if the global LLM profile is set, or the widget
+    // carries its own model_profile override. Problem only when neither holds.
     let global_ok = !config.llm_profile.trim().is_empty();
     let stranded = !global_ok
-        && modes.values().any(|m| {
-            (m.system.is_some() || m.user_template.is_some()) && m.model.trim().is_empty()
+        && llm_props.iter().any(|p| {
+            (p.system.is_some() || p.user_template.is_some()) && p.model_profile.trim().is_empty()
         });
 
     if stranded {
@@ -377,10 +453,9 @@ fn check_llm_configured(config: &AppConfig, modes: &BTreeMap<String, Mode>) -> V
 /// Apply a config-only [`FixAction`] to `config` in place.
 ///
 /// Handles [`FixAction::AttachBookGlobal`], [`FixAction::ClearProfileRef`],
-/// [`FixAction::ResetListenMode`], and [`FixAction::SwitchTtsModel`]. Returns
-/// `Err` for variants the shell must handle ([`FixAction::PointModeModelToDefault`],
-/// [`FixAction::OpenSettingsPane`]) so callers fail loudly rather than silently
-/// no-op.
+/// and [`FixAction::SwitchTtsModel`]. Returns `Err` for
+/// [`FixAction::OpenSettingsPane`], which the shell must handle, so callers
+/// fail loudly rather than silently no-op.
 pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), String> {
     match fix {
         FixAction::AttachBookGlobal { book_id } => {
@@ -398,16 +473,8 @@ pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), S
                 config.sts_llm_profile.clear();
                 Ok(())
             }
-            "sts_voice_profile" => {
-                config.sts_voice_profile.clear();
-                Ok(())
-            }
             other => Err(format!("ClearProfileRef: unknown field '{other}'")),
         },
-        FixAction::ResetListenMode => {
-            config.listen_mode = "listen".to_string();
-            Ok(())
-        }
         FixAction::SwitchTtsModel { profile_id, model } => {
             let target = config
                 .model_profiles
@@ -421,7 +488,7 @@ pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), S
                 None => Err(format!("SwitchTtsModel: no profile '{profile_id}'")),
             }
         }
-        FixAction::PointModeModelToDefault { .. } | FixAction::OpenSettingsPane { .. } => {
+        FixAction::OpenSettingsPane { .. } => {
             Err("fix is not a config mutation — handled by the shell".to_string())
         }
     }
@@ -430,8 +497,8 @@ pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modes::Mode;
     use crate::vocab::VocabBook;
+    use crate::workflow::model::WidgetRole;
     use serde_json::json;
 
     fn cfg() -> AppConfig {
@@ -469,8 +536,32 @@ mod tests {
         v.iter().find(|f| f.id == id)
     }
 
-    fn no_modes() -> BTreeMap<String, Mode> {
-        BTreeMap::new()
+    /// A custom `llm.*` processor widget with the given props.
+    fn llm_widget(id: &str, props: serde_json::Value) -> WidgetDef {
+        WidgetDef {
+            id: id.to_string(),
+            role: WidgetRole::Processor,
+            type_tag: "llm".to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            props,
+            builtin: false,
+        }
+    }
+
+    /// A minimal, valid workflow: `source` → `outputs`, no processors.
+    fn workflow(id: &str, source: &str, outputs: &[&str]) -> WorkflowDef {
+        WorkflowDef {
+            id: id.to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            hotkey: String::new(),
+            triggers: Vec::new(),
+            source: source.to_string(),
+            processors: Vec::new(),
+            outputs: outputs.iter().map(|s| s.to_string()).collect(),
+            builtin: false,
+        }
     }
 
     #[test]
@@ -499,7 +590,7 @@ mod tests {
     fn vocab_book_unattached_warns_with_attach_fix() {
         let mut c = cfg();
         c.vocab_books = vec![book("coding", true)];
-        let f = check_vocab(&c, &no_modes());
+        let f = check_vocab(&c);
         let w = find(&f, "vocab_unattached:coding").expect("unattached finding");
         assert_eq!(w.severity, Severity::Warn);
         assert_eq!(w.fix, Some(FixAction::AttachBookGlobal { book_id: "coding".into() }));
@@ -510,18 +601,17 @@ mod tests {
         let mut c = cfg();
         c.vocab_books = vec![book("coding", true)];
         c.global_vocab_books = vec!["coding".into()];
-        let f = check_vocab(&c, &no_modes());
+        let f = check_vocab(&c);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].id, "vocab_ok");
     }
 
     #[test]
-    fn vocab_attached_via_mode_is_not_unattached() {
+    fn vocab_attached_via_widget_is_not_unattached() {
         let mut c = cfg();
         c.vocab_books = vec![book("coding", true)];
-        let mut modes = no_modes();
-        modes.insert("m".into(), Mode { vocab_books: vec!["coding".into()], ..Default::default() });
-        let f = check_vocab(&c, &modes);
+        c.widgets = vec![llm_widget("llm.custom", json!({ "vocab_books": ["coding"] }))];
+        let f = check_vocab(&c);
         assert!(find(&f, "vocab_unattached:coding").is_none());
     }
 
@@ -533,7 +623,7 @@ mod tests {
             id: "big".into(), name: "Big".into(), enabled: true, terms: big, rules: vec![],
         }];
         c.global_vocab_books = vec!["big".into()];
-        let f = check_vocab(&c, &no_modes());
+        let f = check_vocab(&c);
         let b = find(&f, "vocab_budget").expect("budget finding");
         assert_eq!(b.severity, Severity::Warn);
     }
@@ -543,31 +633,64 @@ mod tests {
         let mut c = cfg();
         c.model_profiles = vec![profile("real")];
         c.sts_llm_profile = "ghost".into();
-        let f = check_model_refs(&c, &no_modes());
+        let f = check_workflow_refs(&c);
         let w = find(&f, "dangling_ref:sts_llm_profile").expect("dangling finding");
         assert_eq!(w.severity, Severity::Warn);
         assert_eq!(w.fix, Some(FixAction::ClearProfileRef { field: "sts_llm_profile".into() }));
     }
 
     #[test]
-    fn listen_mode_unknown_warns_with_reset_fix() {
+    fn dangling_sts_voice_profile_no_longer_warns() {
+        // Workbench P2 Task 14: check_conversation_rtf (this check's last
+        // live reader — see Task 11's now-superseded comment on the old
+        // version of this test) was repointed at call.default's own
+        // CallProps, so a dangling sts_voice_profile no longer surfaces here.
         let mut c = cfg();
-        c.listen_mode = "nonesuch".into();
-        let modes = crate::modes::built_in_modes();
-        let f = check_model_refs(&c, &modes);
-        let w = find(&f, "listen_mode_unknown").expect("listen mode finding");
-        assert_eq!(w.fix, Some(FixAction::ResetListenMode));
+        c.model_profiles = vec![profile("real")];
+        c.sts_voice_profile = "ghost".into();
+        let f = check_workflow_refs(&c);
+        assert!(find(&f, "dangling_ref:sts_voice_profile").is_none());
     }
 
     #[test]
-    fn mode_model_missing_warns_with_point_to_default_fix() {
+    fn llm_listen_missing_warns_when_widget_absent() {
+        // Every real `effective_widgets` output always includes llm.listen
+        // (a built-in the overlay can replace but never remove), so this
+        // exercises the check via the injectable `_over` entry point.
+        let c = cfg();
+        let widgets = vec![llm_widget("llm.polish", json!({}))];
+        let workflows = effective_workflows(&c);
+        let f = check_workflow_refs_over(&c, &widgets, &workflows);
+        let w = find(&f, "llm_listen_missing").expect("llm.listen missing finding");
+        assert_eq!(w.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn dangling_widget_ref_in_workflow_warns() {
+        let c = cfg();
+        let widgets = effective_widgets(&c); // has llm.listen, so that check passes
+        let workflows = vec![workflow("wf.broken", "src.selection", &["out.nonexistent"])];
+        let f = check_workflow_refs_over(&c, &widgets, &workflows);
+        let w = find(&f, "dangling_widget_ref:wf.broken:out.nonexistent").expect("dangling widget ref finding");
+        assert_eq!(w.severity, Severity::Warn);
+        assert_eq!(w.message_params, vec!["wf.broken".to_string(), "out.nonexistent".to_string()]);
+    }
+
+    #[test]
+    fn widget_model_missing_warns() {
         let mut c = cfg();
         c.model_profiles = vec![profile("real")];
-        let mut modes = no_modes();
-        modes.insert("custom".into(), Mode { name: "Custom".into(), model: "ghost".into(), ..Default::default() });
-        let f = check_model_refs(&c, &modes);
-        let w = find(&f, "mode_model_missing:custom").expect("mode model finding");
-        assert_eq!(w.fix, Some(FixAction::PointModeModelToDefault { mode_id: "custom".into() }));
+        c.widgets = vec![llm_widget("llm.custom", json!({ "model_profile": "ghost" }))];
+        let f = check_workflow_refs(&c);
+        find(&f, "widget_model_missing:llm.custom").expect("widget model finding");
+    }
+
+    #[test]
+    fn widget_vocab_missing_warns() {
+        let mut c = cfg();
+        c.widgets = vec![llm_widget("llm.custom", json!({ "vocab_books": ["ghost-book"] }))];
+        let f = check_workflow_refs(&c);
+        find(&f, "widget_vocab_missing:llm.custom:ghost-book").expect("widget vocab finding");
     }
 
     #[test]
@@ -575,19 +698,16 @@ mod tests {
         let mut c = cfg();
         c.model_profiles = vec![profile("real")];
         c.sts_llm_profile = "real".into();
-        c.listen_mode = "listen".into();
-        let modes = crate::modes::built_in_modes();
-        let f = check_model_refs(&c, &modes);
+        let f = check_workflow_refs(&c);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].id, "refs_ok");
     }
 
     #[test]
-    fn llm_unconfigured_warns_when_prompted_modes_stranded() {
+    fn llm_unconfigured_warns_when_prompted_widgets_stranded() {
         let mut c = cfg();
-        c.llm_profile = String::new();
-        let modes = crate::modes::built_in_modes(); // polish/formal/... have prompts, empty model
-        let f = check_llm_configured(&c, &modes);
+        c.llm_profile = String::new(); // built-in llm.* widgets (polish/formal/…) are always prompted
+        let f = check_llm_configured(&c);
         let w = find(&f, "llm_unconfigured").expect("llm finding");
         assert_eq!(w.severity, Severity::Warn);
     }
@@ -596,8 +716,7 @@ mod tests {
     fn llm_ok_when_profile_set() {
         let mut c = cfg();
         c.llm_profile = "real".into();
-        let modes = crate::modes::built_in_modes();
-        let f = check_llm_configured(&c, &modes);
+        let f = check_llm_configured(&c);
         assert_eq!(f[0].id, "llm_ok");
         assert_eq!(f[0].severity, Severity::Pass);
     }
@@ -612,14 +731,25 @@ mod tests {
     }
 
     #[test]
-    fn apply_clear_profile_ref_and_reset_listen_mode() {
+    fn apply_clear_profile_ref() {
+        let mut c = cfg();
+        c.sts_llm_profile = "ghost".into();
+        apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_llm_profile".into() }).unwrap();
+        assert!(c.sts_llm_profile.is_empty());
+    }
+
+    #[test]
+    fn apply_clear_profile_ref_rejects_retired_sts_voice_profile_field() {
+        // Task 14 retired sts_voice_profile's dangling-ref check, so no
+        // Finding constructs this anymore — but the match arm removal itself
+        // is worth a regression guard: an unrecognized field name is a hard
+        // error, not a silent no-op.
         let mut c = cfg();
         c.sts_voice_profile = "ghost".into();
-        c.listen_mode = "bad".into();
-        apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_voice_profile".into() }).unwrap();
-        apply_config_fix(&mut c, &FixAction::ResetListenMode).unwrap();
-        assert!(c.sts_voice_profile.is_empty());
-        assert_eq!(c.listen_mode, "listen");
+        let err = apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_voice_profile".into() })
+            .unwrap_err();
+        assert!(err.contains("sts_voice_profile"));
+        assert_eq!(c.sts_voice_profile, "ghost", "rejected fix must not mutate config");
     }
 
     #[test]
@@ -633,7 +763,6 @@ mod tests {
     #[test]
     fn apply_rejects_non_config_fixes() {
         let mut c = cfg();
-        assert!(apply_config_fix(&mut c, &FixAction::PointModeModelToDefault { mode_id: "x".into() }).is_err());
         assert!(apply_config_fix(&mut c, &FixAction::OpenSettingsPane { pane: "microphone".into() }).is_err());
     }
 
@@ -643,9 +772,7 @@ mod tests {
         c.hotkey_dictation = "cmd+shift+space".into();
         c.model_profiles = vec![profile("p")];
         c.llm_profile = "p".into();
-        c.listen_mode = "listen".into();
-        let modes = crate::modes::built_in_modes();
-        let findings = lint_config(&c, &modes);
+        let findings = lint_config(&c);
         assert!(findings.iter().all(|f| f.severity == Severity::Pass), "unexpected: {findings:?}");
         // hotkeys_ok, refs_ok, llm_ok (no vocab books ⇒ no vocab finding).
         assert!(find(&findings, "hotkeys_ok").is_some());
@@ -655,12 +782,10 @@ mod tests {
 
     #[test]
     fn fix_action_variants_round_trip_through_serde() {
-        // Mirrors the frontend → Tauri deserialization path, incl. the unit variant.
+        // Mirrors the frontend → Tauri deserialization path.
         let cases = vec![
             FixAction::AttachBookGlobal { book_id: "coding".into() },
             FixAction::ClearProfileRef { field: "sts_llm_profile".into() },
-            FixAction::ResetListenMode,
-            FixAction::PointModeModelToDefault { mode_id: "custom".into() },
             FixAction::SwitchTtsModel { profile_id: "p".into(), model: "kokoro-82m".into() },
             FixAction::OpenSettingsPane { pane: "microphone".into() },
         ];

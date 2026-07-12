@@ -35,6 +35,7 @@ import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import { LANGUAGES, inputClass, selectClass } from "./constants";
+import SkillsPanel from "../workbench/SkillsPanel";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
@@ -127,6 +128,33 @@ export function ModelSelector({
   );
 }
 
+/** Widget-instance dropdown for a composite's ref prop (Workbench P2
+ *  foundation for the "dialog"/"call"/"agent"/"meeting" composites built in
+ *  T4/T6-T9 — e.g. a "call" widget's stt_widget/llm_widget prop names the
+ *  "stt"/"llm" widget it delegates to). Modeled on ModelSelector above:
+ *  filtered to widgets of `wantTag`, empty value = "use default" (reuses
+ *  modes.use-default — same copy, same "no override" meaning as
+ *  ModelSelector's empty option). The "dialog"/"agent"/"meeting"/"call"
+ *  PropsForm cases below all render it. */
+export function WidgetRefSelector({
+  wantTag, value, widgets, onChange,
+}: {
+  wantTag: string;
+  value: string;
+  widgets: WidgetDef[];
+  onChange: (v: string) => void;
+}) {
+  const filtered = widgets.filter((w) => w.type_tag === wantTag);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass} style={{ backgroundImage: "none" }}>
+      <option value="">{t("modes.use-default")}</option>
+      {filtered.map((w) => (
+        <option key={w.id} value={w.id}>{widgetLabel(w)}</option>
+      ))}
+    </select>
+  );
+}
+
 export function VocabChips({
   books, selected, onToggle,
 }: {
@@ -215,14 +243,43 @@ function SizeControl({
   );
 }
 
+/** Collapsed "Skills (global)" section rendered under the "agent" PropsForm
+ *  case. Skills are a global registry (not per-widget-instance config — see
+ *  `SkillsPanel`'s own header comment), so this just embeds the panel behind
+ *  a disclosure toggle rather than exposing any of its own props. A separate
+ *  component (not inlined in the "agent" case body) so its `useState` toggle
+ *  is never called conditionally: `PropsForm`'s switch can re-render a
+ *  different `case` across renders (the isNew type picker lets a user change
+ *  `form.type_tag`), which would violate the rules of hooks if the toggle
+ *  lived directly in that case's branch. */
+function AgentSkillsSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="self-start text-[10px] text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.55)] transition-colors"
+      >
+        {open ? "▾" : "▸"} {t("widgets.field.agent.skills")}
+      </button>
+      {open && <SkillsPanel />}
+    </div>
+  );
+}
+
 // ─── Per-type_tag property form ────────────────────────────────────────────────
 
 function PropsForm({
-  form, config, containers, onProps,
+  form, config, containers, widgets, onProps,
 }: {
   form: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
+  /** Loaded widget instances, for composite cases' WidgetRefSelector
+   *  (stt_widget/llm_widget dropdowns). Threaded through from WidgetForm;
+   *  "dialog" (Task 4), "agent" (Task 6), "meeting" (Task 7), and "call"
+   *  (Task 9) consume it. */
+  widgets: WidgetDef[];
   onProps: (props: Props) => void;
 }) {
   const p = form.props;
@@ -351,6 +408,14 @@ function PropsForm({
       const engine = (p.engine as { kind?: string; model_profile?: string; system?: string | null }) ?? {};
       const setEngine = (patch: Partial<{ model_profile: string; system: string }>) =>
         set("engine", { kind: "llm", model_profile: engine.model_profile ?? "", system: engine.system ?? "", ...patch });
+      // Task 4 (additive ref): a non-empty `llm_widget` top-level prop wins
+      // over the inline engine fields below — the desktop's DialogOutput
+      // resolves it the same way (fonos_core::workflow::dialog::
+      // resolve_llm_engine). Hides the inline model/system fields in favor
+      // of a hint, rather than disabling them, so their stale values (if
+      // any, from before a ref was chosen) aren't visually implied to still
+      // matter.
+      const llmWidget = pStr(p, "llm_widget");
       return (
         <div className="flex flex-col gap-2.5">
           <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
@@ -361,12 +426,133 @@ function PropsForm({
             <SizeControl size={(p.size as { width?: number; height?: number }) ?? {}} onChange={(size) => set("size", size)} />
           </Field>
           <div className={headingClass}>{t("widgets.field.engine")}</div>
-          <Field label={t("widgets.field.model")}>
-            <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+          <Field label={t("widgets.field.dialog.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={llmWidget} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
           </Field>
-          <Field label={t("widgets.field.dialog.system")}>
-            <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
+          {llmWidget ? (
+            <div className="text-[11px] text-[rgba(255,255,255,0.35)] italic">
+              {t("widgets.field.dialog.provided-by-widget")}
+            </div>
+          ) : (
+            <>
+              <Field label={t("widgets.field.model")}>
+                <ModelSelector capKey="llm" value={engine.model_profile ?? ""} profiles={config.model_profiles} onChange={(v) => setEngine({ model_profile: v })} />
+              </Field>
+              <Field label={t("widgets.field.dialog.system")}>
+                <textarea value={engine.system ?? ""} onChange={(e) => setEngine({ system: e.target.value })} rows={3} className={textareaClass} />
+              </Field>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    case "agent": {
+      const llmWidget = pStr(p, "llm_widget");
+      return (
+        <div className="flex flex-col gap-2.5">
+          <Field label={t("widgets.field.agent.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={llmWidget} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
           </Field>
+          {/* system (persona) — inline fallback, mirrors the "dialog" case's
+              hide-on-ref pattern above: a non-empty llm_widget ref supplies
+              its own system prompt, so the inline field (and its now-stale
+              value, if any) is hidden behind the same shared hint rather than
+              shown-but-inert. Fix Round 1. */}
+          {llmWidget ? (
+            <div className="text-[11px] text-[rgba(255,255,255,0.35)] italic">
+              {t("widgets.field.dialog.provided-by-widget")}
+            </div>
+          ) : (
+            <Field label={t("widgets.field.agent.system")}>
+              <textarea value={pStr(p, "system")} onChange={(e) => set("system", e.target.value)} rows={3} className={textareaClass} />
+            </Field>
+          )}
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "tts_enabled")} onChange={(e) => set("tts_enabled", e.target.checked)} className="accent-[var(--accent)]" />
+            {t("widgets.field.agent.tts_enabled")}
+          </label>
+          <Field label={t("widgets.field.voice_profile")}>
+            <ModelSelector capKey="tts" value={pStr(p, "voice_profile")} profiles={config.model_profiles} onChange={(v) => set("voice_profile", v)} />
+          </Field>
+          <Field label={t("widgets.field.voice")}>
+            <input type="text" value={pStr(p, "voice", "default")} onChange={(e) => set("voice", e.target.value)} className={inputClass} />
+          </Field>
+          <Field label={t("widgets.field.agent.timeout_secs")}>
+            <input
+              type="number" min={5} max={120} value={pNum(p, "timeout_secs", 30)}
+              onChange={(e) => set("timeout_secs", parseInt(e.target.value) || 30)}
+              className={inputClass}
+            />
+          </Field>
+          <AgentSkillsSection />
+        </div>
+      );
+    }
+
+    case "meeting": {
+      return (
+        <div className="flex flex-col gap-2.5">
+          <Field label={t("widgets.field.meeting.stt_widget")}>
+            <WidgetRefSelector wantTag="stt" value={pStr(p, "stt_widget")} widgets={widgets} onChange={(v) => set("stt_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.meeting.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={pStr(p, "llm_widget")} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.meeting.summary_prompt")}>
+            <textarea value={pStr(p, "summary_prompt")} onChange={(e) => set("summary_prompt", e.target.value)} rows={4} className={textareaClass} />
+          </Field>
+        </div>
+      );
+    }
+
+    case "call": {
+      // Every field here is genuinely wired (Task 9): stt_widget/llm_widget
+      // resolve in CallOutput's ResolvedCallCfg, voice_profile/voice drive
+      // the reply TTS, and max_turns/vad_sensitivity/vad_silence_ms/barge_in
+      // parameterize the call loop. The llm ref supplies BOTH the model and
+      // the persona (its `system`); empty = the built-in call persona.
+      return (
+        <div className="flex flex-col gap-2.5">
+          <Field label={t("widgets.field.call.stt_widget")}>
+            <WidgetRefSelector wantTag="stt" value={pStr(p, "stt_widget")} widgets={widgets} onChange={(v) => set("stt_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.call.llm_widget")}>
+            <WidgetRefSelector wantTag="llm" value={pStr(p, "llm_widget")} widgets={widgets} onChange={(v) => set("llm_widget", v)} />
+          </Field>
+          <Field label={t("widgets.field.voice_profile")}>
+            <ModelSelector capKey="tts" value={pStr(p, "voice_profile")} profiles={config.model_profiles} onChange={(v) => set("voice_profile", v)} />
+          </Field>
+          <Field label={t("widgets.field.voice")}>
+            <input type="text" value={pStr(p, "voice", "default")} onChange={(e) => set("voice", e.target.value)} className={inputClass} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={t("widgets.field.call.max_turns")}>
+              <input
+                type="number" min={0} max={50} value={pNum(p, "max_turns", 8)}
+                onChange={(e) => set("max_turns", Math.max(0, Math.min(50, parseInt(e.target.value) || 0)))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t("widgets.field.call.vad_silence_ms")}>
+              <input
+                type="number" min={500} max={2000} step={100} value={pNum(p, "vad_silence_ms", 800)}
+                onChange={(e) => set("vad_silence_ms", parseInt(e.target.value) || 800)}
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <Field label={t("widgets.field.call.vad_sensitivity")}>
+            <input
+              type="number" min={0} max={1} step={0.05} value={pNum(p, "vad_sensitivity", 0.5)}
+              onChange={(e) => set("vad_sensitivity", Math.max(0, Math.min(1, parseFloat(e.target.value) || 0)))}
+              className={inputClass}
+            />
+          </Field>
+          <label className="flex items-center gap-1.5 cursor-pointer text-[12px] text-[rgba(255,255,255,0.5)]">
+            <input type="checkbox" checked={pBool(p, "barge_in", true)} onChange={(e) => set("barge_in", e.target.checked)} className="accent-[var(--accent)]" />
+            {t("widgets.field.call.barge_in")}
+          </label>
         </div>
       );
     }
@@ -385,11 +571,16 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
+  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
   containers: Container[];
+  /** Every loaded widget instance — threaded down to PropsForm for composite
+   *  cases' WidgetRefSelector (stt_widget/llm_widget dropdowns filtered by
+   *  type_tag). Dialog (Task 4), agent (Task 6), meeting (Task 7), and call
+   *  (Task 9) consume it. */
+  widgets: WidgetDef[];
   /** Allowed type_tags for a NEW widget of value.role (e.g. BuildingBlocks'
    *  TYPE_TAGS[role]) — populates the isNew type_tag <select> below.
    *  Ignored for existing widgets (type_tag is fixed once saved). Falls
@@ -542,6 +733,7 @@ export default function WidgetForm({
             form={form}
             config={config}
             containers={containers}
+            widgets={widgets}
             onProps={(props) => setForm({ ...form, props })}
           />
         </div>

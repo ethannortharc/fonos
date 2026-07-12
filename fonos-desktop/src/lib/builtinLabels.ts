@@ -18,10 +18,15 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "wf.explain": "builtin.wf.explain",
   "wf.listen": "builtin.wf.listen",
   "wf.note": "builtin.wf.note",
+  "wf.agent": "builtin.wf.agent",
+  "wf.agent-voice": "builtin.wf.agent-voice",
+  "wf.meeting": "builtin.wf.meeting",
+  "wf.call": "builtin.wf.call",
   // source widgets
   "src.selection": "builtin.src.selection",
   "src.mic-hold": "builtin.src.mic-hold",
   "src.mic-toggle": "builtin.src.mic-toggle",
+  "src.instant": "builtin.src.instant",
   // processor widgets
   "stt.default": "builtin.stt.default",
   "llm.polish": "builtin.llm.polish",
@@ -30,6 +35,10 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "llm.summarize": "builtin.llm.summarize",
   "llm.listen": "builtin.llm.listen",
   "llm.explain": "builtin.llm.explain",
+  // Migration-generated (see builtin.rs's builtin_display_name doc comment),
+  // not a static built-in — minted only for a customized sts_persona by
+  // migrate::migrate_legacy_call_triggers (final review wave, M1).
+  "llm.call-persona": "builtin.llm.call-persona",
   // output widgets
   "out.insert": "builtin.out.insert",
   "out.replace": "builtin.out.replace",
@@ -38,6 +47,9 @@ export const BUILTIN_LABELS: Record<string, TKey> = {
   "out.dialog": "builtin.out.dialog",
   "out.speak": "builtin.out.speak",
   "out.quicknote": "builtin.out.quicknote",
+  "agent.default": "builtin.agent.default",
+  "meeting.default": "builtin.meeting.default",
+  "call.default": "builtin.call.default",
 };
 
 export function widgetLabel(w: { id: string; name: string; builtin?: boolean }): string {

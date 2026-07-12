@@ -26,9 +26,19 @@ export interface AppConfig {
   warmup_enabled?: boolean;
   ui_language?: "auto" | "en" | "zh";
   hotkey_listen?: string;
+  // DEPRECATED (Workbench P2 T10): still a real Rust config field, but no
+  // longer read — Listen always resolves the built-in `llm.listen` widget
+  // instead (ScenariosTab snapshots still carry it).
   listen_mode?: string;
   listen_voice_profile?: string;
   listen_voice?: string;
+  // Legacy STS/call fields (Workbench P2 T9): still real Rust config fields,
+  // but DEPRECATED — one-time-migrated into the wf.call recipe /
+  // call.default widget props and no longer settings-tab-editable.
+  // ScenariosTab's models-section snapshot (ScenarioAssignments) still
+  // carries sts_voice_profile/sts_voice; its speech-section snapshot
+  // (SpeechSection) dropped them in Task 14 — see SpeechSection's own
+  // comment.
   hotkey_sts?: string;
   sts_persona?: string;
   sts_llm_profile?: string;
@@ -68,11 +78,14 @@ export interface AppConfig {
   notebook_hotkey_1?: number;
   notebook_hotkey_2?: number;
   notebook_hotkey_3?: number;
-  // Meeting fields
+  // Meeting fields. meeting_audio_source was never a real Rust config field
+  // (dead — MeetingTab.tsx wrote it but nothing read it back); removed
+  // alongside MeetingTab.tsx's deletion (Workbench P2 Task 7). The other
+  // three remain real (if no longer settings-tab-editable) config fields —
+  // see their doc comments in fonos-core's AppConfig.
   meeting_stt_profile?: string;
   meeting_llm_profile?: string;
   meeting_summary_prompt?: string;
-  meeting_audio_source?: string;
   hotkey_meeting?: string;
   // Quick transform
   hotkey_transform?: string;
@@ -192,24 +205,43 @@ export interface ModelsSection {
   assignments: ScenarioAssignments;
 }
 
-/** The dictation section — user-modes map (modes.json) + config fields. */
+/** The dictation section — workflow/widget overlays + config fields (Workbench
+ *  P2 Task 11: superseded the modes.json-shaped snapshot; the engine world
+ *  has been the source of truth since Workflow P1). */
 export interface DictationSection {
-  /** id → Mode, exactly as persisted in modes.json. */
-  user_modes: Record<string, Mode>;
+  /** DEPRECATED: opaque legacy `modes.json`-shaped blob (id → mode), exactly
+   *  as persisted before Workbench P2 Task 11. `null` on every snapshot from
+   *  that task onward — present only for reading a pre-Task-11 scenario
+   *  file, which the backend converts into `llm.*` processor widgets on
+   *  apply rather than writing it back. The frontend never reads its
+   *  contents (the `Mode` shape it used to carry was deleted along with the
+   *  legacy `modes` system in Workbench P2 Task 12), so it's untyped JSON
+   *  here rather than a resurrected `Mode` interface. */
+  user_modes: Record<string, unknown> | null;
+  /** User workflow overlays (config.workflows verbatim). */
+  user_workflows: WorkflowDef[];
+  /** User widget overlays (config.widgets verbatim). */
+  user_widgets: WidgetDef[];
   dictation_mode: string;
   translate_target: string;
 }
 
-/** The speech section — Listen + STS conversation configuration. */
+/** The speech section — Listen + the still-live-read STS/call fields.
+ *  Audited for Workbench P2 Task 11: `listen_mode`, `sts_persona`, and
+ *  `sts_max_turns` were dropped — no reader anywhere in the app. Two stay:
+ *  `listen_voice_profile`/`listen_voice` (Listen synthesis) and
+ *  `sts_llm_profile` (still read by `call.default`'s fallback chain).
+ *  `sts_voice_profile`/`sts_voice` were also dropped in Workbench P2 Task 14
+ *  — they were kept past Task 11 only because the Setup Doctor's
+ *  conversation-RTF probe read them directly; that probe now reads
+ *  `call.default`'s own `CallProps` instead, so restoring these two via a
+ *  scenario no longer does anything (the models section's
+ *  `ScenarioAssignments.sts_voice_profile`/`.sts_voice` are unrelated and
+ *  unaffected). */
 export interface SpeechSection {
-  listen_mode: string;
   listen_voice_profile: string;
   listen_voice: string;
-  sts_persona: string;
   sts_llm_profile: string;
-  sts_voice_profile: string;
-  sts_voice: string;
-  sts_max_turns: number;
 }
 
 /** The vocab section — custom vocabulary books + globally-applied book ids. */
@@ -218,13 +250,19 @@ export interface VocabSection {
   global_vocab_books: string[];
 }
 
-/** The hotkeys section — every global + notebook hotkey binding. */
+/** The hotkeys section — every global + notebook hotkey binding.
+ *
+ *  Audited for Workbench P2 Task 11 (the "T6 mandate": old scenarios must not
+ *  write back dead hotkey fields): `hotkey_agent`/`hotkey_agent_panel`
+ *  (Task 6), `hotkey_meeting` (Task 7), and `hotkey_sts` (Task 9) are each
+ *  one-time-folded into a Hotkey trigger chip on the matching recipe and then
+ *  cleared, with no reader left anywhere — dropped from the section entirely.
+ *  `hotkey_transform` stays: it still drives a real reconciliation with
+ *  `text_actions` on every apply. */
 export interface HotkeysSection {
   hotkey_dictation: string;
   hotkey_dictation_toggle: string;
   hotkey_tts: string;
-  hotkey_agent: string;
-  hotkey_agent_panel: string;
   hotkey_note: string;
   hotkey_note_1: string;
   hotkey_note_2: string;
@@ -232,10 +270,8 @@ export interface HotkeysSection {
   notebook_hotkey_1: number;
   notebook_hotkey_2: number;
   notebook_hotkey_3: number;
-  hotkey_meeting: string;
   hotkey_transform: string;
   hotkey_listen: string;
-  hotkey_sts: string;
   /** `undefined`/`null` = scenario predates text actions (apply leaves current
    *  bindings untouched); present (even `[]`) = apply verbatim. */
   text_actions?: TextActionBinding[] | null;
@@ -261,12 +297,12 @@ export interface SavedScenario {
 /** Severity of a doctor Finding — mirrors fonos_core::doctor::Severity. */
 export type DoctorSeverity = "pass" | "warn" | "advise";
 
-/** A typed one-click fix — mirrors fonos_core::doctor::FixAction (tag: "kind"). */
+/** A typed one-click fix — mirrors fonos_core::doctor::FixAction (tag: "kind").
+ *  `reset_listen_mode`/`point_mode_model_to_default` were retired in
+ *  Workbench P2 Task 11 along with the mode-system checks that produced them. */
 export type DoctorFix =
   | { kind: "attach_book_global"; book_id: string }
   | { kind: "clear_profile_ref"; field: string }
-  | { kind: "reset_listen_mode" }
-  | { kind: "point_mode_model_to_default"; mode_id: string }
   | { kind: "switch_tts_model"; profile_id: string; model: string }
   | { kind: "open_settings_pane"; pane: string };
 
@@ -277,33 +313,6 @@ export interface DoctorFinding {
   message_key: string;
   message_params: string[];
   fix: DoctorFix | null;
-}
-
-// ─── Modes ────────────────────────────────────────────────────────────────────
-
-/** A processing mode that defines how spoken text is transformed by an LLM. */
-export interface Mode {
-  name: string;
-  description: string;
-  icon: string;
-  system: string | null;
-  user_template: string | null;
-  temperature: number;
-  model: string;
-  stt_model: string;
-  stt_prompt: string;
-  stt_temperature: number;
-  max_tokens: number;
-  output_language: string;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-  vocab_books?: string[];
-}
-
-/** A mode entry as returned by list_modes — includes id and builtin flag. */
-export interface ModeEntry extends Mode {
-  id: string;
-  builtin: boolean;
 }
 
 // ─── Workflow (Workflow P1) ─────────────────────────────────────────────────
@@ -325,8 +334,8 @@ export interface WidgetDef {
   id: string;
   role: WidgetRole;
   /** Which registered component implementation to instantiate, e.g.
-   *  "selection" | "microphone" | "stt" | "llm" | "insert" | "replace" |
-   *  "clipboard" | "notebook" | "speak" | "panel" | "uppercase". */
+   *  "selection" | "instant" | "microphone" | "stt" | "llm" | "insert" |
+   *  "replace" | "clipboard" | "notebook" | "speak" | "panel" | "uppercase". */
   type_tag: string;
   name: string;
   icon?: string;
@@ -439,19 +448,6 @@ export interface TodaySummary {
   tokens_total: number;
 }
 
-// ─── LLM ─────────────────────────────────────────────────────────────────────
-
-/** Result from process_with_llm command. */
-export interface LlmResult {
-  original: string;
-  processed: string;
-  mode: string;
-  mode_name: string;
-  latency_ms: number;
-  auto_paste: boolean;
-  auto_press_enter: boolean;
-}
-
 // ─── STT ─────────────────────────────────────────────────────────────────────
 
 /** Result from stop_recording command. */
@@ -517,26 +513,6 @@ export interface RecordEventOptions {
   tokens_in?: number | null;
   tokens_out?: number | null;
   session_id?: string | null;
-}
-
-/** Options for the save_custom_mode command. */
-export interface SaveModeOptions {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  system?: string;
-  user_template?: string;
-  temperature?: number;
-  model?: string;
-  stt_model?: string;
-  stt_prompt?: string;
-  stt_temperature?: number;
-  max_tokens?: number;
-  output_language?: string;
-  auto_paste?: boolean;
-  auto_press_enter?: boolean;
-  vocab_books?: string[];
 }
 
 // ─── Agent ────────────────────────────────────────────────────────────────────

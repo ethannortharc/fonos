@@ -1,0 +1,768 @@
+//! Session-type Agent output: opens the floating `agent-panel` window and,
+//! for non-empty input, runs one skill-wielding exchange (STT-or-selection
+//! text in, skill executions + LLM response out) — reusing the exact
+//! `recv*` JS contract the legacy agent hotkey arm drove (see `main.rs`'s
+//! former `"agent"`/`"agent-panel"` dispatch arms, retired by Workbench P2
+//! Task 6).
+//!
+//! [`AgentOutput`] is the terminal [`Output`] an `agent` widget resolves to.
+//! Empty input (the blank-open `wf.agent` recipe, sourced from `src.instant`)
+//! just positions + reveals the panel in "persistent" mode, exactly like the
+//! old `"agent-panel"` toggle arm's show branch — the user then drives it via
+//! the panel's own mic button / typed input, which still calls the unchanged
+//! Tauri commands in `commands::agent` directly. Non-empty input (the voice
+//! recipe `wf.agent-voice`, sourced from `src.mic-hold` → `stt.default`) runs
+//! one full exchange via [`run_agent_exchange`].
+//!
+//! LLM resolution: [`AgentProps::llm_widget`] — Task 4's ref-resolution
+//! template, copied verbatim (resolved synchronously inside a scoped
+//! config-lock block, dropped before any await; a dangling ref or a
+//! type_tag mismatch is a hard `Err`) — wins when non-empty, now taking BOTH
+//! the referenced `llm` widget's `model_profile` AND its `system` (Fix Round
+//! 1 — mirrors Dialog's own ref resolution, `workflow::dialog::resolve_llm_engine`).
+//! **Final review wave (Critical)**: the ref's own `model_profile` can itself
+//! be EMPTY — every builtin `llm` widget ships that way, the "use global"
+//! convention — and that must fall through to the same
+//! `agent_llm_profile`→`llm_profile` legacy chain a wholly-absent ref uses,
+//! never resolve as a literal empty profile id (which
+//! `resolve_agent_llm_service` hard-errors on). See [`resolve_agent_llm_tier`],
+//! which now owns this decision (mirrors `call_widget::resolve_call_llm_tier`'s
+//! shape) — a non-empty ref keeps its own `system` as the persona through the
+//! fall-through (the ref replaces the whole persona, model tier aside).
+//! Empty `llm_widget` falls back to the pre-existing `agent_llm_profile` →
+//! `llm_profile` config chain for the model, unchanged from
+//! `commands::agent::agent_process`, paired with [`AgentProps::system`] for
+//! the persona (empty ⇒ no system prompt at all).
+//!
+//! **Persona seam (I1, final review wave)**: `commands::agent::agent_process`
+//! (the shared agent panel's typed/mic entry point) used to resolve its
+//! persona from `AgentState.system_prompt`, a value cached ONCE at startup
+//! (`main.rs`'s `AgentState::new` construction) from the now-deprecated
+//! `config.agent_system_prompt` — so editing `agent.default`'s `system`/
+//! `llm_widget` in the Workbench only ever changed the voice
+//! (`run_agent_exchange`) path's persona, leaving the panel's typed path
+//! frozen on whatever was configured before the app last started. This
+//! module's doc used to claim `config.agent_system_prompt` had "no live
+//! readers left" after migration — that was **false** while this seam
+//! existed (the startup cache was a live, if indirect, reader). `agent_process`
+//! now calls [`resolve_agent_default_persona`] — the exact same resolution
+//! order this module applies to a widget-sourced call, evaluated against the
+//! singleton `agent.default` widget's own props — so both entry points always
+//! agree. `AgentState.system_prompt` and the `main.rs:396` startup read are
+//! gone entirely (both callers of `run_agent_processor` now always supply a
+//! freshly-resolved persona), making `config.agent_system_prompt` genuinely
+//! reader-free beyond its one-time migration copy — see that field's doc
+//! comment.
+//!
+//! Selection-prefix parity: the legacy arm grabbed the frontmost selection
+//! BEFORE showing the panel (so showing/focusing the panel never raced the
+//! grab — see its "Grab selected text BEFORE showing panel" comment).
+//! [`run_agent_exchange`] preserves that ordering: it grabs the selection as
+//! its very first step, before any panel show/focus call.
+//!
+//! Dropped from the legacy arm (deliberate, see Task 6 report): the
+//! auto-replace-into-selection side effect (pasting the response back into
+//! the app the selection came from). The task's preserved-behavior list
+//! covers process → recvSkillExec → recvResponse → optional TTS plus the
+//! selection-as-prompt-context prefix — not the paste-back, which is a
+//! `replace`-output concern, not a session/chat composite's.
+//!
+//! Lock discipline: every `state.config.lock()` / `state.audio_playback.lock()`
+//! use here is a tight scope dropped before the next await (same discipline
+//! as `dialog.rs`/`workflow_widgets.rs`).
+//!
+//! Panel JS errors: `recvError('...')` calls are escaped via the shared
+//! [`super::js_escape`] (final review wave — the previous manual
+//! backslash/quote-only replace missed embedded newlines, which produced an
+//! unterminated single-quoted JS string literal on any multi-line error and
+//! left the panel stuck on the "thinking" indicator forever).
+
+use serde::{Deserialize, Serialize};
+use tauri::Manager;
+
+use fonos_core::workflow::model::{Data, DataKind, WidgetDef};
+use fonos_core::workflow::registry::{Output, RunCtx};
+
+use super::AppState;
+
+// ─── AgentProps ────────────────────────────────────────────────────────────────
+
+/// Configuration for an `agent`-type composite widget's output — the
+/// per-recipe knobs layered on top of `commands::agent::AgentState`'s
+/// process-global runtime (skill registry / conversation context / safety
+/// filter stay global config, shared by every agent entry point — this
+/// composite AND the legacy panel typing/mic commands alike).
+///
+/// Safety allow/blocklist are deliberately NOT here: they are security
+/// policy, not per-instance behavior — see the brief's "safety 列表留 config
+/// 全局" note. The persona (`system`), by contrast, now DOES live here (Fix
+/// Round 1) — it's the same per-instance concern `DialogProps::engine.system`
+/// already covers for Dialog; see [`resolve_agent_llm_widget_ref`] and
+/// `run_agent_exchange`'s resolution order.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentProps {
+    /// Id of a tuned `llm` widget this agent should resolve its model profile
+    /// (and persona — see `system` below) from instead of the global
+    /// `agent_llm_profile`→`llm_profile` fallback chain (Workbench P2 Task 6,
+    /// additive — mirrors `DialogProps::llm_widget`; see
+    /// [`resolve_agent_llm_widget_ref`]).
+    #[serde(default)]
+    pub llm_widget: String,
+    /// Inline system prompt used when `llm_widget` is empty (Fix Round 1 —
+    /// mirrors `DialogProps::engine`'s inline `system` field). Empty means no
+    /// system prompt at all. Superseded by the referenced widget's own
+    /// `system` when `llm_widget` is non-empty. Seeded from the now-deprecated
+    /// `config.agent_system_prompt` by `migrate_legacy_agent_triggers` for
+    /// upgrading users; a brand-new agent widget starts with this blank.
+    #[serde(default)]
+    pub system: String,
+    /// Speak the response aloud via TTS after delivering it (mirrors the
+    /// legacy `agent_tts_enabled` config default: off).
+    #[serde(default)]
+    pub tts_enabled: bool,
+    /// TTS profile id, or empty to fall back to the global `"tts"` profile
+    /// (same convention as `workflow_widgets::SpeakOutput::voice_profile`).
+    #[serde(default)]
+    pub voice_profile: String,
+    /// Voice identifier passed to the TTS backend (same convention as
+    /// `SpeakOutput::voice`; `"default"` resolves via `tts::resolve_voice`).
+    #[serde(default = "default_voice")]
+    pub voice: String,
+    /// Skill-execution timeout in seconds (mirrors `agent_timeout_secs`'s
+    /// default of 30). Overrides the shared `AgentState.timeout_secs` for
+    /// this call only — see `commands::agent::run_agent_processor`.
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
+    /// Conversation memory depth in turns (mirrors `agent_max_turns`'s
+    /// default of 20). NOTE: the underlying `AgentState.context` is one
+    /// process-global rolling history shared by every agent entry point, so
+    /// this field is carried for parity/future use but does not currently
+    /// resize that shared context per call — see the Task 6 report's
+    /// Concerns for the reasoning.
+    #[serde(default = "default_max_turns")]
+    pub max_turns: usize,
+}
+
+fn default_voice() -> String {
+    "default".to_string()
+}
+fn default_timeout_secs() -> u64 {
+    30
+}
+fn default_max_turns() -> usize {
+    20
+}
+
+/// Resolve [`AgentProps::llm_widget`] — Task 4's ref-resolution template
+/// applied to the agent composite: a non-empty ref is looked up in
+/// `widgets`, erroring on a dangling ref or a `type_tag` other than `"llm"`;
+/// on success its `(model_profile, system)` pair is returned (its
+/// `user_template` is irrelevant here, exactly like `dialog::resolve_llm_engine`
+/// ignores it — an agent exchange's user turn is free-form chat, never
+/// templated). An empty ref returns `Ok(None)`, telling the caller to fall
+/// back to the legacy `agent_llm_profile`→`llm_profile` config chain for the
+/// model, paired with [`AgentProps::system`] for the persona (Fix Round 1) —
+/// unlike `dialog::resolve_llm_engine`, that model fallback needs
+/// `AppConfig`, which this pure function deliberately does not take, keeping
+/// it unit-testable without a `State`.
+pub(crate) fn resolve_agent_llm_widget_ref(
+    props: &AgentProps,
+    widgets: &[WidgetDef],
+) -> Result<Option<(String, Option<String>)>, String> {
+    if props.llm_widget.is_empty() {
+        return Ok(None);
+    }
+    let widget = widgets
+        .iter()
+        .find(|w| w.id == props.llm_widget)
+        .ok_or_else(|| format!("agent: llm_widget '{}' not found", props.llm_widget))?;
+    if widget.type_tag != "llm" {
+        return Err(format!(
+            "agent llm_widget '{}' is a '{}' widget, expected 'llm'",
+            props.llm_widget, widget.type_tag
+        ));
+    }
+    let llm_props: fonos_core::workflow::llm_step::LlmProps =
+        serde_json::from_value(widget.props.clone())
+            .map_err(|e| format!("agent: llm_widget '{}' props: {e}", props.llm_widget))?;
+    Ok(Some((llm_props.model_profile, llm_props.system)))
+}
+
+/// The effective LLM profile id + persona, from
+/// [`resolve_agent_llm_widget_ref`]'s `Ok` payload (pure — unit-testable
+/// without an `AppConfig`) — mirrors `call_widget::resolve_call_llm_tier`'s
+/// shape, adapted to agent's two-level legacy chain (`agent_llm_profile` →
+/// `llm_profile`, both consulted by [`super::agent::resolve_agent_llm_service`]).
+///
+/// - Ref present: its non-empty `model_profile` wins; an EMPTY one falls
+///   through the same `agent_llm_profile`→`llm_profile` cascade a wholly
+///   absent ref uses (final review wave Critical fix — never resolve a
+///   literal empty profile id, which `resolve_agent_llm_service` hard-errors
+///   on). The ref's `system` is the persona
+///   verbatim either way — `None` ⇒ empty ⇒ no persona (the ref replaces the
+///   whole persona, independent of whether its model tier itself fell
+///   through).
+/// - No ref: the same `agent_llm_profile`→`llm_profile` chain for the model,
+///   paired with `props_system` (`AgentProps::system`) for the persona.
+pub(crate) fn resolve_agent_llm_tier(
+    ref_payload: Option<(String, Option<String>)>,
+    agent_llm_profile: &str,
+    llm_profile: &str,
+    props_system: &str,
+) -> (String, String) {
+    let legacy_tier = || {
+        if !agent_llm_profile.is_empty() {
+            agent_llm_profile.to_string()
+        } else {
+            llm_profile.to_string()
+        }
+    };
+    match ref_payload {
+        Some((model_profile, system)) => {
+            let tier = if model_profile.is_empty() { legacy_tier() } else { model_profile };
+            (tier, system.unwrap_or_default())
+        }
+        None => (legacy_tier(), props_system.to_string()),
+    }
+}
+
+/// Resolve the effective persona (system prompt) [`super::agent::agent_process`]
+/// (the shared agent panel's typed/mic entry point, backed by the
+/// process-global `AgentState`) should use — the exact same order
+/// [`run_agent_exchange`] applies for a widget-sourced call, evaluated
+/// against the singleton `agent.default` builtin widget's own [`AgentProps`]
+/// (the "shared per-composite tuning" slot the panel path has always
+/// logically belonged to — see the module docs' "Persona seam" note): a
+/// non-empty `llm_widget` ref's `system` wins (`None` ⇒ empty ⇒ no persona —
+/// the ref replaces the whole persona); otherwise `agent.default`'s own
+/// inline `system` field. Propagates [`resolve_agent_llm_widget_ref`]'s `Err`
+/// (dangling ref / type mismatch) unchanged, matching
+/// [`run_agent_exchange`]'s treatment of the same failure. A missing
+/// `agent.default` widget (defensive — `effective_widgets` always ships the
+/// builtin) resolves to an empty persona rather than erroring.
+pub(crate) fn resolve_agent_default_persona(widgets: &[WidgetDef]) -> Result<String, String> {
+    let Some(widget) = widgets.iter().find(|w| w.id == "agent.default") else {
+        return Ok(String::new());
+    };
+    let props: AgentProps = serde_json::from_value(widget.props.clone())
+        .map_err(|e| format!("agent.default props: {e}"))?;
+    match resolve_agent_llm_widget_ref(&props, widgets)? {
+        Some((_, system)) => Ok(system.unwrap_or_default()),
+        None => Ok(props.system),
+    }
+}
+
+// ─── agent-panel JS bridge ──────────────────────────────────────────────────────
+
+/// Run JS in the agent-panel webview (mirrors `dialog::dialog_js`).
+///
+/// Security note: `WebviewWindow::eval` injects JS into an app-owned Tauri
+/// webview (the bundled `agent-panel.html`), not a general code-exec sink for
+/// untrusted input. Every value interpolated into `js` is pre-escaped by
+/// callers via `serde_json::to_string` (or the shared [`super::js_escape`]
+/// for the single-quoted `recvError('...')` calls) before reaching this
+/// function.
+pub(crate) fn agent_js(h: &tauri::AppHandle, js: &str) {
+    if let Some(panel) = h.get_webview_window("agent-panel") {
+        if let Err(e) = panel.eval(js) {
+            eprintln!("fonos: agent panel JS: {e}");
+        }
+    }
+}
+
+/// Play a synthesized WAV through the shared playback device, initializing it
+/// on first use — mirrors `commands::tts::generate_and_play`'s "play
+/// directly, no IPC round-trip" section. A poisoned lock or playback-init
+/// failure is swallowed (the TTS synthesis already succeeded; a broken
+/// speaker device shouldn't fail the whole exchange), matching the module's
+/// "TTS is best-effort" framing. A standalone (non-async) function rather
+/// than inlined at its one call site: it keeps the `state`/`guard` borrow
+/// scoped to a plain function body instead of a `match` arm nested three
+/// deep inside the exchange's async control flow.
+fn play_wav_best_effort(app: &tauri::AppHandle, wav: Vec<u8>) {
+    let state: tauri::State<'_, AppState> = app.state();
+    let mut guard = match state.audio_playback.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    if guard.is_none() {
+        if let Ok(p) = crate::audio::playback::AudioPlayback::new() {
+            *guard = Some(p);
+        }
+    }
+    if let Some(p) = guard.as_ref() {
+        let _ = p.play_wav(wav);
+    }
+}
+
+// ─── The shared exchange (non-empty-text path) ─────────────────────────────────
+
+/// Run one full agent exchange for already-available `text` (an STT
+/// transcript, or any other already-resolved input): grab the current
+/// selection (BEFORE any panel show — see module docs), reveal the panel,
+/// push the user message + a thinking indicator, run the skill-wielding
+/// agent, push skill executions + the response, optionally speak it via TTS,
+/// then auto-dismiss after playback settles.
+///
+/// `pub(crate)` so [`AgentOutput::deliver`]'s non-empty path is the only
+/// current caller, but any future direct-text entry point could reuse it.
+pub(crate) async fn run_agent_exchange(
+    app: &tauri::AppHandle,
+    text: String,
+    props: &AgentProps,
+) -> Result<(), String> {
+    // Selection grab FIRST — before any panel show/focus — mirrors the
+    // legacy arm's key-down-time grab (before the panel could steal focus).
+    let sel = super::selection::grab_selection().await.ok();
+
+    // Stop any TTS still playing from a previous exchange.
+    {
+        let state: tauri::State<'_, AppState> = app.state();
+        let _ = super::tts::stop_playback(state);
+    }
+
+    #[cfg(target_os = "macos")]
+    super::move_panel_to_cursor(app, "agent-panel", 340, 0, super::PanelAnchor::TopCenter);
+    if let Some(panel) = app.get_webview_window("agent-panel") {
+        let _ = panel.show();
+        let _ = panel.set_focus();
+    }
+    // Let the webview settle before eval() — same trick as dialog/text-action panels.
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    // Reset persistent mode (hides header + mic footer if left over from a
+    // prior blank-open `wf.agent` session) before the ephemeral exchange UI.
+    agent_js(app, "recvShow(false)");
+
+    // Selection-as-prompt-context prefix — logic copied from the legacy arm.
+    let has_selection = sel.as_ref().map(|s| !s.text.is_empty()).unwrap_or(false);
+    let agent_prompt = if let Some(ref s) = sel {
+        if !s.text.is_empty() {
+            format!(
+                "[Selected text from {}]:\n\"\"\"\n{}\n\"\"\"\n\nUser instruction: {}",
+                s.app_name, s.text, text
+            )
+        } else {
+            text.clone()
+        }
+    } else {
+        text.clone()
+    };
+
+    if has_selection {
+        let sel_ref = sel.as_ref().unwrap();
+        let preview: String = sel_ref.text.chars().take(120).collect();
+        let sel_j = serde_json::to_string(&preview).unwrap_or_default();
+        let app_j = serde_json::to_string(&sel_ref.app_name).unwrap_or_default();
+        agent_js(app, &format!("recvSelection({sel_j}, {app_j})"));
+    }
+    let tx_j = serde_json::to_string(&text).unwrap_or_default();
+    agent_js(app, &format!("recvUserMessage({tx_j})"));
+    agent_js(app, "recvThinking()");
+
+    // Resolve the LLM service AND the system prompt together: llm_widget ref
+    // wins (Task 4's template, type check included) — its widget's
+    // model_profile AND system both apply, with an EMPTY ref model_profile
+    // falling through to the legacy agent_llm_profile→llm_profile chain for
+    // the model (final review wave Critical fix — see
+    // [`resolve_agent_llm_tier`]) paired with `props.system` for the persona
+    // when there's no ref at all (Fix Round 1 — replaces the old
+    // `config.agent_system_prompt` read entirely; see the module docs).
+    // Config lock scoped and dropped before any await below.
+    let (llm_service, system_prompt) = {
+        let state: tauri::State<'_, AppState> = app.state();
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        let widgets = fonos_core::workflow::engine::effective_widgets(&config);
+        let ref_payload = resolve_agent_llm_widget_ref(props, &widgets)?;
+        let (profile_id, system_prompt) = resolve_agent_llm_tier(
+            ref_payload,
+            &config.agent_llm_profile,
+            &config.llm_profile,
+            &props.system,
+        );
+        match super::agent::resolve_agent_llm_service(&config, &profile_id) {
+            Ok(svc) => (svc, system_prompt),
+            Err(e) => {
+                agent_js(app, &format!("recvError('{}')", super::js_escape(&e)));
+                return Err(e);
+            }
+        }
+    };
+
+    let agent_result = {
+        let state: tauri::State<'_, AppState> = app.state();
+        super::agent::run_agent_processor(
+            &state,
+            &agent_prompt,
+            llm_service,
+            Some(props.timeout_secs),
+            system_prompt,
+        )
+        .await
+    };
+
+    let result = match agent_result {
+        Ok(r) => r,
+        Err(e) => {
+            agent_js(app, &format!("recvError('{}')", super::js_escape(&e)));
+            return Err(e);
+        }
+    };
+
+    for exec in &result.skill_executions {
+        let p_j = serde_json::to_string(&exec.params).unwrap_or_else(|_| "\"\"".into());
+        let n_j = serde_json::to_string(&exec.skill_name).unwrap_or_default();
+        agent_js(
+            app,
+            &format!("recvSkillExec({n_j},{p_j},{},{})", exec.latency_ms, exec.blocked),
+        );
+    }
+    let r_j = serde_json::to_string(&result.response_text).unwrap_or_default();
+    agent_js(app, &format!("recvResponse({r_j})"));
+
+    // Optional TTS, per-widget props (voice/voice_profile — NOT cfg.default_voice;
+    // speed is fixed at 1.0, matching workflow_widgets::SpeakOutput's own
+    // simplification — the new widget system doesn't thread a per-call speed
+    // override anywhere yet, agent included).
+    let mut audio_dur = 0.0_f64;
+    if props.tts_enabled && !result.response_text.is_empty() {
+        // Truncate to the first 3 sentences for TTS — keep it brief.
+        let tts_text = {
+            let mut count = 0;
+            let mut end = result.response_text.len();
+            for (i, c) in result.response_text.char_indices() {
+                if c == '.' || c == '!' || c == '?' || c == '\u{3002}' || c == '\u{ff01}' || c == '\u{ff1f}' {
+                    count += 1;
+                    if count >= 3 {
+                        end = i + c.len_utf8();
+                        break;
+                    }
+                }
+            }
+            result.response_text[..end].to_string()
+        };
+
+        let engine = {
+            let state: tauri::State<'_, AppState> = app.state();
+            let tts_svc = if props.voice_profile.is_empty() {
+                super::get_service_config(&state, "tts")
+            } else {
+                super::get_service_config_for_profile(&state, &props.voice_profile)
+            };
+            (!tts_svc.base_url.trim().is_empty()).then(|| fonos_core::tts::HttpTts {
+                service: tts_svc,
+                voice: super::tts::resolve_voice(&props.voice),
+                speed: 1.0,
+            })
+        };
+
+        if let Some(engine) = engine {
+            match fonos_core::listen::synthesize_long_text(&tts_text, &engine).await {
+                Ok(wav) => {
+                    audio_dur = fonos_core::listen::wav_duration_secs(&wav).unwrap_or(0.0);
+                    play_wav_best_effort(app, wav);
+                }
+                Err(e) => eprintln!("fonos: agent TTS failed (non-fatal): {e}"),
+            }
+        }
+    }
+
+    // Auto-dismiss: wait for audio to finish + a 2s buffer.
+    let app2 = app.clone();
+    tokio::spawn(async move {
+        let wait = audio_dur + 2.0;
+        tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
+        agent_js(&app2, "recvDismiss()");
+    });
+
+    Ok(())
+}
+
+// ─── AgentOutput ────────────────────────────────────────────────────────────────
+
+/// `agent`: opens the floating agent-panel and, for non-empty input, runs
+/// one skill-wielding exchange via [`run_agent_exchange`].
+pub struct AgentOutput {
+    /// Handle used to reach `AppState` and the panel window.
+    pub app: tauri::AppHandle,
+    /// Deserialized widget configuration.
+    pub props: AgentProps,
+}
+
+#[async_trait::async_trait]
+impl Output for AgentOutput {
+    fn accepts(&self) -> DataKind {
+        DataKind::Text
+    }
+
+    async fn deliver(&self, result: &Data, _ctx: &RunCtx) -> Result<(), String> {
+        let text = match result {
+            Data::Text(t) => t.clone(),
+            Data::Audio(_) => return Err("agent output expected text, got audio".to_string()),
+        };
+
+        if text.is_empty() {
+            // Blank-open (wf.agent, src.instant): position + reveal only —
+            // the user drives the rest via the panel's own commands, exactly
+            // like the legacy "agent-panel" toggle arm's show branch.
+            #[cfg(target_os = "macos")]
+            super::move_panel_to_cursor(&self.app, "agent-panel", 340, 0, super::PanelAnchor::TopCenter);
+            if let Some(panel) = self.app.get_webview_window("agent-panel") {
+                let _ = panel.show();
+                let _ = panel.set_focus();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            agent_js(&self.app, "recvShow(true)");
+            return Ok(());
+        }
+
+        run_agent_exchange(&self.app, text, &self.props).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fonos_core::workflow::model::WidgetRole;
+
+    fn base_props() -> AgentProps {
+        serde_json::from_value(serde_json::json!({})).unwrap()
+    }
+
+    /// A tuned `llm` widget with no `system` set (`None` after deserializing).
+    fn llm_widget_def(id: &str, model_profile: &str) -> WidgetDef {
+        llm_widget_def_with_system(id, model_profile, None)
+    }
+
+    /// A tuned `llm` widget def, optionally carrying a `system` prompt —
+    /// mirrors `dialog.rs`'s test helper of the same shape.
+    fn llm_widget_def_with_system(id: &str, model_profile: &str, system: Option<&str>) -> WidgetDef {
+        WidgetDef {
+            id: id.to_string(),
+            role: WidgetRole::Processor,
+            type_tag: "llm".to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            props: serde_json::json!({ "model_profile": model_profile, "system": system }),
+            builtin: false,
+        }
+    }
+
+    /// An `agent`-type widget def (id left as `"agent.default"`'s usual
+    /// placeholder — callers overwrite `.id` when they need a different one)
+    /// carrying the given `llm_widget` ref and inline `system`, for
+    /// [`resolve_agent_default_persona`]'s tests.
+    fn agent_default_widget_def(llm_widget: &str, system: &str) -> WidgetDef {
+        WidgetDef {
+            id: "agent.default".to_string(),
+            role: WidgetRole::Output,
+            type_tag: "agent".to_string(),
+            name: "agent.default".to_string(),
+            icon: String::new(),
+            props: serde_json::json!({ "llm_widget": llm_widget, "system": system }),
+            builtin: true,
+        }
+    }
+
+    // ── AgentProps serde defaults ────────────────────────────────────────────
+
+    #[test]
+    fn agent_props_defaults_from_empty_json_mirror_config_defaults() {
+        let props: AgentProps = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(props.llm_widget, "");
+        assert_eq!(props.system, "");
+        assert!(!props.tts_enabled);
+        assert_eq!(props.voice_profile, "");
+        assert_eq!(props.voice, "default");
+        assert_eq!(props.timeout_secs, 30);
+        assert_eq!(props.max_turns, 20);
+    }
+
+    #[test]
+    fn agent_props_old_json_without_new_fields_still_parses() {
+        // Back-compat: a persisted agent widget missing any of these keys
+        // (e.g. hand-authored, or from an earlier build) still deserializes.
+        let json = r#"{"llm_widget": "llm.tuned"}"#;
+        let props: AgentProps = serde_json::from_str(json).unwrap();
+        assert_eq!(props.llm_widget, "llm.tuned");
+        assert_eq!(props.system, "");
+        assert_eq!(props.voice, "default");
+        assert_eq!(props.timeout_secs, 30);
+        assert_eq!(props.max_turns, 20);
+    }
+
+    #[test]
+    fn agent_props_roundtrip_preserves_custom_values() {
+        let props = AgentProps {
+            llm_widget: "llm.tuned".into(),
+            system: "You are a pirate.".into(),
+            tts_enabled: true,
+            voice_profile: "tts.custom".into(),
+            voice: "am_echo".into(),
+            timeout_secs: 60,
+            max_turns: 8,
+        };
+        let json = serde_json::to_value(&props).unwrap();
+        let back: AgentProps = serde_json::from_value(json).unwrap();
+        assert_eq!(back, props);
+    }
+
+    // ── resolve_agent_llm_widget_ref (Task 4 template, copied; Fix Round 1 ──
+    // extends it to also resolve `system`, mirroring `dialog::resolve_llm_engine`)
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_empty_returns_none() {
+        let props = base_props();
+        assert_eq!(resolve_agent_llm_widget_ref(&props, &[]).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_resolves_model_profile() {
+        let mut props = base_props();
+        props.llm_widget = "llm.tuned".into();
+        let widgets = vec![llm_widget_def("llm.tuned", "tuned-profile")];
+        assert_eq!(
+            resolve_agent_llm_widget_ref(&props, &widgets).unwrap(),
+            Some(("tuned-profile".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_resolves_system_too() {
+        // Fix Round 1: a non-empty llm_widget ref's `system` wins over
+        // `AgentProps::system` entirely (the ref replaces the whole persona,
+        // not just the model) — mirrors Dialog's ref resolution.
+        let mut props = base_props();
+        props.llm_widget = "llm.tuned".into();
+        props.system = "ignored — the ref wins".into();
+        let widgets = vec![llm_widget_def_with_system("llm.tuned", "tuned-profile", Some("You are Rex."))];
+        assert_eq!(
+            resolve_agent_llm_widget_ref(&props, &widgets).unwrap(),
+            Some(("tuned-profile".to_string(), Some("You are Rex.".to_string())))
+        );
+    }
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_dangling_ref_errors() {
+        let mut props = base_props();
+        props.llm_widget = "llm.missing".into();
+        let err = resolve_agent_llm_widget_ref(&props, &[]).unwrap_err();
+        assert!(err.contains("llm.missing"), "error should name the missing id, got: {err}");
+    }
+
+    #[test]
+    fn resolve_agent_llm_widget_ref_type_mismatch_errors() {
+        let mut props = base_props();
+        props.llm_widget = "speak.x".into();
+        let wrong_type_widget = WidgetDef {
+            id: "speak.x".to_string(),
+            role: WidgetRole::Processor,
+            type_tag: "speak".to_string(),
+            name: "speak.x".to_string(),
+            icon: String::new(),
+            props: serde_json::json!({}),
+            builtin: false,
+        };
+        let err = resolve_agent_llm_widget_ref(&props, &[wrong_type_widget]).unwrap_err();
+        assert!(err.contains("expected 'llm'"), "error should mention type mismatch, got: {err}");
+    }
+
+    // ── resolve_agent_llm_tier (final review wave Critical fix: empty ref ───
+    // model_profile must fall through, mirrors call_widget::resolve_call_llm_tier)
+
+    #[test]
+    fn resolve_agent_llm_tier_ref_profile_and_system_win() {
+        let (tier, persona) = resolve_agent_llm_tier(
+            Some(("tuned-profile".to_string(), Some("You are Rex.".to_string()))),
+            "legacy-agent-profile",
+            "legacy-llm-profile",
+            "ignored — the ref wins",
+        );
+        assert_eq!(tier, "tuned-profile");
+        assert_eq!(persona, "You are Rex.");
+    }
+
+    #[test]
+    fn resolve_agent_llm_tier_empty_ref_profile_falls_to_agent_profile_then_llm_profile() {
+        // Ref present but its model_profile is empty ("use global"
+        // convention, every builtin llm widget's default) — the model falls
+        // through the legacy chain while the ref's own system still owns the
+        // persona (Critical item 1: this used to resolve to a literal "" tier
+        // and hard-error via resolve_agent_llm_service).
+        let (tier, persona) = resolve_agent_llm_tier(
+            Some((String::new(), Some("You are Rex.".to_string()))),
+            "legacy-agent-profile",
+            "legacy-llm-profile",
+            "unused",
+        );
+        assert_eq!(tier, "legacy-agent-profile");
+        assert_eq!(persona, "You are Rex.", "system preserved on fall-through");
+    }
+
+    #[test]
+    fn resolve_agent_llm_tier_empty_ref_profile_and_empty_agent_profile_falls_to_llm_profile() {
+        let (tier, _) =
+            resolve_agent_llm_tier(Some((String::new(), None)), "", "legacy-llm-profile", "unused");
+        assert_eq!(tier, "legacy-llm-profile");
+    }
+
+    #[test]
+    fn resolve_agent_llm_tier_empty_ref_profile_and_empty_legacy_chain_yields_empty_tier() {
+        // Both legacy fields empty too ⇒ tier is "" — the same terminal state
+        // a wholly-absent ref with an empty chain already produced pre-fix;
+        // resolve_agent_llm_service still surfaces its own "no profile
+        // configured" error for this case, unchanged.
+        let (tier, _) = resolve_agent_llm_tier(Some((String::new(), None)), "", "", "unused");
+        assert_eq!(tier, "");
+    }
+
+    #[test]
+    fn resolve_agent_llm_tier_ref_without_system_means_no_persona() {
+        let (_, persona) = resolve_agent_llm_tier(Some(("p".to_string(), None)), "", "", "props system");
+        assert_eq!(persona, "", "the ref replaces the whole persona, even without its own system");
+    }
+
+    #[test]
+    fn resolve_agent_llm_tier_no_ref_uses_legacy_chain_and_props_system() {
+        let (tier, persona) =
+            resolve_agent_llm_tier(None, "legacy-agent-profile", "legacy-llm-profile", "props system");
+        assert_eq!(tier, "legacy-agent-profile");
+        assert_eq!(persona, "props system");
+
+        let (tier, persona) = resolve_agent_llm_tier(None, "", "legacy-llm-profile", "props system");
+        assert_eq!(tier, "legacy-llm-profile");
+        assert_eq!(persona, "props system");
+    }
+
+    // ── resolve_agent_default_persona (I1 fix: agent_process's persona seam) ─
+
+    #[test]
+    fn resolve_agent_default_persona_missing_widget_yields_empty() {
+        assert_eq!(resolve_agent_default_persona(&[]).unwrap(), "");
+    }
+
+    #[test]
+    fn resolve_agent_default_persona_no_ref_uses_own_inline_system() {
+        let widget = agent_default_widget_def("", "You are the default agent.");
+        assert_eq!(
+            resolve_agent_default_persona(&[widget]).unwrap(),
+            "You are the default agent."
+        );
+    }
+
+    #[test]
+    fn resolve_agent_default_persona_ref_system_wins_over_own_inline_system() {
+        let agent_widget = agent_default_widget_def("llm.tuned", "ignored — the ref wins");
+        let llm_widget = llm_widget_def_with_system("llm.tuned", "tuned-profile", Some("You are Rex."));
+        assert_eq!(
+            resolve_agent_default_persona(&[agent_widget, llm_widget]).unwrap(),
+            "You are Rex."
+        );
+    }
+
+    #[test]
+    fn resolve_agent_default_persona_dangling_ref_errors() {
+        let agent_widget = agent_default_widget_def("llm.missing", "unused");
+        let err = resolve_agent_default_persona(&[agent_widget]).unwrap_err();
+        assert!(err.contains("llm.missing"), "error should name the missing id, got: {err}");
+    }
+}

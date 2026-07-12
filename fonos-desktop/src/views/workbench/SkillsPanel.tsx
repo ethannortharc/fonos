@@ -1,4 +1,11 @@
-// Skills management tab — list, toggle, create, test, and import skills.
+// Skills management panel — list, toggle, create, test, and import skills.
+//
+// Moved here (unchanged internals) from views/settings/SkillsTab.tsx
+// (Workbench P2 Task 6): skills are a global registry, not per-widget-instance
+// config, so it no longer lives inside AdvancedTab's Agent segment (retired
+// along with the legacy agent hotkey arms). WidgetForm's "agent" PropsForm
+// case now renders it inside a collapsed "Skills (global)" section — see
+// `AgentSkillsSection` in `views/settings/WidgetForm.tsx`.
 
 import { useState, useEffect, useCallback } from "react";
 import { t, useT } from "../../lib/i18n";
@@ -592,9 +599,9 @@ function SkillCard({
   );
 }
 
-// ─── SkillsTab ────────────────────────────────────────────────────────────────
+// ─── SkillsPanel ────────────────────────────────────────────────────────────────
 
-export default function SkillsTab() {
+export default function SkillsPanel() {
   useT();
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);

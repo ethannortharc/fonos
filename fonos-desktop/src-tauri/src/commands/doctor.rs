@@ -227,10 +227,31 @@ pub(crate) async fn measure_tts_rtf(svc: &ServiceConfig, voice: &str) -> Option<
 
 /// Measure the conversation voice's real-time factor and advise a faster model
 /// when it stutters. Skips silently when TTS is unconfigured or the synth fails.
+///
+/// Resolves the probe voice from the `call.default` widget's
+/// [`super::call_widget::CallProps`] — mirroring `resolve_call_cfg`'s TTS
+/// branch — instead of the deprecated `sts_voice_profile`/`sts_voice` config
+/// fields (Workbench P2 Task 14). The call composite is the only remaining
+/// reader of "the conversation voice" now that the walkie/STS page is
+/// retired, so probing its actually-resolved voice keeps this check honest
+/// even when `call.default` has been tuned away from those legacy fields'
+/// values. `call.default` is a built-in `effective_widgets` never removes,
+/// but the lookup still degrades to "skip" rather than panic if that ever
+/// stops holding.
 async fn check_conversation_rtf(config: &AppConfig) -> Vec<Finding> {
-    // The conversation reply uses sts_voice_profile, falling back to tts_profile.
-    let profile_id = if !config.sts_voice_profile.trim().is_empty() {
-        config.sts_voice_profile.trim().to_string()
+    let widgets = fonos_core::workflow::engine::effective_widgets(config);
+    let Some(call_props) = widgets
+        .iter()
+        .find(|w| w.id == "call.default")
+        .and_then(|w| serde_json::from_value::<super::call_widget::CallProps>(w.props.clone()).ok())
+    else {
+        return Vec::new();
+    };
+
+    // Same voice_profile→global-"tts" convention as resolve_call_cfg's TTS
+    // branch, keeping a concrete profile_id around for the SwitchTtsModel fix.
+    let profile_id = if !call_props.voice_profile.trim().is_empty() {
+        call_props.voice_profile.trim().to_string()
     } else {
         config.tts_profile.trim().to_string()
     };
@@ -243,7 +264,7 @@ async fn check_conversation_rtf(config: &AppConfig) -> Vec<Finding> {
     }
 
     let voice = {
-        let v = config.sts_voice.trim();
+        let v = call_props.voice.trim();
         if v.is_empty() { "default".to_string() } else { v.to_string() }
     };
 
@@ -286,9 +307,8 @@ pub async fn run_doctor(state: tauri::State<'_, AppState>) -> Result<Vec<Finding
         let guard = state.config.lock().map_err(|e| e.to_string())?;
         guard.clone()
     };
-    let modes = fonos_core::modes::all_modes();
 
-    let lint = fonos_core::doctor::lint_config(&config, &modes);
+    let lint = fonos_core::doctor::lint_config(&config);
     let (endpoints, rtf) =
         tokio::join!(check_endpoints(&config), check_conversation_rtf(&config));
     let permissions = check_permissions();
@@ -304,19 +324,15 @@ pub async fn run_doctor(state: tauri::State<'_, AppState>) -> Result<Vec<Finding
 /// Apply one Setup Doctor [`FixAction`], persisting the result.
 ///
 /// Config-only fixes mutate `AppState.config` (via [`fonos_core::doctor::apply_config_fix`])
-/// and save; `PointModeModelToDefault` edits `modes.json`; `OpenSettingsPane`
-/// deep-links to System Settings. The frontend re-runs `run_doctor` afterward.
+/// and save; `OpenSettingsPane` deep-links to System Settings. The frontend
+/// re-runs `run_doctor` afterward.
+///
+/// `PointModeModelToDefault` (which used to edit `modes.json` here) was
+/// retired in Workbench P2 Task 11 along with the `mode_model_missing` check
+/// that produced it — `lint_config` no longer knows about `modes.json` at all.
 #[tauri::command]
 pub fn apply_doctor_fix(state: tauri::State<'_, AppState>, fix: FixAction) -> Result<(), String> {
     match &fix {
-        FixAction::PointModeModelToDefault { mode_id } => {
-            let mut modes = fonos_core::modes::load_custom_modes();
-            if let Some(m) = modes.get_mut(mode_id) {
-                m.model.clear();
-                fonos_core::modes::save_custom_modes(&modes).map_err(|e| e.to_string())?;
-            }
-            Ok(())
-        }
         FixAction::OpenSettingsPane { pane } => {
             super::permissions::open_settings_pane(pane.clone())
         }

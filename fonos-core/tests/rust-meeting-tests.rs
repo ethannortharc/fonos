@@ -21,7 +21,6 @@
 
 use fonos_core::config::AppConfig;
 use fonos_core::hotkey::parse_hotkey;
-use fonos_core::modes::{built_in_modes, ContainerKind, OutputTarget};
 use fonos_core::storage::init_storage_db;
 use rusqlite::Connection;
 use std::time::Instant;
@@ -88,106 +87,13 @@ fn split_stereo(interleaved: &[i16]) -> (Vec<i16>, Vec<i16>) {
 // ---------------------------------------------------------------------------
 // M01 — Meeting mode configuration
 // ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod m01_meeting_mode_config {
-    use super::*;
-
-    /// Unit: "meeting" key exists in built_in_modes().
-    #[test]
-    fn meeting_mode_exists_in_built_in_modes() {
-        let modes = built_in_modes();
-        assert!(
-            modes.contains_key("meeting"),
-            "built_in_modes() must contain a 'meeting' key — add the meeting mode definition"
-        );
-    }
-
-    /// Unit: Meeting mode output_target is AppendToContainer.
-    #[test]
-    fn meeting_mode_output_target_is_append_to_container() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert!(
-            matches!(meeting.output_target, OutputTarget::AppendToContainer),
-            "meeting mode output_target should be AppendToContainer, got {:?}",
-            meeting.output_target
-        );
-    }
-
-    /// Unit: Meeting mode container_type is MeetingSession.
-    #[test]
-    fn meeting_mode_container_type_is_meeting_session() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert!(
-            matches!(meeting.container_type, Some(ContainerKind::MeetingSession)),
-            "meeting mode container_type should be Some(MeetingSession), got {:?}",
-            meeting.container_type
-        );
-    }
-
-    /// Unit: Meeting mode auto_container is true (per-session container).
-    #[test]
-    fn meeting_mode_auto_container_is_true() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert!(
-            meeting.auto_container,
-            "meeting mode auto_container must be true — each session gets its own container"
-        );
-    }
-
-    /// Unit: Meeting mode processor is "none" (STT only, no LLM post-processing on chunks).
-    #[test]
-    fn meeting_mode_processor_is_none() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert_eq!(
-            meeting.processor, "none",
-            "meeting mode processor should be 'none' (raw STT chunks, summary handled separately)"
-        );
-    }
-
-    /// Unit: Meeting mode save_audio is true.
-    #[test]
-    fn meeting_mode_save_audio_is_true() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert!(
-            meeting.save_audio,
-            "meeting mode save_audio must be true — audio retained for playback in detail view"
-        );
-    }
-
-    /// Unit: Meeting mode has a non-empty name and description.
-    #[test]
-    fn meeting_mode_has_name_and_description() {
-        let modes = built_in_modes();
-        let meeting = modes.get("meeting").expect("meeting mode must exist");
-        assert!(!meeting.name.is_empty(), "meeting mode name must not be empty");
-        assert!(
-            !meeting.description.is_empty(),
-            "meeting mode description must not be empty"
-        );
-    }
-
-    /// Unit: Meeting mode does not shadow existing modes (raw, polish, note).
-    #[test]
-    fn meeting_mode_does_not_shadow_existing_modes() {
-        let modes = built_in_modes();
-        assert!(modes.contains_key("raw"), "raw mode must still exist");
-        assert!(modes.contains_key("polish"), "polish mode must still exist");
-        assert!(modes.contains_key("note"), "note mode must still exist");
-
-        let raw = modes.get("raw").unwrap();
-        assert_eq!(raw.name, "Raw", "raw mode name unchanged");
-        assert!(
-            matches!(raw.output_target, OutputTarget::Clipboard),
-            "raw mode output_target unchanged"
-        );
-    }
-}
+//
+// The legacy `modes` system's built-in "meeting" `Mode` (output_target/
+// container_type/processor/auto_container/save_audio) was deleted in
+// Workbench P2 Task 12 — Meeting has run through the workflow engine's
+// `wf.meeting` composite recipe since Workbench P2 Task 7. The
+// m01_meeting_mode_config module that used to regression-test that `Mode`
+// definition was removed along with it.
 
 // ---------------------------------------------------------------------------
 // M02 — Continuous audio chunking
@@ -1437,16 +1343,12 @@ mod m15_backward_compatibility {
         let _ = conn;
     }
 
-    /// Static: Existing modes public API is still importable.
+    /// Static: `OutputTarget` (moved off the deleted `modes` system onto
+    /// `fonos_core::config` in Workbench P2 Task 12) is still importable.
     #[test]
-    fn existing_modes_api_compiles() {
-        use fonos_core::modes::{built_in_modes, ContainerKind, OutputTarget};
+    fn output_target_api_compiles() {
+        use fonos_core::config::OutputTarget;
         let _: OutputTarget = OutputTarget::Clipboard;
-        let _: ContainerKind = ContainerKind::Notebook;
-        let modes = built_in_modes();
-        assert!(modes.contains_key("raw"), "raw mode must still exist");
-        assert!(modes.contains_key("polish"), "polish mode must still exist");
-        assert!(modes.contains_key("note"), "note mode must still exist");
     }
 
     /// Static: Existing config public API is still importable.

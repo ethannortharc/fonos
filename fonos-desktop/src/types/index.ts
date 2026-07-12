@@ -34,8 +34,11 @@ export interface AppConfig {
   listen_voice?: string;
   // Legacy STS/call fields (Workbench P2 T9): still real Rust config fields,
   // but DEPRECATED — one-time-migrated into the wf.call recipe /
-  // call.default widget props and no longer settings-tab-editable
-  // (ScenariosTab snapshots still carry them).
+  // call.default widget props and no longer settings-tab-editable.
+  // ScenariosTab's models-section snapshot (ScenarioAssignments) still
+  // carries sts_voice_profile/sts_voice; its speech-section snapshot
+  // (SpeechSection) dropped them in Task 14 — see SpeechSection's own
+  // comment.
   hotkey_sts?: string;
   sts_persona?: string;
   sts_llm_profile?: string;
@@ -225,18 +228,20 @@ export interface DictationSection {
 
 /** The speech section — Listen + the still-live-read STS/call fields.
  *  Audited for Workbench P2 Task 11: `listen_mode`, `sts_persona`, and
- *  `sts_max_turns` were dropped — no reader anywhere in the app. The other
- *  three stay: `listen_voice_profile`/`listen_voice` (Listen synthesis) and
- *  `sts_voice_profile`/`sts_voice`/`sts_llm_profile` (still read by
- *  `call.default`'s fallback chain and the Setup Doctor's conversation RTF
- *  probe, respectively — dropping them would silently break restoring those
- *  inputs via a scenario). */
+ *  `sts_max_turns` were dropped — no reader anywhere in the app. Two stay:
+ *  `listen_voice_profile`/`listen_voice` (Listen synthesis) and
+ *  `sts_llm_profile` (still read by `call.default`'s fallback chain).
+ *  `sts_voice_profile`/`sts_voice` were also dropped in Workbench P2 Task 14
+ *  — they were kept past Task 11 only because the Setup Doctor's
+ *  conversation-RTF probe read them directly; that probe now reads
+ *  `call.default`'s own `CallProps` instead, so restoring these two via a
+ *  scenario no longer does anything (the models section's
+ *  `ScenarioAssignments.sts_voice_profile`/`.sts_voice` are unrelated and
+ *  unaffected). */
 export interface SpeechSection {
   listen_voice_profile: string;
   listen_voice: string;
   sts_llm_profile: string;
-  sts_voice_profile: string;
-  sts_voice: string;
 }
 
 /** The vocab section — custom vocabulary books + globally-applied book ids. */

@@ -56,7 +56,9 @@ pub enum FixAction {
     },
     /// Clear a dangling top-level profile reference (set the field to `""`, which
     /// makes it fall back to the default profile). `field` is one of
-    /// `listen_voice_profile`, `sts_llm_profile`, `sts_voice_profile`.
+    /// `listen_voice_profile`, `sts_llm_profile` (`sts_voice_profile`'s
+    /// dangling-ref check was retired in Workbench P2 Task 14 — see
+    /// `check_workflow_refs_over`'s doc comment).
     ClearProfileRef {
         /// The `AppConfig` field name to clear.
         field: String,
@@ -294,10 +296,13 @@ fn profile_ids(config: &AppConfig) -> Vec<String> {
 ///   10), replacing the old `listen_mode`-must-resolve check now that
 ///   `listen_mode` has no reader left anywhere.
 /// * Dangling profile references — `listen_voice_profile` / `sts_llm_profile`
-///   / `sts_voice_profile` are all still genuinely live-read (Listen
-///   synthesis, the `call.default` composite's fallback chain, and
-///   `commands::doctor::check_conversation_rtf`'s RTF probe, respectively) so
-///   these three checks are kept as-is, not retired.
+///   are still genuinely live-read (Listen synthesis and the `call.default`
+///   composite's fallback chain, respectively) so these two checks are kept.
+///   `sts_voice_profile`'s twin check was retired in Workbench P2 Task 14:
+///   `commands::doctor::check_conversation_rtf`'s RTF probe — its only
+///   remaining live reader — was repointed at `call.default`'s own
+///   `CallProps` instead, so a dangling `sts_voice_profile` no longer breaks
+///   anything a doctor check should warn about.
 /// * Dangling widget refs in workflows — every effective workflow's source /
 ///   processor / output ids must resolve to an effective widget, the
 ///   structural equivalent of a mode pointing at a missing model profile.
@@ -340,7 +345,6 @@ fn check_workflow_refs_over(
     for (field, value, key) in [
         ("listen_voice_profile", &config.listen_voice_profile, "doctor.dangling_listen_voice"),
         ("sts_llm_profile", &config.sts_llm_profile, "doctor.dangling_sts_llm"),
-        ("sts_voice_profile", &config.sts_voice_profile, "doctor.dangling_sts_voice"),
     ] {
         if !value.trim().is_empty() && !is_profile(value.trim()) {
             problems.push(Finding {
@@ -467,10 +471,6 @@ pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), S
             }
             "sts_llm_profile" => {
                 config.sts_llm_profile.clear();
-                Ok(())
-            }
-            "sts_voice_profile" => {
-                config.sts_voice_profile.clear();
                 Ok(())
             }
             other => Err(format!("ClearProfileRef: unknown field '{other}'")),
@@ -640,16 +640,16 @@ mod tests {
     }
 
     #[test]
-    fn dangling_sts_voice_profile_warns() {
-        // Still live-read by commands::doctor::check_conversation_rtf, so the
-        // check stays (Task 11 audit corrected the brief's assumption that
-        // this one was dead alongside sts_llm_profile).
+    fn dangling_sts_voice_profile_no_longer_warns() {
+        // Workbench P2 Task 14: check_conversation_rtf (this check's last
+        // live reader — see Task 11's now-superseded comment on the old
+        // version of this test) was repointed at call.default's own
+        // CallProps, so a dangling sts_voice_profile no longer surfaces here.
         let mut c = cfg();
         c.model_profiles = vec![profile("real")];
         c.sts_voice_profile = "ghost".into();
         let f = check_workflow_refs(&c);
-        let w = find(&f, "dangling_ref:sts_voice_profile").expect("dangling finding");
-        assert_eq!(w.fix, Some(FixAction::ClearProfileRef { field: "sts_voice_profile".into() }));
+        assert!(find(&f, "dangling_ref:sts_voice_profile").is_none());
     }
 
     #[test]
@@ -733,9 +733,23 @@ mod tests {
     #[test]
     fn apply_clear_profile_ref() {
         let mut c = cfg();
+        c.sts_llm_profile = "ghost".into();
+        apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_llm_profile".into() }).unwrap();
+        assert!(c.sts_llm_profile.is_empty());
+    }
+
+    #[test]
+    fn apply_clear_profile_ref_rejects_retired_sts_voice_profile_field() {
+        // Task 14 retired sts_voice_profile's dangling-ref check, so no
+        // Finding constructs this anymore — but the match arm removal itself
+        // is worth a regression guard: an unrecognized field name is a hard
+        // error, not a silent no-op.
+        let mut c = cfg();
         c.sts_voice_profile = "ghost".into();
-        apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_voice_profile".into() }).unwrap();
-        assert!(c.sts_voice_profile.is_empty());
+        let err = apply_config_fix(&mut c, &FixAction::ClearProfileRef { field: "sts_voice_profile".into() })
+            .unwrap_err();
+        assert!(err.contains("sts_voice_profile"));
+        assert_eq!(c.sts_voice_profile, "ghost", "rejected fix must not mutate config");
     }
 
     #[test]

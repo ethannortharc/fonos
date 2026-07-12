@@ -441,7 +441,6 @@ const en = {
   "doctor.widget_vocab_missing": "Component \"{0}\" references a vocabulary book that no longer exists",
   "doctor.dangling_listen_voice": "The Listen voice profile no longer exists — Listen falls back silently",
   "doctor.dangling_sts_llm": "The conversation LLM profile no longer exists — it falls back silently",
-  "doctor.dangling_sts_voice": "The conversation voice profile no longer exists — it falls back silently",
   "doctor.llm_ok": "LLM is configured for prompted components",
   "doctor.llm_unconfigured": "Some components use LLM prompts but no LLM profile is set — they return the raw transcript",
 
@@ -1169,7 +1168,6 @@ const zh: Partial<Record<Key, string>> = {
   "doctor.widget_vocab_missing": "组件「{0}」引用了已不存在的词汇本",
   "doctor.dangling_listen_voice": "Listen 语音配置已不存在 — Listen 会静默回退",
   "doctor.dangling_sts_llm": "对话 LLM 配置已不存在 — 会静默回退",
-  "doctor.dangling_sts_voice": "对话语音配置已不存在 — 会静默回退",
   "doctor.llm_ok": "LLM 已为需提示词的组件配置",
   "doctor.llm_unconfigured": "部分组件使用了 LLM 提示词,但未设置 LLM 配置 — 它们只会返回原始转写",
 

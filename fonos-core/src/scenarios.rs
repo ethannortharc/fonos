@@ -396,13 +396,18 @@ pub struct DictationSection {
 /// (not just its config.rs doc-comment claim, which for a couple of these
 /// fields turned out to be stale): `listen_mode` and `sts_persona` /
 /// `sts_max_turns` have no reader anywhere in the app anymore and are no
-/// longer snapshotted. `sts_voice_profile` / `sts_voice` remain — despite
-/// being retired from the standalone Talk/STS UI (Workbench P2 Task 9) they
-/// are still read live by `commands::doctor::check_conversation_rtf` (the
-/// Setup Doctor's conversation-voice real-time-factor probe), so dropping
-/// them would silently break restoring that probe's inputs via a scenario.
-/// `sts_llm_profile` remains for the same reason it always did — it's the
-/// `call.default` composite's documented live-read fallback rung.
+/// longer snapshotted. `sts_llm_profile` remains — it's the `call.default`
+/// composite's documented live-read fallback rung.
+///
+/// `sts_voice_profile` / `sts_voice` were dropped in Workbench P2 Task 14:
+/// Task 11's audit kept them here because `commands::doctor::
+/// check_conversation_rtf` still read them directly, but Task 14 repointed
+/// that probe at `call.default`'s own `CallProps` (mirroring
+/// `resolve_call_cfg`'s TTS branch), so these two config fields are now
+/// zero-reader outside the one-time migration that seeded `call.default`
+/// from them — restoring them via a scenario would no longer do anything.
+/// (`ScenarioAssignments.sts_voice_profile`/`.sts_voice`, the **models**
+/// section's copies, are a separate concern — untouched.)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpeechSection {
@@ -412,10 +417,6 @@ pub struct SpeechSection {
     pub listen_voice: String,
     /// LLM profile id for conversation.
     pub sts_llm_profile: String,
-    /// TTS profile id for the spoken reply.
-    pub sts_voice_profile: String,
-    /// Voice identifier for the spoken reply.
-    pub sts_voice: String,
 }
 
 /// The **vocab** section of a saved scenario: the user's custom vocabulary
@@ -653,8 +654,6 @@ pub fn snapshot_current(
         listen_voice_profile: config.listen_voice_profile.clone(),
         listen_voice: config.listen_voice.clone(),
         sts_llm_profile: config.sts_llm_profile.clone(),
-        sts_voice_profile: config.sts_voice_profile.clone(),
-        sts_voice: config.sts_voice.clone(),
     });
     let vocab = include_vocab.then(|| VocabSection {
         vocab_books: config.vocab_books.clone(),
@@ -793,12 +792,8 @@ pub fn apply_saved(config: &mut AppConfig, scenario: &SavedScenario) {
     if let Some(s) = &scenario.speech {
         config.listen_voice_profile = s.listen_voice_profile.clone();
         config.sts_llm_profile = s.sts_llm_profile.clone();
-        config.sts_voice_profile = s.sts_voice_profile.clone();
         if !s.listen_voice.trim().is_empty() {
             config.listen_voice = s.listen_voice.clone();
-        }
-        if !s.sts_voice.trim().is_empty() {
-            config.sts_voice = s.sts_voice.clone();
         }
     }
 
@@ -1038,9 +1033,12 @@ mod tests {
         c.tts_profile = String::new();
         c.dictation_mode = "polish".into();
         c.translate_target = "German".into();
-        // Still-live speech fields (Task 11 audit): listen voice + the
-        // conversation profile/voice `commands::doctor::check_conversation_rtf`
-        // still reads.
+        // Still-live speech field: listen voice + sts_llm_profile (the
+        // call.default composite's fallback rung). sts_voice_profile/
+        // sts_voice are set too (still real AppConfig fields, still captured
+        // by ScenarioAssignments/the models section below) but are no longer
+        // SpeechSection-snapshotted as of Task 14 — see SpeechSection's doc
+        // comment.
         c.listen_voice_profile = "listen-profile".into();
         c.listen_voice = "listen-voice".into();
         c.sts_llm_profile = "convo-llm-profile".into();
@@ -1117,15 +1115,13 @@ mod tests {
         assert_eq!(d.user_workflows[0].id, "wf.custom-1");
         assert_eq!(d.user_widgets.len(), 1);
         assert_eq!(d.user_widgets[0].id, "llm.custom-1");
-        // Speech only — the still-live fields (Task 11 audit).
+        // Speech only — the still-live fields.
         let s = snapshot_current(&c, "S", false, false, true, false, false);
         assert_eq!(s.sections(), vec!["speech"]);
         let sp = s.speech.unwrap();
         assert_eq!(sp.listen_voice_profile, "listen-profile");
         assert_eq!(sp.listen_voice, "listen-voice");
         assert_eq!(sp.sts_llm_profile, "convo-llm-profile");
-        assert_eq!(sp.sts_voice_profile, "convo-voice-profile");
-        assert_eq!(sp.sts_voice, "convo-voice");
         // All five.
         let s = snapshot_current(&c, "All", true, true, true, true, true);
         assert_eq!(s.sections(), vec!["models", "dictation", "speech", "vocab", "hotkeys"]);
@@ -1175,10 +1171,13 @@ mod tests {
         assert_eq!(target.stt_profile, "stt1");
         assert_eq!(target.llm_profile, "llm1");
         assert!(target.model_profiles.iter().any(|p| p["id"].as_str() == Some("stt1")));
-        // Speech restored (Task 11: the still-live fields).
+        // Speech restored (the still-live fields).
         assert_eq!(target.listen_voice_profile, "listen-profile");
         assert_eq!(target.listen_voice, "listen-voice");
         assert_eq!(target.sts_llm_profile, "convo-llm-profile");
+        // sts_voice_profile/sts_voice are restored here too, but via the
+        // *models* section's ScenarioAssignments (included in this "all
+        // sections" snapshot) — Task 14 dropped them from SpeechSection.
         assert_eq!(target.sts_voice_profile, "convo-voice-profile");
         assert_eq!(target.sts_voice, "convo-voice");
         // Vocab restored.
@@ -1257,7 +1256,9 @@ mod tests {
         assert_eq!(target.stt_profile, "keep-stt", "speech apply leaves models untouched");
         assert_eq!(target.llm_profile, "keep-llm");
         assert_eq!(target.sts_llm_profile, "convo-llm-profile");
-        assert_eq!(target.sts_voice_profile, "convo-voice-profile");
+        // sts_voice_profile is a *models*-section (ScenarioAssignments)
+        // field now (Task 14) — a speech-only apply must leave it alone.
+        assert_eq!(target.sts_voice_profile, "", "speech apply no longer touches sts_voice_profile");
 
         // Dictation apply sets config fields and upserts the workflow/widget
         // overlays, leaving unrelated existing overlays alone.

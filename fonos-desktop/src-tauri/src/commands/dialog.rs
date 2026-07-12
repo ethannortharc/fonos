@@ -133,33 +133,69 @@ impl Output for DialogOutput {
             .and_then(|m| m.get("entry_id").and_then(|v| v.as_i64()))
             .unwrap_or(0);
 
-        // All rusqlite work in one scoped block, dropped before any await:
-        // read the raw source text + workflow name off the recorded entry,
-        // create the Conversation container, and write the two seed turns.
-        let (raw_text, title, cid) = {
+        // Read the raw source text + workflow id/name off the recorded entry,
+        // in its own scoped db-lock block (dropped before the config lock
+        // below is taken — never held simultaneously, so this can't invert
+        // lock order against any other call site).
+        //
+        // The recorder's entry has raw_text = the original source text and
+        // metadata.workflow_id/workflow_name for the title. entry_id <= 0
+        // (recorder failed / no id) ⇒ fall back to `final` for the user turn
+        // and a plain "Dialog" title.
+        let (raw_text, wf_id, stored_name) = {
             let state = self.app.state::<AppState>();
             let db = state.db.lock().map_err(|e| e.to_string())?;
-
-            // The recorder's entry has raw_text = the original source text and
-            // metadata.workflow_name for the title. entry_id <= 0 (recorder
-            // failed / no id) ⇒ fall back to `final` for the user turn and a
-            // plain title.
-            let (raw_text, wf_name) = if entry_id > 0 {
+            if entry_id > 0 {
                 match fonos_core::storage::get_entry(&db, entry_id) {
                     Ok(e) => {
-                        let name = e
+                        let stored_name = e
                             .metadata
                             .get("workflow_name")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Dialog")
                             .to_string();
-                        (e.raw_text, name)
+                        let wf_id = e
+                            .metadata
+                            .get("workflow_id")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string);
+                        (e.raw_text, wf_id, stored_name)
                     }
-                    Err(_) => (final_text.clone(), "Dialog".to_string()),
+                    Err(_) => (final_text.clone(), None, "Dialog".to_string()),
                 }
             } else {
-                (final_text.clone(), "Dialog".to_string())
-            };
+                (final_text.clone(), None, "Dialog".to_string())
+            }
+        };
+
+        // Workbench P2 Task 13: prefer localizing `workflow_id` through the
+        // builtin display map AT EMISSION TIME (this panel's own
+        // `config.ui_language`, resolved fresh here rather than trusting
+        // whatever language the recorder happened to localize
+        // `workflow_name` to) — falls back to the stored `workflow_name`
+        // (already localized by `DbRecorder`, a custom recipe's own name, or
+        // the "Dialog" default above) when the id is missing or not a
+        // builtin.
+        let wf_name = match &wf_id {
+            Some(id) => {
+                let state = self.app.state::<AppState>();
+                let lang = match state.config.lock() {
+                    Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+                    Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
+                };
+                fonos_core::workflow::builtin::builtin_display_name(id, lang)
+                    .map(str::to_string)
+                    .unwrap_or(stored_name)
+            }
+            None => stored_name,
+        };
+
+        // All remaining rusqlite work in one scoped block, dropped before any
+        // await: create the Conversation container and write the two seed
+        // turns.
+        let (raw_text, title, cid) = {
+            let state = self.app.state::<AppState>();
+            let db = state.db.lock().map_err(|e| e.to_string())?;
 
             let now = super::storage::now_iso8601();
             let title = format!("{wf_name} · {now}");

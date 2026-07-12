@@ -96,16 +96,26 @@ pub(crate) fn meeting_js(app: &tauri::AppHandle, js: &str) {
     }
 }
 
-/// The default meeting title: `"Meeting {yyyy-MM-dd HH:mm}"`, derived from the
-/// current time. `pub(crate)` (not just used by `start_meeting_with` below)
-/// so [`super::meeting_widget::MeetingOutput`] can compute it BEFORE calling
-/// `start_meeting_with` — it needs the title immediately, for its own
+/// The default meeting title: `"{Meeting label} {yyyy-MM-dd HH:mm}"`, derived
+/// from the current time. `pub(crate)` (not just used by `start_meeting_with`
+/// below) so [`super::meeting_widget::MeetingOutput`] can compute it BEFORE
+/// calling `start_meeting_with` — it needs the title immediately, for its own
 /// `recvStart` panel eval, rather than waiting on `start_meeting_with`'s
 /// return.
-pub(crate) fn default_meeting_title() -> String {
+///
+/// Workbench P2 Task 13: the label is `meeting.default`'s bilingual builtin
+/// display name (`fonos_core::workflow::builtin::builtin_display_name`) for
+/// `lang`, so the meeting panel/container title reads "Meeting …" for an
+/// EN-language user and "会议 …" for a ZH-language user (never a hardcoded
+/// English literal regardless of `config.ui_language`, as it was before this
+/// task) — falls back to the literal "Meeting" in the (unreachable outside a
+/// map-coverage bug) case the id has no display name.
+pub(crate) fn default_meeting_title(lang: fonos_core::workflow::builtin::Lang) -> String {
     let now = now_iso8601();
     let ts = now[..16].replace('T', " ");
-    format!("Meeting {}", ts)
+    let label = fonos_core::workflow::builtin::builtin_display_name("meeting.default", lang)
+        .unwrap_or("Meeting");
+    format!("{label} {}", ts)
 }
 
 /// The built-in meeting-summary instructions, used when no custom prompt
@@ -254,7 +264,11 @@ pub async fn start_meeting(
     state: tauri::State<'_, AppState>,
 ) -> Result<i64, String> {
     let stt_svc = super::get_service_config(&state, "stt");
-    let title = default_meeting_title();
+    let lang = {
+        let config = state.config.lock().map_err(|e| e.to_string())?;
+        fonos_core::workflow::builtin::resolve_lang(&config.ui_language)
+    };
+    let title = default_meeting_title(lang);
     start_meeting_with(&app, &state, stt_svc, title).await
 }
 
@@ -852,7 +866,15 @@ mod tests {
 
     #[test]
     fn default_meeting_title_starts_with_meeting_prefix() {
-        assert!(default_meeting_title().starts_with("Meeting "));
+        assert!(default_meeting_title(fonos_core::workflow::builtin::Lang::En).starts_with("Meeting "));
+    }
+
+    /// Workbench P2 Task 13: the ZH-language title uses the same builtin
+    /// display name (`meeting.default` → "会议") the meeting composite is
+    /// named with in `builtin.rs`, rather than a hardcoded English literal.
+    #[test]
+    fn default_meeting_title_localizes_for_zh() {
+        assert!(default_meeting_title(fonos_core::workflow::builtin::Lang::Zh).starts_with("会议 "));
     }
 
     #[test]

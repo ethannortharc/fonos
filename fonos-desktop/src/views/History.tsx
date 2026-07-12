@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent as R
 import { listEntries, listContainers, searchEntries, deleteEntry, updateEntryText } from "../lib/storage-api";
 import { playAudioFile, stopPlayback, getConfig, saveConfig } from "../lib/api";
 import { t, useT, type TKey } from "../lib/i18n";
+import { workflowLabel } from "../lib/builtinLabels";
 import type { Entry, Container, SourceType } from "../lib/storage-api";
 import type { AppConfig, VocabBook, VocabRule } from "../types";
 import Notes from "./Notes";
@@ -491,6 +492,18 @@ function EntryCard({
   const listenTitle = entry.source_type === "listen"
     ? String((entry.metadata as Record<string, unknown>)?.title ?? "")
     : "";
+  // Mode badge (backend-name i18n, Workbench P2 Task 13): prefer
+  // metadata.workflow_id through workflowLabel/BUILTIN_LABELS — a builtin id
+  // resolves through the id→TKey map and live-switches with the UI language
+  // (unlike the recorder's own localization, this re-renders immediately on
+  // a language change, no restart needed); a custom (non-builtin) id falls
+  // through to the map's `w.name` fallback, i.e. metadata.workflow_name (the
+  // recipe's own user-given name) — or, lacking either, the raw `entry.mode`
+  // (legacy entries recorded before this task carry no workflow_id/name).
+  const meta = entry.metadata as Record<string, unknown>;
+  const wfId = typeof meta.workflow_id === "string" ? meta.workflow_id : undefined;
+  const wfName = typeof meta.workflow_name === "string" ? meta.workflow_name : undefined;
+  const modeLabel = wfId || wfName ? workflowLabel({ id: wfId ?? entry.mode, name: wfName ?? entry.mode }) : entry.mode;
 
   // Open the correction menu when the user selects text inside this card's
   // transcript. Uses the native browser selection — we never fight it.
@@ -527,7 +540,7 @@ function EntryCard({
           <span className="text-[10px] text-[var(--text-faint)] font-mono">{formatTime(entry.created_at)}</span>
           <TypeBadge type={entry.source_type} />
           {entry.mode && entry.mode !== "raw" && entry.mode !== entry.source_type && (
-            <span className="text-[8px] text-[rgba(255,255,255,0.18)] bg-[rgba(255,255,255,0.03)] px-1.5 py-0.5 rounded">{entry.mode}</span>
+            <span className="text-[8px] text-[rgba(255,255,255,0.18)] bg-[rgba(255,255,255,0.03)] px-1.5 py-0.5 rounded">{modeLabel}</span>
           )}
           {notebook && (
             <button

@@ -361,7 +361,15 @@ impl MeetingOutput {
         // dialog panels.
         tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 
-        let title = default_meeting_title();
+        // Workbench P2 Task 13: the title's "Meeting"/"会议" label follows
+        // `config.ui_language` — a separate short-lived lock (dropped
+        // immediately) rather than threading it through the `stt_svc` block
+        // above, which returns a `ServiceConfig`, not a `Lang`.
+        let lang = {
+            let config = state.config.lock().map_err(|e| e.to_string())?;
+            fonos_core::workflow::builtin::resolve_lang(&config.ui_language)
+        };
+        let title = default_meeting_title(lang);
         match meeting::start_meeting_with(&self.app, state, stt_svc, title.clone()).await {
             Ok(_container_id) => {
                 let title_j = serde_json::to_string(&title).unwrap_or_default();

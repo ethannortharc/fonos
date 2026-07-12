@@ -635,20 +635,51 @@ impl Output for PanelOutput {
         };
 
         // Header name = the recorded run's workflow name (mirrors dialog.rs's
-        // title lookup: read `metadata.workflow_name` off the history entry).
-        // All rusqlite work stays in a scoped std-mutex block dropped before the
-        // await below; entry_id <= 0 or a failed lookup falls back to "".
+        // title lookup: read `metadata.workflow_id`/`workflow_name` off the
+        // history entry). Workbench P2 Task 13: prefer localizing
+        // `metadata.workflow_id` through the builtin display map AT EMISSION
+        // TIME (this panel's own `config.ui_language`, resolved fresh here
+        // rather than trusting whatever language the recorder happened to
+        // localize `workflow_name` to) — falls back to the stored
+        // `workflow_name` (already localized by `DbRecorder`, or a custom
+        // recipe's own name) when the id is missing or not a builtin.
+        //
+        // Two separate scoped locks (db, then config), each dropped before
+        // the next is taken — never held simultaneously, so this can't
+        // invert lock order against any other call site — and both dropped
+        // before the await below. entry_id <= 0 or a failed lookup falls
+        // back to "".
         let wf_name = if entry_id > 0 {
             let state = self.app.state::<AppState>();
-            let db = state.db.lock().map_err(|e| e.to_string())?;
-            match fonos_core::storage::get_entry(&db, entry_id) {
-                Ok(e) => e
-                    .metadata
-                    .get("workflow_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                Err(_) => String::new(),
+            let stored = {
+                let db = state.db.lock().map_err(|e| e.to_string())?;
+                fonos_core::storage::get_entry(&db, entry_id).ok().map(|e| {
+                    let name = e
+                        .metadata
+                        .get("workflow_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let id = e
+                        .metadata
+                        .get("workflow_id")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    (id, name)
+                })
+            };
+            match stored {
+                Some((Some(id), stored_name)) => {
+                    let lang = match state.config.lock() {
+                        Ok(config) => fonos_core::workflow::builtin::resolve_lang(&config.ui_language),
+                        Err(_) => fonos_core::workflow::builtin::resolve_lang("auto"),
+                    };
+                    fonos_core::workflow::builtin::builtin_display_name(&id, lang)
+                        .map(str::to_string)
+                        .unwrap_or(stored_name)
+                }
+                Some((None, stored_name)) => stored_name,
+                None => String::new(),
             }
         } else {
             String::new()

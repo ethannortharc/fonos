@@ -163,8 +163,39 @@ pub struct DbRecorder {
     pub handle: tauri::AppHandle,
 }
 
+/// Localize `wf.name` for history metadata through the builtin display map
+/// (Workbench P2 Task 13). Pure — split out of [`DbRecorder::record`] so it's
+/// unit-testable without a live `tauri::AppHandle`/`AppState` (this crate's
+/// test harness cannot construct one — see `tests/uppercase_acceptance.rs`'s
+/// doc comment). A builtin `id` resolves to its EN/ZH display name per
+/// `ui_language` (`resolve_lang`'s `"auto"`/env fallback included); a custom
+/// (non-builtin) `id` has no map entry and keeps `name` verbatim, so custom
+/// recipes always keep their user-given names.
+fn localized_workflow_name(id: &str, name: &str, ui_language: &str) -> String {
+    let lang = fonos_core::workflow::builtin::resolve_lang(ui_language);
+    fonos_core::workflow::builtin::builtin_display_name(id, lang)
+        .map(str::to_string)
+        .unwrap_or_else(|| name.to_string())
+}
+
 impl RunRecorder for DbRecorder {
     fn record(&self, wf: &WorkflowDef, raw_text: &str, final_text: &str) -> Result<i64, String> {
+        let state = self.handle.state::<AppState>();
+
+        // Localize `workflow_name` through the same builtin map every
+        // satellite panel reads at emission time (Workbench P2 Task 13), so a
+        // Chinese-literal builtin name never leaks to an EN-language user's
+        // History row/panel header. A poisoned config lock degrades to the
+        // raw `wf.name` rather than failing the record (same error policy as
+        // the DB lock below — this must never return `Err`).
+        let workflow_name = match state.config.lock() {
+            Ok(config) => localized_workflow_name(&wf.id, &wf.name, &config.ui_language),
+            Err(e) => {
+                eprintln!("fonos: DbRecorder — config lock poisoned, workflow_name not localized: {e}");
+                wf.name.clone()
+            }
+        };
+
         let entry = fonos_core::storage::Entry {
             id: None,
             created_at: super::storage::now_iso8601(),
@@ -177,7 +208,7 @@ impl RunRecorder for DbRecorder {
             audio_ref: None,
             metadata: serde_json::json!({
                 "workflow_id": wf.id,
-                "workflow_name": wf.name,
+                "workflow_name": workflow_name,
             }),
         };
 
@@ -185,7 +216,6 @@ impl RunRecorder for DbRecorder {
         // is a sync trait method; no await). Every failure is absorbed into
         // `Ok(0)` per the error policy above; this function must NEVER return
         // `Err`, or the engine would fail the whole run on a history-log miss.
-        let state = self.handle.state::<AppState>();
         let db = match state.db.lock() {
             Ok(db) => db,
             Err(e) => {
@@ -229,5 +259,30 @@ mod tests {
         drop(first);
         let third = InFlightGuard::try_acquire();
         assert!(third.is_some(), "acquire should succeed again once the prior guard is dropped");
+    }
+
+    /// A builtin id resolves through `fonos_core::workflow::builtin`'s map,
+    /// live-switching on `ui_language` — the localization
+    /// `DbRecorder::record` writes into `workflow_name`.
+    #[test]
+    fn localized_workflow_name_resolves_builtin_by_lang() {
+        assert_eq!(localized_workflow_name("wf.dictation", "听写", "en"), "Dictation");
+        assert_eq!(localized_workflow_name("wf.dictation", "听写", "zh"), "听写");
+        assert_eq!(localized_workflow_name("wf.explain", "选中解释", "en"), "Explain selection");
+    }
+
+    /// A custom (non-builtin) id has no map entry — the given `name` (the
+    /// user's own recipe name) passes through unchanged, regardless of
+    /// `ui_language`.
+    #[test]
+    fn localized_workflow_name_falls_back_to_given_name_for_custom_id() {
+        assert_eq!(
+            localized_workflow_name("wf.custom-1700000000000", "我的流程", "en"),
+            "我的流程"
+        );
+        assert_eq!(
+            localized_workflow_name("wf.custom-1700000000000", "我的流程", "zh"),
+            "我的流程"
+        );
     }
 }

@@ -368,6 +368,20 @@ mod tests {
     }
 
     #[test]
+    fn find_helper_binary_resolves_fonos_stt_apple_in_dev_checkout() {
+        // Guards the packaged-app bug this helper was extracted to fix:
+        // fonos-stt-apple is git-tracked under resources/, so it must
+        // resolve to a real, existing path via one of the six candidates
+        // (exactly which one depends on build-script copy state) rather
+        // than returning None.
+        let found = find_helper_binary("fonos-stt-apple");
+        assert!(found.is_some(), "expected fonos-stt-apple to resolve to some candidate");
+        let path = found.unwrap();
+        assert!(path.ends_with("fonos-stt-apple"), "unexpected path: {path}");
+        assert!(Path::new(&path).exists(), "resolved path does not exist: {path}");
+    }
+
+    #[test]
     fn feed_degrades_when_writer_thread_gone() {
         let (tx, rx) = sync_channel::<Vec<i16>>(600);
         drop(rx); // simulate the writer thread having already exited

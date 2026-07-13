@@ -6,6 +6,14 @@
 //! measurement. The whole run is bounded (~10s worst case) and parallel where
 //! it matters (endpoint probes and the RTF synth run concurrently).
 //!
+//! A failing endpoint probe additionally runs the OMLX process-without-listener
+//! differential (real-device UX finding): a raw TCP refusal on the configured
+//! port plus a `pgrep -f omlx` hit distinguishes "the server was never
+//! started" from "its Homebrew-launched process is still alive but stopped
+//! listening" (e.g. its launcher pointing at a removed Python) — a state that
+//! otherwise looks identical from the HTTP probe alone and leaves dictation
+//! requests hanging with no way to tell the two apart.
+//!
 //! `run_doctor` returns `Vec<Finding>` (serde-serializable); `apply_doctor_fix`
 //! applies one typed `FixAction` and lets the frontend re-run the whole doctor.
 
@@ -94,13 +102,34 @@ async fn check_endpoints(config: &AppConfig) -> Vec<Finding> {
                     message_params: vec![label, format!("{host} · {ms}ms")],
                     fix: None,
                 },
-                Err(_) => Finding {
-                    id: format!("endpoint_bad:{host}"),
-                    severity: Severity::Warn,
-                    message_key: "doctor.endpoint_unreachable".to_string(),
-                    message_params: vec![label, host],
-                    fix: None,
-                },
+                Err(_) => {
+                    // Differential (real-device UX finding): a Homebrew-launched
+                    // `omlx-server` can be left running by its supervisor even
+                    // after the actual server process died (e.g. its launcher
+                    // points at a removed Python) — the port stops listening but
+                    // `pgrep` still finds a matching process. That state reads
+                    // identically to "server not started" from the HTTP probe
+                    // alone, so a dictation request against it just sits in
+                    // "Processing" with no way to tell the two apart. Enrich the
+                    // same failing-endpoint row with a distinct message instead
+                    // of adding a second row, so the warning count doesn't
+                    // double-count one failure.
+                    let message_key = if omlx_stale_process_decision(
+                        tcp_port_refused(&host).await,
+                        omlx_process_running().await,
+                    ) {
+                        "doctor.omlx_stale_process"
+                    } else {
+                        "doctor.endpoint_unreachable"
+                    };
+                    Finding {
+                        id: format!("endpoint_bad:{host}"),
+                        severity: Severity::Warn,
+                        message_key: message_key.to_string(),
+                        message_params: vec![label, host],
+                        fix: None,
+                    }
+                }
             }
         }));
     }
@@ -111,6 +140,54 @@ async fn check_endpoints(config: &AppConfig) -> Vec<Finding> {
         }
     }
     out
+}
+
+// ── OMLX process-without-listener differential ──────────────────────────────
+
+/// Pure decision: is this the "stale OMLX process" state? Both signals must
+/// hold — a bare TCP refusal alone just means "nothing's there" (could be a
+/// typo'd port, a server never started, …), and a matching process alone just
+/// means *some* `omlx`-named process is running (could be a client, a
+/// different instance). Only the combination pins it on "the launcher started
+/// something, but that something isn't the listener anymore." Extracted so the
+/// decision is unit-testable without a real socket or `pgrep`.
+fn omlx_stale_process_decision(tcp_refused: bool, process_exists: bool) -> bool {
+    tcp_refused && process_exists
+}
+
+/// Raw TCP connect to `host:port` (bypassing HTTP entirely) with a short
+/// timeout, true only on an explicit connection refusal — the OS-level
+/// signature of "nothing is bound to this port," as opposed to a DNS failure,
+/// a firewalled drop (which times out, not refuses), or a TLS/HTTP-level
+/// problem that a live process could still produce. `host_port` is already
+/// `host:port` (see [`host_of`]); malformed input degrades to `false`.
+async fn tcp_port_refused(host_port: &str) -> bool {
+    match tokio::time::timeout(
+        Duration::from_millis(800),
+        tokio::net::TcpStream::connect(host_port),
+    )
+    .await
+    {
+        Ok(Err(e)) => e.kind() == std::io::ErrorKind::ConnectionRefused,
+        _ => false, // connected fine, or the connect attempt itself timed out
+    }
+}
+
+/// True when a process whose command line matches `omlx` is running
+/// (`pgrep -f omlx`). Best-effort: any failure to run `pgrep` at all (not on
+/// PATH, unsupported platform, …) degrades silently to `false` rather than
+/// erroring the whole doctor run.
+async fn omlx_process_running() -> bool {
+    tokio::task::spawn_blocking(|| {
+        std::process::Command::new("pgrep")
+            .arg("-f")
+            .arg("omlx")
+            .output()
+            .map(|out| out.status.success() && !out.stdout.is_empty())
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
 }
 
 // ── permissions ─────────────────────────────────────────────────────────────
@@ -346,5 +423,34 @@ pub fn apply_doctor_fix(state: tauri::State<'_, AppState>, fix: FixAction) -> Re
                 .map_err(|e| format!("failed to save config: {e}"))?;
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod omlx_stale_process_tests {
+    use super::omlx_stale_process_decision;
+
+    #[test]
+    fn both_signals_true_is_stale() {
+        assert!(omlx_stale_process_decision(true, true));
+    }
+
+    #[test]
+    fn refused_without_matching_process_is_not_stale() {
+        // Port just isn't in use by anything OMLX-related — a plain
+        // "unreachable" finding, not the stale-launcher one.
+        assert!(!omlx_stale_process_decision(true, false));
+    }
+
+    #[test]
+    fn matching_process_without_refusal_is_not_stale() {
+        // Some omlx-ish process is running, but the port responded (or the
+        // TCP probe merely timed out rather than refusing) — not this state.
+        assert!(!omlx_stale_process_decision(false, true));
+    }
+
+    #[test]
+    fn neither_signal_is_not_stale() {
+        assert!(!omlx_stale_process_decision(false, false));
     }
 }

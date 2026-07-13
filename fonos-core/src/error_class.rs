@@ -82,6 +82,33 @@ pub fn classify_error(raw: &str) -> SurfacedError {
             pane: None,
         };
     }
+
+    // ── STT connectivity errors ──────────────────────────────────────────────
+    // `transcribe_core` prefixes STT failures with "STT failed via {provider}
+    // at {url}: …" (see commands::dictation::transcribe_core), so branch on
+    // that prefix to give the two distinct connectivity failure modes their
+    // own short message instead of falling into the generic "Network error
+    // reaching the provider" case below — which reads oddly for a local
+    // self-hosted STT box and doesn't tell a stuck "Processing" pill apart
+    // from a server that's still loading a model (out of scope: real
+    // model-loading progress needs server-side support). Checked before the
+    // generic network fallback since "refused"/"timed out" would otherwise
+    // also match the broader "connection"/"timeout" substrings there.
+    if has("stt failed") {
+        if has("refused") {
+            return SurfacedError {
+                message: "STT endpoint unreachable — check the server is running".to_string(),
+                pane: None,
+            };
+        }
+        if has("timed out") || has("timeout") {
+            return SurfacedError {
+                message: "STT timed out — the server took too long to respond".to_string(),
+                pane: None,
+            };
+        }
+    }
+
     if has("request failed")
         || has("connection")
         || has("timed out")
@@ -147,6 +174,35 @@ mod tests {
     #[test]
     fn timeout_maps_to_network() {
         let s = classify_error("Google error: operation timed out after 30s");
+        assert!(s.message.contains("Network error"), "got: {}", s.message);
+        assert_eq!(s.pane, None);
+    }
+
+    #[test]
+    fn stt_connect_refused_maps_to_endpoint_unreachable() {
+        // Real reqwest wording for a stale OMLX process (port not listening).
+        let raw = "STT failed via openai at http://127.0.0.1:8000: request to \
+                   http://127.0.0.1:8000/v1/audio/transcriptions failed: error trying \
+                   to connect: tcp connect error: Connection refused (os error 61)";
+        let s = classify_error(raw);
+        assert_eq!(s.message, "STT endpoint unreachable — check the server is running");
+        assert_eq!(s.pane, None);
+    }
+
+    #[test]
+    fn stt_timeout_maps_to_timed_out() {
+        let raw = "STT failed via openai at http://127.0.0.1:8000: request to \
+                   http://127.0.0.1:8000/v1/audio/transcriptions failed: operation timed out";
+        let s = classify_error(raw);
+        assert_eq!(s.message, "STT timed out — the server took too long to respond");
+        assert_eq!(s.pane, None);
+    }
+
+    #[test]
+    fn non_stt_connection_refused_still_maps_to_generic_network() {
+        // Same "refused" wording but from a non-STT (LLM) caller — must not
+        // pick up the STT-specific message (no "STT failed" prefix).
+        let s = classify_error("LLM request failed: connection refused");
         assert!(s.message.contains("Network error"), "got: {}", s.message);
         assert_eq!(s.pane, None);
     }

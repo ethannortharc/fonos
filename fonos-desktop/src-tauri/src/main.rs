@@ -1066,6 +1066,14 @@ fn main() {
             // 2. Position float window at bottom center of primary screen.
             commands::dictation::move_float_to_primary_pub(app.handle());
 
+            // 2b. Re-place the float pill whenever the display configuration
+            // changes (external monitor connected/disconnected, resolution or
+            // arrangement change) so it never strands on coordinates computed
+            // for a display that is gone. macOS-only; Tauri exposes no
+            // cross-platform monitors-changed event.
+            #[cfg(target_os = "macos")]
+            commands::dictation::register_display_reconfig_callback(app.handle());
+
             // 3. Tray menu.
             use tauri::menu::PredefinedMenuItem;
 

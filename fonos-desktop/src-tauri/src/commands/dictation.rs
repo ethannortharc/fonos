@@ -119,33 +119,189 @@ fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
         })
     };
 
-    let scale = target.scale_factor();
-    // Pill geometry, three-way lockstep: tauri.conf.json float window (98×32)
-    // ↔ float.html IDLE_W/PH ↔ here.
+    move_float_to_monitor_rect(&float_win, target);
+}
+
+/// Bottom-center the float pill on `target`. The single source of truth for the
+/// pill's placement math — target *selection* (primary / under-cursor /
+/// display-that-still-contains-it) is the caller's job; this only does the
+/// geometry, so every path lands the pill identically.
+#[cfg(target_os = "macos")]
+fn move_float_to_monitor_rect(float_win: &tauri::WebviewWindow, target: &tauri::Monitor) {
+    let (px, py) = bottom_center_physical(
+        target.position().x,
+        target.position().y,
+        target.size().width as i32,
+        target.size().height as i32,
+        target.scale_factor(),
+    );
+    // set_position expects physical pixels.
+    let _ = float_win.set_position(tauri::PhysicalPosition::new(px, py));
+    // A programmatic move of a transparent NSWindow can leave the window
+    // server compositing the old frame at the old spot until a display pass
+    // happens — same ghost mechanism as resize_float; see refresh_ns_window.
+    super::refresh_ns_window(float_win);
+}
+
+/// Pure bottom-center math: given a monitor's physical bounds and scale, return
+/// the physical (x, y) that centers the 98×32 pill horizontally and sits it
+/// ~110pt above the monitor's bottom edge (macOS Dock clearance). Extracted so
+/// the placement is unit-testable without a live window.
+///
+/// Pill geometry is a three-way lockstep: tauri.conf.json float window (98×32)
+/// ↔ float.html IDLE_W/PH ↔ here.
+#[cfg(target_os = "macos")]
+fn bottom_center_physical(mon_x: i32, mon_y: i32, mon_w: i32, mon_h: i32, scale: f64) -> (i32, i32) {
     let pill_w = 98.0; // logical pixels
     let pill_h = 32.0;
     // ~110pt above screen bottom to clear macOS Dock + gap above it
     let dock_clearance = 110.0;
 
     // Convert monitor position/size to logical
-    let mon_x = target.position().x as f64 / scale;
-    let mon_y = target.position().y as f64 / scale;
-    let mon_w = target.size().width as f64 / scale;
-    let mon_h = target.size().height as f64 / scale;
+    let lx = mon_x as f64 / scale;
+    let ly = mon_y as f64 / scale;
+    let lw = mon_w as f64 / scale;
+    let lh = mon_h as f64 / scale;
 
     // Center horizontally, position above Dock at bottom
-    let x = mon_x + (mon_w - pill_w) / 2.0;
-    let y = mon_y + mon_h - pill_h - dock_clearance;
+    let x = lx + (lw - pill_w) / 2.0;
+    let y = ly + lh - pill_h - dock_clearance;
 
-    // set_position expects physical pixels
-    let _ = float_win.set_position(tauri::PhysicalPosition::new(
-        (x * scale) as i32,
-        (y * scale) as i32,
-    ));
-    // A programmatic move of a transparent NSWindow can leave the window
-    // server compositing the old frame at the old spot until a display pass
-    // happens — same ghost mechanism as resize_float; see refresh_ns_window.
-    super::refresh_ns_window(&float_win);
+    ((x * scale) as i32, (y * scale) as i32)
+}
+
+/// A monitor's physical bounds — the plain-data slice of `tauri::Monitor` that
+/// the pure target-selection logic below operates on (so it needs no live app).
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug)]
+struct MonitorRect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+}
+
+/// Pure: index of the first rect whose bounds contain the point `(cx, cy)`,
+/// else `None`. Left edge inclusive, right/bottom exclusive — matching
+/// `resize_float`'s existing "which monitor is the pill's center on" test.
+#[cfg(target_os = "macos")]
+fn monitor_index_containing(rects: &[MonitorRect], cx: i32, cy: i32) -> Option<usize> {
+    rects
+        .iter()
+        .position(|r| cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h)
+}
+
+/// Re-place the float pill after the display configuration changes (external
+/// monitor connected/disconnected, resolution/arrangement change).
+///
+/// Rule: if the pill's current center still falls inside a live monitor, re-run
+/// the bottom-center math on *that* monitor — so a resolution or arrangement
+/// shift re-anchors the pill without yanking it off the display the user left it
+/// on. If its display is gone (center inside no live monitor), fall back to the
+/// primary monitor, same as first-launch placement.
+#[cfg(target_os = "macos")]
+pub(crate) fn reposition_float_after_display_change(app: &tauri::AppHandle) {
+    let Some(float_win) = app.get_webview_window("float") else { return };
+
+    let monitors = match float_win.available_monitors() {
+        Ok(m) if !m.is_empty() => m,
+        _ => return,
+    };
+
+    // Current pill center, physical pixels (same coordinate space as the
+    // monitor bounds and as resize_float's center-on-monitor test).
+    let (Ok(pos), Ok(size)) = (float_win.outer_position(), float_win.outer_size()) else {
+        return;
+    };
+    let cx = pos.x + size.width as i32 / 2;
+    let cy = pos.y + size.height as i32 / 2;
+
+    let rects: Vec<MonitorRect> = monitors
+        .iter()
+        .map(|m| MonitorRect {
+            x: m.position().x,
+            y: m.position().y,
+            w: m.size().width as i32,
+            h: m.size().height as i32,
+        })
+        .collect();
+
+    let target = match monitor_index_containing(&rects, cx, cy) {
+        // Pill's display survived — re-anchor on it (handles resolution shifts).
+        Some(i) => &monitors[i],
+        // Pill's display is gone — fall back to primary (monitor at origin).
+        None => monitors
+            .iter()
+            .find(|m| m.position().x == 0 && m.position().y == 0)
+            .unwrap_or(&monitors[0]),
+    };
+
+    move_float_to_monitor_rect(&float_win, target);
+}
+
+/// Register a CoreGraphics display-reconfiguration callback so the float pill
+/// re-places itself whenever displays are added/removed/rearranged. Call once,
+/// at setup, from the main thread.
+///
+/// The callback is a plain `extern "C"` fn pointer (no `block2`/NSNotification
+/// dependency — CoreGraphics is already linked). The `AppHandle` reaches the
+/// callback through a `static OnceLock` rather than the `user_info` pointer:
+/// `OnceLock` is set-once, needs no `Box::into_raw`/leak, and reads back with a
+/// safe `.get()` — strictly simpler than round-tripping a raw pointer.
+///
+/// CoreGraphics fires this callback several times per user-visible change (once
+/// with the Begin flag *before*, once *after*, per affected display), so we
+/// debounce rather than filter flags: every fire bumps a generation counter and
+/// schedules a reposition ~500ms later that only runs if it is still the latest
+/// fire. Debouncing (over flag-filtering) coalesces the multi-fire storm into a
+/// single reposition *and* defers it until the arrangement has settled, so
+/// `available_monitors()` reports the final geometry, not a mid-transition one.
+#[cfg(target_os = "macos")]
+pub fn register_display_reconfig_callback(app: &tauri::AppHandle) {
+    use core::ffi::c_void;
+    use core_graphics::display::{CGDirectDisplayID, CGDisplayRegisterReconfigurationCallback};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+
+    static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+    /// Debounce token: bumped on every callback; a scheduled reposition acts
+    /// only if its captured value is still current when it wakes.
+    static GEN: AtomicU64 = AtomicU64::new(0);
+
+    // SAFETY: signature matches `CGDisplayReconfigurationCallBack` exactly.
+    // Touches only a `static OnceLock` (read) and a `static AtomicU64`, then
+    // hands off to the async runtime — no windows are touched on this thread.
+    unsafe extern "C" fn on_reconfig(
+        _display: CGDirectDisplayID,
+        _flags: u32,
+        _user_info: *const c_void,
+    ) {
+        let Some(app) = APP.get() else { return };
+        let ticket = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            // Superseded by a later fire in the same reconfiguration burst.
+            if GEN.load(Ordering::SeqCst) != ticket {
+                return;
+            }
+            // Hop to the main thread before touching any window.
+            let app_main = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                reposition_float_after_display_change(&app_main);
+            });
+        });
+    }
+
+    if APP.set(app.clone()).is_err() {
+        return; // already registered
+    }
+    // SAFETY: `on_reconfig` is a valid `extern "C"` fn of the exact callback
+    // type; a null `user_info` is fine (the AppHandle travels via `APP`). The
+    // OnceLock guard above makes registration run at most once.
+    unsafe {
+        let _ = CGDisplayRegisterReconfigurationCallback(on_reconfig, std::ptr::null());
+    }
 }
 
 /// Linux/Windows fallback: center on primary monitor, near bottom.
@@ -1121,4 +1277,79 @@ fn preprocess_audio(samples: Vec<i16>) -> (Vec<i16>, (f64, f64)) {
         noise_removed_pct, gain_db);
 
     (normalized, (noise_removed_pct, gain_db))
+}
+
+/// Unit tests for the pure display-placement logic backing
+/// [`reposition_float_after_display_change`]. macOS-gated because the functions
+/// under test are macOS-only (Linux uses a different placement path).
+#[cfg(all(test, target_os = "macos"))]
+mod display_tests {
+    use super::{bottom_center_physical, monitor_index_containing, MonitorRect};
+
+    // Built-in laptop display at the origin, 1512×982 @ 2x (physical 3024×1964).
+    fn builtin() -> MonitorRect {
+        MonitorRect { x: 0, y: 0, w: 3024, h: 1964 }
+    }
+    // External 4K to the right of the built-in, 3840×2160 @ 1x.
+    fn external() -> MonitorRect {
+        MonitorRect { x: 3024, y: 0, w: 3840, h: 2160 }
+    }
+
+    #[test]
+    fn center_on_external_selects_external() {
+        let rects = [builtin(), external()];
+        // A point comfortably inside the external display.
+        assert_eq!(monitor_index_containing(&rects, 3024 + 1920, 1080), Some(1));
+    }
+
+    #[test]
+    fn center_on_builtin_selects_builtin() {
+        let rects = [builtin(), external()];
+        assert_eq!(monitor_index_containing(&rects, 1500, 980), Some(0));
+    }
+
+    #[test]
+    fn stranded_center_on_dead_display_selects_none() {
+        // External unplugged: only the built-in survives, but the pill's center
+        // is still parked at coordinates that were inside the (now gone) 4K.
+        // This is exactly the reported bug — selection must return None so the
+        // caller falls back to the primary monitor.
+        let rects = [builtin()];
+        assert_eq!(monitor_index_containing(&rects, 3024 + 1920, 1080), None);
+    }
+
+    #[test]
+    fn edges_are_left_inclusive_right_exclusive() {
+        let rects = [builtin()];
+        assert_eq!(monitor_index_containing(&rects, 0, 0), Some(0)); // top-left corner
+        assert_eq!(monitor_index_containing(&rects, 3024, 0), None); // right edge exclusive
+        assert_eq!(monitor_index_containing(&rects, 0, 1964), None); // bottom edge exclusive
+    }
+
+    #[test]
+    fn empty_monitor_set_selects_none() {
+        assert_eq!(monitor_index_containing(&[], 100, 100), None);
+    }
+
+    #[test]
+    fn bottom_center_1x_centers_and_clears_dock() {
+        // 1920×1080 @ 1x at origin: x = (1920-98)/2 = 911, y = 1080-32-110 = 938.
+        assert_eq!(bottom_center_physical(0, 0, 1920, 1080, 1.0), (911, 938));
+    }
+
+    #[test]
+    fn bottom_center_2x_scales_back_to_physical() {
+        // 3024×1964 physical @ 2x → logical 1512×982.
+        // x_logical = (1512-98)/2 = 707 → physical 1414.
+        // y_logical = 982-32-110 = 840 → physical 1680.
+        assert_eq!(bottom_center_physical(0, 0, 3024, 1964, 2.0), (1414, 1680));
+    }
+
+    #[test]
+    fn bottom_center_honors_monitor_offset() {
+        // External at physical x=3024 @ 1x: pill centers within that display,
+        // not the desktop origin — the offset must carry through.
+        let (x, _y) = bottom_center_physical(3024, 0, 3840, 2160, 1.0);
+        assert_eq!(x, 3024 + (3840 - 98) / 2);
+    }
 }

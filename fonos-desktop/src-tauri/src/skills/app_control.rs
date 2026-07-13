@@ -9,6 +9,9 @@ pub struct AppControlSkill;
 
 /// Resolve common short names to their actual macOS app names.
 fn resolve_app_name(name: &str) -> String {
+    let name = name.trim().trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '.' | ',' | '!' | '?' | ';' | ':' | '"' | '\'')
+    });
     let lower = name.to_lowercase();
     match lower.as_str() {
         "chrome" | "google chrome" => "Google Chrome".into(),
@@ -220,6 +223,7 @@ mod test_desktop_skills {
         assert_eq!(resolve_app_name("Chrome"), "Google Chrome");
         assert_eq!(resolve_app_name("vscode"), "Visual Studio Code");
         assert_eq!(resolve_app_name("firefox"), "Firefox");
+        assert_eq!(resolve_app_name(" Safari. "), "Safari");
         assert_eq!(resolve_app_name("MyCustomApp"), "MyCustomApp");
     }
 

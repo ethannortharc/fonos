@@ -430,6 +430,7 @@ const en = {
   // Findings — connectivity / permissions / RTF (shell)
   "doctor.endpoint_ok": "{0} connected",
   "doctor.endpoint_unreachable": "Can't reach {0} — check the server is running",
+  "doctor.omlx_stale_process": "{0}'s process is running but its port isn't listening — the launcher may be broken; try restarting the service",
   "doctor.permissions_ok": "Microphone and Accessibility permissions granted",
   "doctor.permission_mic": "Microphone permission not granted — dictation can't hear you",
   "doctor.permission_accessibility": "Accessibility permission not granted — hotkeys and paste won't work",
@@ -1169,6 +1170,7 @@ const zh: Partial<Record<Key, string>> = {
   "doctor.fixing": "修复中…",
   "doctor.endpoint_ok": "{0} 连接正常",
   "doctor.endpoint_unreachable": "无法连接 {0} — 请检查服务是否在运行",
+  "doctor.omlx_stale_process": "{0} 的进程仍在运行,但端口未监听 — 启动器可能已损坏,请尝试重启该服务",
   "doctor.permissions_ok": "麦克风与辅助功能权限已授予",
   "doctor.permission_mic": "未授予麦克风权限 — 听写无法收音",
   "doctor.permission_accessibility": "未授予辅助功能权限 — 快捷键和粘贴将失效",

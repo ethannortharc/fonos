@@ -51,8 +51,17 @@ pub async fn transcribe_http(
         form = form.text("language", lang_code.to_string());
     }
 
+    // `connect_timeout` bounds only the TCP/TLS handshake — a stale process
+    // whose port isn't listening (or a firewalled drop) fails fast instead of
+    // hanging the pill in "Processing" indefinitely. `timeout` bounds the
+    // whole request (connect + upload + inference + response) and stays
+    // generous since a real transcription of a long recording can legitimately
+    // take a while — this used to be a flat 15s, which was actually the wrong
+    // knob for the reported bug (connect refusal is near-instant either way)
+    // and risked cutting off long legitimate transcriptions.
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(120))
         .build() {
         Ok(c) => c,
         Err(e) => return Err(format!("could not build HTTP client: {e}")),
@@ -148,8 +157,10 @@ pub async fn transcribe_chat(
         "max_tokens": 4096
     });
 
+    // Same connect/total split as `transcribe_http` above.
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(120))
         .build()
     {
         Ok(c) => c,

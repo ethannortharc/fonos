@@ -1018,33 +1018,14 @@ async fn transcribe_apple(audio_path: &str, lang_code: &str, vocab_terms: &[Stri
 }
 
 /// Locate the fonos-stt-apple binary.
+///
+/// Delegates to the shared six-candidate finder (dev/`cargo test`/packaged
+/// `.app`) — this used to hand-roll a four-candidate search that lacked the
+/// nested `Contents/Resources/resources/` path Tauri v2 actually bundles
+/// into, so packaged apps could never find the helper. Same bug family as
+/// `fonos-audio-capture` (d7978bc) and `fonos-voice-capture` (#56).
 fn find_apple_stt_binary() -> Option<String> {
-    let name = "fonos-stt-apple";
-    let candidates: Vec<std::path::PathBuf> = {
-        let mut v = Vec::new();
-        // 1. Next to current executable (covers `cargo run` from target/debug/)
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(dir) = exe.parent() {
-                v.push(dir.join(name));
-                // 2. macOS .app bundle: Contents/MacOS/../Resources/
-                if let Some(parent) = dir.parent() {
-                    v.push(parent.join("Resources").join(name));
-                }
-            }
-        }
-        // 3. Development paths relative to CWD
-        v.push(std::path::PathBuf::from(format!("src-tauri/resources/{name}")));
-        v.push(std::path::PathBuf::from(format!("fonos-desktop/src-tauri/resources/{name}")));
-        v
-    };
-    for c in &candidates {
-        if c.exists() {
-            eprintln!("fonos: found Apple STT binary at {}", c.display());
-            return Some(c.to_string_lossy().to_string());
-        }
-    }
-    eprintln!("fonos: searched for {name} in: {:?}", candidates.iter().map(|c| c.display().to_string()).collect::<Vec<_>>());
-    None
+    crate::audio::diarize::find_helper_binary("fonos-stt-apple")
 }
 
 // STT clients moved to fonos-core (issue #21); re-exported so existing

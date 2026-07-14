@@ -1,10 +1,11 @@
 //! Platform adapters implementing the fonos-core pipeline ports.
 //!
-//! The core pipeline speaks [`PipelineEvent`] and [`TextSink`]; these adapters
-//! translate to the desktop surfaces: the float pill's `float:*` Tauri events
-//! and CGEvent/xdotool text injection.
+//! The core pipeline speaks [`PipelineEvent`]; these adapters translate it to
+//! the desktop surfaces — most visibly the float pill's `float:*` Tauri events.
+//! (Text injection at the cursor is handled inside the engine's own `insert`
+//! output, not here — see `commands::workflow_widgets`.)
 
-use fonos_core::pipeline::{EventSink, PipelineEvent, TextSink};
+use fonos_core::pipeline::{EventSink, PipelineEvent};
 use tauri::Emitter;
 
 /// Emits pipeline events as the float pill's `float:*` Tauri events.
@@ -45,26 +46,6 @@ impl EventSink for PillEventSink {
             // Run bench (a later task) uses its own sink for these.
             PipelineEvent::StepStarted { .. } | PipelineEvent::StepFinished { .. } => {}
         }
-    }
-}
-
-/// Delivers text at the cursor via the injection module, resolving the
-/// per-app strategy from the live config.
-///
-/// Constructed only on the Linux dictation path (`stop_and_process_dictation`,
-/// `cfg(target_os = "linux")`); macOS dictation now runs through the workflow
-/// engine's `insert` output, so this is dead code on the macOS build.
-#[allow(dead_code)]
-pub struct InjectionTextSink(pub std::sync::Arc<std::sync::Mutex<fonos_core::config::AppConfig>>);
-
-impl TextSink for InjectionTextSink {
-    fn inject(&self, text: &str) -> Result<(), String> {
-        let cfg = self.0.lock().map(|c| c.clone()).unwrap_or_default();
-        crate::injection::inject_text(text, &cfg).map(|_| ())
-    }
-
-    fn press_enter(&self) -> Result<(), String> {
-        crate::injection::press_enter()
     }
 }
 

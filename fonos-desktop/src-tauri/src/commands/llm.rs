@@ -2,66 +2,6 @@
 
 use super::AppState;
 use fonos_core::model_caps;
-use fonos_core::pipeline::LlmStageOutput;
-use fonos_core::workflow::llm_step::{run_llm_step, LlmProps};
-
-/// Run one LLM processor step for the Linux-only legacy dictation dispatch
-/// (`main.rs::stop_and_process_dictation`, the CGEventTap-free fallback for
-/// platforms without the macOS hotkey engine dispatch) from an
-/// already-resolved `llm.{mode_id}` widget's [`LlmProps`] — mirrors
-/// [`super::workflow_widgets::LlmProcessor::process`] (the engine's own LLM
-/// step) exactly: same service resolution, same glossary assembly, `""` for
-/// `translate_target` (translation is prompt-based now; see `LlmProps`'s own
-/// doc). No stats event is recorded — the engine's `LlmProcessor` doesn't
-/// record one either, so this stays platform-consistent rather than
-/// resurrecting the deleted `process_with_llm`'s per-call `"llm"` stats row.
-///
-/// `auto_paste` is always `true` and `auto_press_enter` is read from the live
-/// `out.insert` widget's `press_enter` prop — `wf.dictation`'s fixed output
-/// (see `workflow::migrate::migrate_to_workflows` rule 2) — since a `Mode`'s
-/// own per-mode `auto_paste`/`auto_press_enter` no longer exists.
-///
-/// Its only caller (`main.rs::stop_and_process_dictation`) is
-/// `#[cfg(target_os = "linux")]`, so this is unreachable — and clippy-flagged
-/// dead code — on every other target; unlike the deleted `process_with_llm`
-/// this isn't a `#[tauri::command]` kept alive by an unconditional
-/// `invoke_handler!` registration, so the lint needs an explicit nudge here.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) async fn run_dictation_llm_step(
-    state: &AppState,
-    text: String,
-    props: &LlmProps,
-) -> Result<LlmStageOutput, String> {
-    let (service, glossary, press_enter) = {
-        let config = state.config.lock().map_err(|e| e.to_string())?;
-        let service = if props.model_profile.is_empty() {
-            super::get_service_config(state, "llm")
-        } else {
-            super::get_service_config_for_profile(state, &props.model_profile)
-        };
-        let books = fonos_core::vocab::effective_books(
-            &config.vocab_books,
-            &config.global_vocab_books,
-            &props.vocab_books,
-        );
-        let glossary = fonos_core::vocab::build_glossary_block(&fonos_core::vocab::collect_terms(&books));
-        let press_enter = fonos_core::workflow::engine::effective_widgets(&config)
-            .iter()
-            .find(|w| w.id == "out.insert")
-            .and_then(|w| w.props.get("press_enter"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        (service, glossary, press_enter)
-    };
-
-    let processed = run_llm_step(props, &text, &service, "", glossary.as_deref()).await?;
-
-    Ok(LlmStageOutput {
-        processed,
-        auto_paste: true,
-        auto_press_enter: press_enter,
-    })
-}
 
 /// Probe a model's capabilities and cache results.
 #[tauri::command]

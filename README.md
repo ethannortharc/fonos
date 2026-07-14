@@ -305,8 +305,13 @@ Text injection on Linux needs `xdotool`:
 sudo apt install xdotool
 ```
 
-On Wayland, paste-at-cursor currently works through XWayland. Some
-platform-specific capture and session features remain more complete on macOS.
+On X11, every recipe hotkey works — the pill key, dictation hold and toggle,
+and any selection recipe you bind — through the same workflow engine macOS
+uses. Global hotkeys need X11: under Wayland the system blocks global key
+grabs, so use `kill -USR2 <pid>` (or your compositor's own shortcut runner) to
+toggle dictation instead. On Wayland, paste-at-cursor currently works through
+XWayland. Some platform-specific capture and session features remain more
+complete on macOS.
 
 ## Build From Source
 

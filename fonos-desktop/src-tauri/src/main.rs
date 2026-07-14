@@ -121,111 +121,102 @@ fn move_note_panel_to_cursor(app: &tauri::AppHandle) {
     ));
 }
 
-/// Stop dictation, run LLM if needed, inject text at cursor, emit float:stop.
-/// Re-centers the float pill after completion.
+/// Every (combo, dispatch-label) the app should bind, derived from live config:
+/// one entry per workflow Hotkey chip (`workflow-{id}@{idx}`) plus the pill's
+/// own key (`"pill"`). The single source of truth for *what* to register,
+/// shared by the macOS CGEventTap registration ([`build_hotkey_configs`]) and
+/// the Linux global-shortcut registration ([`register_workflow_shortcuts`]), so
+/// both platforms bind the exact same set of hotkeys.
 ///
-/// Only invoked from the Linux global-shortcut path; macOS drives this through
-/// the CGEventTap hotkey handler instead.
-#[cfg(target_os = "linux")]
-async fn stop_and_process_dictation(handle: tauri::AppHandle) {
-    use tauri::Emitter;
-    let state: tauri::State<'_, commands::AppState> = handle.state();
-    let state2: tauri::State<'_, commands::AppState> = handle.state();
-    let dictation_t0 = std::time::Instant::now();
-    match commands::dictation::stop_recording(handle.clone(), state, None).await {
-        Ok(result) => {
-            if !result.text.is_empty() {
-                let (mode, llm_props) = {
-                    let cfg = state2.config.lock().unwrap();
-                    let mode = cfg.dictation_mode.clone();
-                    let widgets = fonos_core::workflow::engine::effective_widgets(&cfg);
-                    let props = commands::dictation::dictation_mode_llm_props(&widgets, &mode);
-                    (mode, props)
-                };
-                if let Some(props) = llm_props {
-                    // stop_recording already left the pill in the processing
-                    // state for LLM modes; just run the LLM and emit the final
-                    // float:stop/float:error below.
-                    {
-                        // Shared post-LLM flow (fonos-core pipeline, issue #21): deliver the
-                        // processed text, emit exactly one terminal pill event, classify errors.
-                        let stage = commands::llm::run_dictation_llm_step(&state2, result.text, &props).await;
-                        let (events, text_sink) = {
-                            let s: tauri::State<AppState> = handle.state();
-                            (
-                                crate::adapters::PillEventSink(handle.clone()),
-                                crate::adapters::InjectionTextSink(s.config.clone()),
-                            )
-                        };
-                        if fonos_core::pipeline::deliver_llm_result(stage, &events, &text_sink).await
-                            == fonos_core::pipeline::DeliveryOutcome::Delivered
-                        {
-                            // End-to-end dictation latency (key release → delivered), issue #4.
-                            let db_arc = {
-                                let s: tauri::State<AppState> = handle.state();
-                                s.db.clone()
-                            };
-                            let guard = db_arc.lock();
-                            if let Ok(db) = guard {
-                                let _ = fonos_core::stats::record_dictation_latency(
-                                    &db, dictation_t0.elapsed().as_millis() as i64, &mode, &result.stt_model,
-                                );
-                            }
-                        }
-                    }
-                }
-                // Raw mode — stop_recording already injected and emitted
-                // float:stop (success) or float:error (injection failure).
-                // Re-emitting float:stop here would repaint the pill green
-                // over a just-shown injection error.
-            } else {
-                let _ = handle.emit("float:stop", "");
-            }
-        }
-        Err(e) => {
-            if e.contains("not recording") {
-                // Harmless start/stop race — keep the silent idle revert.
-                let _ = handle.emit("float:stop", "");
-            } else {
-                crate::error_surface::emit_float_error(&handle, &e);
-            }
-        }
-    }
-}
-
-/// Build all hotkey configs from the current app config.
-#[cfg(target_os = "macos")]
-fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
-    let mut configs = Vec::new();
-    let mut try_add = |combo: &str, label: &str| {
-        if combo.is_empty() { return; }
-        match hotkey::HotkeyManager::parse_hotkey(combo, label) {
-            Ok(hk) => configs.push(hk),
-            Err(e) => eprintln!("fonos: could not parse {} hotkey '{}': {}", label, combo, e),
-        }
-    };
-    // Non-workflow triggers keep their dedicated labels + dispatch arms.
-    // (Agent's former standalone "agent"/"agent-panel" labels are gone —
-    // Workbench P2 Task 6 folded them into wf.agent-voice/wf.agent's own
-    // Hotkey chips, handled by the `starts_with("workflow-")` arm below.
-    // Meeting's former standalone "meeting" label is gone the same way —
-    // Workbench P2 Task 7 folded hotkey_meeting into wf.meeting's own Hotkey
-    // chip; the STS walkie's "sts" label likewise — Task 9 folded hotkey_sts
-    // into wf.call's own Hotkey chip, retiring the hold-to-talk arm.)
-    // Dictation / note / listen / text-actions are unified onto the workflow
-    // engine (Workflow P1): every Hotkey chip on a workflow registers its own
-    // `workflow-{id}@{trigger_idx}` label (Workbench P1), handled by the
-    // `starts_with("workflow-")` arm.
+/// `cfg`-free so `cargo check`/`cargo test` exercise it on macOS.
+fn hotkey_bindings(config: &AppConfig) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    // Dictation / note / listen / text-actions / selection recipes are all
+    // unified onto the workflow engine (Workflow P1): every Hotkey chip on a
+    // workflow registers its own `workflow-{id}@{trigger_idx}` label (Workbench
+    // P1). Agent/meeting/STS's former standalone labels are gone the same way —
+    // they are now Hotkey chips on wf.agent*/wf.meeting/wf.call.
     for wf in fonos_core::workflow::engine::effective_workflows(config) {
         for (idx, combo, _capture) in wf.hotkey_triggers() {
-            try_add(combo, &crate::trigger_label::hotkey_label(&wf.id, idx));
+            if combo.is_empty() {
+                continue;
+            }
+            out.push((combo.to_string(), crate::trigger_label::hotkey_label(&wf.id, idx)));
         }
     }
     // Pill-owned hotkey (Workbench P1, spec §3c): the floating pill holds its
     // own global key, separate from any recipe's Hotkey chips, dispatched by
-    // the `"pill"` arm below.
-    try_add(&config.pill_hotkey, "pill");
+    // the `"pill"` arm.
+    if !config.pill_hotkey.is_empty() {
+        out.push((config.pill_hotkey.clone(), "pill".to_string()));
+    }
+    out
+}
+
+/// Build all macOS CGEventTap hotkey configs from the current app config, by
+/// parsing every combo [`hotkey_bindings`] resolves.
+#[cfg(target_os = "macos")]
+fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
+    let mut configs = Vec::new();
+    for (combo, label) in hotkey_bindings(config) {
+        match hotkey::HotkeyManager::parse_hotkey(&combo, &label) {
+            Ok(hk) => configs.push(hk),
+            Err(e) => eprintln!("fonos: could not parse {} hotkey '{}': {}", label, combo, e),
+        }
+    }
     configs
+}
+
+/// Map a fonos combo string (`"cmd+shift+space"`, the same format
+/// [`hotkey::HotkeyManager::parse_hotkey`] consumes on macOS) to the token
+/// string the global-shortcut plugin's `Shortcut` parser accepts
+/// (`"CommandOrControl+Shift+space"`).
+///
+/// The last `+`-separated token is the key, earlier tokens are modifiers — same
+/// split as the macOS parser. `cmd`/`command` map to `CommandOrControl` so a
+/// macOS-authored combo lands on Control (not the Super key) under X11. Only the
+/// key names that differ between fonos's macOS key table
+/// ([`hotkey`]`::key_name_to_code`) and the case-insensitive global-hotkey
+/// parser need translation; every other token (letters, digits, raw
+/// punctuation, `space`, `tab`, `escape`, arrows, F-keys) is accepted verbatim.
+/// Returns `None` for an empty combo or an unknown modifier token, so the caller
+/// skips (and logs) an unbindable combo. Final-key validity is confirmed by
+/// `Shortcut::from_str` at registration time.
+///
+/// `cfg`-free (pure) so it is unit-tested on macOS; only *called* on Linux.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn to_plugin_shortcut(combo: &str) -> Option<String> {
+    if combo.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = combo.split('+').collect();
+    let (key_tok, mod_toks) = parts.split_last()?; // parts is non-empty
+    let mut out: Vec<String> = Vec::with_capacity(parts.len());
+    for m in mod_toks {
+        out.push(
+            match m.trim().to_lowercase().as_str() {
+                "cmd" | "command" => "CommandOrControl",
+                "ctrl" | "control" => "Control",
+                "shift" => "Shift",
+                "alt" | "opt" | "option" => "Alt",
+                _ => return None, // unknown modifier — unbindable
+            }
+            .to_string(),
+        );
+    }
+    let key = key_tok.trim().to_lowercase();
+    if key.is_empty() {
+        return None;
+    }
+    let key = match key.as_str() {
+        "return" => "enter",          // plugin has no RETURN alias (ENTER only)
+        "delete" | "backspace" => "backspace", // macOS `delete` IS the Backspace key
+        "forwarddelete" => "delete",  // plugin DELETE == forward-delete
+        "grave" => "backquote",       // plugin has no GRAVE alias (Backquote / `)
+        other => other,
+    };
+    out.push(key.to_string());
+    Some(out.join("+"))
 }
 
 /// Debounces a fast physical double-press of a toggle-capture hotkey so it
@@ -235,9 +226,9 @@ fn build_hotkey_configs(config: &AppConfig) -> Vec<hotkey::HotkeyConfig> {
 /// `workflow-{id}` and `pill` hotkey arms alike (see
 /// [`dispatch_workflow_trigger`]) — since the guard is about a fast physical
 /// gesture, not about which specific hotkey fired.
-#[cfg(target_os = "macos")]
+/// `cfg`-free: shared by both the macOS CGEventTap callback and the Linux
+/// global-shortcut callback (both drive [`dispatch_workflow_trigger`]).
 static TOGGLE_DEBOUNCE_LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-#[cfg(target_os = "macos")]
 const TOGGLE_DELAY_MS: u64 = 500;
 
 /// The shared mic hold/toggle dispatch dance for every workflow-triggering
@@ -247,7 +238,10 @@ const TOGGLE_DELAY_MS: u64 = 500;
 /// workflow — mic sources on the correct hold/toggle edge (toggle key-downs
 /// debounced via [`TOGGLE_DEBOUNCE_LAST`]), non-mic sources once on
 /// key-down — or finishes an in-flight capture.
-#[cfg(target_os = "macos")]
+///
+/// `cfg`-free (platform-neutral): the macOS CGEventTap callback and the Linux
+/// global-shortcut callback share it verbatim, so dictation and every recipe
+/// hotkey take the exact same engine path on both platforms.
 async fn dispatch_workflow_trigger(
     handle: tauri::AppHandle,
     wf_id: String,
@@ -305,6 +299,152 @@ async fn dispatch_workflow_trigger(
     } else if is_down {
         // Non-mic sources (e.g. selection) fire once on key-down.
         commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
+    }
+}
+
+/// Resolve a `workflow-{id}@{idx}` dispatch label against the live config into
+/// the `(workflow id, is_mic, capture)` [`dispatch_workflow_trigger`] needs.
+///
+/// The label carries the fired trigger chip as `workflow-{id}@{trigger_idx}`
+/// (Workbench P1 — one binding per Hotkey chip). `is_mic` gates the two-phase
+/// mic dance and comes from the target workflow's source widget; `capture`
+/// ("hold"|"toggle") comes from that workflow's `triggers[trigger_idx]`. `None`
+/// when the label resolves to no live workflow (a dangling/renamed trigger) — the
+/// caller logs and drops the keystroke.
+///
+/// `cfg`-free: the macOS CGEventTap callback and the Linux global-shortcut
+/// callback share it, so a rebind in Workbench takes effect identically on both.
+fn resolve_workflow_trigger(config: &AppConfig, label: &str) -> Option<(String, bool, String)> {
+    let (base_label, trigger_idx) = crate::trigger_label::parse_hotkey_label(label);
+    let wf_id = fonos_core::workflow::engine::resolve_trigger_target(base_label);
+    let widgets = fonos_core::workflow::engine::effective_widgets(config);
+    let workflows = fonos_core::workflow::engine::effective_workflows(config);
+    workflows.iter().find(|w| w.id == wf_id).map(|wf| {
+        let src = widgets.iter().find(|w| w.id == wf.source);
+        let is_mic = src.map(|w| w.type_tag == "microphone").unwrap_or(false);
+        let capture = wf
+            .hotkey_triggers()
+            .find(|(i, _, _)| *i == trigger_idx)
+            .map(|(_, _, cap)| cap.to_string())
+            .unwrap_or_else(|| "hold".to_string());
+        (wf.id.clone(), is_mic, capture)
+    })
+}
+
+/// Resolve the pill-owned hotkey against the live config (Workbench P1, spec
+/// §3c). Runs whichever workflow the pill roller currently has selected
+/// (`active_voice_workflow`), falling back to the built-in `wf.dictation` — the
+/// "run whatever's selected" behavior the old `workflow-wf.dictation` redirect
+/// used to provide. `capture` comes from `config.pill_hotkey_capture` (the
+/// pill's key isn't a per-workflow trigger chip). `None` when the resolved id
+/// has no live workflow.
+///
+/// `cfg`-free: shared by the macOS + Linux callbacks. Resolving `active_voice_workflow`
+/// *at keypress time* (not registration time) is what lets the pill key follow
+/// the roller without a `hotkey:reload`, on both platforms.
+fn resolve_pill_trigger(config: &AppConfig) -> Option<(String, bool, String)> {
+    let workflows = fonos_core::workflow::engine::effective_workflows(config);
+    let active = &config.active_voice_workflow;
+    let wf_id = if !active.is_empty() && workflows.iter().any(|w| w.id == *active) {
+        active.clone()
+    } else {
+        "wf.dictation".to_string()
+    };
+    let widgets = fonos_core::workflow::engine::effective_widgets(config);
+    let capture = if config.pill_hotkey_capture.is_empty() {
+        "hold".to_string()
+    } else {
+        config.pill_hotkey_capture.clone()
+    };
+    workflows.iter().find(|w| w.id == wf_id).map(|wf| {
+        let src = widgets.iter().find(|w| w.id == wf.source);
+        let is_mic = src.map(|w| w.type_tag == "microphone").unwrap_or(false);
+        (wf.id.clone(), is_mic, capture)
+    })
+}
+
+/// Register every workflow + pill hotkey with the Linux global-shortcut plugin.
+///
+/// Reads the live config through [`hotkey_bindings`] — the same source of truth
+/// the macOS CGEventTap uses — maps each fonos combo to the plugin's `Shortcut`
+/// format ([`to_plugin_shortcut`]), and installs a per-combo handler that mirrors
+/// the macOS callback: it resolves the dispatch target from live config
+/// ([`resolve_pill_trigger`] / [`resolve_workflow_trigger`]) on each keypress and
+/// hands off to the shared [`dispatch_workflow_trigger`]. Called on startup and,
+/// after an `unregister_all()`, on every `hotkey:reload`.
+///
+/// The plugin (via `global-hotkey`) always *consumes* a registered combo — the
+/// grabbed key never reaches the focused window — so the workflow `capture`
+/// flag ("hold"/"toggle") is honored, but there is no separate "don't capture"
+/// mode to implement (X11 `XGrabKey` has none; this matches the macOS
+/// CGEventTap, which likewise always drops a matched hotkey). Wayland is out of
+/// scope: `global-hotkey` is X11-only.
+#[cfg(target_os = "linux")]
+fn register_workflow_shortcuts(app: &tauri::AppHandle) {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+    let bindings = {
+        let state: tauri::State<'_, AppState> = app.state();
+        let config = match state.config.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("fonos: linux hotkey registration — config lock poisoned: {e}");
+                return;
+            }
+        };
+        hotkey_bindings(&config)
+    };
+
+    let gs = app.global_shortcut();
+    for (combo, label) in bindings {
+        let Some(plugin_combo) = to_plugin_shortcut(&combo) else {
+            eprintln!("fonos: skipping unbindable combo '{combo}' ({label})");
+            continue;
+        };
+        let shortcut: Shortcut = match plugin_combo.parse() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("fonos: invalid shortcut '{plugin_combo}' ({label}): {e}");
+                continue;
+            }
+        };
+        let handle = app.clone();
+        let lbl = label.clone();
+        let res = gs.on_shortcut(shortcut, move |_app, _sc, event| {
+            let handle = handle.clone();
+            let label = lbl.clone();
+            // The plugin delivers exactly one Pressed on physical key-down and
+            // one Released on key-up: `global-hotkey` enables X11
+            // DETECTABLE_AUTO_REPEAT and dedups by held-state, so auto-repeat is
+            // suppressed just like the macOS CGEventTap's own held-set.
+            let is_down = event.state == ShortcutState::Pressed;
+            tauri::async_runtime::spawn(async move {
+                let resolved = {
+                    let state: tauri::State<'_, AppState> = handle.state();
+                    let config = match state.config.lock() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("fonos: linux hotkey — config lock poisoned: {e}");
+                            return;
+                        }
+                    };
+                    if label == "pill" {
+                        resolve_pill_trigger(&config)
+                    } else {
+                        resolve_workflow_trigger(&config, &label)
+                    }
+                };
+                let Some((wf_id, is_mic, capture)) = resolved else {
+                    eprintln!("fonos: linux hotkey '{label}' resolved to no workflow — ignoring");
+                    return;
+                };
+                dispatch_workflow_trigger(handle.clone(), wf_id, is_mic, &capture, is_down).await;
+            });
+        });
+        match res {
+            Ok(()) => eprintln!("fonos: registered linux shortcut '{combo}' → {label}"),
+            Err(e) => eprintln!("fonos: failed to register linux shortcut '{combo}' ({label}): {e}"),
+        }
     }
 }
 
@@ -711,7 +851,10 @@ fn main() {
                 });
             }
 
-            // 1. Global hotkeys (macOS uses CGEventTap; Linux TODO: use global-shortcut plugin).
+            // 1. Global hotkeys. macOS uses a hand-rolled CGEventTap; Linux uses
+            //    the global-shortcut plugin (block 1b below). Both register the
+            //    same set (`hotkey_bindings`) and dispatch through the same
+            //    workflow engine (`dispatch_workflow_trigger`).
             #[cfg(target_os = "macos")]
             {
             let state = app.state::<AppState>();
@@ -750,23 +893,11 @@ fn main() {
                             // hands-free call on each key-down.
 
                             l if l.starts_with("workflow-") => {
-                                // Resolve the trigger target and derive
-                                // `is_mic`/`capture` under the config lock,
-                                // then drop it before any await. The label
-                                // carries the fired trigger chip as
-                                // `workflow-{id}@{trigger_idx}`
-                                // (Workbench P1 — one binding per Hotkey
-                                // chip). Every `workflow-{id}` label triggers
-                                // its own id directly (Workbench P1, spec
-                                // §3c: the former `workflow-wf.dictation` →
-                                // `active_voice_workflow` redirect is gone —
-                                // that behavior now belongs to the pill's own
-                                // hotkey, see the `"pill"` arm below).
-                                // `is_mic` gates the two-phase mic dance and
-                                // comes from the target workflow's source
-                                // widget; `capture` ("hold"|"toggle") comes
-                                // from the fired workflow's
-                                // `triggers[trigger_idx]`. A missing/dangling
+                                // Resolve the trigger target under the config
+                                // lock, drop it before any await, then dispatch.
+                                // Resolution logic is shared with the Linux
+                                // global-shortcut callback via
+                                // `resolve_workflow_trigger` — a missing/dangling
                                 // workflow is logged and the trigger dropped.
                                 let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
@@ -777,29 +908,7 @@ fn main() {
                                             return;
                                         }
                                     };
-                                    let (base_label, trigger_idx) =
-                                        crate::trigger_label::parse_hotkey_label(l);
-                                    let wf_id =
-                                        fonos_core::workflow::engine::resolve_trigger_target(base_label);
-                                    let widgets =
-                                        fonos_core::workflow::engine::effective_widgets(&config);
-                                    let workflows =
-                                        fonos_core::workflow::engine::effective_workflows(&config);
-                                    workflows
-                                        .iter()
-                                        .find(|w| w.id == wf_id)
-                                        .map(|wf| {
-                                            let src = widgets.iter().find(|w| w.id == wf.source);
-                                            let is_mic = src
-                                                .map(|w| w.type_tag == "microphone")
-                                                .unwrap_or(false);
-                                            let capture = wf
-                                                .hotkey_triggers()
-                                                .find(|(i, _, _)| *i == trigger_idx)
-                                                .map(|(_, _, cap)| cap.to_string())
-                                                .unwrap_or_else(|| "hold".to_string());
-                                            (wf.id.clone(), is_mic, capture)
-                                        })
+                                    resolve_workflow_trigger(&config, l)
                                 };
                                 let Some((wf_id, is_mic, capture)) = resolved else {
                                     eprintln!(
@@ -813,23 +922,10 @@ fn main() {
 
                             "pill" => {
                                 // Pill-owned hotkey (Workbench P1, spec §3c):
-                                // the floating pill holds its own global key,
-                                // separate from any recipe's Hotkey chips.
-                                // Pressing it runs whichever workflow the
-                                // pill roller currently has selected
-                                // (`active_voice_workflow`), falling back to
-                                // the built-in wf.dictation — this is the
-                                // exact "run whatever's selected" behavior
-                                // the old `workflow-wf.dictation` redirect
-                                // used to provide, now read directly rather
-                                // than through `resolve_trigger_target`.
-                                // `is_mic` is derived the same way as the
-                                // `workflow-` arm above; `capture` comes from
-                                // `config.pill_hotkey_capture` (not a
-                                // per-workflow trigger chip, since the pill's
-                                // key isn't one). Shares the mic dance with
-                                // the `workflow-` arm via
-                                // `dispatch_workflow_trigger`.
+                                // runs whichever workflow the pill roller
+                                // currently has selected. Resolution is shared
+                                // with the Linux callback via
+                                // `resolve_pill_trigger`.
                                 let resolved = {
                                     let state: tauri::State<'_, AppState> = handle.state();
                                     let config = match state.config.lock() {
@@ -839,30 +935,7 @@ fn main() {
                                             return;
                                         }
                                     };
-                                    let workflows =
-                                        fonos_core::workflow::engine::effective_workflows(&config);
-                                    let active = &config.active_voice_workflow;
-                                    let wf_id = if !active.is_empty()
-                                        && workflows.iter().any(|w| w.id == *active)
-                                    {
-                                        active.clone()
-                                    } else {
-                                        "wf.dictation".to_string()
-                                    };
-                                    let widgets =
-                                        fonos_core::workflow::engine::effective_widgets(&config);
-                                    let capture = if config.pill_hotkey_capture.is_empty() {
-                                        "hold".to_string()
-                                    } else {
-                                        config.pill_hotkey_capture.clone()
-                                    };
-                                    workflows.iter().find(|w| w.id == wf_id).map(|wf| {
-                                        let src = widgets.iter().find(|w| w.id == wf.source);
-                                        let is_mic = src
-                                            .map(|w| w.type_tag == "microphone")
-                                            .unwrap_or(false);
-                                        (wf.id.clone(), is_mic, capture)
-                                    })
+                                    resolve_pill_trigger(&config)
                                 };
                                 let Some((wf_id, is_mic, capture)) = resolved else {
                                     eprintln!(
@@ -921,150 +994,23 @@ fn main() {
             } // end #[cfg(target_os = "macos")] hotkey block
 
             // 1b. Linux global shortcuts via tauri-plugin-global-shortcut.
+            // Registers EVERY workflow Hotkey chip plus the pill's own key
+            // (`hotkey_bindings`) and routes each through the same workflow
+            // engine the macOS CGEventTap uses — dictation (hold via the pill,
+            // toggle via wf.dictation-toggle) and every selection recipe alike.
+            // X11 only (global-shortcut can't grab under Wayland).
             #[cfg(target_os = "linux")]
             {
-                use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+                register_workflow_shortcuts(app.handle());
 
-                let state = app.state::<AppState>();
-                let config = state.config.lock().unwrap();
-                let combos: Vec<(String, String)> = vec![
-                    (config.hotkey_dictation.clone(), "dictation".into()),
-                    (config.hotkey_dictation_toggle.clone(), "dictation-toggle".into()),
-                ];
-                drop(config);
-
-                // Convert fonos hotkey format (cmd+shift+a) to Tauri shortcut format (CommandOrControl+Shift+A)
-                fn to_tauri_shortcut(combo: &str) -> Option<String> {
-                    if combo.is_empty() { return None; }
-                    let parts: Vec<&str> = combo.split('+').collect();
-                    let converted: Vec<String> = parts.iter().map(|p| {
-                        match p.to_lowercase().as_str() {
-                            "cmd" | "command" => "CommandOrControl".into(),
-                            "ctrl" | "control" => "Control".into(),
-                            "shift" => "Shift".into(),
-                            "alt" | "opt" | "option" => "Alt".into(),
-                            "space" => "Space".into(),
-                            other => {
-                                let mut c = other.chars();
-                                match c.next() {
-                                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                                    None => other.into(),
-                                }
-                            }
-                        }
-                    }).collect();
-                    Some(converted.join("+"))
-                }
-
-                let app_handle = app.handle().clone();
-                for (combo, label) in combos {
-                    if let Some(tauri_combo) = to_tauri_shortcut(&combo) {
-                        match tauri_combo.parse::<Shortcut>() {
-                            Ok(shortcut) => {
-                                let lbl = label.clone();
-                                let h = app_handle.clone();
-                                if let Err(e) = app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
-                                    let handle = h.clone();
-                                    let label = lbl.clone();
-                                    let is_toggle = label == "dictation-toggle";
-                                    let pressed = event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed;
-
-                                    if is_toggle {
-                                        // Toggle: only react to press
-                                        if !pressed { return; }
-                                        tauri::async_runtime::spawn(async move {
-                                            eprintln!("fonos: linux toggle '{}'", label);
-                                            if crate::commands::dictation::is_recording() {
-                                                stop_and_process_dictation(handle).await;
-                                            } else {
-                                                let state: tauri::State<'_, AppState> = handle.state();
-                                                if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                    crate::error_surface::emit_float_error(&handle, &e);
-                                                }
-                                            }
-                                        });
-                                    } else {
-                                        // Hold-to-talk: press=start, release=stop
-                                        tauri::async_runtime::spawn(async move {
-                                            if pressed {
-                                                eprintln!("fonos: linux hold '{}' down", label);
-                                                if !crate::commands::dictation::is_recording() {
-                                                    let state: tauri::State<'_, AppState> = handle.state();
-                                                    if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                        crate::error_surface::emit_float_error(&handle, &e);
-                                                    }
-                                                }
-                                            } else {
-                                                eprintln!("fonos: linux hold '{}' up", label);
-                                                if crate::commands::dictation::is_recording() {
-                                                    stop_and_process_dictation(handle).await;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }) {
-                                    eprintln!("fonos: failed to register linux shortcut '{}': {e}", combo);
-                                } else {
-                                    eprintln!("fonos: registered linux shortcut '{}' → {}", combo, label);
-                                }
-                            }
-                            Err(e) => eprintln!("fonos: invalid shortcut '{}': {e}", tauri_combo),
-                        }
-                    }
-                }
-
-                // Hot-reload: unregister all + re-register with new config
+                // Hot-reload: on a config change (e.g. a rebind in Workbench),
+                // drop every OS grab and re-register from the fresh config.
                 let reload_handle = app.handle().clone();
                 app.listen("hotkey:reload", move |_| {
-                    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
-
-                    let h = reload_handle.clone();
-                    eprintln!("fonos: linux hotkey reload — re-registering");
-                    let _ = h.global_shortcut().unregister_all();
-
-                    let state: tauri::State<'_, AppState> = h.state();
-                    let config = state.config.lock().unwrap();
-                    let combos: Vec<(String, String)> = vec![
-                        (config.hotkey_dictation.clone(), "dictation".into()),
-                        (config.hotkey_dictation_toggle.clone(), "dictation-toggle".into()),
-                    ];
-                    drop(config);
-
-                    for (combo, label) in combos {
-                        if let Some(tauri_combo) = to_tauri_shortcut(&combo) {
-                            if let Ok(shortcut) = tauri_combo.parse::<Shortcut>() {
-                                let lbl = label.clone();
-                                let h2 = h.clone();
-                                if let Err(e) = h.global_shortcut().on_shortcut(shortcut, move |_app, _sc, event| {
-                                    let handle = h2.clone();
-                                    let l = lbl.clone();
-                                    let is_toggle = l == "dictation-toggle";
-                                    let pressed = event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed;
-                                    if is_toggle && !pressed { return; }
-                                    tauri::async_runtime::spawn(async move {
-                                        if is_toggle || !pressed {
-                                            // toggle press or hold release → stop
-                                            if crate::commands::dictation::is_recording() {
-                                                stop_and_process_dictation(handle).await;
-                                            }
-                                        } else {
-                                            // hold press → start
-                                            if !crate::commands::dictation::is_recording() {
-                                                let state: tauri::State<'_, AppState> = handle.state();
-                                                if let Err(e) = commands::dictation::start_recording(handle.clone(), state, None).await {
-                                                    crate::error_surface::emit_float_error(&handle, &e);
-                                                }
-                                            }
-                                        }
-                                    });
-                                }) {
-                                    eprintln!("fonos: reload shortcut '{}' failed: {e}", combo);
-                                } else {
-                                    eprintln!("fonos: reloaded linux shortcut '{}' → {}", combo, label);
-                                }
-                            }
-                        }
-                    }
+                    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                    eprintln!("fonos: linux hotkey reload — re-registering all workflow shortcuts");
+                    let _ = reload_handle.global_shortcut().unregister_all();
+                    register_workflow_shortcuts(&reload_handle);
                 });
             }
 
@@ -1175,4 +1121,102 @@ fn main() {
                 std::process::exit(0);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::to_plugin_shortcut;
+    use std::str::FromStr;
+    use tauri_plugin_global_shortcut::Shortcut;
+
+    /// Every string `to_plugin_shortcut` emits must parse as a plugin
+    /// `Shortcut` (the plugin uses global-hotkey's `from_str`), or the Linux
+    /// registration would silently drop the binding.
+    fn assert_parses(combo: &str) {
+        let mapped = to_plugin_shortcut(combo)
+            .unwrap_or_else(|| panic!("`{combo}` should map to Some"));
+        Shortcut::from_str(&mapped)
+            .unwrap_or_else(|e| panic!("`{combo}` → `{mapped}` failed to parse: {e}"));
+    }
+
+    #[test]
+    fn maps_modifiers_and_letter() {
+        // cmd → CommandOrControl (lands on Control under X11, not the Super key).
+        assert_eq!(to_plugin_shortcut("cmd+shift+a").as_deref(), Some("CommandOrControl+Shift+a"));
+        assert_eq!(to_plugin_shortcut("command+shift+a").as_deref(), Some("CommandOrControl+Shift+a"));
+        assert_eq!(to_plugin_shortcut("ctrl+alt+z").as_deref(), Some("Control+Alt+z"));
+        assert_eq!(to_plugin_shortcut("control+option+z").as_deref(), Some("Control+Alt+z"));
+    }
+
+    #[test]
+    fn maps_named_and_special_keys() {
+        assert_eq!(to_plugin_shortcut("cmd+shift+space").as_deref(), Some("CommandOrControl+Shift+space"));
+        // Keys whose fonos name differs from the global-hotkey token get remapped.
+        assert_eq!(to_plugin_shortcut("cmd+return").as_deref(), Some("CommandOrControl+enter"));
+        assert_eq!(to_plugin_shortcut("cmd+delete").as_deref(), Some("CommandOrControl+backspace"));
+        assert_eq!(to_plugin_shortcut("cmd+backspace").as_deref(), Some("CommandOrControl+backspace"));
+        assert_eq!(to_plugin_shortcut("cmd+forwarddelete").as_deref(), Some("CommandOrControl+delete"));
+        assert_eq!(to_plugin_shortcut("cmd+grave").as_deref(), Some("CommandOrControl+backquote"));
+    }
+
+    #[test]
+    fn single_key_combo_has_no_modifiers() {
+        assert_eq!(to_plugin_shortcut("f5").as_deref(), Some("f5"));
+    }
+
+    #[test]
+    fn empty_and_unknown_modifier_reject() {
+        assert_eq!(to_plugin_shortcut(""), None);
+        // "hyper" is not a modifier fonos/macOS recognizes → unbindable.
+        assert_eq!(to_plugin_shortcut("hyper+a"), None);
+    }
+
+    #[test]
+    fn every_mapping_parses_as_a_plugin_shortcut() {
+        // A representative spread across the key families the macOS parser
+        // (`hotkey::key_name_to_code`) accepts: letters, digits, raw and named
+        // punctuation, whitespace/control keys, arrows, and function keys.
+        for combo in [
+            "cmd+shift+a",
+            "ctrl+alt+z",
+            "cmd+9",
+            "cmd+space",
+            "cmd+return",
+            "cmd+enter",
+            "cmd+tab",
+            "cmd+escape",
+            "cmd+esc",
+            "cmd+delete",
+            "cmd+backspace",
+            "cmd+forwarddelete",
+            "cmd+up",
+            "cmd+arrowdown",
+            "cmd+left",
+            "cmd+right",
+            "cmd+f1",
+            "cmd+f12",
+            "cmd+f19",
+            "cmd+minus",
+            "cmd+-",
+            "cmd+equal",
+            "cmd+=",
+            "cmd+bracketleft",
+            "cmd+[",
+            "cmd+semicolon",
+            "cmd+;",
+            "cmd+comma",
+            "cmd+,",
+            "cmd+slash",
+            "cmd+/",
+            "cmd+period",
+            "cmd+.",
+            "cmd+backslash",
+            "cmd+quote",
+            "cmd+grave",
+            "cmd+backquote",
+            "cmd+`",
+        ] {
+            assert_parses(combo);
+        }
+    }
 }

@@ -180,6 +180,14 @@ pub fn resize_float(app: tauri::AppHandle, width: u32, height: u32) -> Result<()
         if size_changed || pos_changed {
             refresh_ns_window(&w);
         }
+        // Linux/GTK analog: after a programmatic resize/move an X11 or
+        // Wayland compositor can keep compositing the pill's PREVIOUS frame
+        // until the widget gets a natural draw pass — the same ghost the
+        // macOS path fixes. Force a full-surface redraw. See refresh_gtk_window.
+        #[cfg(target_os = "linux")]
+        if size_changed || pos_changed {
+            refresh_gtk_window(&w);
+        }
     }
     Ok(())
 }
@@ -220,6 +228,37 @@ pub(crate) fn refresh_ns_window(w: &tauri::WebviewWindow) {
     });
 }
 
+/// Linux/GTK analog of [`refresh_ns_window`]: force the float pill's toplevel
+/// GTK window to re-run its size allocation and repaint its full surface, so an
+/// X11 or Wayland compositor drops any stale frame it kept after a programmatic
+/// resize/move.
+///
+/// On Linux the transparent, borderless webview is a GTK `ApplicationWindow`
+/// (`WebviewWindow::gtk_window()`). After `set_size`/`set_position` the
+/// compositor can keep compositing the window's PREVIOUS backing surface at the
+/// old geometry until the widget gets a natural draw pass — the same "two
+/// superimposed pill frames" ghost the macOS shadow-invalidation path fixes.
+/// `queue_resize()` re-negotiates the allocation for the new geometry and
+/// `queue_draw()` marks the whole widget (and its child webview) dirty, forcing
+/// GTK to re-rasterize the full surface on the next frame.
+///
+/// GTK objects are `!Send` and must be touched only on the main thread, so the
+/// `gtk::ApplicationWindow` is fetched INSIDE `run_on_main_thread` — only the
+/// `Send` `WebviewWindow` handle crosses into the closure. Sync Tauri commands
+/// already execute on the main thread, where the closure then runs inline, so
+/// ordering relative to the preceding resize is preserved.
+#[cfg(target_os = "linux")]
+pub(crate) fn refresh_gtk_window(w: &tauri::WebviewWindow) {
+    use gtk::prelude::WidgetExt;
+    let win = w.clone();
+    let _ = w.run_on_main_thread(move || {
+        if let Ok(gtk_window) = win.gtk_window() {
+            gtk_window.queue_resize();
+            gtk_window.queue_draw();
+        }
+    });
+}
+
 /// Fire-and-forget window-server refresh for the float pill.
 ///
 /// float.html calls this after its repaint-guard flash settles on every state
@@ -229,13 +268,16 @@ pub(crate) fn refresh_ns_window(w: &tauri::WebviewWindow) {
 /// above — yet the window server may still hold a stale composite from an
 /// earlier frame. Resizing transitions get the invalidation twice (at frame
 /// change and at settle); both are imperceptible no-ops when nothing is stale.
-/// No-op on non-macOS platforms.
+/// No-op on Windows; the macOS and Linux paths force a display pass on their
+/// respective native windows (see [`refresh_ns_window`] / [`refresh_gtk_window`]).
 #[tauri::command]
 pub fn refresh_float_window(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     if let Some(_w) = app.get_webview_window("float") {
         #[cfg(target_os = "macos")]
         refresh_ns_window(&_w);
+        #[cfg(target_os = "linux")]
+        refresh_gtk_window(&_w);
     }
     Ok(())
 }

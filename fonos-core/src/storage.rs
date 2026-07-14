@@ -498,6 +498,21 @@ pub fn delete_container(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Delete a container together with every entry inside it.
+///
+/// Unlike [`delete_container`] (which unlinks entries so they survive in plain
+/// history), this cascades the delete to the container's entries — for
+/// containers whose entries have no life outside the container (meeting
+/// sessions: the transcript segments are meaningless once the session is
+/// gone, and must not spill into History as loose entries).
+pub fn delete_container_cascade(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM entries WHERE container_id = ?1", params![id])
+        .map_err(|e| Error::Database(format!("delete_container_cascade entries: {e}")))?;
+    conn.execute("DELETE FROM containers WHERE id = ?1", params![id])
+        .map_err(|e| Error::Database(format!("delete_container_cascade: {e}")))?;
+    Ok(())
+}
+
 /// Resolve a workflow notebook widget's configured `container_id` to a live
 /// container row. `0` is the "Quick Note" sentinel; a stale id (the target
 /// notebook was deleted) also falls back to Quick Note so a flow never
@@ -1159,6 +1174,24 @@ mod tests {
         // …but the entry survives, unlinked (back in plain history).
         let got = get_entry(&conn, entry_id).expect("entry survives");
         assert_eq!(got.container_id, None);
+    }
+
+    #[test]
+    fn delete_container_cascade_removes_entries() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let nb_id = seed_notebook(&conn, "Team Standup");
+        let entry_id = seed_entry(&conn, "transcript segment", None);
+        update_entry_container(&conn, entry_id, Some(nb_id)).expect("link");
+
+        delete_container_cascade(&conn, nb_id).expect("delete_container_cascade");
+
+        // The container row is gone…
+        assert!(get_container(&conn, nb_id).is_err());
+        // …and so is the entry — a meeting segment has no life outside the
+        // session, so it must NOT survive as a loose history entry.
+        assert!(get_entry(&conn, entry_id).is_err());
     }
 
     #[test]

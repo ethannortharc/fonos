@@ -708,18 +708,13 @@ pub(crate) async fn transcribe_samples(
                 raw_text: transcript.clone(),
                 processed_text: None,
                 container_id: if dictation_mode == "note" {
-                    // Use the notebook selected in the note panel (stored in AppState).
-                    // If no target set (race condition on first open), fall back to Quick Note.
+                    // Resolve the note panel's selected notebook (stored in
+                    // AppState) through the shared resolver: no target / the
+                    // sentinel 0 / a since-deleted notebook all fall back to
+                    // Quick Note, so a note dictation never writes into a dead
+                    // container row.
                     let target = state.note_target.lock().ok().and_then(|g| *g);
-                    if target.is_some() {
-                        target
-                    } else {
-                        // Find Quick Note container as fallback
-                        db.query_row(
-                            "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
-                            [], |r| r.get::<_, i64>(0)
-                        ).ok()
-                    }
+                    fonos_core::storage::resolve_notebook_container(&db, target.unwrap_or(0))
                 } else {
                     None
                 },

@@ -191,13 +191,25 @@ pub fn update_container_metadata(
 }
 
 /// Delete a container by its row ID.
+///
+/// Meeting sessions own their transcript segments — those entries have no life
+/// outside the session, so cascade-delete them (otherwise deleting a meeting
+/// dumps every segment into History as loose entries). Every other container
+/// type (notebooks) unlinks its entries back into plain history instead
+/// ("delete notebook, keep the notes"). If the container is already gone,
+/// fall through to the idempotent unlink path.
 #[tauri::command(rename_all = "snake_case")]
 pub fn delete_container(
     state: tauri::State<'_, AppState>,
     id: i64,
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    storage::delete_container(&conn, id).map_err(|e| e.to_string())
+    match storage::get_container(&conn, id) {
+        Ok(c) if c.container_type == ContainerType::MeetingSession => {
+            storage::delete_container_cascade(&conn, id).map_err(|e| e.to_string())
+        }
+        _ => storage::delete_container(&conn, id).map_err(|e| e.to_string()),
+    }
 }
 
 // ─── Export commands ───────────────────────────────────────────────────────────

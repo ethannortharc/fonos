@@ -1375,4 +1375,69 @@ mod tests {
         assert!(!super::workflow_has_llm(&wf(vec![]), &widgets));
         assert!(!super::workflow_has_llm(&wf(vec!["proc.upper"]), &widgets));
     }
+
+    #[test]
+    fn workflow_has_llm_against_builtin_composite_shapes() {
+        use crate::workflow::builtin::{built_in_widgets, built_in_workflows};
+
+        let widgets = built_in_widgets();
+        let workflows = built_in_workflows();
+
+        // Session composites (agent, meeting, call) have empty processors and
+        // LLM-backed output widgets. They should return false: composites are
+        // conversations, not commands.
+        let agent_wf = workflows.iter().find(|w| w.id == "wf.agent").expect("wf.agent exists");
+        assert!(
+            agent_wf.processors.is_empty(),
+            "wf.agent should have no processors"
+        );
+        assert!(!super::workflow_has_llm(agent_wf, &widgets),
+            "wf.agent has no LLM processor; LLM-backed output does not count");
+
+        let meeting_wf = workflows
+            .iter()
+            .find(|w| w.id == "wf.meeting")
+            .expect("wf.meeting exists");
+        assert!(
+            meeting_wf.processors.is_empty(),
+            "wf.meeting should have no processors"
+        );
+        assert!(!super::workflow_has_llm(meeting_wf, &widgets),
+            "wf.meeting has no LLM processor; LLM-backed output does not count");
+
+        let call_wf = workflows
+            .iter()
+            .find(|w| w.id == "wf.call")
+            .expect("wf.call exists");
+        assert!(
+            call_wf.processors.is_empty(),
+            "wf.call should have no processors"
+        );
+        assert!(!super::workflow_has_llm(call_wf, &widgets),
+            "wf.call has no LLM processor; LLM-backed output does not count");
+
+        // Workflows with actual LLM processors should return true.
+        let explain_wf = workflows
+            .iter()
+            .find(|w| w.id == "wf.explain")
+            .expect("wf.explain exists");
+        assert!(
+            explain_wf.processors.iter().any(|p| p == "llm.explain"),
+            "wf.explain should have llm.explain processor"
+        );
+        assert!(super::workflow_has_llm(explain_wf, &widgets),
+            "wf.explain has an LLM processor");
+
+        // Verify explain's output is not itself an LLM widget, so we know we're
+        // testing the processor scan, not a lucky output match.
+        let explain_output_id = &explain_wf.outputs[0];
+        let explain_output = widgets
+            .iter()
+            .find(|w| &w.id == explain_output_id)
+            .expect("output widget exists");
+        assert_eq!(
+            explain_output.type_tag, "dialog",
+            "wf.explain output is dialog, not llm"
+        );
+    }
 }

@@ -132,4 +132,21 @@ describe("EngineSetupReview", () => {
     expect(notice.textContent).toContain("install it from ollama.com");
     expect(screen.queryByTestId("review-progress")).toBeNull();
   });
+
+  it("ignores events from a different engine and only fires onDone for the matching engine", async () => {
+    const onDone = vi.fn();
+    render(
+      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={onDone} />
+    );
+    fireEvent.click(screen.getByTestId("review-confirm"));
+    await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
+
+    // Send a done event from a different engine — should be ignored
+    listeners["engine:setup"]({ payload: JSON.stringify({ stage: "done", engine: "vllm" }) });
+    expect(onDone).not.toHaveBeenCalled();
+
+    // Send done from the matching engine — should fire onDone
+    listeners["engine:setup"]({ payload: JSON.stringify({ stage: "done", engine: "ollama" }) });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
 });

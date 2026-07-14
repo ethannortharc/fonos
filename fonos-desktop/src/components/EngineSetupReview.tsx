@@ -69,6 +69,9 @@ export default function EngineSetupReview({
       } catch {
         return;
       }
+      // Only process events for the current engine; stray events from
+      // previously-abandoned setups must not affect this card.
+      if (ev.engine && ev.engine !== built.plan.engine) return;
       if (ev.stage === "error") {
         setError(ev.message ?? "setup failed");
         setFailedStage(ev.failed_stage);
@@ -85,6 +88,7 @@ export default function EngineSetupReview({
       if (ev.stage === "done") {
         if (!doneRef.current) {
           doneRef.current = true;
+          setRunning(false);
           onDone();
         }
         return;
@@ -105,6 +109,7 @@ export default function EngineSetupReview({
     setError("");
     setFailedStage(undefined);
     setManualMsg("");
+    setStage(null);
     setRunning(true);
     try {
       await engineSetup(built.plan);

@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Onboarding from "../Onboarding";
-import { saveConfig, requestAccessibility } from "../../lib/api";
+import { saveConfig, requestAccessibility, startRecording, stopRecording } from "../../lib/api";
 
 const listeners: Record<string, (e: unknown) => void> = {};
 
@@ -24,10 +24,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 vi.mock("../../lib/api", () => ({
-  getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "" })),
+  getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "", hotkey_dictation: "cmd+shift+space" })),
   saveConfig: vi.fn(async () => {}),
   checkAccessibility: vi.fn(async () => false),
   requestAccessibility: vi.fn(async () => false),
+  startRecording: vi.fn(async () => {}),
+  stopRecording: vi.fn(async () => ({ text: "" })),
   recordOnboardingEvent: vi.fn(async () => true),
 }));
 
@@ -66,6 +68,20 @@ describe("Onboarding (macOS flow)", () => {
       .mocked(saveConfig)
       .mock.calls.map((c) => JSON.parse(c[0] as string));
     expect(persisted.some((p) => p.has_completed_onboarding === true)).toBe(true);
+  });
+
+  it("hold-to-talk button drives start_recording on press and stop_recording on release", async () => {
+    render(<Onboarding onDone={() => {}} />);
+    fireEvent.click(screen.getByTestId("ob-start"));
+    const ptt = await screen.findByTestId("ob-ptt");
+    fireEvent.pointerDown(ptt);
+    expect(startRecording).toHaveBeenCalledTimes(1);
+    expect(stopRecording).not.toHaveBeenCalled();
+    fireEvent.pointerUp(ptt);
+    expect(stopRecording).toHaveBeenCalledTimes(1);
+    // pointerleave after release must not fire a second stop (guarded).
+    fireEvent.pointerLeave(ptt);
+    expect(stopRecording).toHaveBeenCalledTimes(1);
   });
 
   it("float:stop fills the playground and enables Continue", async () => {

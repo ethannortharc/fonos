@@ -16,10 +16,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => () => {}),
 }));
 vi.mock("../../lib/api", () => ({
-  getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "" })),
+  getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "", hotkey_dictation: "cmd+shift+space" })),
   saveConfig: vi.fn(async () => {}),
   checkAccessibility: vi.fn(async () => true),
   requestAccessibility: vi.fn(async () => true),
+  startRecording: vi.fn(async () => {}),
+  stopRecording: vi.fn(async () => ({ text: "" })),
   recordOnboardingEvent: vi.fn(async () => true),
 }));
 

@@ -12,6 +12,8 @@ import {
   saveConfig,
   checkAccessibility,
   requestAccessibility,
+  startRecording,
+  stopRecording,
 } from "../lib/api";
 import { ensureAppleSttDefault } from "../lib/appleSttSeed";
 import { isMacOS } from "../lib/platform";
@@ -21,6 +23,40 @@ import Scenarios, { isSttConfigured } from "./Scenarios";
 /** Ordered steps. Linux front-loads engine setup because it has no built-in
  *  STT (spec §P1 Linux 差异); "engines" renders <Scenarios mode="overlay">. */
 export type ObStep = "welcome" | "engines" | "playground" | "accessibility" | "guided";
+
+// ── hotkey combo formatting (I1) ────────────────────────────────────────────
+// Render the *actual* configured dictation combo into the guided/playground
+// copy instead of the vague "your dictation hotkey". Mirrors ScenariosTab's
+// formatCombo, but spaces the key off the modifiers ("⌘⇧ Space") on mac and
+// falls back to a text form ("Ctrl+Shift+Space") elsewhere.
+const MOD_MAC: Record<string, string> = {
+  cmd: "⌘", command: "⌘", meta: "⌘",
+  ctrl: "⌃", control: "⌃",
+  alt: "⌥", option: "⌥", opt: "⌥",
+  shift: "⇧",
+};
+const MOD_TXT: Record<string, string> = {
+  cmd: "Ctrl", command: "Ctrl", meta: "Ctrl",
+  ctrl: "Ctrl", control: "Ctrl",
+  alt: "Alt", option: "Alt", opt: "Alt",
+  shift: "Shift",
+};
+
+function keyName(p: string): string {
+  if (p === "space") return "Space";
+  return p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1);
+}
+
+/** Format a stored combo ("cmd+shift+space") for display. */
+function formatHotkey(combo: string, mac: boolean): string {
+  const parts = combo.split("+").map((p) => p.trim().toLowerCase()).filter(Boolean);
+  if (parts.length === 0) return "";
+  const key = keyName(parts[parts.length - 1]);
+  const mods = parts.slice(0, -1).map((p) => (mac ? MOD_MAC[p] : MOD_TXT[p]) ?? keyName(p));
+  return mac
+    ? mods.join("") + (mods.length ? " " : "") + key
+    : [...mods, key].join("+");
+}
 
 const FLOW: ObStep[] = isMacOS
   ? ["welcome", "playground", "accessibility", "guided"]
@@ -40,9 +76,43 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // Whether an STT engine is configured; gates the "no engine" warning in the
   // playground. Re-computed every time the playground step is (re-)entered.
   const [sttReady, setSttReady] = useState(true);
+  // The actual configured dictation combo, formatted for display (I1). Loaded
+  // once on mount; defaults to the built-in combo until config resolves.
+  const [hotkey, setHotkey] = useState(() => formatHotkey("cmd+shift+space", isMacOS));
+  // Hold-to-talk button state (C2). `pttActive` guards start/stop so the
+  // pointerup + pointerleave pair can't double-fire the recording commands.
+  const [ptt, setPtt] = useState(false);
+  const pttActive = useRef(false);
   // macOS reaches "engines" only via skip, where it is terminal. On Linux it
   // sits mid-flow and continues to the playground.
   const enginesTerminal = useRef(isMacOS);
+
+  // Load the configured dictation combo once so the copy shows the real keys.
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => {
+        const combo = (cfg as { hotkey_dictation?: string }).hotkey_dictation || "cmd+shift+space";
+        setHotkey(formatHotkey(combo, isMacOS));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Hold-to-talk: an AX-independent fallback to the global hotkey (which needs
+  // Accessibility to fire). Drives the same start_recording/stop_recording path
+  // as the pill, which revives the legacy funnel instrumentation and emits
+  // float:stop (caught by the playground listener below).
+  const startPtt = useCallback(() => {
+    if (pttActive.current) return;
+    pttActive.current = true;
+    setPtt(true);
+    startRecording().catch(() => {});
+  }, []);
+  const stopPtt = useCallback(() => {
+    if (!pttActive.current) return;
+    pttActive.current = false;
+    setPtt(false);
+    stopRecording().catch(() => {});
+  }, []);
 
   const finish = useCallback(async () => {
     try {
@@ -214,10 +284,23 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 {playText}
               </p>
             ) : (
-              <p className="text-[12px] text-[rgba(255,255,255,0.35)]">{t("ob.playground.hint")}</p>
+              <p className="text-[12px] text-[rgba(255,255,255,0.35)]">
+                {t("ob.playground.hint").replace("{hotkey}", hotkey)}
+              </p>
             )}
           </div>
           {playText && <p className="text-[11px] text-[#7ed492]">{t("ob.playground.ready")}</p>}
+          {/* AX-independent fallback: the hotkey hint above stays primary. */}
+          <button
+            data-testid="ob-ptt"
+            onPointerDown={startPtt}
+            onPointerUp={stopPtt}
+            onPointerLeave={stopPtt}
+            className={pill}
+          >
+            {ptt ? t("ob.play.ptt-active") : t("ob.play.ptt")}
+          </button>
+          <p className="text-[11px] text-[rgba(255,255,255,0.35)]">{t("ob.play.ptt-hint")}</p>
           {!sttReady && (
             <>
               <p data-testid="ob-no-stt" className="text-[11px] text-[#e8a72e]">
@@ -277,7 +360,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       {step === "guided" && (
         <div className="flex flex-col items-center gap-3 text-center max-w-[480px] px-6">
           <div className="text-[18px] font-semibold text-[#fafaf9]">{t("ob.guided.title")}</div>
-          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">{t("ob.guided.desc")}</p>
+          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">
+            {t("ob.guided.desc").replace("{hotkey}", hotkey)}
+          </p>
           {guidedDone ? (
             <p data-testid="ob-guided-done" className="text-[12px] text-[#7ed492]">
               {t("ob.guided.success")}

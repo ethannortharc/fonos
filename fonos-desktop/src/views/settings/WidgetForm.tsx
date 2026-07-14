@@ -34,10 +34,12 @@ import { t, useT } from "../../lib/i18n";
 import { isMacOS } from "../../lib/platform";
 import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "../../types";
 import type { Container } from "../../lib/storage-api";
+import { createContainer } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import { LANGUAGES, inputClass, selectClass } from "./constants";
 import SkillsPanel from "../workbench/SkillsPanel";
+import NotebookCombobox from "./NotebookCombobox";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
@@ -396,12 +398,21 @@ function PropsForm({
       const notebooks = containers.filter((c) => c.container_type === "notebook");
       return (
         <Field label={t("widgets.field.container_id")}>
-          <select value={String(pNum(p, "container_id", 0))} onChange={(e) => set("container_id", parseInt(e.target.value) || 0)} className={selectClass}>
-            <option value="0">{t("widgets.notebook.quick")}</option>
-            {notebooks.map((c) => (
-              <option key={c.id} value={c.id}>{c.title}</option>
-            ))}
-          </select>
+          <NotebookCombobox
+            containerId={pNum(p, "container_id", 0)}
+            pendingTitle={pStr(p, "container_title")}
+            notebooks={notebooks}
+            onChange={(sel) => {
+              const next: Props = { ...p };
+              if (sel.kind === "existing") {
+                next.container_id = sel.container_id;
+                delete next.container_title;
+              } else {
+                next.container_title = sel.title;
+              }
+              onProps(next);
+            }}
+          />
         </Field>
       );
     }
@@ -684,7 +695,19 @@ export default function WidgetForm({
     if (!form.id.trim()) { setError(t("widgets.err.type-required")); return; }
     setError("");
     try {
-      await onSave(formToWidget(form));
+      let props = form.props;
+      // Name-is-identity notebooks: a pending title (typed text matching no
+      // existing notebook) becomes a real container only at save time —
+      // cancelling the form never creates anything (spec §1).
+      if (form.type_tag === "notebook") {
+        const pending = pStr(props, "container_title").trim();
+        if (pending) {
+          const created = await createContainer(pending, "notebook");
+          props = { ...props, container_id: created.id };
+          delete (props as Record<string, unknown>).container_title;
+        }
+      }
+      await onSave(formToWidget({ ...form, props }));
     } catch (e) {
       // The caller's save (backend validation) rejected — show it inline,
       // same as WidgetsTab's original handleSave.

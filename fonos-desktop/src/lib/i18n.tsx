@@ -687,6 +687,8 @@ const en = {
   "widgets.editor.config": "Configuration",
   "widgets.no-config": "This widget has no configuration.",
   "widgets.notebook.quick": "Quick Note (default)",
+  "widgets.notebook.ph": "Pick or type a notebook name",
+  "widgets.notebook.will-create": "Will create “{name}”",
   "widgets.strategy.paste": "Paste",
   "widgets.strategy.type": "Type character-by-character",
 
@@ -1415,6 +1417,8 @@ const zh: Partial<Record<Key, string>> = {
   "widgets.editor.config": "配置",
   "widgets.no-config": "此部件无需配置。",
   "widgets.notebook.quick": "快速笔记（默认）",
+  "widgets.notebook.ph": "选择或输入笔记本名字",
+  "widgets.notebook.will-create": "将新建「{name}」",
   "widgets.strategy.paste": "粘贴",
   "widgets.strategy.type": "逐字键入",
 

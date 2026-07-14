@@ -111,7 +111,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     if (!pttActive.current) return;
     pttActive.current = false;
     setPtt(false);
-    stopRecording().catch(() => {});
+    // Use the returned transcript directly: without Accessibility the legacy
+    // path can't inject (no float:stop fires), but the text still comes back
+    // here — the whole point of this AX-independent fallback.
+    stopRecording()
+      .then((r) => {
+        if (r?.text) setPlayText(r.text);
+      })
+      .catch(() => {});
   }, []);
 
   const finish = useCallback(async () => {

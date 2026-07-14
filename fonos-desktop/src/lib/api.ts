@@ -328,6 +328,17 @@ export async function getToday(): Promise<TodaySummary> {
   return invoke<TodaySummary>("get_today");
 }
 
+/** One recorded first-run funnel node (P1 onboarding_events, one row per step). */
+export interface OnboardingEvent {
+  step: string;
+  created_at: string;
+}
+
+/** Fetch the local first-run funnel events (record-once per step, never uploaded). */
+export async function getOnboardingEvents(): Promise<OnboardingEvent[]> {
+  return invoke<OnboardingEvent[]>("get_onboarding_events");
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 /** Return the current application configuration. */

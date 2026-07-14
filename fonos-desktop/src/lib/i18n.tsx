@@ -200,6 +200,15 @@ const en = {
   "stats.avg": "Avg",
   "stats.fastest": "Fastest",
   "stats.unknown-model": "(unknown)",
+  "stats.firstrun.title": "First-run timeline",
+  "stats.firstrun.empty": "No first-run data yet",
+  "stats.firstrun.launch": "Launch",
+  "stats.firstrun.mic_granted": "Microphone granted",
+  "stats.firstrun.first_transcript": "First transcript",
+  "stats.firstrun.ax_granted": "Accessibility granted",
+  "stats.firstrun.first_insert": "First system-wide insert",
+  "stats.firstrun.first_command": "First command",
+  "stats.firstrun.target-met": "✓ within {secs}s",
 
   // notes page
   "notes.title": "Notes",
@@ -1001,6 +1010,15 @@ const zh: Partial<Record<Key, string>> = {
   "stats.avg": "平均",
   "stats.fastest": "最快",
   "stats.unknown-model": "（未知）",
+  "stats.firstrun.title": "首次体验时间线",
+  "stats.firstrun.empty": "尚无首启记录",
+  "stats.firstrun.launch": "启动",
+  "stats.firstrun.mic_granted": "麦克风授权",
+  "stats.firstrun.first_transcript": "首次转写",
+  "stats.firstrun.ax_granted": "辅助功能授权",
+  "stats.firstrun.first_insert": "首次系统级插入",
+  "stats.firstrun.first_command": "首次命令",
+  "stats.firstrun.target-met": "✓ 目标 {secs}s",
 
   // notes page
   "notes.title": "笔记",

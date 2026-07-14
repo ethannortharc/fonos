@@ -619,6 +619,15 @@ const en = {
   "scen.setup.start": "Start the engine",
   "scen.setup.note": "Everything is confirmed on a review card before anything runs.",
 
+  // Role-coverage placeholders (R4) — explain why a cloud row is blank; the row
+  // stays an editable input either way.
+  "scen.cloud.ph.no-tts": "This provider has no speech synthesis — configure OpenAI or local Kokoro later",
+  "scen.cloud.ph.no-stt": "No dictation model here — use the built-in voice (macOS), a local engine, or Fireworks/OpenAI",
+  "scen.cloud.ph.custom": "Type the model id your endpoint serves for this role — leave empty to skip",
+  // Local Custom tile (R3) — manual, no detection three-state, no install CTA.
+  "scen.manual": "manual",
+  "scen.custom.needurl": "Enter the server URL and at least one model to continue",
+
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
   "wf.section.preset": "Preset",
   "wf.section.custom": "Custom",
@@ -1423,6 +1432,14 @@ const zh: Partial<Record<Key, string>> = {
   "scen.setup.install": "一键安装并启动",
   "scen.setup.start": "启动引擎",
   "scen.setup.note": "执行前会先弹出确认卡，逐行可改。",
+
+  // 角色覆盖占位（R4）—— 解释某一行为何留空；无论如何该行都可编辑。
+  "scen.cloud.ph.no-tts": "该服务商无朗读模型——可稍后接 OpenAI 或本地 Kokoro",
+  "scen.cloud.ph.no-stt": "此处无听写模型——可用内置语音(macOS)、本地引擎，或 Fireworks/OpenAI",
+  "scen.cloud.ph.custom": "填入你的服务在该角色下提供的模型 id——留空则跳过",
+  // 本地「自定义」卡片（R3）—— 手动，无检测三态，无安装 CTA。
+  "scen.manual": "手动",
+  "scen.custom.needurl": "请填入服务地址和至少一个模型以继续",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
   "wf.section.preset": "预置",

@@ -54,7 +54,17 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 type ScenarioKey = "local" | "cloud" | "zero";
 // EngineKey is imported from ../lib/engineSetup (single source of truth shared
 // with buildSetupPlan / EngineSetupReview).
-const CLOUD_PROVIDER_KEYS = ["openai", "openrouter", "anthropic", "google", "fireworks"] as const;
+// Single source of truth for the provider-key union — every CLOUD_PROVIDERS
+// entry's `key` must appear here (a Scenarios test enforces parity). Exported so
+// tests can assert cerebras/custom presence + ProviderKey derivation.
+export const CLOUD_PROVIDER_KEYS = [
+  "openai",
+  "openrouter",
+  "anthropic",
+  "google",
+  "fireworks",
+  "cerebras",
+] as const;
 type ProviderKey = (typeof CLOUD_PROVIDER_KEYS)[number];
 
 interface EngineDef {
@@ -96,7 +106,10 @@ interface CloudBundle {
   stt?: { model: string; stt_api: "whisper" | "chat" };
   sttApple?: boolean;
   llm?: string;
-  tts?: string;
+  // Role-coverage metadata (R4): a real model id = prefilled default; `null` =
+  // the provider genuinely lacks this role (drives an explanatory placeholder);
+  // absent/`undefined` = unknown (e.g. Custom, where the user types anything).
+  tts?: string | null;
 }
 interface ProviderDef {
   key: ProviderKey;
@@ -105,7 +118,8 @@ interface ProviderDef {
   bundle: CloudBundle;
 }
 
-const CLOUD_PROVIDERS: ProviderDef[] = [
+// Exported so tests can assert provider presence + ProviderKey/keys parity.
+export const CLOUD_PROVIDERS: ProviderDef[] = [
   {
     key: "openai",
     name: "OpenAI",
@@ -120,32 +134,67 @@ const CLOUD_PROVIDERS: ProviderDef[] = [
     key: "openrouter",
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
-    bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true },
+    bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true, tts: null },
   },
   {
     key: "anthropic",
     name: "Anthropic",
     baseUrl: "https://api.anthropic.com",
-    bundle: { llm: "claude-sonnet-4-5", sttApple: true },
+    bundle: { llm: "claude-sonnet-4-5", sttApple: true, tts: null },
   },
   {
     key: "google",
     name: "Google",
     baseUrl: "https://generativelanguage.googleapis.com",
-    bundle: { llm: "gemini-2.5-flash", sttApple: true },
+    bundle: { llm: "gemini-2.5-flash", sttApple: true, tts: null },
   },
   {
     key: "fireworks",
     name: "Fireworks",
     baseUrl: "https://api.fireworks.ai/inference/v1",
     bundle: {
+      // Fireworks serves an OpenAI-compatible Whisper endpoint; "whisper-v3-turbo"
+      // is their documented id — the row stays editable if it drifts.
       stt: { model: "whisper-v3-turbo", stt_api: "whisper" },
       llm: "accounts/fireworks/models/kimi-k2-instruct",
+      tts: null, // no Fireworks TTS today → no-tts hint on the voice rows
     },
+  },
+  {
+    // LLM-only. Cerebras is OpenAI-compatible, so the generic fallthrough in
+    // fonos-core (llm.rs → call_openai_compatible; not caught by the
+    // anthropic/google branches) drives it — no Rust change needed.
+    // "qwen-3-32b" is their documented fast Qwen; the row stays editable so
+    // model drift is user-fixable. macOS keeps the Apple STT fallback.
+    key: "cerebras",
+    name: "Cerebras",
+    baseUrl: "https://api.cerebras.ai/v1",
+    bundle: { llm: "qwen-3-32b", sttApple: true, tts: null },
   },
 ];
 
-const OPENROUTER_FREE_LLM = "meta-llama/llama-3.3-70b-instruct:free";
+// live-verified against openrouter.ai/api/v1/models on 2026-07-14; rows stay editable if the pool rotates
+export const OPENROUTER_FREE_LLM = "qwen/qwen3-next-80b-a3b-instruct:free";
+
+/** Placeholder i18n key for a cloud plan row, by provider bundle + role
+ *  (R4 role-coverage). PRINCIPLE: prefill is a default, never a lock — every
+ *  row is an editable input; the placeholder just explains *why* a role is
+ *  blank so the user knows where to point it instead. A real model id → the
+ *  generic model-id hint; an explicit `null` → the role is genuinely absent
+ *  (no-tts / off-macOS no-stt); absent metadata → Custom, type anything. */
+export function cloudRowPlaceholder(b: CloudBundle, role: RoleKey): TKey {
+  if (role === "conv" || role === "listen") {
+    if (b.tts === null) return "scen.cloud.ph.no-tts";
+    return b.tts ? "scen.cloud.row.ph" : "scen.cloud.ph.custom";
+  }
+  if (role === "stt") {
+    if (b.stt) return "scen.cloud.row.ph";
+    // No real cloud STT model: sttApple providers explain the on-device / local
+    // route; a bare bundle (Custom) just invites a model id.
+    return b.sttApple ? "scen.cloud.ph.no-stt" : "scen.cloud.ph.custom";
+  }
+  return b.llm ? "scen.cloud.row.ph" : "scen.cloud.ph.custom";
+}
 
 const CARD_META: Record<
   ScenarioKey,
@@ -1046,6 +1095,8 @@ function CloudStep({
   setBaseUrl: (v: string) => void;
 }) {
   const set = (role: RoleKey, v: string) => setCloudSel({ ...cloudSel, [role]: v });
+  const bundle = CLOUD_PROVIDERS.find((p) => p.key === provider)!.bundle;
+  const ph = (role: RoleKey) => t(cloudRowPlaceholder(bundle, role));
   return (
     <div className="mt-4 rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4 flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
@@ -1096,11 +1147,11 @@ function CloudStep({
         {cloudSel.stt === "apple" ? (
           <PlanRowStatic role="stt" value={t("scen.apple")} />
         ) : (
-          <PlanRowInput role="stt" value={cloudSel.stt} onChange={(v) => set("stt", v)} placeholder={t("scen.cloud.row.ph")} />
+          <PlanRowInput role="stt" value={cloudSel.stt} onChange={(v) => set("stt", v)} placeholder={ph("stt")} />
         )}
-        <PlanRowInput role="llm" value={cloudSel.llm} onChange={(v) => set("llm", v)} placeholder={t("scen.cloud.row.ph")} />
-        <PlanRowInput role="conv" value={cloudSel.conv} onChange={(v) => set("conv", v)} placeholder={t("scen.cloud.row.ph")} />
-        <PlanRowInput role="listen" value={cloudSel.listen} onChange={(v) => set("listen", v)} placeholder={t("scen.cloud.row.ph")} />
+        <PlanRowInput role="llm" value={cloudSel.llm} onChange={(v) => set("llm", v)} placeholder={ph("llm")} />
+        <PlanRowInput role="conv" value={cloudSel.conv} onChange={(v) => set("conv", v)} placeholder={ph("conv")} />
+        <PlanRowInput role="listen" value={cloudSel.listen} onChange={(v) => set("listen", v)} placeholder={ph("listen")} />
       </div>
       <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("scen.cloud.editable.note")}</span>
     </div>
@@ -1210,7 +1261,9 @@ export function relDate(epochSecs: string): string {
   return td("scen.saved.day", [String(Math.floor(diff / 86400))]);
 }
 
-export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google", "fireworks"]);
+// Providers whose saved-scenario preview shows a "needs key" chip when the key
+// is blank. "custom" is intentionally absent — keyless LAN servers are valid.
+export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google", "fireworks", "cerebras"]);
 
 /** Host (with port) of a base URL — "http://localhost:8000" → "localhost:8000",
  *  "https://api.openai.com" → "api.openai.com". Empty for keyless/local. */

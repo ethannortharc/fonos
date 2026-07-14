@@ -596,6 +596,10 @@ const en = {
   // onboarding (P3)
   "scen.cloud.row.ph": "model id — leave empty to skip",
   "scen.cloud.editable.note": "Every row is a default — edit or clear any of them.",
+  "scen.installed.stopped": "installed, not running",
+  "scen.setup.install": "Install & start for me",
+  "scen.setup.start": "Start the engine",
+  "scen.setup.note": "Everything is confirmed on a review card before anything runs.",
 
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
   "wf.section.preset": "Preset",
@@ -1375,6 +1379,10 @@ const zh: Partial<Record<Key, string>> = {
   // onboarding (P3)
   "scen.cloud.row.ph": "模型 id——留空则不指派",
   "scen.cloud.editable.note": "每一行都是缺省值，可改可清空。",
+  "scen.installed.stopped": "已安装，未运行",
+  "scen.setup.install": "一键安装并启动",
+  "scen.setup.start": "启动引擎",
+  "scen.setup.note": "执行前会先弹出确认卡，逐行可改。",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
   "wf.section.preset": "预置",

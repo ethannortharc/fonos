@@ -10,16 +10,22 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  checkDiskSpace,
+  detectHardware,
+  engineDetect,
   getConfig,
   saveConfig,
-  scanModels,
   scenarioProbe,
 } from "../lib/api";
 import type {
   AppConfig,
+  EngineDetection,
+  HardwareInfo,
   ModelProfile,
   ScenarioProbe,
 } from "../types";
+import { buildSetupPlan, type BuiltPlan, type EngineKey, type Tier } from "../lib/engineSetup";
+import EngineSetupReview from "../components/EngineSetupReview";
 import { t, td, useT, type TKey } from "../lib/i18n";
 import { isMacOS } from "../lib/platform";
 
@@ -46,7 +52,8 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 // ── scenario / engine / provider definitions ────────────────────────────────
 
 type ScenarioKey = "local" | "cloud" | "zero";
-type EngineKey = "omlx" | "lmstudio" | "ollama" | "vllm";
+// EngineKey is imported from ../lib/engineSetup (single source of truth shared
+// with buildSetupPlan / EngineSetupReview).
 const CLOUD_PROVIDER_KEYS = ["openai", "openrouter", "anthropic", "google", "fireworks"] as const;
 type ProviderKey = (typeof CLOUD_PROVIDER_KEYS)[number];
 
@@ -287,9 +294,15 @@ export default function Scenarios({
   useT();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selected, setSelected] = useState<ScenarioKey | null>(null);
-  const [engine, setEngine] = useState<EngineKey>("omlx");
+  // Platform-optimal default: macOS ships the OMLX full pipeline; Linux has no
+  // Apple STT, so Ollama (LLM-only + auto-installable) is the sensible start.
+  const [engine, setEngine] = useState<EngineKey>(isMacOS ? "omlx" : "ollama");
   const [provider, setProvider] = useState<ProviderKey>("openai");
-  const [detected, setDetected] = useState<Partial<Record<EngineKey, boolean | null>>>({});
+  const [detected, setDetected] = useState<Partial<Record<EngineKey, EngineDetection | null>>>({});
+  const [hardware, setHardware] = useState<HardwareInfo | null>(null);
+  const [diskKb, setDiskKb] = useState(0);
+  const [tierOverride, setTierOverride] = useState<Tier | null>(null);
+  const [review, setReview] = useState<BuiltPlan | null>(null);
 
   // Step 2 (local probe) state.
   const [baseUrl, setBaseUrl] = useState("http://localhost:8000");
@@ -325,15 +338,18 @@ export default function Scenarios({
     reloadConfig();
   }, [reloadConfig]);
 
-  // Detect local engines on mount (parallel, best-effort).
+  // Two-layer engine detection + hardware/disk facts on mount (best-effort).
   useEffect(() => {
     let alive = true;
     setDetected(Object.fromEntries(LOCAL_ENGINES.map((e) => [e.key, null])));
-    LOCAL_ENGINES.forEach((e) => {
-      scanModels(e.url, "")
-        .then((r) => alive && setDetected((d) => ({ ...d, [e.key]: r.reachable })))
-        .catch(() => alive && setDetected((d) => ({ ...d, [e.key]: false })));
-    });
+    engineDetect()
+      .then((list) => {
+        if (!alive) return;
+        setDetected(Object.fromEntries(list.map((d) => [d.engine, d])));
+      })
+      .catch(() => alive && setDetected({}));
+    detectHardware().then((h) => alive && setHardware(h)).catch(() => {});
+    checkDiskSpace().then((d) => alive && setDiskKb(d.available_kb)).catch(() => {});
     return () => {
       alive = false;
     };
@@ -361,6 +377,8 @@ export default function Scenarios({
     setEngine(k);
     setProbe(null);
     setProbeErr("");
+    setReview(null);
+    setTierOverride(null);
     const e = LOCAL_ENGINES.find((x) => x.key === k)!;
     setBaseUrl(e.url);
     setApiKey("");
@@ -404,6 +422,25 @@ export default function Scenarios({
       setProbing(false);
     }
   }, [baseUrl, apiKey, currentEngine.full]);
+
+  // ── one-click setup: detection → review card → auto-probe ────────────────────
+  // A user-chosen tier (from a disk/failure downgrade) wins; else the hardware's
+  // recommendation; else the safe floor.
+  const tier: Tier = tierOverride ?? hardware?.tier ?? "light";
+  const openReview = (forTier: Tier) => {
+    const det = detected[engine];
+    if (!det) return;
+    setTierOverride(forTier);
+    setReview(buildSetupPlan(det, forTier, diskKb, engine));
+  };
+  const reviewDone = () => {
+    setReview(null);
+    // Engine came up — re-detect and hand off to the normal probe flow.
+    engineDetect()
+      .then((list) => setDetected(Object.fromEntries(list.map((d) => [d.engine, d]))))
+      .catch(() => {});
+    runProbe();
+  };
 
   // Build the desired role specs for the current selection.
   const buildSpecs = (): { source: string; specs: { role: RoleKey; spec: ProfileSpec }[] } | null => {
@@ -619,6 +656,19 @@ export default function Scenarios({
           planSel={planSel}
           setPlanSel={setPlanSel}
           full={currentEngine.full}
+          onSetup={() => openReview(tier)}
+          review={
+            review && (
+              <EngineSetupReview
+                built={review}
+                engineName={currentEngine.name}
+                tier={tier}
+                onRetier={openReview}
+                onCancel={() => setReview(null)}
+                onDone={reviewDone}
+              />
+            )
+          }
         />
       )}
 
@@ -741,9 +791,11 @@ function LocalStep({
   planSel,
   setPlanSel,
   full,
+  onSetup,
+  review,
 }: {
   engine: EngineKey;
-  detected: Partial<Record<EngineKey, boolean | null>>;
+  detected: Partial<Record<EngineKey, EngineDetection | null>>;
   onEngine: (k: EngineKey) => void;
   baseUrl: string;
   apiKey: string;
@@ -756,6 +808,8 @@ function LocalStep({
   planSel: Record<RoleKey, string>;
   setPlanSel: (v: Record<RoleKey, string>) => void;
   full: boolean;
+  onSetup: () => void;
+  review: React.ReactNode;
 }) {
   const set = (role: RoleKey, v: string) => setPlanSel({ ...planSel, [role]: v });
   const ttsCandidates = probe?.classified.tts ?? [];
@@ -785,10 +839,12 @@ function LocalStep({
                   {e.name}
                 </div>
                 <div className="text-[8.5px] mt-0.5">
-                  {det === null ? (
+                  {det === null || det === undefined ? (
                     <span className="text-[rgba(255,255,255,0.3)]">{t("scen.detecting")}</span>
-                  ) : det ? (
+                  ) : det.running ? (
                     <span className="text-[#4ade80]">{t("scen.detected")}</span>
+                  ) : det.installed ? (
+                    <span className="text-[var(--accent)]">{t("scen.installed.stopped")}</span>
                   ) : (
                     <span className="text-[rgba(255,255,255,0.25)]">{t("scen.notdetected")}</span>
                   )}
@@ -826,6 +882,26 @@ function LocalStep({
           {probing ? t("scen.probing") : probe ? t("scen.reprobe") : t("scen.probe")}
         </button>
       </div>
+
+      {/* One-click setup CTA — only while the selected engine isn't running.
+          Opens the pre-execution review card (rendered via the `review` slot). */}
+      {(() => {
+        const d = detected[engine];
+        if (!d || d.running) return null;
+        return (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              data-testid="engine-setup-cta"
+              onClick={onSetup}
+              className="px-4 py-2 rounded-lg bg-[rgba(242,184,75,0.14)] border border-[rgba(242,184,75,0.35)] text-[var(--accent)] text-[11px] font-semibold hover:bg-[rgba(242,184,75,0.2)] transition-colors"
+            >
+              {d.installed ? t("scen.setup.start") : t("scen.setup.install")}
+            </button>
+            <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("scen.setup.note")}</span>
+          </div>
+        );
+      })()}
+      {review}
 
       {/* Banner */}
       {probeErr && (

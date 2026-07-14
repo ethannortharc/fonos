@@ -25,11 +25,21 @@ const entry = (id: number, text: string, at: Date) => ({
   metadata: {},
 });
 
+// Stateful across the "delete notebook" test: once a delete happens,
+// listContainers stops returning the deleted notebook — mirroring the real
+// IPC round-trip that the auto-select effect can otherwise race against.
+let deleted = false;
+const quickNoteContainer = { id: 3, container_type: "notebook", title: "Quick Note", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} };
+const zhaichaoContainer = { id: 7, container_type: "notebook", title: "摘抄", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} };
+
 vi.mock("../../lib/storage-api", () => ({
-  listContainers: vi.fn(async () => [
-    { id: 3, container_type: "notebook", title: "Quick Note", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} },
-    { id: 7, container_type: "notebook", title: "摘抄", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} },
-  ]),
+  listContainers: vi.fn(async () => {
+    // A real IPC round-trip crosses a task boundary — delay resolution so
+    // tests can observe React re-rendering against a stale notebooks list
+    // while a reload is in flight (the actual bug this file regresses).
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return deleted ? [quickNoteContainer] : [quickNoteContainer, zhaichaoContainer];
+  }),
   // Deliberately out of order: newest first, like the backend can return.
   getContainerEntries: vi.fn(async () => [
     entry(2, "second", new Date("2026-07-13T11:00:00")),
@@ -37,10 +47,16 @@ vi.mock("../../lib/storage-api", () => ({
   ]),
   updateEntry: vi.fn(async () => {}),
   deleteEntry: vi.fn(async () => {}),
-  deleteContainer: vi.fn(async () => {}),
+  deleteContainer: vi.fn(async () => {
+    deleted = true;
+  }),
   exportNotebookMd: vi.fn(async () => ""),
   exportNotebookJson: vi.fn(async () => ""),
 }));
+
+beforeEach(() => {
+  deleted = false;
+});
 
 describe("Notes document-flow view", () => {
   it("renders entries oldest-first with day group headers", async () => {
@@ -90,5 +106,27 @@ describe("notebook header actions", () => {
   it("export menu lives in the notebook header", async () => {
     render(<Notes />);
     await waitFor(() => expect(screen.getByTestId("export-notebook-btn")).toBeInTheDocument());
+  });
+
+  it("recovers selection after deleting the deep-linked notebook", async () => {
+    render(<Notes initialNotebookId={7} />);
+    // Deep link to 摘抄 (id 7) puts it in view on load.
+    const btn = await screen.findByTestId("delete-notebook-btn");
+    expect(screen.getByText("摘抄")).toBeInTheDocument();
+
+    fireEvent.click(btn); // arms the confirm state
+    fireEvent.click(btn); // confirms — deletes notebook 7
+    await waitFor(() => expect(deleteContainer).toHaveBeenCalledWith(7));
+
+    // The deleted notebook must not come back via the stale deep-link
+    // preference once the fresh notebook list lands, and the view must not
+    // get stuck with a dead selection: the header (export menu) must still
+    // render — it only renders when a real, existing notebook is selected —
+    // while the delete button stays gone (Quick Note is a system notebook).
+    await waitFor(() => {
+      expect(screen.queryByText("摘抄")).toBeNull();
+      expect(screen.queryByTestId("delete-notebook-btn")).toBeNull();
+      expect(screen.getByTestId("export-notebook-btn")).toBeInTheDocument();
+    });
   });
 });

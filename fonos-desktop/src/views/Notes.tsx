@@ -415,12 +415,19 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
     loadNotebooks();
   }, [loadNotebooks]);
 
+  // The deep-link preference (initialNotebookId) should position the view
+  // once on mount, not keep overriding later auto-selects — otherwise a
+  // reselect after e.g. deleting the deep-linked notebook can resurrect it
+  // if it races a stale (not-yet-reloaded) notebooks list.
+  const initialApplied = useRef(false);
+
   useEffect(() => {
     if (selectedId === null && sortedNotebooks.length > 0) {
       const preferred =
-        initialNotebookId != null && sortedNotebooks.some((nb) => nb.id === initialNotebookId)
+        !initialApplied.current && initialNotebookId != null && sortedNotebooks.some((nb) => nb.id === initialNotebookId)
           ? initialNotebookId
           : sortedNotebooks[0].id;
+      initialApplied.current = true;
       setSelectedId(preferred);
     }
   }, [sortedNotebooks, selectedId, initialNotebookId]);
@@ -457,8 +464,12 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
     try {
       await deleteContainer(selectedNotebook.id);
       setConfirmNbDelete(false);
-      setSelectedId(null); // auto-select effect re-picks the first notebook
+      // Reload BEFORE clearing selection: the auto-select effect reads
+      // sortedNotebooks synchronously off state, so if selectedId were
+      // nulled first it could run against the stale (pre-reload) list and
+      // re-select the notebook we just deleted.
       await loadNotebooks();
+      setSelectedId(null); // auto-select effect re-picks the first notebook
     } catch (e) {
       console.error("deleteContainer:", e);
     }

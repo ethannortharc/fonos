@@ -1108,6 +1108,22 @@ fn main() {
                             raise_main_window(&app_handle_menu);
                         }
                         "quit" => {
+                            // Hide every window up front (most importantly the
+                            // always-on-top `float` pill) so nothing is left
+                            // visible on screen while the process winds down —
+                            // on Linux, GTK/WebKit teardown can take a moment
+                            // or hang outright, which previously stranded the
+                            // pill frozen mid-dictation. RunEvent::Exit below
+                            // is what actually guarantees the process dies.
+                            for (_, window) in app_handle_menu.webview_windows() {
+                                let _ = window.hide();
+                            }
+                            // Stop any live mic capture (e.g. quitting
+                            // mid-dictation) via the same stop path the
+                            // dictation commands use, so the cpal stream is
+                            // dropped instead of left running past exit.
+                            let state: tauri::State<'_, AppState> = app_handle_menu.state();
+                            let _ = commands::dictation::stop_and_drain(state.inner());
                             app_handle_menu.exit(0);
                         }
                         _ => {}
@@ -1144,6 +1160,14 @@ fn main() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 raise_main_window(_app_handle);
+            }
+            // Hard fallback: once the event loop reports Exit, force the
+            // process down. Background threads we don't (and can't) join —
+            // the detached SIGUSR2 signal-hook thread (main.rs ~698), any
+            // lingering GTK/WebKit teardown on Linux — must not be able to
+            // keep the process alive after the window/tray lifecycle is done.
+            if let tauri::RunEvent::Exit = _event {
+                std::process::exit(0);
             }
         });
 }

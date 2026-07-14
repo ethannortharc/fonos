@@ -109,7 +109,7 @@ const CHEVRON_ICON = (
   </svg>
 );
 
-// ─── Entry item (used in notebook detail) ─────────────────────────────────────
+// ─── Entry item — one paragraph in the document-flow notebook view ────────────
 
 interface EntryItemProps {
   entry: Entry;
@@ -117,10 +117,6 @@ interface EntryItemProps {
   onDelete: (id: number) => Promise<void>;
   onPlay?: (audioRef: string) => void;
 }
-
-/** System notebooks are recreated lazily by the app — deleting them would
- *  just resurrect an empty copy, so the UI doesn't offer it (spec §3). */
-const SYSTEM_NOTEBOOKS = ["Quick Note", "Text Actions"];
 
 /** Day bucket label for journal-style grouping: Today / Yesterday / Mar 5. */
 function dayLabel(isoDate: string): string {
@@ -246,7 +242,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
 
       {/* Hover actions — CSS-only reveal so paragraphs stay clean. */}
       {!editMode && (
-        <div className="absolute right-0 -top-2 hidden group-hover:flex items-center gap-0.5 rounded-md bg-[#242220] border border-[rgba(255,255,255,0.08)] px-1 py-0.5 shadow-lg">
+        <div className="absolute right-0 -top-2 hidden group-hover:flex group-focus-within:flex items-center gap-0.5 rounded-md bg-[#242220] border border-[rgba(255,255,255,0.08)] px-1 py-0.5 shadow-lg">
           {onPlay && entry.audio_ref && (
             <button
               data-testid="audio-play-btn"
@@ -363,6 +359,11 @@ function ExportMenu({ notebookId }: { notebookId: number }) {
 // ─── New Notebook form ────────────────────────────────────────────────────────
 
 // ─── Notebook list (Level 1) ──────────────────────────────────────────────────
+
+/** System notebooks are recreated lazily by the app — deleting them would
+ *  just resurrect an empty copy, so the notebook header doesn't offer a
+ *  Delete button for them (spec §3). */
+const SYSTEM_NOTEBOOKS = ["Quick Note", "Text Actions"];
 
 function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; initialNotebookId?: number }) {
   const [notebooks, setNotebooks] = useState<Container[]>([]);

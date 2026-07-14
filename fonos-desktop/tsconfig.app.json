@@ -6,6 +6,9 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    /* vitest uses globals:true; without this the scoped typecheck rejects
+       every test file (vi/describe/expect), leaving tests type-unchecked. */
+    "types": ["vite/client", "vitest/globals"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

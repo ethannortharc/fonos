@@ -10,7 +10,7 @@
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Scenarios from "../Scenarios";
-import type { EngineDetection } from "../../types";
+import type { EngineDetection, ScenarioProbe } from "../../types";
 
 vi.mock("../../lib/i18n", () => ({
   t: (k: string) => k,
@@ -35,8 +35,8 @@ const DETECTION: EngineDetection[] = [
   { engine: "vllm", running: false, installed: false, url: "http://localhost:8000" },
 ];
 
-const saveConfigMock = vi.fn(async () => {});
-const scenarioProbeMock = vi.fn(async () => ({
+const saveConfigMock = vi.fn(async (..._args: unknown[]) => {});
+const scenarioProbeMock = vi.fn(async (): Promise<ScenarioProbe> => ({
   reachable: false,
   latency_ms: 0,
   models: [],
@@ -64,7 +64,7 @@ describe("Scenarios · LocalStep wiring (Linux)", () => {
       classified: { stt: [], llm: [], tts: [] },
       tts_rtfs: {},
       plan: { stt: null, llm: null, conversation_tts: null, listen_tts: null },
-    });
+    } satisfies ScenarioProbe);
   });
 
   it("defaults the local channel to Ollama and targets it in the setup review", async () => {
@@ -89,7 +89,7 @@ describe("Scenarios · LocalStep wiring (Linux)", () => {
       classified: { stt: ["some-stt-model"], llm: ["m1"], tts: [] },
       tts_rtfs: {},
       plan: { stt: null, llm: "m1", conversation_tts: null, listen_tts: null },
-    });
+    } satisfies ScenarioProbe);
 
     render(<Scenarios mode="overlay" onDone={() => {}} />);
     fireEvent.click(screen.getByText("scen.local.name"));
@@ -104,7 +104,7 @@ describe("Scenarios · LocalStep wiring (Linux)", () => {
     // no stt_profile pointed at one.
     fireEvent.click(screen.getByText("scen.apply"));
     await waitFor(() => expect(saveConfigMock).toHaveBeenCalled());
-    const payload = JSON.parse(saveConfigMock.mock.calls[0][0] as string);
+    const payload = JSON.parse((saveConfigMock.mock.calls[0]![0] as unknown) as string);
     expect(
       (payload.model_profiles ?? []).some((p: { provider: string }) => p.provider === "apple")
     ).toBe(false);

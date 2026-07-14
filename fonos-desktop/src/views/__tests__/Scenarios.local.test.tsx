@@ -7,7 +7,6 @@
 
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Scenarios from "../Scenarios";
-import { engineDetect, scenarioProbe } from "../../lib/api";
 import type { EngineDetection } from "../../types";
 
 vi.mock("../../lib/i18n", () => ({

@@ -16,7 +16,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-const engineSetupMock = vi.fn(async () => {});
+const engineSetupMock = vi.fn(async (_plan: unknown) => {});
 vi.mock("../../lib/api", () => ({
   engineSetup: (plan: unknown) => engineSetupMock(plan),
 }));

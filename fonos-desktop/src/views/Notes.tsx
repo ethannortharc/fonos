@@ -13,7 +13,6 @@ import {
   exportNotebookJson,
 } from "../lib/storage-api";
 import type { Container, Entry } from "../lib/storage-api";
-import { playAudioFile } from "../lib/api";
 import { t, useT } from "../lib/i18n";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

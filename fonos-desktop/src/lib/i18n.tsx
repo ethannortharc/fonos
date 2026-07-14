@@ -816,6 +816,23 @@ const en = {
   "wb.bench.mic-idle": "Mock input · microphone — tap to record and run",
   "wb.bench.mic-live": "Recording… tap again to stop",
   "wb.bench.text-hint": "Mock input · text — the bench stages the input for you",
+
+  // engine setup review card (onboarding P3)
+  "engine.review.title": "Confirm the plan",
+  "engine.review.install": "Install {0}",
+  "engine.review.start": "Start {0}",
+  "engine.review.ondemand": "Models are downloaded on demand by the engine",
+  "engine.review.manual": "{0} has no automated install — set it up manually, then re-detect",
+  "engine.review.size": "≈{0} GB",
+  "engine.review.disk.low": "Not enough free disk for ≈{0} GB",
+  "engine.review.downgrade": "Use a smaller model instead",
+  "engine.review.confirm": "Start",
+  "engine.review.running": "Working…",
+  "engine.review.busy": "Setup is already running",
+  "engine.review.stage.install": "Installing",
+  "engine.review.stage.start": "Starting",
+  "engine.review.stage.wait": "Waiting for the engine",
+  "engine.review.stage.pull": "Downloading",
 };
 
 export type TKey = keyof typeof en;
@@ -1576,6 +1593,23 @@ const zh: Partial<Record<Key, string>> = {
   "wb.bench.mic-idle": "模拟输入 · 麦克风 — 点按即录音开跑",
   "wb.bench.mic-live": "正在录音… 再点一下停止",
   "wb.bench.text-hint": "模拟输入 · 文本 — 台架替你备好输入",
+
+  // engine setup review card (onboarding P3)
+  "engine.review.title": "确认计划",
+  "engine.review.install": "安装 {0}",
+  "engine.review.start": "启动 {0}",
+  "engine.review.ondemand": "模型由引擎按需下载",
+  "engine.review.manual": "{0} 暂不支持自动安装——请手动装好后重新检测",
+  "engine.review.size": "约 {0} GB",
+  "engine.review.disk.low": "磁盘剩余空间不足（需约 {0} GB）",
+  "engine.review.downgrade": "改用小一档的模型",
+  "engine.review.confirm": "开始执行",
+  "engine.review.running": "执行中…",
+  "engine.review.busy": "已在进行中",
+  "engine.review.stage.install": "安装中",
+  "engine.review.stage.start": "启动中",
+  "engine.review.stage.wait": "等待引擎就绪",
+  "engine.review.stage.pull": "下载中",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

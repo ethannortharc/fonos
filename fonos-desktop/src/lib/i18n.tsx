@@ -139,6 +139,8 @@ const en = {
   "general.update.downloading": "Downloading…",
   "general.update.installing": "Installing…",
   "general.update.error": "Update failed",
+  "general.update.manual": "{0} available — manual install required",
+  "general.update.download": "Download",
 
   // models tab
   "models.defaults": "Default Services",
@@ -884,6 +886,8 @@ const zh: Partial<Record<Key, string>> = {
   "general.update.downloading": "下载中…",
   "general.update.installing": "安装中…",
   "general.update.error": "更新失败",
+  "general.update.manual": "有新版本 {0}，需手动安装",
+  "general.update.download": "下载",
 
   // models tab
   "models.defaults": "默认服务",

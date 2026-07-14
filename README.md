@@ -277,13 +277,27 @@ Meeting system-audio capture may request Screen Recording permission.
 
 ### Linux
 
-Download the `.deb` or `.rpm` package from
-[Releases](https://github.com/ethannortharc/fonos/releases/latest):
+Download a package from
+[Releases](https://github.com/ethannortharc/fonos/releases/latest). Three
+formats are published for each release:
 
-```bash
-sudo apt install ./fonos_*.deb    # Debian / Ubuntu
-sudo dnf install ./fonos-*.rpm    # Fedora / RHEL
-```
+- **AppImage** (recommended) — self-contained, no installation, and the only
+  format Fonos can auto-update in place (Settings → General → Updates checks
+  GitHub Releases and swaps itself on demand):
+
+  ```bash
+  chmod +x Fonos_*.AppImage
+  ./Fonos_*.AppImage
+  ```
+
+- **`.deb` / `.rpm`** — integrates with your distro's package manager, but
+  updates are manual: reinstall the new package when a release notification
+  points you to it.
+
+  ```bash
+  sudo apt install ./fonos_*.deb    # Debian / Ubuntu
+  sudo dnf install ./fonos-*.rpm    # Fedora / RHEL
+  ```
 
 Text injection on Linux needs `xdotool`:
 

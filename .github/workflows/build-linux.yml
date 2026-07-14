@@ -35,7 +35,9 @@ jobs:
             libjavascriptcoregtk-4.1-dev \
             libsoup-3.0-dev \
             libasound2-dev \
-            rpm
+            rpm \
+            xdg-utils \
+            libfuse2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -79,9 +81,16 @@ jobs:
                   print(f'Generated {p} ({size}x{size})')
           "
 
-      - name: Build Tauri app (deb + rpm)
+      # AppImage is the only Linux bundle format the updater can install in
+      # place (see tauri.linux.conf.json), so it needs the same minisign
+      # signing key used for the macOS updater artifacts (scripts/release-macos.sh).
+      # deb/rpm don't get signed — they're not updater targets.
+      - name: Build Tauri app (deb + rpm + appimage)
         working-directory: fonos-desktop
-        run: cargo tauri build --bundles deb,rpm
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build --bundles deb,rpm,appimage
 
       - name: List build artifacts
         run: |
@@ -89,6 +98,8 @@ jobs:
           find target/release/bundle/deb -name "*.deb" -exec ls -lh {} \;
           echo "=== RPM ==="
           find target/release/bundle/rpm -name "*.rpm" -exec ls -lh {} \;
+          echo "=== AppImage ==="
+          find target/release/bundle/appimage -name "*.AppImage*" -exec ls -lh {} \;
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
@@ -102,6 +113,21 @@ jobs:
           name: fonos-rpm-${{ matrix.arch }}
           path: target/release/bundle/rpm/*.rpm
 
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonos-appimage-${{ matrix.arch }}
+          path: target/release/bundle/appimage/*.AppImage
+
+      # Kept separate from the .AppImage artifact above so the latest.json
+      # merge job (below) can fetch just the tiny signature file per arch
+      # without pulling down the multi-hundred-MB image.
+      - name: Upload AppImage signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: fonos-appimage-sig-${{ matrix.arch }}
+          path: target/release/bundle/appimage/*.AppImage.sig
+
       - name: Upload to release (if tagged)
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -111,6 +137,61 @@ jobs:
           # Create release if it doesn't exist yet (first matrix job to reach here creates it)
           gh release view "$TAG_NAME" >/dev/null 2>&1 || \
             gh release create "$TAG_NAME" --title "Fonos $TAG_NAME" --generate-notes
-          for f in target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm; do
+          for f in target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage target/release/bundle/appimage/*.AppImage.sig; do
             gh release upload "$TAG_NAME" "$f" --clobber
           done
+
+  # Runs once both matrix legs have uploaded their signed AppImage + .sig to
+  # the release. Merges linux-x86_64/linux-aarch64 entries into latest.json
+  # (creating it if release-macos.sh hasn't run yet for this tag, merging
+  # into it if it has — see scripts/merge-latest-json.sh).
+  publish-latest-json:
+    needs: build-linux
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download amd64 updater signature
+        uses: actions/download-artifact@v4
+        with:
+          name: fonos-appimage-sig-amd64
+          path: sigs/amd64
+
+      - name: Download arm64 updater signature
+        uses: actions/download-artifact@v4
+        with:
+          name: fonos-appimage-sig-arm64
+          path: sigs/arm64
+
+      - name: Merge linux entries into latest.json
+        run: |
+          set -euo pipefail
+          # Platform keys per the updater's static-JSON schema:
+          # https://v2.tauri.app/plugin/updater/#static-json-file
+          declare -A ARCH_TO_PLATFORM=( [amd64]=linux-x86_64 [arm64]=linux-aarch64 )
+          fragment="$(mktemp)"
+          echo '{}' > "$fragment"
+          for arch in amd64 arm64; do
+            sig_path="$(find "sigs/$arch" -name '*.AppImage.sig' | head -1)"
+            if [[ -z "$sig_path" ]]; then
+              echo "error: no .AppImage.sig found for $arch under sigs/$arch" >&2
+              exit 1
+            fi
+            # The .sig filename (minus the .sig suffix) is exactly the asset
+            # name we uploaded to the release, so the download URL follows
+            # without having to guess Tauri's AppImage naming convention.
+            appimage_name="$(basename "${sig_path%.sig}")"
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}/${appimage_name}"
+            signature="$(cat "$sig_path")"
+            platform="${ARCH_TO_PLATFORM[$arch]}"
+            jq --arg platform "$platform" --arg url "$url" --arg sig "$signature" \
+              '. + {($platform): {url: $url, signature: $sig}}' "$fragment" > "$fragment.tmp"
+            mv "$fragment.tmp" "$fragment"
+          done
+          ./scripts/merge-latest-json.sh "$TAG_NAME" "$fragment" latest.json --upload

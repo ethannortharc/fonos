@@ -21,6 +21,7 @@ pub mod stats;
 pub mod storage;
 pub mod text_action;
 pub mod tts;
+pub mod update;
 pub mod voices;
 pub mod widget_uppercase;
 pub mod workflow_cfg;

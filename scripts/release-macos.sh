@@ -67,27 +67,24 @@ if [[ ! -f "$SIG_FILE" ]]; then
 fi
 
 SIGNATURE="$(cat "$SIG_FILE")"
-PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ASSET_NAME="Fonos_${VERSION}_aarch64.app.tar.gz"
 URL="https://github.com/ethannortharc/fonos/releases/download/${TAG}/${ASSET_NAME}"
 
-# ── (d) write latest.json (the updater endpoint manifest) ───────────────────
+# ── (d) merge the darwin-aarch64 entry into latest.json ─────────────────────
+# scripts/merge-latest-json.sh (shared with build-linux.yml's Linux updater
+# job) fetches whatever latest.json already exists on the "$TAG" release and
+# merges into it, rather than clobbering it. That matters because either
+# release producer can run first:
+#   - if Linux CI already ran for this tag, it published linux-x86_64 /
+#     linux-aarch64 entries — this preserves them.
+#   - if this is the first producer for the tag, it creates latest.json with
+#     only darwin-aarch64, and the Linux job merges into *that* when it runs.
 LATEST_JSON="$BUNDLE_DIR/latest.json"
-jq -n \
-  --arg version "$TAG" \
-  --arg notes "see release page" \
-  --arg pub_date "$PUB_DATE" \
-  --arg signature "$SIGNATURE" \
-  --arg url "$URL" \
-  '{
-    version: $version,
-    notes: $notes,
-    pub_date: $pub_date,
-    platforms: {
-      "darwin-aarch64": { signature: $signature, url: $url }
-    }
-  }' > "$LATEST_JSON"
-echo "==> wrote $LATEST_JSON"
+PLATFORMS_FRAGMENT="$(mktemp)"
+jq -n --arg signature "$SIGNATURE" --arg url "$URL" \
+  '{"darwin-aarch64": {signature: $signature, url: $url}}' > "$PLATFORMS_FRAGMENT"
+"$REPO_ROOT/scripts/merge-latest-json.sh" "$TAG" "$PLATFORMS_FRAGMENT" "$LATEST_JSON"
+rm -f "$PLATFORMS_FRAGMENT"
 
 # ── (e) copy the tarball to the release asset name + print the upload cmd ────
 ASSET_PATH="$BUNDLE_DIR/$ASSET_NAME"

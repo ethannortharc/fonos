@@ -300,17 +300,38 @@ pub fn refresh_tray_status(app: &AppHandle, progress: Option<(TrayRow, u8)>) {
         }
     };
 
-    if let Ok(slot) = state.tray_menu.lock() {
-        if let Some(h) = slot.as_ref() {
-            let _ = h.mic.set_text(row_text(TrayRow::Mic, with_progress(TrayRow::Mic), lang));
-            let _ = h.stt.set_text(row_text(TrayRow::Stt, with_progress(TrayRow::Stt), lang));
-            let _ = h.llm.set_text(row_text(TrayRow::Llm, with_progress(TrayRow::Llm), lang));
-            let _ = h.tts.set_text(row_text(TrayRow::Tts, with_progress(TrayRow::Tts), lang));
-            let _ = h.unlock.set_text(unlock_text(llm_cfg, lang));
-            let _ = h.doctor.set_text(doctor_text(lang));
-            let _ = h.settings.set_text(settings_text(lang));
+    // Clone the seven MenuItem handles out of the lock, then drop the guard
+    // BEFORE any `set_text`. `MenuItem::set_text` blocks on the main thread, and
+    // this function is itself reachable from a sync command on the main thread —
+    // holding `tray_menu` across the blocking calls is a circular wait (the
+    // classic tray deadlock). The handles are cheap Arc-backed clones, so this
+    // costs nothing and drives the OS menu outside the lock.
+    let handles = match state.tray_menu.lock() {
+        Ok(slot) => slot.as_ref().map(|h| {
+            (
+                h.mic.clone(),
+                h.stt.clone(),
+                h.llm.clone(),
+                h.tts.clone(),
+                h.unlock.clone(),
+                h.doctor.clone(),
+                h.settings.clone(),
+            )
+        }),
+        Err(e) => {
+            eprintln!("fonos: refresh_tray_status — tray_menu lock poisoned: {e}");
+            return;
         }
     };
+    if let Some((mic, stt, llm, tts, unlock, doctor, settings)) = handles {
+        let _ = mic.set_text(row_text(TrayRow::Mic, with_progress(TrayRow::Mic), lang));
+        let _ = stt.set_text(row_text(TrayRow::Stt, with_progress(TrayRow::Stt), lang));
+        let _ = llm.set_text(row_text(TrayRow::Llm, with_progress(TrayRow::Llm), lang));
+        let _ = tts.set_text(row_text(TrayRow::Tts, with_progress(TrayRow::Tts), lang));
+        let _ = unlock.set_text(unlock_text(llm_cfg, lang));
+        let _ = doctor.set_text(doctor_text(lang));
+        let _ = settings.set_text(settings_text(lang));
+    }
 }
 
 #[cfg(test)]

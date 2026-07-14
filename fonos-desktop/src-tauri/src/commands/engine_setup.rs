@@ -170,6 +170,93 @@ pub async fn engine_detect() -> Result<Vec<EngineDetection>, String> {
     Ok(out)
 }
 
+/// Hardware facts + derived tier. `tier` serializes lowercase.
+#[derive(Serialize)]
+pub struct HardwareInfo {
+    /// Total physical memory in bytes.
+    pub mem_bytes: u64,
+    /// CPU/chip brand string ("Apple M4 Pro", "AMD Ryzen …").
+    pub chip: String,
+    /// An `nvidia-smi` binary is on PATH.
+    pub has_nvidia_gpu: bool,
+    /// Derived recommendation tier.
+    pub tier: fonos_core::engine_setup::HardwareTier,
+}
+
+fn cmd_stdout(cmd: &str, args: &[&str]) -> Option<String> {
+    std::process::Command::new(cmd)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// Read memory size, chip brand, and NVIDIA presence; classify the tier.
+#[tauri::command]
+pub async fn detect_hardware() -> Result<HardwareInfo, String> {
+    tokio::task::spawn_blocking(|| {
+        #[cfg(target_os = "macos")]
+        let (mem_bytes, chip) = (
+            cmd_stdout("sysctl", &["-n", "hw.memsize"])
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0),
+            cmd_stdout("sysctl", &["-n", "machdep.cpu.brand_string"]).unwrap_or_default(),
+        );
+        #[cfg(not(target_os = "macos"))]
+        let (mem_bytes, chip) = (
+            std::fs::read_to_string("/proc/meminfo")
+                .ok()
+                .and_then(|t| fonos_core::engine_setup::parse_meminfo_total_bytes(&t))
+                .unwrap_or(0),
+            std::fs::read_to_string("/proc/cpuinfo")
+                .ok()
+                .and_then(|t| {
+                    t.lines()
+                        .find(|l| l.starts_with("model name"))
+                        .and_then(|l| l.split(':').nth(1))
+                        .map(|s| s.trim().to_string())
+                })
+                .unwrap_or_default(),
+        );
+        let has_nvidia_gpu = std::process::Command::new("which")
+            .arg("nvidia-smi")
+            .output()
+            .map(|o| o.status.success() && !o.stdout.is_empty())
+            .unwrap_or(false);
+        let tier = fonos_core::engine_setup::classify_tier(mem_bytes, &chip, has_nvidia_gpu);
+        Ok(HardwareInfo { mem_bytes, chip, has_nvidia_gpu, tier })
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+/// Free disk space on the user's home volume, in KB (`df -k ~`).
+#[derive(Serialize)]
+pub struct DiskInfo {
+    /// Available kilobytes.
+    pub available_kb: u64,
+}
+
+/// Check available disk space (used by the pre-execution review card).
+#[tauri::command]
+pub async fn check_disk_space() -> Result<DiskInfo, String> {
+    tokio::task::spawn_blocking(|| {
+        let home = dirs::home_dir().ok_or("no home dir")?;
+        let out = std::process::Command::new("df")
+            .arg("-k")
+            .arg(&home)
+            .output()
+            .map_err(|e| format!("df: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        fonos_core::engine_setup::parse_df_available_kb(&text)
+            .map(|available_kb| DiskInfo { available_kb })
+            .ok_or_else(|| "could not parse df output".to_string())
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

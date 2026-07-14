@@ -612,6 +612,8 @@ fn main() {
             commands::scenarios::import_scenario_json,
             // Engine setup (onboarding P3)
             commands::engine_setup::engine_detect,
+            commands::engine_setup::detect_hardware,
+            commands::engine_setup::check_disk_space,
             // The STS walkie/Talk-page commands (sts_page_start/stop,
             // get_sts_history, reset_sts_session) and call_start are gone
             // (Workbench P2 Task 9): calls start via the `call` composite

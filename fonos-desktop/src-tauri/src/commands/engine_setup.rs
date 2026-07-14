@@ -411,13 +411,12 @@ fn install_action(engine: &str) -> InstallAction {
             }
             #[cfg(not(target_os = "macos"))]
             {
-                // Official installer script (documented install path on Linux).
-                InstallAction::Automated {
-                    program: "sh".into(),
-                    args: vec![
-                        "-c".into(),
-                        "curl -fsSL https://ollama.com/install.sh | sh".into(),
-                    ],
+                // The official `curl | sh` installer needs sudo/a TTY to place
+                // the binary and register the systemd service, so running it
+                // from our headless spawn_blocking would just fail. Downgrade to
+                // a Manual step carrying the exact command for the user to run.
+                InstallAction::Manual {
+                    message: "Install Ollama with: curl -fsSL https://ollama.com/install.sh | sh — then re-run setup.".into(),
                 }
             }
         }
@@ -635,5 +634,19 @@ mod tests {
         assert!(matches!(install_action("lmstudio"), InstallAction::Manual { .. }));
         assert!(matches!(install_action("vllm"), InstallAction::Manual { .. }));
         assert!(matches!(install_action("nonsense"), InstallAction::Manual { .. }));
+    }
+
+    /// Linux ollama: the `curl | sh` installer needs sudo/a TTY, so a headless
+    /// run downgrades to a Manual step carrying the official command rather than
+    /// attempting (and failing) the script.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn install_action_ollama_is_manual_on_linux() {
+        match install_action("ollama") {
+            InstallAction::Manual { message } => {
+                assert!(message.contains("ollama.com/install.sh"));
+            }
+            InstallAction::Automated { .. } => panic!("expected Manual, got Automated"),
+        }
     }
 }

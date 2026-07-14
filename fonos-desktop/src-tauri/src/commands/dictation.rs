@@ -650,6 +650,14 @@ pub(crate) async fn transcribe_samples(
                 delivered = false;
                 let msg = format!("Injection failed: {e}");
                 crate::error_surface::emit_float_error(app, &msg);
+            } else {
+                // Boundary marker: inject_text is a *blocking* call (arboard /
+                // xdotool on Linux) with no timeout, sitting between the
+                // float:processing emit above and the float:stop emit below. If
+                // the logs show "INJECTING raw text at cursor" but never this
+                // line (nor "Injection failed"), injection itself is wedged and
+                // the pill stays stuck in "Processing".
+                eprintln!("fonos: raw injection delivered ({} chars)", transcript.len());
             }
             raw_e2e_done = delivered;
         }
@@ -1008,9 +1016,24 @@ pub(crate) async fn stt_transcribe(
 
     // ── Branch: Apple on-device / Whisper API / Chat Completions STT ────────
     if svc.provider == "apple" {
-        let (transcript, stt_engine) =
-            transcribe_apple(&audio_path_str, &lang_code, &vocab_terms).await;
-        return Ok(SttTranscription { transcript, stt_engine, audio_path: audio_path_str, preprocess_metrics });
+        // Apple Speech is a macOS-only SFSpeechRecognizer helper. On any other
+        // platform the helper binary cannot exist; the old code returned an
+        // empty transcript here, silently swallowing the failure so the pill
+        // flashed a bogus "no speech" (or appeared stuck) instead of a real
+        // error. Return an explicit Err so the caller (transcribe_core) surfaces
+        // it via emit_float_error — see the `Err(e)` arm in transcribe_core.
+        #[cfg(target_os = "macos")]
+        {
+            let (transcript, stt_engine) =
+                transcribe_apple(&audio_path_str, &lang_code, &vocab_terms).await;
+            return Ok(SttTranscription { transcript, stt_engine, audio_path: audio_path_str, preprocess_metrics });
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err(
+                "Apple Speech is only available on macOS. Pick a different STT model in Settings.".to_string(),
+            );
+        }
     }
 
     let result = if svc.stt_api == "chat" {
@@ -1103,6 +1126,11 @@ pub async fn transcribe_file(
 
 /// Transcribe via macOS SFSpeechRecognizer (calls the bundled Swift helper).
 /// Returns (transcript, engine) where engine is "on-device" or "server".
+///
+/// macOS-only: the `svc.provider == "apple"` branch in [`stt_transcribe`]
+/// returns an explicit error on every other platform, so this helper (and the
+/// binary finder below) are never referenced off macOS.
+#[cfg(target_os = "macos")]
 async fn transcribe_apple(audio_path: &str, lang_code: &str, vocab_terms: &[String]) -> (String, String) {
     // Find the helper binary next to the app binary or in resources
     let helper = find_apple_stt_binary();
@@ -1180,6 +1208,7 @@ async fn transcribe_apple(audio_path: &str, lang_code: &str, vocab_terms: &[Stri
 /// nested `Contents/Resources/resources/` path Tauri v2 actually bundles
 /// into, so packaged apps could never find the helper. Same bug family as
 /// `fonos-audio-capture` (d7978bc) and `fonos-voice-capture` (#56).
+#[cfg(target_os = "macos")]
 fn find_apple_stt_binary() -> Option<String> {
     crate::audio::diarize::find_helper_binary("fonos-stt-apple")
 }
@@ -1201,7 +1230,16 @@ pub async fn test_stt(state: tauri::State<'_, AppState>, profile_id: String) -> 
     let stt = super::get_service_config_for_profile(&state, &profile_id);
 
     if stt.provider == "apple" {
-        return Ok("Apple on-device speech — no network endpoint to test.".to_string());
+        // Apple Speech is macOS-only (SFSpeechRecognizer helper). Off macOS it
+        // can never run, so report that instead of a misleading "nothing to test".
+        #[cfg(target_os = "macos")]
+        {
+            return Ok("Apple on-device speech — no network endpoint to test.".to_string());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return Err("Apple Speech is only available on macOS.".to_string());
+        }
     }
     if stt.base_url.trim().is_empty() {
         return Err("This model has no base URL configured.".to_string());

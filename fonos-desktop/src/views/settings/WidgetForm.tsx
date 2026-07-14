@@ -31,6 +31,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t, useT } from "../../lib/i18n";
+import { isMacOS } from "../../lib/platform";
 import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "../../types";
 import type { Container } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
@@ -118,7 +119,7 @@ export function ModelSelector({
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass} style={{ backgroundImage: "none" }}>
       <option value="">{t("modes.use-default")}</option>
-      {capKey === "stt" && <option value="apple-speech">{t("modes.stt.apple")}</option>}
+      {capKey === "stt" && isMacOS && <option value="apple-speech">{t("modes.stt.apple")}</option>}
       {filtered.map((p) => (
         <option key={p.id} value={p.id}>{p.name} ({p.model})</option>
       ))}

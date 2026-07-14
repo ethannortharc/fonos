@@ -14,8 +14,22 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { engineSetup } from "../lib/api";
 import type { EngineSetupEvent } from "../types";
-import { suggestDowngrade, type BuiltPlan, type Tier } from "../lib/engineSetup";
+import {
+  recomputeDisk,
+  suggestDowngrade,
+  TIER_PULLS,
+  type BuiltPlan,
+  type Tier,
+} from "../lib/engineSetup";
 import { t, td, useT } from "../lib/i18n";
+
+/** Select sentinel for the "custom model…" option. */
+const CUSTOM = "__custom__";
+/** The three recommended tier models, in max→light order, for the pull select. */
+const TIER_OPTIONS = (Object.keys(TIER_PULLS) as Tier[]).map((k) => TIER_PULLS[k]);
+/** True when a model isn't one of the recommended tier models (so it's a free-
+ *  text custom entry whose size we can't know). An empty string is custom too. */
+const isCustomModel = (model: string) => !TIER_OPTIONS.some((o) => o.model === model);
 
 const STAGE_KEY: Record<string, string> = {
   install: "engine.review.stage.install",
@@ -36,6 +50,7 @@ export default function EngineSetupReview({
   built,
   engineName,
   tier,
+  diskAvailableKb,
   onRetier,
   onCancel,
   onDone,
@@ -43,6 +58,7 @@ export default function EngineSetupReview({
   built: BuiltPlan;
   engineName: string;
   tier: Tier;
+  diskAvailableKb: number;
   onRetier: (t: Tier) => void;
   onCancel: () => void;
   onDone: () => void;
@@ -54,6 +70,36 @@ export default function EngineSetupReview({
   const [failedStage, setFailedStage] = useState<EngineSetupEvent["failed_stage"]>();
   const [manualMsg, setManualMsg] = useState("");
   const doneRef = useRef(false);
+
+  // Editable pull list (Finding 4). Seeded from the built plan's pull rows; the
+  // parent remounts this card (via a tier/engine key) whenever those change, so
+  // this initializer is the single sync point. Only ollama pulls models, so the
+  // whole editor is gated on it. `id` keeps input focus stable across edits.
+  const isOllama = built.plan.engine === "ollama";
+  const idRef = useRef(0);
+  const [pulls, setPulls] = useState<Array<{ id: number; model: string; sizeGb?: number }>>(() =>
+    built.rows
+      .filter((r) => r.kind === "pull")
+      .map((r) => ({ id: idRef.current++, model: r.model ?? "", sizeGb: r.sizeGb }))
+  );
+
+  // Disk verdict recomputed from the *current* rows — a smaller/removed model
+  // (or a custom, unsized one) updates the warning and the confirm gate live.
+  const { diskOk, requiredGb, downgrade } = recomputeDisk(pulls, diskAvailableKb, tier);
+
+  const setModel = (id: number, value: string) =>
+    setPulls((rows) =>
+      rows.map((r) => {
+        if (r.id !== id) return r;
+        if (value === CUSTOM) return { ...r, model: "", sizeGb: undefined };
+        const tierOpt = TIER_OPTIONS.find((o) => o.model === value);
+        // A tier pick carries its known size; free-text edits leave size unknown.
+        return tierOpt ? { ...r, model: tierOpt.model, sizeGb: tierOpt.sizeGb } : { ...r, model: value, sizeGb: undefined };
+      })
+    );
+  const removeRow = (id: number) => setPulls((rows) => rows.filter((r) => r.id !== id));
+  const addRow = () =>
+    setPulls((rows) => [...rows, { id: idRef.current++, model: "", sizeGb: undefined }]);
 
   // Subscribe to engine:setup progress. Disposed-guard idiom (mirrors
   // ModelsTab's diarize:download subscription): a `disposed` flag drops a
@@ -112,7 +158,10 @@ export default function EngineSetupReview({
     setStage(null);
     setRunning(true);
     try {
-      await engineSetup(built.plan);
+      // Send the *edited* pull list — the backend pulls exactly these (it
+      // never re-derives from tier), so removed/changed/custom rows are honored.
+      const editedPulls = pulls.map((p) => p.model.trim()).filter(Boolean);
+      await engineSetup({ ...built.plan, pulls: editedPulls });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setRunning(false);
@@ -147,34 +196,92 @@ export default function EngineSetupReview({
       <div className="text-[12px] font-semibold text-[#fafaf9]">{t("engine.review.title")}</div>
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
-        {built.rows.map((r, i) => (
-          <div
-            key={i}
-            data-testid={`review-row-${r.kind}`}
-            className="flex items-center gap-2 px-3 py-2 text-[11px] text-[rgba(255,255,255,0.75)]"
-          >
-            {r.kind === "pull" ? (
-              <>
-                <span>⬇️</span>
-                <span className="font-mono">{r.model}</span>
-                <span className="ml-auto text-[10px] text-[rgba(255,255,255,0.4)] tabular-nums">
-                  {td("engine.review.size", [String(r.sizeGb ?? 0)])}
-                </span>
-              </>
-            ) : (
+        {/* Non-pull rows (install / start / note / manual) stay static. */}
+        {built.rows
+          .filter((r) => r.kind !== "pull")
+          .map((r, i) => (
+            <div
+              key={i}
+              data-testid={`review-row-${r.kind}`}
+              className="flex items-center gap-2 px-3 py-2 text-[11px] text-[rgba(255,255,255,0.75)]"
+            >
               <span>{rowLabel(r.kind)}</span>
-            )}
-          </div>
-        ))}
+            </div>
+          ))}
+
+        {/* Editable pull rows — ollama only (the only engine that pulls). */}
+        {isOllama &&
+          pulls.map((r) => {
+            const custom = isCustomModel(r.model);
+            return (
+              <div
+                key={r.id}
+                data-testid="review-row-pull"
+                className="flex items-center gap-2 px-3 py-2 text-[11px] text-[rgba(255,255,255,0.75)]"
+              >
+                <span>⬇️</span>
+                <select
+                  data-testid="review-pull-select"
+                  value={custom ? CUSTOM : r.model}
+                  onChange={(e) => setModel(r.id, e.target.value)}
+                  disabled={running}
+                  className="bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded px-1.5 py-1 text-[11px] text-[rgba(255,255,255,0.85)] max-w-[220px]"
+                >
+                  {TIER_OPTIONS.map((o) => (
+                    <option key={o.model} value={o.model}>
+                      {`${o.model} · ~${o.sizeGb}GB`}
+                    </option>
+                  ))}
+                  <option value={CUSTOM}>{t("engine.review.custom")}</option>
+                </select>
+                {custom && (
+                  <input
+                    data-testid="review-pull-custom"
+                    value={r.model}
+                    onChange={(e) => setModel(r.id, e.target.value)}
+                    disabled={running}
+                    placeholder={t("engine.review.custom.placeholder")}
+                    className="font-mono bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded px-1.5 py-1 text-[11px] text-[rgba(255,255,255,0.85)] w-[150px]"
+                  />
+                )}
+                <span className="ml-auto text-[10px] text-[rgba(255,255,255,0.4)] tabular-nums">
+                  {r.sizeGb != null
+                    ? td("engine.review.size", [String(r.sizeGb)])
+                    : t("engine.review.size.unknown")}
+                </span>
+                <button
+                  data-testid="review-pull-remove"
+                  onClick={() => removeRow(r.id)}
+                  disabled={running}
+                  aria-label={t("engine.review.remove")}
+                  className="text-[rgba(255,255,255,0.35)] hover:text-[#f87171] transition-colors disabled:opacity-40 px-1"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+
+        {/* Append another (custom) model. */}
+        {isOllama && (
+          <button
+            data-testid="review-pull-add"
+            onClick={addRow}
+            disabled={running}
+            className="w-full text-left px-3 py-2 text-[11px] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.06)] transition-colors disabled:opacity-40"
+          >
+            {t("engine.review.addmodel")}
+          </button>
+        )}
       </div>
 
-      {!built.diskOk && (
+      {!diskOk && (
         <div className="text-[11px] text-[#f2b84b] flex items-center gap-2 flex-wrap">
-          <span>{td("engine.review.disk.low", [String(built.requiredGb)])}</span>
-          {built.downgrade && (
+          <span>{td("engine.review.disk.low", [String(requiredGb)])}</span>
+          {downgrade && (
             <button
               data-testid="review-downgrade"
-              onClick={() => onRetier(built.downgrade!)}
+              onClick={() => onRetier(downgrade)}
               className="underline underline-offset-2 hover:text-[#fafaf9] transition-colors"
             >
               {t("engine.review.downgrade")}
@@ -233,7 +340,7 @@ export default function EngineSetupReview({
         <button
           data-testid="review-confirm"
           onClick={confirm}
-          disabled={!built.diskOk || running}
+          disabled={!diskOk || running}
           className="px-5 py-2 rounded-lg bg-[rgba(242,184,75,0.14)] border border-[rgba(242,184,75,0.35)] text-[var(--accent)] text-[12px] font-semibold hover:bg-[rgba(242,184,75,0.2)] transition-colors disabled:opacity-40"
         >
           {running ? t("engine.review.running") : t("engine.review.confirm")}

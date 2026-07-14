@@ -697,9 +697,14 @@ export default function Scenarios({
           review={
             review && (
               <EngineSetupReview
+                // Remount when the plan's engine/tier changes (e.g. a disk
+                // downgrade) so the editable pull list reseeds from the new
+                // plan; in-place edits keep the same key and persist.
+                key={`${engine}-${tier}`}
                 built={review}
                 engineName={currentEngine.name}
                 tier={tier}
+                diskAvailableKb={diskKb}
                 onRetier={openReview}
                 onCancel={() => setReview(null)}
                 onDone={reviewDone}

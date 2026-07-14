@@ -25,6 +25,28 @@ export function suggestDowngrade(tier: Tier): Tier | null {
   return null;
 }
 
+/** One editable pull entry. `sizeGb` is `undefined` for custom models whose
+ *  size we can't know ahead of the download. */
+export interface PullRow {
+  model: string;
+  sizeGb?: number;
+}
+
+/** Recompute the disk verdict from an edited pull list (review card, Finding
+ *  4). Custom rows with an unknown size contribute nothing to the required
+ *  volume — we can't precheck what we can't size — so a list of only custom
+ *  models reads `diskOk`. Otherwise mirrors buildSetupPlan's 10% headroom. */
+export function recomputeDisk(
+  pulls: PullRow[],
+  diskAvailableKb: number,
+  tier: Tier
+): { diskOk: boolean; requiredGb: number; downgrade: Tier | null } {
+  const requiredGb = pulls.reduce((sum, p) => sum + (p.sizeGb ?? 0), 0);
+  const availGb = diskAvailableKb / 1_000_000;
+  const diskOk = requiredGb === 0 || availGb > requiredGb * 1.1;
+  return { diskOk, requiredGb, downgrade: diskOk ? null : suggestDowngrade(tier) };
+}
+
 /** Engines fonos can install automatically. */
 const AUTO_INSTALL: ReadonlySet<string> = new Set(["omlx", "ollama"]);
 

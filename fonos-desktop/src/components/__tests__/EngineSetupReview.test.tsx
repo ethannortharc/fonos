@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import EngineSetupReview from "../EngineSetupReview";
 import type { BuiltPlan } from "../../lib/engineSetup";
 
@@ -21,6 +22,9 @@ vi.mock("../../lib/api", () => ({
   engineSetup: (plan: unknown) => engineSetupMock(plan),
 }));
 
+// Ample disk unless a test overrides it — the built fixture below needs ≈9.3 GB.
+const DISK = 500_000_000; // KB → 500 GB
+
 const built: BuiltPlan = {
   plan: { engine: "ollama", install: true, start: true, pulls: ["qwen3:14b"], base_url: "http://localhost:11434" },
   rows: [{ kind: "install" }, { kind: "start" }, { kind: "pull", model: "qwen3:14b", sizeGb: 9.3 }],
@@ -29,12 +33,24 @@ const built: BuiltPlan = {
   downgrade: null,
 };
 
+function renderReview(overrides: Partial<ComponentProps<typeof EngineSetupReview>> = {}) {
+  const props: ComponentProps<typeof EngineSetupReview> = {
+    built,
+    engineName: "Ollama",
+    tier: "balanced",
+    diskAvailableKb: DISK,
+    onRetier: () => {},
+    onCancel: () => {},
+    onDone: () => {},
+    ...overrides,
+  };
+  return render(<EngineSetupReview {...props} />);
+}
+
 describe("EngineSetupReview", () => {
   it("renders rows and starts setup on confirm, reporting progress → done", async () => {
     const onDone = vi.fn();
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={onDone} />
-    );
+    renderReview({ onDone });
     expect(screen.getByTestId("review-row-install")).toBeInTheDocument();
     expect(screen.getByTestId("review-row-pull")).toBeInTheDocument();
 
@@ -50,25 +66,15 @@ describe("EngineSetupReview", () => {
 
   it("blocks confirm and offers downgrade when disk is insufficient", () => {
     const onRetier = vi.fn();
-    render(
-      <EngineSetupReview
-        built={{ ...built, diskOk: false, downgrade: "light" }}
-        engineName="Ollama"
-        tier="balanced"
-        onRetier={onRetier}
-        onCancel={() => {}}
-        onDone={() => {}}
-      />
-    );
+    // 5 GB free can't hold the balanced pull (≈9.3 GB) → recomputed diskOk false.
+    renderReview({ diskAvailableKb: 5_000_000, onRetier });
     expect(screen.getByTestId("review-confirm")).toBeDisabled();
     fireEvent.click(screen.getByTestId("review-downgrade"));
     expect(onRetier).toHaveBeenCalledWith("light");
   });
 
   it("shows the error stage with a message", async () => {
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={() => {}} />
-    );
+    renderReview();
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
     listeners["engine:setup"]({ payload: JSON.stringify({ stage: "error", message: "pull failed" }) });
@@ -77,9 +83,7 @@ describe("EngineSetupReview", () => {
 
   it("pull failure offers a downgrade when a lower tier exists", async () => {
     const onRetier = vi.fn();
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={onRetier} onCancel={() => {}} onDone={() => {}} />
-    );
+    renderReview({ onRetier });
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
     listeners["engine:setup"]({ payload: JSON.stringify({ stage: "error", failed_stage: "pull", message: "pull failed" }) });
@@ -96,9 +100,7 @@ describe("EngineSetupReview", () => {
 
   it("busy rejection shows an already-running notice and offers no downgrade", async () => {
     const onRetier = vi.fn();
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={onRetier} onCancel={() => {}} onDone={() => {}} />
-    );
+    renderReview({ onRetier });
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
     listeners["engine:setup"]({
@@ -110,9 +112,7 @@ describe("EngineSetupReview", () => {
   });
 
   it("install failure offers no downgrade (a smaller model won't fix an install)", async () => {
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={() => {}} />
-    );
+    renderReview();
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
     listeners["engine:setup"]({ payload: JSON.stringify({ stage: "error", failed_stage: "install", message: "brew failed" }) });
@@ -122,9 +122,7 @@ describe("EngineSetupReview", () => {
   });
 
   it("renders a terminal manual notice for engines with no automated install", async () => {
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={() => {}} />
-    );
+    renderReview();
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
     listeners["engine:setup"]({ payload: JSON.stringify({ stage: "manual", message: "install it from ollama.com" }) });
@@ -135,9 +133,7 @@ describe("EngineSetupReview", () => {
 
   it("ignores events from a different engine and only fires onDone for the matching engine", async () => {
     const onDone = vi.fn();
-    render(
-      <EngineSetupReview built={built} engineName="Ollama" tier="balanced" onRetier={() => {}} onCancel={() => {}} onDone={onDone} />
-    );
+    renderReview({ onDone });
     fireEvent.click(screen.getByTestId("review-confirm"));
     await waitFor(() => expect(engineSetupMock).toHaveBeenCalled());
 
@@ -148,5 +144,58 @@ describe("EngineSetupReview", () => {
     // Send done from the matching engine — should fire onDone
     listeners["engine:setup"]({ payload: JSON.stringify({ stage: "done", engine: "ollama" }) });
     await waitFor(() => expect(onDone).toHaveBeenCalled());
+  });
+
+  // ── Editable pull models (Finding 4) ──────────────────────────────────────
+
+  it("changing the model via the select sends the edited pull list", async () => {
+    renderReview();
+    const select = screen.getByTestId("review-pull-select") as HTMLSelectElement;
+    expect(select.value).toBe("qwen3:14b"); // seeded from the built plan
+    fireEvent.change(select, { target: { value: "qwen3:4b" } }); // light tier
+    // Size label follows the picked tier's known size.
+    await waitFor(() => expect(screen.getByTestId("review-row-pull").textContent).toContain("2.6"));
+
+    fireEvent.click(screen.getByTestId("review-confirm"));
+    await waitFor(() =>
+      expect(engineSetupMock).toHaveBeenCalledWith(expect.objectContaining({ pulls: ["qwen3:4b"] }))
+    );
+  });
+
+  it("removing the only pull row confirms with an empty pull list", async () => {
+    renderReview();
+    fireEvent.click(screen.getByTestId("review-pull-remove"));
+    expect(screen.queryByTestId("review-row-pull")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("review-confirm"));
+    await waitFor(() =>
+      expect(engineSetupMock).toHaveBeenCalledWith(expect.objectContaining({ pulls: [] }))
+    );
+  });
+
+  it("adding a custom model reveals a free-text input, shows unknown size, and sends it", async () => {
+    renderReview();
+    fireEvent.click(screen.getByTestId("review-pull-add"));
+    const customInputs = screen.getAllByTestId("review-pull-custom");
+    expect(customInputs).toHaveLength(1);
+    // The new custom row has no known size.
+    expect(screen.getAllByText("engine.review.size.unknown").length).toBeGreaterThan(0);
+
+    fireEvent.change(customInputs[0], { target: { value: "phi4:mini" } });
+    fireEvent.click(screen.getByTestId("review-confirm"));
+    await waitFor(() =>
+      expect(engineSetupMock).toHaveBeenCalledWith(
+        expect.objectContaining({ pulls: ["qwen3:14b", "phi4:mini"] })
+      )
+    );
+  });
+
+  it("recomputes the disk verdict when the model changes (bigger model → blocked)", () => {
+    // 15 GB free: fits balanced (≈9.3) but not max (≈18.6).
+    renderReview({ diskAvailableKb: 15_000_000, tier: "balanced" });
+    expect(screen.getByTestId("review-confirm")).not.toBeDisabled();
+    fireEvent.change(screen.getByTestId("review-pull-select"), { target: { value: "qwen3:30b-a3b" } });
+    expect(screen.getByTestId("review-confirm")).toBeDisabled();
+    expect(screen.getByTestId("review-downgrade")).toBeInTheDocument();
   });
 });

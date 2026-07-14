@@ -242,7 +242,7 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
 
       {/* Hover actions — CSS-only reveal so paragraphs stay clean. */}
       {!editMode && (
-        <div className="absolute right-0 -top-2 hidden group-hover:flex group-focus-within:flex items-center gap-0.5 rounded-md bg-[#242220] border border-[rgba(255,255,255,0.08)] px-1 py-0.5 shadow-lg">
+        <div className="absolute right-0 -top-2 flex opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto items-center gap-0.5 rounded-md bg-[#242220] border border-[rgba(255,255,255,0.08)] px-1 py-0.5 shadow-lg">
           {onPlay && entry.audio_ref && (
             <button
               data-testid="audio-play-btn"

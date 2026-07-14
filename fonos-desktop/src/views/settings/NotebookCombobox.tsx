@@ -3,6 +3,9 @@
 // live in lib/notebookSelection.ts; this component only owns the popover.
 // It intentionally has no "rename" semantics — renaming a notebook is a
 // management action on the notebook itself, not on the widget binding.
+// The input text is seeded from props once per mount — callers that reuse one
+// instance across different widgets must remount it (key={form.id}), matching
+// WidgetForm's own value.id resync contract.
 
 import { useEffect, useRef, useState } from "react";
 import { t, useT } from "../../lib/i18n";

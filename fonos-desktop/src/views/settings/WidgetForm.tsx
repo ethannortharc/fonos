@@ -399,6 +399,7 @@ function PropsForm({
       return (
         <Field label={t("widgets.field.container_id")}>
           <NotebookCombobox
+            key={form.id}
             containerId={pNum(p, "container_id", 0)}
             pendingTitle={pStr(p, "container_title")}
             notebooks={notebooks}

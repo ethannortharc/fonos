@@ -141,7 +141,7 @@ const CARD_META: Record<
 
 // ── profile-build helpers (Apply) ────────────────────────────────────────────
 
-interface ProfileSpec {
+export interface ProfileSpec {
   provider: string;
   base_url: string;
   model: string;
@@ -175,8 +175,15 @@ function uniqueId(base: string, taken: Set<string>): string {
 
 /** Build the merged profile array + default-field updates for a set of desired
  *  role specs, reusing existing profiles by base_url+model and never mutating
- *  them. Returns a partial AppConfig to persist. */
-function buildUpdates(
+ *  them. Returns a partial AppConfig to persist.
+ *
+ *  Only includes a role-default key when `specs` actually assigned that role
+ *  — partial bundles (e.g. an Anthropic apply that's LLM-only) must never
+ *  clear role defaults the specs didn't touch, since the backend's save_config
+ *  merges by key (absent keys keep their current value; see
+ *  src-tauri/src/commands/config.rs). A full bundle (all four roles present)
+ *  still sets all five fields, same as before. */
+export function buildUpdates(
   existing: ModelProfile[],
   source: string,
   specs: { role: RoleKey; spec: ProfileSpec }[]
@@ -238,17 +245,20 @@ function buildUpdates(
     roleToId[role] = id;
   }
 
-  const conv = roleToId.conv ?? roleToId.listen ?? "";
-  const listen = roleToId.listen ?? roleToId.conv ?? "";
-  return {
+  const conv = roleToId.conv ?? roleToId.listen;
+  const listen = roleToId.listen ?? roleToId.conv;
+  const updates: Partial<AppConfig> = {
     model_profiles: profiles,
-    stt_profile: roleToId.stt ?? "",
-    llm_profile: roleToId.llm ?? "",
-    tts_profile: conv,
-    sts_voice_profile: conv,
-    listen_voice_profile: listen,
     has_completed_onboarding: true,
   };
+  if (roleToId.stt) updates.stt_profile = roleToId.stt;
+  if (roleToId.llm) updates.llm_profile = roleToId.llm;
+  if (conv) {
+    updates.tts_profile = conv;
+    updates.sts_voice_profile = conv;
+  }
+  if (listen) updates.listen_voice_profile = listen;
+  return updates;
 }
 
 // ── small presentational pieces ──────────────────────────────────────────────
@@ -455,7 +465,13 @@ export default function Scenarios({
 
   const canApply = (): boolean => {
     if (selected === "local") return !!probe?.reachable;
-    if (selected === "cloud") return cloudKey.trim().length > 0;
+    if (selected === "cloud") {
+      const hasKey = cloudKey.trim().length > 0;
+      const hasRole = (Object.keys(cloudSel) as RoleKey[]).some(
+        (r) => cloudSel[r].trim().length > 0
+      );
+      return hasKey && hasRole;
+    }
     if (selected === "zero") return true;
     return false;
   };

@@ -501,9 +501,12 @@ fn main() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
-    // In-app auto-update (macOS): the updater plugin checks the GitHub Releases
-    // `latest.json` endpoint and installs signed artifacts; the process plugin
-    // exposes relaunch() so the UI can restart into the new version.
+    // In-app auto-update (macOS + Linux AppImage): the updater plugin checks
+    // the GitHub Releases `latest.json` endpoint and installs signed
+    // artifacts; the process plugin exposes relaunch() so the UI can restart
+    // into the new version. On Linux this only works for AppImage installs —
+    // see `commands::update::update_supports_self_install`, which the
+    // frontend uses to hide the in-place install button for deb/rpm.
     builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init());
@@ -547,6 +550,8 @@ fn main() {
             commands::tts::list_model_voices,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
+            commands::update::update_supports_self_install,
+            commands::update::open_releases_page,
             // TTS commands
             commands::tts::synthesize_speech,
             commands::tts::generate_and_play,

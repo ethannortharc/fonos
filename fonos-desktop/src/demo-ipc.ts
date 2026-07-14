@@ -454,6 +454,8 @@ export function installDemoIpc() {
         return true;
       case "open_settings_pane":
         return null;
+      case "update_supports_self_install":
+        return true;
       case "start_recording":
         return null;
       case "stop_recording":

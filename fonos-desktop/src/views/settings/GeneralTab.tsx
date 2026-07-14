@@ -15,11 +15,31 @@ import DoctorCard from "./DoctorCard";
 // silent check(); the plugin/IPC is absent in the browser demo, so every plugin
 // call is dynamically imported and wrapped in try/catch — a caught failure just
 // falls back to the version + a manual "Check for updates" button.
+//
+// "manual" is Linux deb/rpm: the updater plugin can find an update there just
+// fine, but downloadAndInstall() can't swap a package-manager install in
+// place (only an AppImage supports that — see tauri.linux.conf.json). The
+// backend's update_supports_self_install() distinguishes the two cases so
+// this only offers the one-click button when it'll actually work.
+const RELEASES_URL = "https://github.com/ethannortharc/fonos/releases/latest";
+
+// The webview blocks target="_blank" navigation (no opener plugin), so the
+// backend opens the page via the OS opener; window.open covers the browser demo.
+async function openReleasesPage() {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_releases_page");
+  } catch {
+    window.open(RELEASES_URL, "_blank", "noreferrer,noopener");
+  }
+}
+
 type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "none" }
   | { kind: "available"; version: string; update: Update }
+  | { kind: "manual"; version: string }
   | { kind: "downloading"; percent: number | null }
   | { kind: "installing" }
   | { kind: "error" };
@@ -44,8 +64,24 @@ function UpdatesSection() {
     try {
       const { check: checkForUpdate } = await import("@tauri-apps/plugin-updater");
       const update = await checkForUpdate();
+      if (!update) {
+        setState({ kind: "none" });
+        return;
+      }
+      // Default to self-installable (true) so macOS/Windows and the browser
+      // demo (no IPC — invoke() throws) behave exactly as before this check
+      // was added.
+      let selfInstall = true;
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        selfInstall = await invoke<boolean>("update_supports_self_install");
+      } catch {
+        // ignore — fall back to true
+      }
       setState(
-        update ? { kind: "available", version: update.version, update } : { kind: "none" }
+        selfInstall
+          ? { kind: "available", version: update.version, update }
+          : { kind: "manual", version: update.version }
       );
     } catch {
       setState(silent ? { kind: "idle" } : { kind: "error" });
@@ -117,6 +153,21 @@ function UpdatesSection() {
             className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(242,184,75,0.3)] bg-[rgba(242,184,75,0.12)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.18)] transition-colors"
           >
             {t("general.update.update")}
+          </button>
+        </>
+      );
+      break;
+    case "manual":
+      control = (
+        <>
+          <span className="text-[10.5px] text-[var(--accent)]">
+            {td("general.update.manual", [state.version])}
+          </span>
+          <button
+            onClick={() => void openReleasesPage()}
+            className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(242,184,75,0.3)] bg-[rgba(242,184,75,0.12)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.18)] transition-colors"
+          >
+            {t("general.update.download")}
           </button>
         </>
       );

@@ -481,7 +481,12 @@ export default function Scenarios({
       {error && <div className="text-[11px] text-[#f87171] text-center">{error}</div>}
 
       {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-4">
+      <div
+        className={[
+          "grid grid-cols-1 gap-2.5 mt-4",
+          isMacOS ? "sm:grid-cols-3" : "sm:grid-cols-2",
+        ].join(" ")}
+      >
         {(Object.keys(CARD_META) as ScenarioKey[])
           // Zero relies on Apple on-device Speech — macOS only (spec §P1
           // Linux 差异; the backend errors explicitly off-macOS anyway).

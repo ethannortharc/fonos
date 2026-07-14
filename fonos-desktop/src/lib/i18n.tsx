@@ -589,6 +589,7 @@ const en = {
   "ob.guided.waiting": "Listening for your first insertion…",
   "ob.guided.success": "✓ Inserted — you're all set!",
   "ob.guided.finish": "Finish",
+  "ob.linux.hotkey-hint": "On Wayland the global hotkey may be unavailable — trigger dictation from the tray, or bind a shortcut that sends SIGUSR2 to Fonos.",
 
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
   "wf.section.preset": "Preset",
@@ -1344,6 +1345,7 @@ const zh: Partial<Record<Key, string>> = {
   "ob.guided.waiting": "等待第一次插入…",
   "ob.guided.success": "✓ 插入成功——一切就绪！",
   "ob.guided.finish": "完成",
+  "ob.linux.hotkey-hint": "Wayland 下全局热键可能不可用——可从托盘触发听写，或在系统里绑定快捷键向 Fonos 发送 SIGUSR2。",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
   "wf.section.preset": "预置",

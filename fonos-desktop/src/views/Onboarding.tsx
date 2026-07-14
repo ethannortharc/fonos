@@ -273,7 +273,12 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      <div className="absolute bottom-6 right-8">
+      <div className="absolute bottom-6 right-8 flex flex-col items-end gap-1">
+        {!isMacOS && (
+          <p className="text-[10px] text-[rgba(255,255,255,0.25)] max-w-[360px] text-right">
+            {t("ob.linux.hotkey-hint")}
+          </p>
+        )}
         <button
           data-testid="ob-skip"
           onClick={skip}

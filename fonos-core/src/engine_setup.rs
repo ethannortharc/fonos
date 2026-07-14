@@ -136,6 +136,90 @@ pub fn parse_pull_line(line: &str) -> Option<PullProgress> {
     Some(PullProgress { status, pct, error: None })
 }
 
+/// Incremental byte→line splitter for NDJSON streams (chunks may cut lines).
+#[derive(Default)]
+pub struct LineBuffer {
+    buf: Vec<u8>,
+}
+
+impl LineBuffer {
+    /// Feed a chunk; returns the complete lines it closed (without `\n`).
+    pub fn push(&mut self, chunk: &[u8]) -> Vec<String> {
+        self.buf.extend_from_slice(chunk);
+        let mut out = Vec::new();
+        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+            let line: Vec<u8> = self.buf.drain(..=pos).collect();
+            let line = &line[..line.len() - 1];
+            out.push(String::from_utf8_lossy(line).into_owned());
+        }
+        out
+    }
+
+    /// Drain any trailing bytes as a final line (streams may omit the last `\n`).
+    pub fn finish(&mut self) -> Option<String> {
+        if self.buf.is_empty() {
+            return None;
+        }
+        let rest = String::from_utf8_lossy(&self.buf).into_owned();
+        self.buf.clear();
+        Some(rest)
+    }
+}
+
+/// Pull a model via Ollama's streaming `POST /api/pull`, invoking
+/// `on_progress` per parsed NDJSON line. Errors on HTTP failure, an error
+/// line, or a stream that ends without a `success` status.
+pub async fn ollama_pull(
+    base_url: &str,
+    model: &str,
+    mut on_progress: impl FnMut(PullProgress),
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    let url = format!("{}/api/pull", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        // Both spellings for old/new Ollama versions.
+        .json(&serde_json::json!({ "name": model, "model": model, "stream": true }))
+        .send()
+        .await
+        .map_err(|e| format!("ollama pull request failed: {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("ollama pull error {status}: {body}"));
+    }
+    let mut stream = resp.bytes_stream();
+    let mut lines = LineBuffer::default();
+    let mut succeeded = false;
+    let mut handle = |line: String| -> Result<(), String> {
+        if let Some(p) = parse_pull_line(&line) {
+            if let Some(err) = &p.error {
+                return Err(err.clone());
+            }
+            if p.status == "success" {
+                succeeded = true;
+            }
+            on_progress(p);
+        }
+        Ok(())
+    };
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("ollama pull stream failed: {e}"))?;
+        for line in lines.push(&chunk) {
+            handle(line)?;
+        }
+    }
+    if let Some(rest) = lines.finish() {
+        handle(rest)?;
+    }
+    if succeeded {
+        Ok(())
+    } else {
+        Err("ollama pull ended without success".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,5 +298,16 @@ mod tests {
         let err = parse_pull_line(r#"{"error":"pull model manifest: file does not exist"}"#).unwrap();
         assert!(err.error.as_deref().unwrap().contains("manifest"));
         assert!(parse_pull_line("not json").is_none());
+    }
+
+    #[test]
+    fn line_buffer_splits_ndjson_across_chunks() {
+        let mut buf = LineBuffer::default();
+        let mut lines: Vec<String> = Vec::new();
+        lines.extend(buf.push(b"{\"status\":\"a\"}\n{\"sta"));
+        lines.extend(buf.push(b"tus\":\"b\"}\n"));
+        assert_eq!(lines, vec![r#"{"status":"a"}"#.to_string(), r#"{"status":"b"}"#.to_string()]);
+        assert_eq!(buf.push(b"tail-no-newline"), Vec::<String>::new());
+        assert_eq!(buf.finish().as_deref(), Some("tail-no-newline"));
     }
 }

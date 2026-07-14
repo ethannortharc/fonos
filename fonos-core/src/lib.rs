@@ -11,6 +11,7 @@ pub mod audio;
 pub mod config;
 pub mod doctor;
 pub mod echo;
+pub mod engine_setup;
 pub mod error;
 pub mod funnel;
 pub mod hotkey;

@@ -483,7 +483,16 @@ pub fn update_container(conn: &Connection, id: i64, title: &str) -> Result<()> {
 }
 
 /// Delete a container by ID.
+///
+/// Entries linked to the container are unlinked first (`container_id` →
+/// NULL) so they fall back to plain history instead of pointing at a dead
+/// row — "delete notebook, keep the notes".
 pub fn delete_container(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET container_id = NULL WHERE container_id = ?1",
+        params![id],
+    )
+    .map_err(|e| Error::Database(format!("delete_container unlink: {e}")))?;
     conn.execute("DELETE FROM containers WHERE id = ?1", params![id])
         .map_err(|e| Error::Database(format!("delete_container: {e}")))?;
     Ok(())
@@ -1005,6 +1014,19 @@ mod tests {
         insert_entry(conn, &entry).expect("insert_entry")
     }
 
+    fn seed_notebook(conn: &Connection, title: &str) -> i64 {
+        let c = Container {
+            id: None,
+            container_type: ContainerType::Notebook,
+            title: title.to_string(),
+            parent_id: None,
+            created_at: now_iso8601(),
+            updated_at: now_iso8601(),
+            metadata: serde_json::Value::Null,
+        };
+        insert_container(conn, &c).expect("insert_container")
+    }
+
     #[test]
     fn update_entry_processed_text_rewrites_only_display_text() {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -1093,5 +1115,23 @@ mod tests {
         // Linking the audio file must not disturb the entry's text.
         assert_eq!(got.raw_text, "spoken briefing");
         assert_eq!(got.processed_text.as_deref(), Some("spoken briefing"));
+    }
+
+    #[test]
+    fn delete_container_unlinks_entries() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let nb_id = seed_notebook(&conn, "Scratch");
+        let entry_id = seed_entry(&conn, "kept text", None);
+        update_entry_container(&conn, entry_id, Some(nb_id)).expect("link");
+
+        delete_container(&conn, nb_id).expect("delete_container");
+
+        // The container row is gone…
+        assert!(get_container(&conn, nb_id).is_err());
+        // …but the entry survives, unlinked (back in plain history).
+        let got = get_entry(&conn, entry_id).expect("entry survives");
+        assert_eq!(got.container_id, None);
     }
 }

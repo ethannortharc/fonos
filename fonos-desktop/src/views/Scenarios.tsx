@@ -47,7 +47,8 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 
 type ScenarioKey = "local" | "cloud" | "zero";
 type EngineKey = "omlx" | "lmstudio" | "ollama" | "vllm";
-type ProviderKey = "openai" | "openrouter";
+const CLOUD_PROVIDER_KEYS = ["openai", "openrouter", "anthropic", "google", "fireworks"] as const;
+type ProviderKey = (typeof CLOUD_PROVIDER_KEYS)[number];
 
 interface EngineDef {
   key: EngineKey;
@@ -103,6 +104,27 @@ const CLOUD_PROVIDERS: ProviderDef[] = [
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
     bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true },
+  },
+  {
+    key: "anthropic",
+    name: "Anthropic",
+    baseUrl: "https://api.anthropic.com",
+    bundle: { llm: "claude-sonnet-4-5", sttApple: true },
+  },
+  {
+    key: "google",
+    name: "Google",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    bundle: { llm: "gemini-2.5-flash", sttApple: true },
+  },
+  {
+    key: "fireworks",
+    name: "Fireworks",
+    baseUrl: "https://api.fireworks.ai/inference/v1",
+    bundle: {
+      stt: { model: "whisper-v3-turbo", stt_api: "whisper" },
+      llm: "accounts/fireworks/models/kimi-k2-instruct",
+    },
   },
 ];
 
@@ -270,6 +292,11 @@ export default function Scenarios({
   // Cloud / zero key inputs.
   const [cloudKey, setCloudKey] = useState("");
   const [zeroKey, setZeroKey] = useState("");
+  // Cloud plan rows — editable copies of the provider bundle (spec: 每步有缺省、逐项可改).
+  const [cloudSel, setCloudSel] = useState<Record<RoleKey, string>>({ stt: "", llm: "", conv: "", listen: "" });
+  // Editable endpoint — defaults to the provider's URL; hand-editing it IS the
+  // "custom OpenAI-compatible endpoint" path (spec: 自定义 endpoint 就在卡内).
+  const [cloudBaseUrl, setCloudBaseUrl] = useState(CLOUD_PROVIDERS[0].baseUrl);
 
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -315,6 +342,10 @@ export default function Scenarios({
       setBaseUrl(currentEngine.url);
       setApiKey("");
     }
+    if (s === "cloud") {
+      setCloudSel(bundleToSel(provider));
+      setCloudBaseUrl(currentProvider.baseUrl);
+    }
   };
   const selectEngine = (k: EngineKey) => {
     setEngine(k);
@@ -323,6 +354,20 @@ export default function Scenarios({
     const e = LOCAL_ENGINES.find((x) => x.key === k)!;
     setBaseUrl(e.url);
     setApiKey("");
+  };
+  const bundleToSel = (key: ProviderKey): Record<RoleKey, string> => {
+    const b = CLOUD_PROVIDERS.find((p) => p.key === key)!.bundle;
+    return {
+      stt: b.stt?.model ?? (b.sttApple && isMacOS ? "apple" : ""),
+      llm: b.llm ?? "",
+      conv: b.tts ?? "",
+      listen: b.tts ?? "",
+    };
+  };
+  const selectProvider = (k: ProviderKey) => {
+    setProvider(k);
+    setCloudSel(bundleToSel(k));
+    setCloudBaseUrl(CLOUD_PROVIDERS.find((p) => p.key === k)!.baseUrl);
   };
 
   const runProbe = useCallback(async () => {
@@ -370,23 +415,23 @@ export default function Scenarios({
       return { source: engine, specs };
     }
     if (selected === "cloud") {
-      const b = currentProvider.bundle;
       const specs: { role: RoleKey; spec: ProfileSpec }[] = [];
       const cloud = (model: string, caps: string[], stt_api?: "whisper" | "chat"): ProfileSpec => ({
         provider: currentProvider.key,
-        base_url: currentProvider.baseUrl,
+        base_url: cloudBaseUrl.trim() || currentProvider.baseUrl,
         model,
         api_key: cloudKey,
         capabilities: caps,
         stt_api,
       });
-      if (b.stt) specs.push({ role: "stt", spec: cloud(b.stt.model, ["stt"], b.stt.stt_api) });
-      else if (b.sttApple) specs.push({ role: "stt", spec: appleSpec() });
-      if (b.llm) specs.push({ role: "llm", spec: cloud(b.llm, ["llm"]) });
-      if (b.tts) {
-        specs.push({ role: "conv", spec: cloud(b.tts, ["tts"]) });
-        specs.push({ role: "listen", spec: cloud(b.tts, ["tts"]) });
+      if (cloudSel.stt === "apple") {
+        if (isMacOS) specs.push({ role: "stt", spec: appleSpec() });
+      } else if (cloudSel.stt) {
+        specs.push({ role: "stt", spec: cloud(cloudSel.stt, ["stt"], currentProvider.bundle.stt?.stt_api ?? "whisper") });
       }
+      if (cloudSel.llm) specs.push({ role: "llm", spec: cloud(cloudSel.llm, ["llm"]) });
+      if (cloudSel.conv) specs.push({ role: "conv", spec: cloud(cloudSel.conv, ["tts"]) });
+      if (cloudSel.listen) specs.push({ role: "listen", spec: cloud(cloudSel.listen, ["tts"]) });
       return { source: currentProvider.key, specs };
     }
     if (selected === "zero") {
@@ -433,7 +478,7 @@ export default function Scenarios({
       setApplying(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, engine, baseUrl, apiKey, planSel, provider, cloudKey, zeroKey, probe, config, reloadConfig]);
+  }, [selected, engine, baseUrl, apiKey, planSel, provider, cloudKey, cloudSel, cloudBaseUrl, zeroKey, probe, config, reloadConfig]);
 
   const skip = useCallback(async () => {
     try {
@@ -564,9 +609,13 @@ export default function Scenarios({
       {selected === "cloud" && (
         <CloudStep
           provider={provider}
-          onProvider={setProvider}
+          onProvider={selectProvider}
           cloudKey={cloudKey}
           setCloudKey={setCloudKey}
+          cloudSel={cloudSel}
+          setCloudSel={setCloudSel}
+          baseUrl={cloudBaseUrl}
+          setBaseUrl={setCloudBaseUrl}
         />
       )}
 
@@ -834,19 +883,26 @@ function CloudStep({
   onProvider,
   cloudKey,
   setCloudKey,
+  cloudSel,
+  setCloudSel,
+  baseUrl,
+  setBaseUrl,
 }: {
   provider: ProviderKey;
   onProvider: (k: ProviderKey) => void;
   cloudKey: string;
   setCloudKey: (v: string) => void;
+  cloudSel: Record<RoleKey, string>;
+  setCloudSel: (v: Record<RoleKey, string>) => void;
+  baseUrl: string;
+  setBaseUrl: (v: string) => void;
 }) {
-  const def = CLOUD_PROVIDERS.find((p) => p.key === provider)!;
-  const b = def.bundle;
+  const set = (role: RoleKey, v: string) => setCloudSel({ ...cloudSel, [role]: v });
   return (
     <div className="mt-4 rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4 flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("scen.provider")}</span>
-        <div className="grid grid-cols-2 gap-1.5 max-w-[280px]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-w-[420px]">
           {CLOUD_PROVIDERS.map((p) => {
             const on = p.key === provider;
             return (
@@ -867,28 +923,38 @@ function CloudStep({
         </div>
       </div>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.apikey")}</span>
-        <input
-          value={cloudKey}
-          onChange={(e) => setCloudKey(e.target.value)}
-          placeholder={t("scen.apikey.ph")}
-          className={`${control} font-mono w-full`}
-        />
-      </label>
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex flex-col gap-1 flex-1 min-w-[220px]">
+          <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.baseurl")}</span>
+          <input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            className={`${control} font-mono w-full`}
+            data-testid="cloud-base-url"
+          />
+        </label>
+        <label className="flex flex-col gap-1 w-[200px]">
+          <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.apikey")}</span>
+          <input
+            value={cloudKey}
+            onChange={(e) => setCloudKey(e.target.value)}
+            placeholder={t("scen.apikey.ph")}
+            className={`${control} font-mono w-full`}
+          />
+        </label>
+      </div>
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
-        <PlanRowStatic role="stt" value={b.stt ? b.stt.model : t("scen.apple")} />
-        {b.llm && <PlanRowStatic role="llm" value={b.llm} />}
-        {b.tts ? (
-          <>
-            <PlanRowStatic role="conv" value={b.tts} />
-            <PlanRowStatic role="listen" value={b.tts} />
-          </>
+        {cloudSel.stt === "apple" ? (
+          <PlanRowStatic role="stt" value={t("scen.apple")} />
         ) : (
-          <PlanRowStatic role="conv" value={t("scen.unassigned")} note={t("scen.tts.note")} />
+          <PlanRowInput role="stt" value={cloudSel.stt} onChange={(v) => set("stt", v)} placeholder={t("scen.cloud.row.ph")} />
         )}
+        <PlanRowInput role="llm" value={cloudSel.llm} onChange={(v) => set("llm", v)} placeholder={t("scen.cloud.row.ph")} />
+        <PlanRowInput role="conv" value={cloudSel.conv} onChange={(v) => set("conv", v)} placeholder={t("scen.cloud.row.ph")} />
+        <PlanRowInput role="listen" value={cloudSel.listen} onChange={(v) => set("listen", v)} placeholder={t("scen.cloud.row.ph")} />
       </div>
+      <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("scen.cloud.editable.note")}</span>
     </div>
   );
 }
@@ -956,6 +1022,33 @@ function PlanRowStatic({ role, value, note }: { role: RoleKey; value: string; no
   );
 }
 
+/** Editable plan row: role label + free-text mono input (cloud bundles have
+ *  no candidate list to select from — every default stays hand-editable). */
+function PlanRowInput({
+  role,
+  value,
+  onChange,
+  placeholder,
+}: {
+  role: RoleKey;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5">
+      <span className="w-[92px] flex-none text-[10.5px] text-[rgba(255,255,255,0.4)]">{t(ROLE_LABEL[role])}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "—"}
+        className={`${control} font-mono flex-1 min-w-0`}
+        data-testid={`cloud-row-${role}`}
+      />
+    </div>
+  );
+}
+
 // ── saved-scenario preview helpers (shared with Settings › Scenarios) ─────────
 
 /** Relative "saved N ago" label from an epoch-seconds string. */
@@ -969,7 +1062,7 @@ export function relDate(epochSecs: string): string {
   return td("scen.saved.day", [String(Math.floor(diff / 86400))]);
 }
 
-export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google"]);
+export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google", "fireworks"]);
 
 /** Host (with port) of a base URL — "http://localhost:8000" → "localhost:8000",
  *  "https://api.openai.com" → "api.openai.com". Empty for keyless/local. */

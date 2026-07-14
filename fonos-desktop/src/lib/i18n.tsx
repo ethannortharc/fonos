@@ -593,6 +593,10 @@ const en = {
   "ob.guided.finish": "Finish",
   "ob.linux.hotkey-hint": "On Wayland the global hotkey may be unavailable — trigger dictation from the tray, or bind a shortcut that sends SIGUSR2 to Fonos.",
 
+  // onboarding (P3)
+  "scen.cloud.row.ph": "model id — leave empty to skip",
+  "scen.cloud.editable.note": "Every row is a default — edit or clear any of them.",
+
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
   "wf.section.preset": "Preset",
   "wf.section.custom": "Custom",
@@ -1350,6 +1354,10 @@ const zh: Partial<Record<Key, string>> = {
   "ob.guided.success": "✓ 插入成功——一切就绪！",
   "ob.guided.finish": "完成",
   "ob.linux.hotkey-hint": "Wayland 下全局热键可能不可用——可从托盘触发听写，或在系统里绑定快捷键向 Fonos 发送 SIGUSR2。",
+
+  // onboarding (P3)
+  "scen.cloud.row.ph": "模型 id——留空则不指派",
+  "scen.cloud.editable.note": "每一行都是缺省值，可改可清空。",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
   "wf.section.preset": "预置",

@@ -476,6 +476,11 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
         }
     }
 
+    // Funnel: the microphone is provably usable from here on (record-once).
+    if let Ok(db) = state.db.lock() {
+        let _ = fonos_core::funnel::record(&db, "mic_granted");
+    }
+
     // Preload the backends while the user speaks (issue #4 warm-up).
     spawn_backend_warmup(&state);
 
@@ -658,6 +663,21 @@ pub(crate) async fn transcribe_samples(
                 // line (nor "Injection failed"), injection itself is wedged and
                 // the pill stays stuck in "Processing".
                 eprintln!("fonos: raw injection delivered ({} chars)", transcript.len());
+                // Funnel: first successful system-level insertion (record-once).
+                if let Ok(db) = state.db.lock() {
+                    let _ = fonos_core::funnel::record(&db, "first_insert");
+                }
+                // Onboarding's guided task listens for this; target_app lets it
+                // tell an insertion into another app from one into Fonos. The
+                // frontmost_app lookup is one osascript/xdotool round-trip —
+                // acceptable on this already-blocking delivery path.
+                let target = crate::commands::selection::frontmost_app();
+                let target_app: Option<String> =
+                    if target.is_empty() { None } else { Some(target) };
+                let _ = app.emit(
+                    "dictation:delivered",
+                    serde_json::json!({ "target_app": target_app }),
+                );
             }
             raw_e2e_done = delivered;
         }
@@ -679,6 +699,8 @@ pub(crate) async fn transcribe_samples(
     // Record STT event to stats DB (legacy). `stats_model` comes from the core.
     if !transcript.is_empty() {
         if let Ok(db) = state.db.lock() {
+            // Funnel: first non-empty transcript ever (record-once).
+            let _ = fonos_core::funnel::record(&db, "first_transcript");
             let _ = fonos_core::stats::record_event(
                 &db, "stt", &transcript, "", recording_duration,
                 latency_ms as i64, &dictation_mode, &stats_model, "", &audio_path_str,

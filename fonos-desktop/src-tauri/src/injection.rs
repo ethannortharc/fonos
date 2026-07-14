@@ -200,6 +200,40 @@ pub fn accessibility_trusted() -> bool {
     }
 }
 
+/// Ask the OS to show the Accessibility permission prompt (macOS). Returns
+/// the current trusted state. The system shows the dialog at most once per
+/// TCC grant cycle; later calls just return the state. Always true on other
+/// platforms.
+pub fn accessibility_prompt() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::ffi::c_void;
+        unsafe {
+            let key = kAXTrustedCheckOptionPrompt;
+            let value = kCFBooleanTrue;
+            // Null callbacks are fine here: key and value are process-lifetime
+            // CF constants, so the dictionary never needs to retain them.
+            let opts = CFDictionaryCreate(
+                std::ptr::null(),
+                &key as *const _ as *const *const c_void,
+                &value as *const _ as *const *const c_void,
+                1,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            let trusted = AXIsProcessTrustedWithOptions(opts) != 0;
+            if !opts.is_null() {
+                CFRelease(opts as *mut c_void);
+            }
+            trusted
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
 /// Fail fast on conditions that make simulated input silently vanish.
 fn preflight_input_checks() -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -420,6 +454,25 @@ extern "C" {
     /// Returns non-zero when this process may use Accessibility APIs
     /// (and therefore post CGEvents to other apps).
     fn AXIsProcessTrusted() -> u8;
+    /// Same check, but with an options dictionary; passing
+    /// kAXTrustedCheckOptionPrompt=true makes the OS show the grant prompt.
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> u8;
+    /// CFString key: "AXTrustedCheckOptionPrompt".
+    static kAXTrustedCheckOptionPrompt: *const std::ffi::c_void;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    static kCFBooleanTrue: *const std::ffi::c_void;
+    fn CFDictionaryCreate(
+        allocator: *const std::ffi::c_void,
+        keys: *const *const std::ffi::c_void,
+        values: *const *const std::ffi::c_void,
+        num_values: isize,
+        key_callbacks: *const std::ffi::c_void,
+        value_callbacks: *const std::ffi::c_void,
+    ) -> *const std::ffi::c_void;
 }
 
 #[cfg(target_os = "macos")]

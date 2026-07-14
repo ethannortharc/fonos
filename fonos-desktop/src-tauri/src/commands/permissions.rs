@@ -5,9 +5,24 @@
 
 /// Whether this process is trusted for Accessibility (needed for global
 /// hotkeys and text injection on macOS). Always true on other platforms.
+/// Records the `ax_granted` funnel milestone the first time it reads true
+/// (record-once; cheap INSERT OR IGNORE afterwards).
 #[tauri::command]
-pub fn check_accessibility() -> bool {
-    crate::injection::accessibility_trusted()
+pub fn check_accessibility(state: tauri::State<'_, super::AppState>) -> bool {
+    let trusted = crate::injection::accessibility_trusted();
+    if trusted {
+        if let Ok(db) = state.db.lock() {
+            let _ = fonos_core::funnel::record(&db, "ax_granted");
+        }
+    }
+    trusted
+}
+
+/// Trigger the OS Accessibility permission prompt (macOS) and return the
+/// current trusted state. Non-macOS platforms return true immediately.
+#[tauri::command]
+pub fn request_accessibility() -> bool {
+    crate::injection::accessibility_prompt()
 }
 
 /// Settings panes that can be deep-linked. Keys are stable identifiers used

@@ -10,6 +10,7 @@ pub mod dialog;
 pub mod diarize;
 pub mod dictation;
 pub mod doctor;
+pub mod funnel;
 pub mod llm;
 pub mod meeting;
 pub mod meeting_widget;

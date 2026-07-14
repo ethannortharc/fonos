@@ -550,6 +550,8 @@ fn main() {
 
     // Initialize v2 storage tables (entries, containers, FTS5) — idempotent.
     fonos_core::storage::init_storage_db(&db_conn);
+    // Onboarding funnel milestones (local-only, record-once) — idempotent.
+    fonos_core::funnel::init_db(&db_conn);
     // Migrate legacy events table to v2 entries/containers schema (idempotent).
     if let Err(e) = fonos_core::storage::migrate_from_history(&db_conn) {
         eprintln!("fonos: storage migration warning: {e}");
@@ -690,6 +692,10 @@ fn main() {
             commands::tts::list_model_voices,
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
+            commands::permissions::request_accessibility,
+            // Onboarding funnel (local-only)
+            commands::funnel::record_onboarding_event,
+            commands::funnel::get_onboarding_events,
             commands::update::update_supports_self_install,
             commands::update::open_releases_page,
             // TTS commands

@@ -1,5 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import Notes from "../Notes";
+import { deleteContainer } from "../../lib/storage-api";
 
 vi.mock("../../lib/i18n", () => ({
   t: (k: string) => k,
@@ -26,15 +27,8 @@ const entry = (id: number, text: string, at: Date) => ({
 
 vi.mock("../../lib/storage-api", () => ({
   listContainers: vi.fn(async () => [
-    {
-      id: 3,
-      container_type: "notebook",
-      title: "Quick Note",
-      parent_id: null,
-      created_at: iso(NOW),
-      updated_at: iso(NOW),
-      metadata: {},
-    },
+    { id: 3, container_type: "notebook", title: "Quick Note", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} },
+    { id: 7, container_type: "notebook", title: "摘抄", parent_id: null, created_at: iso(NOW), updated_at: iso(NOW), metadata: {} },
   ]),
   // Deliberately out of order: newest first, like the backend can return.
   getContainerEntries: vi.fn(async () => [
@@ -67,5 +61,34 @@ describe("Notes document-flow view", () => {
     for (const el of screen.getAllByTestId("entry-card")) {
       expect(el.className).not.toContain("border");
     }
+  });
+});
+
+describe("notebook header actions", () => {
+  it("hides delete for system notebooks, shows it for custom ones", async () => {
+    render(<Notes />);
+    // Quick Note auto-selected first.
+    await waitFor(() => expect(screen.getAllByTestId("entry-text").length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("delete-notebook-btn")).toBeNull();
+
+    fireEvent.click(screen.getByText("摘抄"));
+    await waitFor(() => expect(screen.getByTestId("delete-notebook-btn")).toBeInTheDocument());
+  });
+
+  it("delete requires a second confirming click, then calls deleteContainer", async () => {
+    render(<Notes />);
+    await waitFor(() => expect(screen.getAllByTestId("entry-text").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByText("摘抄"));
+    const btn = await screen.findByTestId("delete-notebook-btn");
+
+    fireEvent.click(btn);
+    expect(deleteContainer).not.toHaveBeenCalled();
+    fireEvent.click(btn);
+    await waitFor(() => expect(deleteContainer).toHaveBeenCalledWith(7));
+  });
+
+  it("export menu lives in the notebook header", async () => {
+    render(<Notes />);
+    await waitFor(() => expect(screen.getByTestId("export-notebook-btn")).toBeInTheDocument());
   });
 });

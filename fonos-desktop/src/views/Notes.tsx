@@ -8,6 +8,7 @@ import {
   getContainerEntries,
   updateEntry,
   deleteEntry,
+  deleteContainer,
   exportNotebookMd,
   exportNotebookJson,
 } from "../lib/storage-api";
@@ -25,23 +26,6 @@ function timeOnly(isoDate: string): string {
 
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
-
-const BACK_ICON = (
-  <svg
-    width={16}
-    height={16}
-    viewBox="0 0 24 24"
-    fill="none"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    stroke="currentColor"
-  >
-    <polyline points="15 18 9 12 15 6" />
-  </svg>
-);
-
-
 
 const PENCIL_ICON = (
   <svg
@@ -133,6 +117,10 @@ interface EntryItemProps {
   onDelete: (id: number) => Promise<void>;
   onPlay?: (audioRef: string) => void;
 }
+
+/** System notebooks are recreated lazily by the app — deleting them would
+ *  just resurrect an empty copy, so the UI doesn't offer it (spec §3). */
+const SYSTEM_NOTEBOOKS = ["Quick Note", "Text Actions"];
 
 /** Day bucket label for journal-style grouping: Today / Yesterday / Mar 5. */
 function dayLabel(isoDate: string): string {
@@ -296,42 +284,14 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
   );
 }
 
-// ─── Notebook Detail view ─────────────────────────────────────────────────────
+// ─── Export menu ──────────────────────────────────────────────────────────────
 
-interface NotebookDetailProps {
-  notebook: Container;
-  onBack: () => void;
-}
-
-function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [loading, setLoading] = useState(true);
+/** Export dropdown for the selected notebook — lifted verbatim out of the
+ *  removed NotebookDetail so the list view's header can host it. */
+function ExportMenu({ notebookId }: { notebookId: number }) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const results = await getContainerEntries(notebook.id);
-      // Sort chronologically (oldest first)
-      const sorted = [...results].sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      setEntries(sorted);
-    } catch (e) {
-      console.error("getContainerEntries:", e);
-      setEntries([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [notebook.id]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Close export menu when clicking outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
@@ -342,29 +302,10 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [showExportMenu]);
 
-  const handleEdit = useCallback(
-    async (id: number, newText: string) => {
-      await updateEntry(id, newText);
-      setEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, processed_text: newText } : e))
-      );
-    },
-    []
-  );
-
-  const handleDelete = useCallback(async (id: number) => {
-    await deleteEntry(id);
-    setEntries((prev) => prev.filter((e) => e.id !== id));
-  }, []);
-
-  const handlePlay = useCallback((audioRef: string) => {
-    playAudioFile(audioRef).catch((e) => console.error("playAudioFile:", e));
-  }, []);
-
   const handleExportMd = async () => {
     setShowExportMenu(false);
     try {
-      await exportNotebookMd(notebook.id, "");
+      await exportNotebookMd(notebookId, "");
     } catch (e) {
       console.error("exportNotebookMd:", e);
     }
@@ -373,101 +314,43 @@ function NotebookDetail({ notebook, onBack }: NotebookDetailProps) {
   const handleExportJson = async () => {
     setShowExportMenu(false);
     try {
-      await exportNotebookJson(notebook.id, "");
+      await exportNotebookJson(notebookId, "");
     } catch (e) {
       console.error("exportNotebookJson:", e);
     }
   };
 
   return (
-    <div
-      data-testid="notebook-detail"
-      className="flex flex-col h-full bg-[var(--bg)]"
-    >
-      {/* Top bar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.05)] flex-shrink-0">
-        <button
-          data-testid="back-btn"
-          onClick={onBack}
-          title={t("notes.back-to-notebooks")}
-          className="w-[28px] h-[28px] rounded-lg flex items-center justify-center text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-        >
-          {BACK_ICON}
-        </button>
-
-        <h2 className="text-[15px] font-semibold text-[#fafaf9] flex-1 truncate">
-          {notebook.title}
-        </h2>
-
-        {/* Export dropdown */}
-        <div className="relative" ref={exportRef}>
-          <button
-            data-testid="export-notebook-btn"
-            onClick={() => setShowExportMenu((v) => !v)}
-            title={t("notes.export-notebook")}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-          >
-            {EXPORT_ICON}
-            <span>{t("notes.export")}</span>
-            {CHEVRON_ICON}
-          </button>
-
-          {showExportMenu && (
-            <div className="absolute right-0 top-full mt-1 w-[160px] bg-[#242220] border border-[rgba(255,255,255,0.1)] rounded-lg shadow-xl z-50 overflow-hidden">
-              <button
-                data-testid="export-md"
-                onClick={handleExportMd}
-                className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-              >
-                {t("notes.export-md")}
-              </button>
-              <button
-                data-testid="export-json"
-                onClick={handleExportJson}
-                className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-              >
-                {t("notes.export-json")}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Entry list */}
-      <div
-        data-testid="entry-list"
-        className="flex-1 overflow-auto px-4 py-4 flex flex-col gap-3"
+    <div className="relative" ref={exportRef}>
+      <button
+        data-testid="export-notebook-btn"
+        onClick={() => setShowExportMenu((v) => !v)}
+        title={t("notes.export-notebook")}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] text-[rgba(255,255,255,0.4)] hover:text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
       >
-        {loading && (
-          <div className="text-center text-[rgba(255,255,255,0.2)] text-[12px] py-8">
-            {t("notes.loading-entries")}
-          </div>
-        )}
+        {EXPORT_ICON}
+        <span>{t("notes.export")}</span>
+        {CHEVRON_ICON}
+      </button>
 
-        {!loading && entries.length === 0 && (
-          <div
-            data-testid="notebook-empty"
-            className="text-center text-[rgba(255,255,255,0.2)] text-[12px] py-12 flex flex-col items-center gap-2"
+      {showExportMenu && (
+        <div className="absolute right-0 top-full mt-1 w-[160px] bg-[#242220] border border-[rgba(255,255,255,0.1)] rounded-lg shadow-xl z-50 overflow-hidden">
+          <button
+            data-testid="export-md"
+            onClick={handleExportMd}
+            className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
           >
-            <NotebookIcon size={32} className="opacity-30" />
-            <p>{t("notes.empty-notebook")}</p>
-            <p className="text-[rgba(255,255,255,0.12)] text-[11px]">
-              {t("notes.empty-hint")}
-            </p>
-          </div>
-        )}
-
-        {!loading &&
-          entries.map((entry) => (
-            <EntryItem
-              key={entry.id}
-              entry={entry}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onPlay={handlePlay}
-            />
-          ))}
-      </div>
+            {t("notes.export-md")}
+          </button>
+          <button
+            data-testid="export-json"
+            onClick={handleExportJson}
+            className="w-full px-3 py-2.5 text-left text-[12px] text-[rgba(255,255,255,0.7)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+          >
+            {t("notes.export-json")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -561,6 +444,26 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
 
   const selectedNotebook = sortedNotebooks.find((nb) => nb.id === selectedId);
 
+  const [confirmNbDelete, setConfirmNbDelete] = useState(false);
+  useEffect(() => setConfirmNbDelete(false), [selectedId]);
+
+  const handleDeleteNotebook = async () => {
+    if (!selectedNotebook) return;
+    if (!confirmNbDelete) {
+      setConfirmNbDelete(true);
+      setTimeout(() => setConfirmNbDelete(false), 3000);
+      return;
+    }
+    try {
+      await deleteContainer(selectedNotebook.id);
+      setConfirmNbDelete(false);
+      setSelectedId(null); // auto-select effect re-picks the first notebook
+      await loadNotebooks();
+    } catch (e) {
+      console.error("deleteContainer:", e);
+    }
+  };
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // A real notebook opens at its latest page: pin to bottom whenever the
   // selected notebook's entries finish loading.
@@ -604,6 +507,28 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
           ))}
         </div>
       </div>
+
+      {selectedNotebook && (
+        <div className="flex items-center justify-end gap-1 px-5 pb-1.5">
+          <ExportMenu notebookId={selectedNotebook.id} />
+          {!SYSTEM_NOTEBOOKS.includes(selectedNotebook.title) && (
+            <button
+              data-testid="delete-notebook-btn"
+              onClick={handleDeleteNotebook}
+              title={t("notes.delete-notebook")}
+              className={[
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors",
+                confirmNbDelete
+                  ? "text-[#ef4444] bg-[rgba(239,68,68,0.1)]"
+                  : "text-[rgba(255,255,255,0.4)] hover:text-[#ef4444] hover:bg-[rgba(239,68,68,0.08)]",
+              ].join(" ")}
+            >
+              {TRASH_ICON}
+              <span>{confirmNbDelete ? t("notes.delete-notebook-confirm") : t("notes.delete-notebook")}</span>
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mx-5 border-t border-[rgba(255,255,255,0.04)]" />
 
@@ -675,21 +600,5 @@ export default function Notes({
   initialNotebookId?: number;
 } = {}) {
   useT();
-  const [view, setView] = useState<"list" | "detail">("list");
-  const [selectedNotebook, setSelectedNotebook] = useState<Container | null>(null);
-
-  void selectedNotebook; // detail view uses this
-
-  const handleBack = () => {
-    setView("list");
-    setSelectedNotebook(null);
-  };
-
-  if (view === "detail" && selectedNotebook) {
-    return (
-      <NotebookDetail notebook={selectedNotebook} onBack={handleBack} />
-    );
-  }
-
   return <NotebookList embedded={embedded} initialNotebookId={initialNotebookId} />;
 }

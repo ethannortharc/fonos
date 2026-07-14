@@ -2,8 +2,13 @@
 // defaults to Ollama (no OMLX/Apple pipeline), so the setup CTA and review card
 // target Ollama out of the box. macOS defaulting is covered in
 // Scenarios.local.test.tsx.
+//
+// Also covers Finding 1 (P3 Task 9 fix round 1): Apple on-device Speech is
+// macOS-only, so the local flow must never sentinel-fall to it off-macOS —
+// neither in the auto-assigned plan row nor as a selectable option nor in the
+// specs an Apply actually writes.
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Scenarios from "../Scenarios";
 import type { EngineDetection } from "../../types";
 
@@ -30,23 +35,38 @@ const DETECTION: EngineDetection[] = [
   { engine: "vllm", running: false, installed: false, url: "http://localhost:8000" },
 ];
 
+const saveConfigMock = vi.fn(async () => {});
+const scenarioProbeMock = vi.fn(async () => ({
+  reachable: false,
+  latency_ms: 0,
+  models: [],
+  classified: { stt: [], llm: [], tts: [] },
+  tts_rtfs: {},
+  plan: { stt: null, llm: null, conversation_tts: null, listen_tts: null },
+}));
+
 vi.mock("../../lib/api", () => ({
   getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "" })),
-  saveConfig: vi.fn(async () => {}),
-  scenarioProbe: vi.fn(async () => ({
-    reachable: false,
-    latency_ms: 0,
-    models: [],
-    classified: { stt: [], llm: [], tts: [] },
-    tts_rtfs: {},
-    plan: { stt: null, llm: null, conversation_tts: null, listen_tts: null },
-  })),
+  saveConfig: (...a: unknown[]) => saveConfigMock(...(a as [])),
+  scenarioProbe: (...a: unknown[]) => scenarioProbeMock(...(a as [])),
   engineDetect: vi.fn(async () => DETECTION),
   detectHardware: vi.fn(async () => ({ mem_bytes: 32e9, chip: "x86_64", has_nvidia_gpu: true, tier: "max" })),
   checkDiskSpace: vi.fn(async () => ({ available_kb: 900_000_000 })),
 }));
 
 describe("Scenarios · LocalStep wiring (Linux)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    scenarioProbeMock.mockResolvedValue({
+      reachable: false,
+      latency_ms: 0,
+      models: [],
+      classified: { stt: [], llm: [], tts: [] },
+      tts_rtfs: {},
+      plan: { stt: null, llm: null, conversation_tts: null, listen_tts: null },
+    });
+  });
+
   it("defaults the local channel to Ollama and targets it in the setup review", async () => {
     render(<Scenarios mode="overlay" onDone={() => {}} />);
     fireEvent.click(screen.getByText("scen.local.name"));
@@ -56,5 +76,37 @@ describe("Scenarios · LocalStep wiring (Linux)", () => {
     expect(cta.textContent).toBe("scen.setup.install");
     fireEvent.click(cta);
     expect((await screen.findByTestId("review-engine")).textContent).toBe("Ollama");
+  });
+
+  it("never assigns Apple STT in the local flow — not as a plan-row option, not in the applied specs", async () => {
+    // A reachable probe against a non-full engine (Ollama) with no explicit
+    // STT pick — pre-fix, runProbe's sentinel fallback forced "apple" here
+    // regardless of platform.
+    scenarioProbeMock.mockResolvedValue({
+      reachable: true,
+      latency_ms: 9,
+      models: ["some-stt-model", "m1"],
+      classified: { stt: ["some-stt-model"], llm: ["m1"], tts: [] },
+      tts_rtfs: {},
+      plan: { stt: null, llm: "m1", conversation_tts: null, listen_tts: null },
+    });
+
+    render(<Scenarios mode="overlay" onDone={() => {}} />);
+    fireEvent.click(screen.getByText("scen.local.name"));
+    fireEvent.click(screen.getByText("scen.probe"));
+    await waitFor(() => expect(scenarioProbeMock).toHaveBeenCalled());
+
+    // The STT plan row never offers — and never auto-selects — "apple".
+    await screen.findByText("scen.role.stt");
+    expect(screen.queryByText("scen.apple")).toBeNull();
+
+    // Apply and inspect the actual specs written — no apple provider profile,
+    // no stt_profile pointed at one.
+    fireEvent.click(screen.getByText("scen.apply"));
+    await waitFor(() => expect(saveConfigMock).toHaveBeenCalled());
+    const payload = JSON.parse(saveConfigMock.mock.calls[0][0] as string);
+    expect(
+      (payload.model_profiles ?? []).some((p: { provider: string }) => p.provider === "apple")
+    ).toBe(false);
   });
 });

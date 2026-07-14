@@ -45,12 +45,22 @@ vi.mock("../../components/EngineSetupReview", () => ({
   ),
 }));
 
+// Baseline: no engine other than the mac default is running, so the mount-time
+// running-engine auto-take-over (Finding 2 fix) never fires here — this is the
+// fixture most tests use to exercise the platform-default CTA/probe flow.
 const DETECTION: EngineDetection[] = [
   { engine: "omlx", running: false, installed: true, url: "http://localhost:8000" }, // mac default → installed, stopped
   { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234" }, // absent
-  { engine: "ollama", running: true, installed: true, url: "http://localhost:11434" }, // running
+  { engine: "ollama", running: false, installed: true, url: "http://localhost:11434" }, // installed, stopped
   { engine: "vllm", running: false, installed: false, url: "http://localhost:8000" },
 ];
+
+// Variant where Ollama is actually running while the mac default (OMLX) isn't
+// — used to exercise the "detected" (green) badge state and the running-engine
+// auto-take-over (Finding 2 fix round 1).
+const DETECTION_OLLAMA_RUNNING: EngineDetection[] = DETECTION.map((d) =>
+  d.engine === "ollama" ? { ...d, running: true } : d
+);
 
 const engineDetectMock = vi.fn(async () => DETECTION);
 const scenarioProbeMock = vi.fn(async () => ({
@@ -91,6 +101,10 @@ describe("Scenarios · LocalStep wiring (macOS)", () => {
   });
 
   it("runs two-layer detection on mount and renders the three engine states", async () => {
+    // Ollama running here is irrelevant to this assertion (badge text is per
+    // engine row, not tied to the currently-selected engine) — reuse the
+    // running variant just to exercise all three badge states at once.
+    engineDetectMock.mockResolvedValueOnce(DETECTION_OLLAMA_RUNNING);
     await openLocal();
     await waitFor(() => expect(engineDetectMock).toHaveBeenCalled());
     // running → detected; installed-not-running → installed.stopped; absent → notdetected
@@ -122,10 +136,28 @@ describe("Scenarios · LocalStep wiring (macOS)", () => {
   });
 
   it("hides the CTA for a running engine (the normal probe path takes over)", async () => {
+    // With Ollama running, mount's auto-take-over (Finding 2) already selects
+    // it before this fires — clicking it again is a harmless no-op; the CTA
+    // stays hidden throughout since the selected engine is running.
+    engineDetectMock.mockResolvedValueOnce(DETECTION_OLLAMA_RUNNING);
     await openLocal();
-    await screen.findByTestId("engine-setup-cta");
+    await waitFor(() => expect(engineDetectMock).toHaveBeenCalled());
     fireEvent.click(screen.getByText("Ollama")); // running engine
     await waitFor(() => expect(screen.queryByTestId("engine-setup-cta")).toBeNull());
+  });
+
+  it("auto-switches to a running engine when the platform default isn't running (running-engine take-over)", async () => {
+    // OMLX (mac default) is installed but stopped; Ollama is running. Mount
+    // should auto-switch selection to Ollama via the normal selectEngine path
+    // (so baseUrl follows too), and the CTA never appears since the
+    // now-selected engine is already running.
+    engineDetectMock.mockResolvedValueOnce(DETECTION_OLLAMA_RUNNING);
+    await openLocal();
+    await waitFor(() => expect(engineDetectMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("http://localhost:11434")).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("engine-setup-cta")).toBeNull();
   });
 
   it("review done re-detects and auto-probes into the plan rows", async () => {

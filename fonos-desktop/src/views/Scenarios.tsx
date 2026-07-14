@@ -8,7 +8,7 @@
 // default assignments (never overwriting existing profiles). A "Saved setups"
 // section lists switchable bundles with apply / delete / import / export.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   checkDiskSpace,
   detectHardware,
@@ -339,6 +339,9 @@ export default function Scenarios({
   }, [reloadConfig]);
 
   // Two-layer engine detection + hardware/disk facts on mount (best-effort).
+  // `autoTakeoverDone` fires the running-engine take-over below at most once,
+  // so it never fights a later, deliberate user engine choice.
+  const autoTakeoverDone = useRef(false);
   useEffect(() => {
     let alive = true;
     setDetected(Object.fromEntries(LOCAL_ENGINES.map((e) => [e.key, null])));
@@ -346,6 +349,23 @@ export default function Scenarios({
       .then((list) => {
         if (!alive) return;
         setDetected(Object.fromEntries(list.map((d) => [d.engine, d])));
+        // Running-engine auto-take-over (spec: 在跑的服务直接接管) — if the
+        // currently-selected engine isn't running but another local engine
+        // already is, switch to it via the normal engine-switch path (so
+        // baseUrl etc. follow), once, on mount.
+        if (!autoTakeoverDone.current) {
+          autoTakeoverDone.current = true;
+          const selectedDet = list.find((d) => d.engine === engine);
+          if (!selectedDet?.running) {
+            // Cross-reference against LOCAL_ENGINES (not the detection list
+            // directly) so the match comes back typed as EngineKey rather
+            // than EngineDetection's backend-mirroring `string`.
+            const runningOther = LOCAL_ENGINES.find(
+              (e) => e.key !== engine && list.find((d) => d.engine === e.key)?.running
+            );
+            if (runningOther) selectEngine(runningOther.key);
+          }
+        }
       })
       .catch(() => alive && setDetected({}));
     detectHardware().then((h) => alive && setHardware(h)).catch(() => {});
@@ -353,6 +373,9 @@ export default function Scenarios({
     return () => {
       alive = false;
     };
+    // Mount-only: intentionally ignores `engine`/`selectEngine` churn — the
+    // ref above enforces the single-shot semantics, not the dep array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentEngine = LOCAL_ENGINES.find((e) => e.key === engine)!;
@@ -411,7 +434,10 @@ export default function Scenarios({
       }
       const p = result.plan;
       setPlanSel({
-        stt: currentEngine.full ? p.stt ?? "apple" : "apple",
+        // Apple on-device Speech is macOS-only (the backend errors explicitly
+        // off-platform) — never sentinel-fall to it on Linux, for full or
+        // non-full engines alike (mirrors the cloud-branch guard below).
+        stt: currentEngine.full ? p.stt ?? (isMacOS ? "apple" : "") : isMacOS ? "apple" : "",
         llm: p.llm ?? "",
         conv: p.conversation_tts ?? "",
         listen: p.listen_tts ?? "",
@@ -454,8 +480,9 @@ export default function Scenarios({
         capabilities: caps,
         stt_api,
       });
-      if (planSel.stt === "apple") specs.push({ role: "stt", spec: appleSpec() });
-      else if (planSel.stt) specs.push({ role: "stt", spec: local(planSel.stt, ["stt"], "whisper") });
+      if (planSel.stt === "apple") {
+        if (isMacOS) specs.push({ role: "stt", spec: appleSpec() });
+      } else if (planSel.stt) specs.push({ role: "stt", spec: local(planSel.stt, ["stt"], "whisper") });
       if (planSel.llm) specs.push({ role: "llm", spec: local(planSel.llm, ["llm"]) });
       if (planSel.conv) specs.push({ role: "conv", spec: local(planSel.conv, ["tts"]) });
       if (planSel.listen) specs.push({ role: "listen", spec: local(planSel.listen, ["tts"]) });
@@ -928,7 +955,10 @@ function LocalStep({
             role="stt"
             value={planSel.stt}
             options={[
-              { value: "apple", label: t("scen.apple") },
+              // Apple on-device Speech is macOS-only — don't offer it as a
+              // choice off-macOS (mirrors the `key !== "zero" || isMacOS`
+              // scenario-card filter above).
+              ...(isMacOS ? [{ value: "apple", label: t("scen.apple") }] : []),
               ...(probe.classified.stt.map((m) => ({ value: m, label: m }))),
             ]}
             onChange={(v) => set("stt", v)}

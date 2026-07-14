@@ -16,8 +16,16 @@ struct EngineSpec {
     binaries: &'static [&'static str],
     /// App-bundle paths whose existence means "installed".
     app_paths: &'static [&'static str],
+    /// True when another engine in this table listens on the same default
+    /// `url` (omlx and vllm both default to `:8000`). A shared-port engine's
+    /// HTTP probe alone can't tell the two apart, so `running` additionally
+    /// requires the brand-specific process match.
+    shared_port: bool,
 }
 
+// Not yet consumed — Task 5 wires the omlx install action that uses this
+// (mirrors tray.rs's unlock_body pattern before its consumer landed).
+#[allow(dead_code)]
 /// Homebrew formula used to install oMLX — kept as one constant so a rename
 /// is a one-line change.
 pub(crate) const OMLX_BREW_FORMULA: &str = "omlx";
@@ -29,6 +37,7 @@ const ENGINES: &[EngineSpec] = &[
         process: "omlx",
         binaries: &["omlx", "omlx-server"],
         app_paths: &[],
+        shared_port: true,
     },
     EngineSpec {
         key: "lmstudio",
@@ -36,6 +45,7 @@ const ENGINES: &[EngineSpec] = &[
         process: "LM Studio",
         binaries: &["lms"],
         app_paths: &["/Applications/LM Studio.app"],
+        shared_port: false,
     },
     EngineSpec {
         key: "ollama",
@@ -43,6 +53,7 @@ const ENGINES: &[EngineSpec] = &[
         process: "ollama",
         binaries: &["ollama"],
         app_paths: &["/Applications/Ollama.app"],
+        shared_port: false,
     },
     EngineSpec {
         key: "vllm",
@@ -50,6 +61,7 @@ const ENGINES: &[EngineSpec] = &[
         process: "vllm",
         binaries: &["vllm"],
         app_paths: &[],
+        shared_port: true,
     },
 ];
 
@@ -67,11 +79,22 @@ async fn binary_on_path(name: &'static str) -> bool {
 }
 
 /// Two-layer detection result for one engine.
+///
+/// omlx and vllm both default to `http://localhost:8000` (`shared_port`
+/// engines): whichever one actually owns the port answers `/v1/models` for
+/// both, so an HTTP-only probe would make both report `running: true`. For
+/// those engines `running` additionally requires the brand-specific process
+/// probe (`pgrep -f <process>`) to match — a generic port-8000 responder
+/// with no matching brand process means neither omlx nor vllm claims
+/// `running`. This does not block a *different* engine from later taking
+/// over that port; the same scan/probe flow re-evaluates both signals each
+/// call, so a takeover is picked up on the next detection pass.
 #[derive(Serialize)]
 pub struct EngineDetection {
     /// Engine key: omlx / lmstudio / ollama / vllm.
     pub engine: String,
-    /// A live HTTP listener answered `/v1/models`.
+    /// A live HTTP listener answered `/v1/models` (and, for shared-port
+    /// engines, a matching brand process is also running — see struct doc).
     pub running: bool,
     /// Installed on this machine (binary on PATH, app bundle, or a live
     /// process) even if not currently listening.
@@ -80,10 +103,24 @@ pub struct EngineDetection {
     pub url: String,
 }
 
+/// Pure decision for the `running` verdict from the two independent
+/// signals. Shared-port engines (omlx, vllm) require both the HTTP probe
+/// and the brand-specific process match, since either one alone can't
+/// distinguish "this engine is running" from "the other engine on this
+/// port is running." Non-shared-port engines only need the HTTP probe —
+/// their port isn't contested, so a process check would be redundant.
+fn running_verdict(shared_port: bool, http_ok: bool, process_ok: bool) -> bool {
+    if shared_port {
+        http_ok && process_ok
+    } else {
+        http_ok
+    }
+}
+
 async fn detect_one(spec: &'static EngineSpec) -> EngineDetection {
-    let (running, _ms, _models) =
+    let (http_ok, _ms, _models) =
         super::scenarios::fetch_models(spec.url, "", Duration::from_secs(2)).await;
-    let mut installed = running;
+    let mut installed = http_ok;
     if !installed {
         for b in spec.binaries {
             if binary_on_path(b).await {
@@ -95,9 +132,18 @@ async fn detect_one(spec: &'static EngineSpec) -> EngineDetection {
     if !installed {
         installed = spec.app_paths.iter().any(|p| std::path::Path::new(p).exists());
     }
+    // Shared-port engines need this probe's result for `running_verdict`
+    // regardless of whether `installed` is already settled, so run it
+    // whenever either consumer needs it — never more than once either way.
+    let process_matches = if spec.shared_port || !installed {
+        super::doctor::process_running(spec.process).await
+    } else {
+        false
+    };
     if !installed {
-        installed = super::doctor::process_running(spec.process).await;
+        installed = process_matches;
     }
+    let running = running_verdict(spec.shared_port, http_ok, process_matches);
     EngineDetection {
         engine: spec.key.to_string(),
         running,
@@ -122,4 +168,26 @@ pub async fn engine_detect() -> Result<Vec<EngineDetection>, String> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Truth table for `running_verdict`: shared-port engines need BOTH
+    /// signals; non-shared engines need only the HTTP probe.
+    #[test]
+    fn running_verdict_truth_table() {
+        // shared-port (omlx/vllm on :8000)
+        assert!(running_verdict(true, true, true), "shared TT should claim running");
+        assert!(!running_verdict(true, true, false), "shared TF (other brand owns the port) must not claim running");
+        assert!(!running_verdict(true, false, true), "shared FT (process up, port not answering) must not claim running");
+        assert!(!running_verdict(true, false, false), "shared FF should not claim running");
+
+        // non-shared-port (lmstudio/ollama)
+        assert!(running_verdict(false, true, true), "non-shared T* should claim running");
+        assert!(running_verdict(false, true, false), "non-shared T* should claim running regardless of process signal");
+        assert!(!running_verdict(false, false, true), "non-shared F* must not claim running");
+        assert!(!running_verdict(false, false, false), "non-shared F* must not claim running");
+    }
 }

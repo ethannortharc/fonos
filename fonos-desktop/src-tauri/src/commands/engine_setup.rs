@@ -229,7 +229,10 @@ async fn detect_one(spec: &'static EngineSpec) -> EngineDetection {
     if process_matches {
         evidence.push("process".to_string());
     }
-    if http_ok {
+    // "port" is only evidence when this brand actually owns the verdict: on a
+    // shared port the non-owner also sees http_ok, and showing "port" under a
+    // not-detected badge reads like a lingering false positive.
+    if http_ok && running {
         evidence.push("port".to_string());
     }
 

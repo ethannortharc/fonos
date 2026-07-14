@@ -484,7 +484,10 @@ pub struct NotebookOutput {
     /// Handle used to reach the history DB.
     pub app: tauri::AppHandle,
     /// Target container id; `0` means "resolve the Quick Note notebook at run
-    /// time" (Quick Note lookup, same SQL the note flow used).
+    /// time" (Quick Note lookup, same SQL the note flow used). A stale id
+    /// (notebook deleted after the widget was configured) also falls back to
+    /// Quick Note so a flow never fails delivery just because its notebook
+    /// went away.
     pub container_id: i64,
 }
 
@@ -501,19 +504,10 @@ impl Output for NotebookOutput {
 
         let state = self.app.state::<AppState>();
         let db = state.db.lock().map_err(|e| e.to_string())?;
-        // container_id 0 ⇒ Quick Note by title (None if it doesn't exist yet,
-        // which stores the entry uncontained — same Quick Note lookup the note
-        // flow used).
-        let container_id = if self.container_id == 0 {
-            db.query_row(
-                "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
-                [],
-                |r| r.get::<_, i64>(0),
-            )
-            .ok()
-        } else {
-            Some(self.container_id)
-        };
+        // 0 ⇒ Quick Note sentinel; a stale id (deleted notebook) also falls
+        // back to Quick Note instead of failing the flow (spec §1 容错).
+        let container_id =
+            fonos_core::storage::resolve_notebook_container(&db, self.container_id);
         fonos_core::storage::update_entry_container(&db, entry_id, container_id)
             .map_err(|e| e.to_string())
     }

@@ -498,6 +498,32 @@ pub fn delete_container(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a workflow notebook widget's configured `container_id` to a live
+/// container row. `0` is the "Quick Note" sentinel; a stale id (the target
+/// notebook was deleted) also falls back to Quick Note so a flow never
+/// fails delivery just because its notebook went away. Returns `None` when
+/// even Quick Note doesn't exist yet — callers store the entry uncontained.
+pub fn resolve_notebook_container(conn: &Connection, configured: i64) -> Option<i64> {
+    if configured != 0 {
+        let live: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM containers WHERE id = ?1",
+                params![configured],
+                |r| r.get(0),
+            )
+            .ok();
+        if live.is_some() {
+            return live;
+        }
+    }
+    conn.query_row(
+        "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
 // ─── FTS5 Search ─────────────────────────────────────────
 
 /// Full-text search over all entries (raw_text + processed_text).
@@ -1133,5 +1159,26 @@ mod tests {
         // …but the entry survives, unlinked (back in plain history).
         let got = get_entry(&conn, entry_id).expect("entry survives");
         assert_eq!(got.container_id, None);
+    }
+
+    #[test]
+    fn resolve_notebook_container_sentinel_and_stale_fallback() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        // No Quick Note yet: sentinel resolves to None (store uncontained).
+        assert_eq!(resolve_notebook_container(&conn, 0), None);
+
+        let quick_id = seed_notebook(&conn, "Quick Note");
+        let nb_id = seed_notebook(&conn, "Clips");
+
+        // 0 ⇒ Quick Note sentinel.
+        assert_eq!(resolve_notebook_container(&conn, 0), Some(quick_id));
+        // A live id resolves to itself.
+        assert_eq!(resolve_notebook_container(&conn, nb_id), Some(nb_id));
+
+        // A stale id (deleted notebook) falls back to Quick Note.
+        delete_container(&conn, nb_id).expect("delete");
+        assert_eq!(resolve_notebook_container(&conn, nb_id), Some(quick_id));
     }
 }

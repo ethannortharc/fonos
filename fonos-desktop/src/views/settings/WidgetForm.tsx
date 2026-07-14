@@ -34,10 +34,12 @@ import { t, useT } from "../../lib/i18n";
 import { isMacOS } from "../../lib/platform";
 import type { AppConfig, ModelProfile, VocabBook, WidgetDef, WidgetRole } from "../../types";
 import type { Container } from "../../lib/storage-api";
+import { createContainer } from "../../lib/storage-api";
 import { WidgetIcon, roleColor } from "../../components/WidgetIcon";
 import { widgetLabel } from "../../lib/builtinLabels";
 import { LANGUAGES, inputClass, selectClass } from "./constants";
 import SkillsPanel from "../workbench/SkillsPanel";
+import NotebookCombobox from "./NotebookCombobox";
 
 // ─── Shared class recipes (canonical: constants.ts; match WidgetsTab/WorkflowsTab) ──
 
@@ -396,12 +398,22 @@ function PropsForm({
       const notebooks = containers.filter((c) => c.container_type === "notebook");
       return (
         <Field label={t("widgets.field.container_id")}>
-          <select value={String(pNum(p, "container_id", 0))} onChange={(e) => set("container_id", parseInt(e.target.value) || 0)} className={selectClass}>
-            <option value="0">{t("widgets.notebook.quick")}</option>
-            {notebooks.map((c) => (
-              <option key={c.id} value={c.id}>{c.title}</option>
-            ))}
-          </select>
+          <NotebookCombobox
+            key={form.id}
+            containerId={pNum(p, "container_id", 0)}
+            pendingTitle={pStr(p, "container_title")}
+            notebooks={notebooks}
+            onChange={(sel) => {
+              const next: Props = { ...p };
+              if (sel.kind === "existing") {
+                next.container_id = sel.container_id;
+                delete next.container_title;
+              } else {
+                next.container_title = sel.title;
+              }
+              onProps(next);
+            }}
+          />
         </Field>
       );
     }
@@ -615,7 +627,7 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
+  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, onContainerCreated, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
@@ -642,6 +654,14 @@ export default function WidgetForm({
    *  rendered inline in the card's footer, near the Delete button, instead
    *  of the caller having to render it as a detached sibling below the form. */
   deleteError?: string;
+  /** Fired after a "notebook" widget's pending title is turned into a real
+   *  container at save time. The `containers` list an owner threads in is
+   *  loaded once, so it goes stale the moment we mint a new notebook here;
+   *  the owner reloads its list in response, keeping name-is-identity honest
+   *  — a sibling widget typing the same title then exact-matches this new
+   *  notebook instead of forking a duplicate. Read-only consumers (Building
+   *  Blocks catalog) never create containers, so they may omit it. */
+  onContainerCreated?: () => void;
   /** Read-only detail view (Building Blocks catalog): every field is disabled
    *  (via a wrapping disabled <fieldset>) and the footer shows only a Close
    *  button wired to onCancel. Never combined with isNew. Default false keeps
@@ -684,7 +704,27 @@ export default function WidgetForm({
     if (!form.id.trim()) { setError(t("widgets.err.type-required")); return; }
     setError("");
     try {
-      await onSave(formToWidget(form));
+      let props = form.props;
+      // Name-is-identity notebooks: a pending title (typed text matching no
+      // existing notebook) becomes a real container only at save time —
+      // cancelling the form never creates anything (spec §1).
+      if (form.type_tag === "notebook") {
+        const pending = pStr(props, "container_title").trim();
+        if (pending) {
+          const created = await createContainer(pending, "notebook");
+          props = { ...props, container_id: created.id };
+          delete (props as Record<string, unknown>).container_title;
+          // Commit the exchanged props into form state right away: if the
+          // create succeeds but onSave below rejects, a retry must bind the
+          // already-created id — not re-run createContainer off the stale
+          // container_title and fork a duplicate notebook (spec §1).
+          setForm((f) => ({ ...f, props }));
+          // The owner's `containers` list is now stale — ask it to reload so a
+          // sibling widget can exact-match this new notebook by name.
+          onContainerCreated?.();
+        }
+      }
+      await onSave(formToWidget({ ...form, props }));
     } catch (e) {
       // The caller's save (backend validation) rejected — show it inline,
       // same as WidgetsTab's original handleSave.

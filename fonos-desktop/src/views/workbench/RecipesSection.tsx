@@ -195,10 +195,11 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
     }
   };
 
-  useEffect(() => { load(); }, []);
-  useEffect(() => {
+  const reloadContainers = () => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => { reloadContainers(); }, []);
 
   // Jump-to-recipe intent from the Home page: expand the target card and
   // scroll to it. Guarded by a handled-nonce ref (not just the nonce itself)
@@ -477,6 +478,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
             typeTags={TYPE_TAGS[picker.role]}
             onSave={(w) => saveNewWidget(wf, picker.target, w)}
             onCancel={() => setPicker(null)}
+            onContainerCreated={reloadContainers}
           />
         );
       }
@@ -513,6 +515,7 @@ export default function RecipesSection({ config, onBench, focusRecipe }: {
             widgets={widgets}
             onSave={editNodeSave}
             onCancel={() => setActiveNodeId(null)}
+            onContainerCreated={reloadContainers}
           />
         ) : (
           <div className="text-[11px] text-[#ef4444] px-1">{t("flows.dangling")}</div>

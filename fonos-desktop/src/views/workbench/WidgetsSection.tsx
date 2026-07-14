@@ -37,10 +37,15 @@ export function summarizeProps(w: WidgetDef): string {
 export default function WidgetsSection({
   config,
   containers,
+  onContainerCreated,
   onTest,
 }: {
   config: AppConfig;
   containers: Container[];
+  /** Reload the owner's (Workbench's) containers list after a notebook widget
+   *  mints a new container at save time — forwarded to WidgetForm so
+   *  name-is-identity holds across this stale-once-loaded list. */
+  onContainerCreated?: () => void;
   onTest: (widgetId: string) => void;
 }) {
   useT();
@@ -118,6 +123,7 @@ export default function WidgetsSection({
                         typeTags={[tag]}
                         onSave={onSaved}
                         onCancel={() => setCreating(null)}
+                        onContainerCreated={onContainerCreated}
                       />
                     </div>
                   )}
@@ -164,6 +170,7 @@ export default function WidgetsSection({
                                 onCancel={() => setEditing(null)}
                                 onDelete={w.builtin ? undefined : () => { void onDeleteWidget(w.id); }}
                                 deleteError={open ? deleteError : undefined}
+                                onContainerCreated={onContainerCreated}
                               />
                             </div>
                           )}

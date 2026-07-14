@@ -35,10 +35,14 @@ type BenchEvent =
 const msg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export default function TestRunSection({
-  config, containers, target, onTargetChange,
+  config, containers, onContainerCreated, target, onTargetChange,
 }: {
   config: AppConfig;
   containers: Container[];
+  /** Reload the owner's (Workbench's) containers list after a notebook widget
+   *  mints a new container at save time — forwarded to WidgetForm to keep
+   *  name-is-identity honest across this stale-once-loaded list. */
+  onContainerCreated?: () => void;
   target: BenchTarget;
   onTargetChange: (t: BenchTarget) => void;
 }) {
@@ -389,6 +393,7 @@ export default function TestRunSection({
                 setEditNode(null);
               }}
               onCancel={() => setEditNode(null)}
+              onContainerCreated={onContainerCreated}
             />
           </div>
         )}

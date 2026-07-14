@@ -483,10 +483,60 @@ pub fn update_container(conn: &Connection, id: i64, title: &str) -> Result<()> {
 }
 
 /// Delete a container by ID.
+///
+/// Entries linked to the container are unlinked first (`container_id` →
+/// NULL) so they fall back to plain history instead of pointing at a dead
+/// row — "delete notebook, keep the notes".
 pub fn delete_container(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE entries SET container_id = NULL WHERE container_id = ?1",
+        params![id],
+    )
+    .map_err(|e| Error::Database(format!("delete_container unlink: {e}")))?;
     conn.execute("DELETE FROM containers WHERE id = ?1", params![id])
         .map_err(|e| Error::Database(format!("delete_container: {e}")))?;
     Ok(())
+}
+
+/// Delete a container together with every entry inside it.
+///
+/// Unlike [`delete_container`] (which unlinks entries so they survive in plain
+/// history), this cascades the delete to the container's entries — for
+/// containers whose entries have no life outside the container (meeting
+/// sessions: the transcript segments are meaningless once the session is
+/// gone, and must not spill into History as loose entries).
+pub fn delete_container_cascade(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM entries WHERE container_id = ?1", params![id])
+        .map_err(|e| Error::Database(format!("delete_container_cascade entries: {e}")))?;
+    conn.execute("DELETE FROM containers WHERE id = ?1", params![id])
+        .map_err(|e| Error::Database(format!("delete_container_cascade: {e}")))?;
+    Ok(())
+}
+
+/// Resolve a workflow notebook widget's configured `container_id` to a live
+/// container row. `0` is the "Quick Note" sentinel; a stale id (the target
+/// notebook was deleted) also falls back to Quick Note so a flow never
+/// fails delivery just because its notebook went away. Returns `None` when
+/// even Quick Note doesn't exist yet — callers store the entry uncontained.
+pub fn resolve_notebook_container(conn: &Connection, configured: i64) -> Option<i64> {
+    if configured != 0 {
+        let live: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM containers WHERE id = ?1",
+                params![configured],
+                |r| r.get(0),
+            )
+            .ok();
+        if live.is_some() {
+            return live;
+        }
+    }
+    conn.query_row(
+        "SELECT id FROM containers WHERE container_type='notebook' AND title='Quick Note' LIMIT 1",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
 }
 
 // ─── FTS5 Search ─────────────────────────────────────────
@@ -1005,6 +1055,19 @@ mod tests {
         insert_entry(conn, &entry).expect("insert_entry")
     }
 
+    fn seed_notebook(conn: &Connection, title: &str) -> i64 {
+        let c = Container {
+            id: None,
+            container_type: ContainerType::Notebook,
+            title: title.to_string(),
+            parent_id: None,
+            created_at: now_iso8601(),
+            updated_at: now_iso8601(),
+            metadata: serde_json::Value::Null,
+        };
+        insert_container(conn, &c).expect("insert_container")
+    }
+
     #[test]
     fn update_entry_processed_text_rewrites_only_display_text() {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -1093,5 +1156,62 @@ mod tests {
         // Linking the audio file must not disturb the entry's text.
         assert_eq!(got.raw_text, "spoken briefing");
         assert_eq!(got.processed_text.as_deref(), Some("spoken briefing"));
+    }
+
+    #[test]
+    fn delete_container_unlinks_entries() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let nb_id = seed_notebook(&conn, "Scratch");
+        let entry_id = seed_entry(&conn, "kept text", None);
+        update_entry_container(&conn, entry_id, Some(nb_id)).expect("link");
+
+        delete_container(&conn, nb_id).expect("delete_container");
+
+        // The container row is gone…
+        assert!(get_container(&conn, nb_id).is_err());
+        // …but the entry survives, unlinked (back in plain history).
+        let got = get_entry(&conn, entry_id).expect("entry survives");
+        assert_eq!(got.container_id, None);
+    }
+
+    #[test]
+    fn delete_container_cascade_removes_entries() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        let nb_id = seed_notebook(&conn, "Team Standup");
+        let entry_id = seed_entry(&conn, "transcript segment", None);
+        update_entry_container(&conn, entry_id, Some(nb_id)).expect("link");
+
+        delete_container_cascade(&conn, nb_id).expect("delete_container_cascade");
+
+        // The container row is gone…
+        assert!(get_container(&conn, nb_id).is_err());
+        // …and so is the entry — a meeting segment has no life outside the
+        // session, so it must NOT survive as a loose history entry.
+        assert!(get_entry(&conn, entry_id).is_err());
+    }
+
+    #[test]
+    fn resolve_notebook_container_sentinel_and_stale_fallback() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        init_storage_db(&conn);
+
+        // No Quick Note yet: sentinel resolves to None (store uncontained).
+        assert_eq!(resolve_notebook_container(&conn, 0), None);
+
+        let quick_id = seed_notebook(&conn, "Quick Note");
+        let nb_id = seed_notebook(&conn, "Clips");
+
+        // 0 ⇒ Quick Note sentinel.
+        assert_eq!(resolve_notebook_container(&conn, 0), Some(quick_id));
+        // A live id resolves to itself.
+        assert_eq!(resolve_notebook_container(&conn, nb_id), Some(nb_id));
+
+        // A stale id (deleted notebook) falls back to Quick Note.
+        delete_container(&conn, nb_id).expect("delete");
+        assert_eq!(resolve_notebook_container(&conn, nb_id), Some(quick_id));
     }
 }

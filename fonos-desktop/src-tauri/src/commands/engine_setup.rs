@@ -4,7 +4,8 @@
 
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, Manager};
 
 /// Static facts for one supported local engine.
 struct EngineSpec {
@@ -23,11 +24,8 @@ struct EngineSpec {
     shared_port: bool,
 }
 
-// Not yet consumed — Task 5 wires the omlx install action that uses this
-// (mirrors tray.rs's unlock_body pattern before its consumer landed).
-#[allow(dead_code)]
 /// Homebrew formula used to install oMLX — kept as one constant so a rename
-/// is a one-line change.
+/// is a one-line change. Consumed by [`install_action`].
 pub(crate) const OMLX_BREW_FORMULA: &str = "omlx";
 
 const ENGINES: &[EngineSpec] = &[
@@ -260,6 +258,287 @@ pub async fn check_disk_space() -> Result<DiskInfo, String> {
     .map_err(|e| format!("join: {e}"))?
 }
 
+// ---------------------------------------------------------------------------
+// install → start → wait → pull orchestration (`engine_setup` command)
+// ---------------------------------------------------------------------------
+
+/// The confirmed setup plan from the review card (Task 8 emits it).
+#[derive(Deserialize)]
+pub struct SetupPlanDto {
+    /// Engine key: omlx / ollama (lmstudio/vllm never orchestrate installs).
+    pub engine: String,
+    /// Run the install stage.
+    pub install: bool,
+    /// Run the start stage.
+    pub start: bool,
+    /// Ollama models to pull (empty for other engines).
+    pub pulls: Vec<String>,
+    /// Base URL to wait on after starting.
+    pub base_url: String,
+}
+
+/// Emit an `engine:setup` event to the main window (JSON payload as a string,
+/// mirroring `diarize.rs`'s `diarize:download` wiring).
+fn emit_setup(app: &tauri::AppHandle, payload: serde_json::Value) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.emit("engine:setup", payload.to_string());
+    }
+}
+
+/// Emit a terminal `engine:setup` error carrying the machine-readable
+/// `failed_stage` the frontend Review card needs for its downgrade path, then
+/// restore the tray to its real status (any in-flight pull progress is now
+/// void). Controller ruling: every stage failure is both an event and a
+/// machine-readable outcome.
+fn emit_error(app: &tauri::AppHandle, failed_stage: &str, message: String) {
+    emit_setup(
+        app,
+        serde_json::json!({ "stage": "error", "failed_stage": failed_stage, "message": message }),
+    );
+    crate::tray::refresh_tray_status(app, None);
+}
+
+/// Run a blocking subprocess to completion, surfacing a trimmed stderr on
+/// failure. Called only from `spawn_blocking`.
+fn run_shell(cmd: &str, args: &[&str]) -> Result<(), String> {
+    let out = std::process::Command::new(cmd)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{cmd}: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{cmd} {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// What the install stage should do for a given engine.
+enum InstallAction {
+    /// Run this program with these args on a blocking thread.
+    Automated { program: String, args: Vec<String> },
+    /// No automated path — surface these steps to the user (a non-error
+    /// terminal outcome, not an `Err`). Covers unmanaged engines
+    /// (lmstudio/vllm) and a machine with no Homebrew.
+    Manual { message: String },
+}
+
+/// Resolve a usable `brew` executable: the two standard Homebrew prefixes
+/// (Apple-Silicon `/opt/homebrew`, Intel `/usr/local`) first, then a PATH
+/// lookup. `None` means Homebrew is absent — callers surface manual steps
+/// rather than failing. Does blocking I/O; call from `spawn_blocking`.
+fn resolve_brew() -> Option<String> {
+    for p in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"] {
+        if std::path::Path::new(p).exists() {
+            return Some(p.to_string());
+        }
+    }
+    let out = std::process::Command::new("which").arg("brew").output().ok()?;
+    if out.status.success() && !out.stdout.is_empty() {
+        Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Decide the install action for an engine. omlx/ollama install via Homebrew
+/// (Linux ollama uses the official installer script); a missing brew or an
+/// unmanaged engine downgrades to [`InstallAction::Manual`] instead of an
+/// error. Does blocking I/O (`resolve_brew`); call from `spawn_blocking`.
+fn install_action(engine: &str) -> InstallAction {
+    match engine {
+        "omlx" => match resolve_brew() {
+            Some(brew) => InstallAction::Automated {
+                program: brew,
+                args: vec!["install".into(), OMLX_BREW_FORMULA.into()],
+            },
+            None => InstallAction::Manual {
+                message: format!(
+                    "Homebrew not found. Install oMLX manually, then re-run setup: brew install {OMLX_BREW_FORMULA}"
+                ),
+            },
+        },
+        "ollama" => {
+            #[cfg(target_os = "macos")]
+            {
+                match resolve_brew() {
+                    Some(brew) => InstallAction::Automated {
+                        program: brew,
+                        args: vec!["install".into(), "ollama".into()],
+                    },
+                    None => InstallAction::Manual {
+                        message: "Homebrew not found. Install Ollama from https://ollama.com/download, then re-run setup.".into(),
+                    },
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Official installer script (documented install path on Linux).
+                InstallAction::Automated {
+                    program: "sh".into(),
+                    args: vec![
+                        "-c".into(),
+                        "curl -fsSL https://ollama.com/install.sh | sh".into(),
+                    ],
+                }
+            }
+        }
+        other => InstallAction::Manual {
+            message: format!(
+                "{other} has no automated installer; install it manually and re-run setup."
+            ),
+        },
+    }
+}
+
+/// Detached start command per engine. The child is spawned and *not* waited
+/// on — the wait stage polls the HTTP listener instead.
+fn start_cmd(engine: &str) -> Option<(&'static str, Vec<&'static str>)> {
+    match engine {
+        "omlx" => Some(("omlx-server", vec![])),
+        "ollama" => Some(("ollama", vec!["serve"])),
+        _ => None,
+    }
+}
+
+/// Monotonic progress gate. Ollama's `/api/pull` reports per-blob pct that
+/// restarts at 0 for each layer; tracking the running max means the bar (and
+/// the tray) only ever move forward. Returns `Some(pct)` when `pct` advances
+/// the max (emit it), `None` otherwise (suppress — this doubles as the emit
+/// throttle the review requested). Controller ruling.
+fn advance_progress(max: &mut u8, pct: u8) -> Option<u8> {
+    if pct > *max {
+        *max = pct;
+        Some(pct)
+    } else {
+        None
+    }
+}
+
+/// The confirmed install → start → wait → pull orchestration for one engine.
+/// Runs detached (see [`engine_setup`]); every stage transition, progress
+/// tick, and terminal outcome (`done` / `error` / `manual`) is reported
+/// through `engine:setup` events, so the caller never blocks on it.
+async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
+    // ---- install --------------------------------------------------------
+    if plan.install {
+        emit_setup(&app, serde_json::json!({ "stage": "install", "engine": plan.engine }));
+        let engine = plan.engine.clone();
+        // `install_action` (brew resolution) and `run_shell` both block, so
+        // resolve *and* run on a blocking thread. `Ok(None)` = installed,
+        // `Ok(Some(msg))` = manual steps, `Err` = install failed.
+        let outcome = tokio::task::spawn_blocking(move || match install_action(&engine) {
+            InstallAction::Automated { program, args } => {
+                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                run_shell(&program, &arg_refs).map(|_| None)
+            }
+            InstallAction::Manual { message } => Ok(Some(message)),
+        })
+        .await;
+        match outcome {
+            Ok(Ok(None)) => {}
+            Ok(Ok(Some(message))) => {
+                emit_setup(
+                    &app,
+                    serde_json::json!({ "stage": "manual", "engine": plan.engine, "message": message }),
+                );
+                return; // can't start an engine we didn't install
+            }
+            Ok(Err(e)) => return emit_error(&app, "install", e),
+            Err(e) => return emit_error(&app, "install", format!("join: {e}")),
+        }
+    }
+
+    // ---- start (detached child; the wait stage confirms it came up) -----
+    if plan.start {
+        emit_setup(&app, serde_json::json!({ "stage": "start", "engine": plan.engine }));
+        let engine = plan.engine.clone();
+        let res = tokio::task::spawn_blocking(move || match start_cmd(&engine) {
+            Some((cmd, args)) => std::process::Command::new(cmd)
+                .args(args)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("start {cmd}: {e}")),
+            None => Err(format!("no start command for {engine}")),
+        })
+        .await;
+        match res {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return emit_error(&app, "start", e),
+            Err(e) => return emit_error(&app, "start", format!("join: {e}")),
+        }
+    }
+
+    // ---- wait for the listener (also covers "already running" cheaply) --
+    emit_setup(&app, serde_json::json!({ "stage": "wait", "engine": plan.engine }));
+    let mut up = false;
+    for _ in 0..30 {
+        let (reachable, _, _) =
+            super::scenarios::fetch_models(&plan.base_url, "", Duration::from_secs(2)).await;
+        if reachable {
+            up = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    if !up {
+        return emit_error(
+            &app,
+            "wait",
+            format!("{} did not come up on {}", plan.engine, plan.base_url),
+        );
+    }
+
+    // ---- pull (ollama only; monotonic progress drives the tray) ---------
+    for model in &plan.pulls {
+        emit_setup(&app, serde_json::json!({ "stage": "pull", "model": model, "pct": 0 }));
+        let app2 = app.clone();
+        let model2 = model.clone();
+        let mut max_pct: u8 = 0;
+        let res = fonos_core::engine_setup::ollama_pull(&plan.base_url, model, move |p| {
+            if let Some(pct) = p.pct {
+                if let Some(shown) = advance_progress(&mut max_pct, pct) {
+                    emit_setup(
+                        &app2,
+                        serde_json::json!({ "stage": "pull", "model": model2, "pct": shown }),
+                    );
+                    // Rust-side direct tray wiring (mirrors diarize P2-T5).
+                    crate::tray::refresh_tray_status(
+                        &app2,
+                        Some((crate::tray::TrayRow::Llm, shown.min(100))),
+                    );
+                }
+            }
+        })
+        .await;
+        if let Err(e) = res {
+            return emit_error(&app, "pull", format!("pull {model}: {e}"));
+        }
+    }
+
+    emit_setup(&app, serde_json::json!({ "stage": "done", "engine": plan.engine }));
+    crate::tray::refresh_tray_status(&app, None);
+}
+
+/// Orchestrate install → start → wait → pull for a confirmed setup plan.
+///
+/// The heavy lifting runs **detached**: the command spawns [`run_setup`] and
+/// returns an immediate ack, so the `invoke` never blocks for the minutes an
+/// install or model pull can take. Every stage transition, progress tick, and
+/// terminal outcome is reported through `engine:setup` events (payload JSON
+/// string `{stage, pct?, model?, message?, failed_stage?}`, stage ∈
+/// `install|start|wait|pull|manual|done|error`), consumed by Task 8.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn engine_setup(app: tauri::AppHandle, plan: SetupPlanDto) -> Result<(), String> {
+    tauri::async_runtime::spawn(run_setup(app, plan));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +558,32 @@ mod tests {
         assert!(running_verdict(false, true, false), "non-shared T* should claim running regardless of process signal");
         assert!(!running_verdict(false, false, true), "non-shared F* must not claim running");
         assert!(!running_verdict(false, false, false), "non-shared F* must not claim running");
+    }
+
+    /// `advance_progress` only reports forward movement: equal pct and the
+    /// per-layer restart-to-0 are both suppressed, so the emitted stream (and
+    /// the tray) is monotonic. Controller carry-forward ruling.
+    #[test]
+    fn advance_progress_only_moves_forward() {
+        let mut max = 0u8;
+        // 0 is the already-emitted floor (the pull-start event), not a bump.
+        assert_eq!(advance_progress(&mut max, 0), None);
+        assert_eq!(advance_progress(&mut max, 5), Some(5));
+        assert_eq!(advance_progress(&mut max, 5), None, "equal pct is suppressed");
+        assert_eq!(advance_progress(&mut max, 2), None, "a layer restart is suppressed");
+        assert_eq!(advance_progress(&mut max, 40), Some(40));
+        assert_eq!(advance_progress(&mut max, 100), Some(100));
+        assert_eq!(advance_progress(&mut max, 100), None);
+        assert_eq!(max, 100);
+    }
+
+    /// Engines with no automated installer downgrade to manual steps rather
+    /// than erroring (these branches touch no filesystem, so they're
+    /// deterministic regardless of the host's Homebrew state).
+    #[test]
+    fn install_action_is_manual_for_unmanaged_engines() {
+        assert!(matches!(install_action("lmstudio"), InstallAction::Manual { .. }));
+        assert!(matches!(install_action("vllm"), InstallAction::Manual { .. }));
+        assert!(matches!(install_action("nonsense"), InstallAction::Manual { .. }));
     }
 }

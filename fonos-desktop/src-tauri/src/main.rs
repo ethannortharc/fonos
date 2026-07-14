@@ -835,10 +835,13 @@ fn main() {
                 }
             }
 
-            // 0. SIGUSR2 handler — toggle dictation from external scripts / window managers.
+            // 0. SIGUSR2 handler — toggle dictation from external scripts / window
+            //    managers (the documented fallback where global key grabs don't
+            //    exist, e.g. Wayland). Dispatches through the same engine path as
+            //    the hotkeys; a signal has no key-up edge, so it always acts as a
+            //    toggle press regardless of the pill's hold/toggle setting.
             #[cfg(unix)]
             {
-                use tauri::Emitter;
                 let sig_handle = app.handle().clone();
                 std::thread::spawn(move || {
                     use signal_hook::iterator::Signals;
@@ -846,7 +849,26 @@ fn main() {
                         .expect("failed to register SIGUSR2 handler");
                     for _ in signals.forever() {
                         eprintln!("fonos: SIGUSR2 received — toggling dictation");
-                        let _ = sig_handle.emit("signal:toggle-dictation", ());
+                        let handle = sig_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let resolved = {
+                                let state: tauri::State<'_, AppState> = handle.state();
+                                let config = match state.config.lock() {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        eprintln!("fonos: SIGUSR2 — config lock poisoned: {e}");
+                                        return;
+                                    }
+                                };
+                                resolve_pill_trigger(&config)
+                            };
+                            let Some((wf_id, is_mic, _capture)) = resolved else {
+                                eprintln!("fonos: SIGUSR2 resolved to no workflow — ignoring");
+                                return;
+                            };
+                            dispatch_workflow_trigger(handle.clone(), wf_id, is_mic, "toggle", true)
+                                .await;
+                        });
                     }
                 });
             }

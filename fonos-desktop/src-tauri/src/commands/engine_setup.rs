@@ -2,10 +2,45 @@
 //! hardware/disk facts, and install/start/pull orchestration. Pure logic
 //! lives in [`fonos_core::engine_setup`]; this module is the shell.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
+
+// ---------------------------------------------------------------------------
+// Re-entrancy guard for engine setup (mirrors workflow_exec.rs pattern)
+// ---------------------------------------------------------------------------
+
+/// True while a setup run is in flight. Re-entrant triggers are dropped so
+/// overlapping runs can't race (e.g., double-fire detached-ack launching two
+/// brew installs and two engine serves).
+static SETUP_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// RAII reset for [`SETUP_IN_FLIGHT`]: clears the flag on scope exit (including
+/// early returns and the `run_setup` await point), so a failed or empty run
+/// never wedges the trigger.
+struct SetupInFlightGuard;
+impl Drop for SetupInFlightGuard {
+    fn drop(&mut self) {
+        SETUP_IN_FLIGHT.store(false, Ordering::SeqCst);
+    }
+}
+
+impl SetupInFlightGuard {
+    /// Attempt to claim the in-flight guard: `None` if a setup is already in
+    /// progress.
+    fn try_acquire() -> Option<SetupInFlightGuard> {
+        SETUP_IN_FLIGHT
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| SetupInFlightGuard)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Engine specs and detection
+// ---------------------------------------------------------------------------
 
 /// Static facts for one supported local engine.
 struct EngineSpec {
@@ -290,10 +325,10 @@ fn emit_setup(app: &tauri::AppHandle, payload: serde_json::Value) {
 /// restore the tray to its real status (any in-flight pull progress is now
 /// void). Controller ruling: every stage failure is both an event and a
 /// machine-readable outcome.
-fn emit_error(app: &tauri::AppHandle, failed_stage: &str, message: String) {
+fn emit_error(app: &tauri::AppHandle, engine: &str, failed_stage: &str, message: String) {
     emit_setup(
         app,
-        serde_json::json!({ "stage": "error", "failed_stage": failed_stage, "message": message }),
+        serde_json::json!({ "stage": "error", "engine": engine, "failed_stage": failed_stage, "message": message }),
     );
     crate::tray::refresh_tray_status(app, None);
 }
@@ -447,8 +482,8 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
                 );
                 return; // can't start an engine we didn't install
             }
-            Ok(Err(e)) => return emit_error(&app, "install", e),
-            Err(e) => return emit_error(&app, "install", format!("join: {e}")),
+            Ok(Err(e)) => return emit_error(&app, &plan.engine, "install", e),
+            Err(e) => return emit_error(&app, &plan.engine, "install", format!("join: {e}")),
         }
     }
 
@@ -469,8 +504,8 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
         .await;
         match res {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => return emit_error(&app, "start", e),
-            Err(e) => return emit_error(&app, "start", format!("join: {e}")),
+            Ok(Err(e)) => return emit_error(&app, &plan.engine, "start", e),
+            Err(e) => return emit_error(&app, &plan.engine, "start", format!("join: {e}")),
         }
     }
 
@@ -489,6 +524,7 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
     if !up {
         return emit_error(
             &app,
+            &plan.engine,
             "wait",
             format!("{} did not come up on {}", plan.engine, plan.base_url),
         );
@@ -496,8 +532,9 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
 
     // ---- pull (ollama only; monotonic progress drives the tray) ---------
     for model in &plan.pulls {
-        emit_setup(&app, serde_json::json!({ "stage": "pull", "model": model, "pct": 0 }));
+        emit_setup(&app, serde_json::json!({ "stage": "pull", "engine": plan.engine, "model": model, "pct": 0 }));
         let app2 = app.clone();
+        let engine2 = plan.engine.clone();
         let model2 = model.clone();
         let mut max_pct: u8 = 0;
         let res = fonos_core::engine_setup::ollama_pull(&plan.base_url, model, move |p| {
@@ -505,7 +542,7 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
                 if let Some(shown) = advance_progress(&mut max_pct, pct) {
                     emit_setup(
                         &app2,
-                        serde_json::json!({ "stage": "pull", "model": model2, "pct": shown }),
+                        serde_json::json!({ "stage": "pull", "engine": engine2, "model": model2, "pct": shown }),
                     );
                     // Rust-side direct tray wiring (mirrors diarize P2-T5).
                     crate::tray::refresh_tray_status(
@@ -517,7 +554,7 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
         })
         .await;
         if let Err(e) = res {
-            return emit_error(&app, "pull", format!("pull {model}: {e}"));
+            return emit_error(&app, &plan.engine, "pull", format!("pull {model}: {e}"));
         }
     }
 
@@ -531,11 +568,24 @@ async fn run_setup(app: tauri::AppHandle, plan: SetupPlanDto) {
 /// returns an immediate ack, so the `invoke` never blocks for the minutes an
 /// install or model pull can take. Every stage transition, progress tick, and
 /// terminal outcome is reported through `engine:setup` events (payload JSON
-/// string `{stage, pct?, model?, message?, failed_stage?}`, stage ∈
+/// string `{stage, engine, pct?, model?, message?, failed_stage?}`, stage ∈
 /// `install|start|wait|pull|manual|done|error`), consumed by Task 8.
+///
+/// Re-entry is guarded: double-firing the detached-ack command is dropped so
+/// overlapping runs can't race (e.g., two brew installs, two engine serves).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn engine_setup(app: tauri::AppHandle, plan: SetupPlanDto) -> Result<(), String> {
-    tauri::async_runtime::spawn(run_setup(app, plan));
+    let Some(_guard) = SetupInFlightGuard::try_acquire() else {
+        emit_setup(
+            &app,
+            serde_json::json!({ "stage": "error", "engine": plan.engine, "failed_stage": "busy", "message": "engine setup already in progress" }),
+        );
+        return Ok(());
+    };
+    tauri::async_runtime::spawn(async move {
+        let _guard_holder = _guard;
+        run_setup(app, plan).await;
+    });
     Ok(())
 }
 

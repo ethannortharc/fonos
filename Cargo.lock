@@ -1342,6 +1342,7 @@ dependencies = [
  "cpal",
  "dirs",
  "fonos-core",
+ "gtk",
  "libc",
  "objc2",
  "reqwest 0.12.28",

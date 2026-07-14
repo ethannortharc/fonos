@@ -38,6 +38,15 @@ core-foundation = "0.10"
 # dependency tree via tauri/wry — this only makes it a direct dependency).
 objc2 = "0.6"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# GTK widget redraw for the transparent float pill (Linux ghost-frame fix):
+# queue_resize()/queue_draw() on the ApplicationWindow returned by
+# WebviewWindow::gtk_window(). Version matches tauri 2.10's gtk (0.18) so cargo
+# unifies to one crate instance and the returned type is this crate's
+# ApplicationWindow. Already in the tree via tauri on Linux — this only makes it
+# a direct dependency.
+gtk = "0.18"
+
 [dev-dependencies]
 # Used by test_build.rs for Cargo.toml validation.
 toml = "0.8"

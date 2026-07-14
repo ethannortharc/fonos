@@ -143,6 +143,7 @@ const en = {
   "general.update.download": "Download",
 
   // models tab
+  "models.add-engine": "＋ Add engine (guided)",
   "models.defaults": "Default Services",
   "models.notset": "Not set",
   "models.notconfigured": "Not configured",
@@ -943,6 +944,7 @@ const zh: Partial<Record<Key, string>> = {
   "general.update.download": "下载",
 
   // models tab
+  "models.add-engine": "＋ 添加引擎（引导）",
   "models.defaults": "默认服务",
   "models.notset": "未设置",
   "models.notconfigured": "未配置",

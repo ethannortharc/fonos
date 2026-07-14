@@ -77,21 +77,25 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         if (patch) return saveConfig(JSON.stringify(patch));
       })
       .catch(() => {});
-    const cleanup: (() => void)[] = [];
-    (async () => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        cleanup.push(
-          await listen<string>("float:stop", (e) => {
-            const text = typeof e.payload === "string" ? e.payload : "";
-            if (text.trim()) setPlayText(text);
-          })
-        );
+        const un = await listen<string>("float:stop", (e) => {
+          const text = typeof e.payload === "string" ? e.payload : "";
+          if (text.trim()) setPlayText(text);
+        });
+        if (disposed) { un(); return; }
+        unlisten = un;
       } catch {
         /* not in Tauri */
       }
     })();
-    return () => cleanup.forEach((fn) => fn());
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [step]);
 
   // Accessibility: pass straight through when already trusted (always true
@@ -131,23 +135,27 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // Guided task: a successful insertion into any app that isn't Fonos itself.
   useEffect(() => {
     if (step !== "guided") return;
-    const cleanup: (() => void)[] = [];
-    (async () => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        cleanup.push(
-          await listen<{ target_app: string | null }>("dictation:delivered", (e) => {
-            const app = e.payload?.target_app ?? "";
-            // Unknown target counts as success; only an insertion back into
-            // Fonos's own windows doesn't complete the "any other app" task.
-            if (!/fonos/i.test(app)) setGuidedDone(true);
-          })
-        );
+        const un = await listen<{ target_app: string | null }>("dictation:delivered", (e) => {
+          const app = e.payload?.target_app ?? "";
+          // Unknown target counts as success; only an insertion back into
+          // Fonos's own windows doesn't complete the "any other app" task.
+          if (!/fonos/i.test(app)) setGuidedDone(true);
+        });
+        if (disposed) { un(); return; }
+        unlisten = un;
       } catch {
         /* not in Tauri */
       }
     })();
-    return () => cleanup.forEach((fn) => fn());
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [step]);
 
   if (step === "engines") {

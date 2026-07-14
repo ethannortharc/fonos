@@ -7,12 +7,16 @@ import type {
   AgentResult,
   AppConfig,
   DailyStat,
+  DiskInfo,
   DoctorFinding,
   DoctorFix,
+  EngineDetection,
+  HardwareInfo,
   ModelCaps,
   SavedScenario,
   ScanResult,
   ScenarioProbe,
+  SetupPlan,
   SkillInfo,
   SttResult,
   TodaySummary,
@@ -201,6 +205,31 @@ export async function scenarioProbe(
   voice?: string
 ): Promise<ScenarioProbe> {
   return invoke<ScenarioProbe>("scenario_probe", { baseUrl, apiKey, voice: voice ?? null });
+}
+
+// ─── Engine setup (onboarding P3) ───────────────────────────────────────────
+
+/** Probe all four local engines in parallel: running (HTTP) + installed
+ *  (PATH / app bundle / process). */
+export async function engineDetect(): Promise<EngineDetection[]> {
+  return invoke<EngineDetection[]>("engine_detect");
+}
+
+/** Read memory size, chip brand, and NVIDIA presence; classify the tier. */
+export async function detectHardware(): Promise<HardwareInfo> {
+  return invoke<HardwareInfo>("detect_hardware");
+}
+
+/** Check available disk space (used by the pre-execution review card). */
+export async function checkDiskSpace(): Promise<DiskInfo> {
+  return invoke<DiskInfo>("check_disk_space");
+}
+
+/** Orchestrate install → start → wait → pull for a confirmed setup plan.
+ *  Runs detached on the Rust side — this resolves immediately; progress and
+ *  the terminal outcome arrive via `engine:setup` events. */
+export async function engineSetup(plan: SetupPlan): Promise<void> {
+  return invoke<void>("engine_setup", { plan });
 }
 
 /** Snapshot the live config as a new saved scenario, capturing the chosen

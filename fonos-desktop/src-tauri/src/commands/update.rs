@@ -25,3 +25,24 @@ pub fn update_supports_self_install() -> bool {
         true
     }
 }
+
+/// Open the GitHub releases page in the user's default browser. The webview
+/// blocks `target="_blank"` navigation (no opener plugin is installed), so the
+/// "manual update" link goes through the OS opener instead. Restricted to the
+/// releases page rather than accepting an arbitrary URL from the frontend.
+#[tauri::command]
+pub fn open_releases_page() -> Result<(), String> {
+    const URL: &str = "https://github.com/ethannortharc/fonos/releases/latest";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(target_os = "linux")]
+    let opener = "xdg-open";
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    return Err("Opening URLs is not supported on this platform".to_string());
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    std::process::Command::new(opener)
+        .arg(URL)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open browser: {e}"))
+}

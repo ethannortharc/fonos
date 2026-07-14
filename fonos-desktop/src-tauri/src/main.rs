@@ -551,6 +551,7 @@ fn main() {
             commands::permissions::check_accessibility,
             commands::permissions::open_settings_pane,
             commands::update::update_supports_self_install,
+            commands::update::open_releases_page,
             // TTS commands
             commands::tts::synthesize_speech,
             commands::tts::generate_and_play,

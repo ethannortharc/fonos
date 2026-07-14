@@ -23,6 +23,17 @@ import DoctorCard from "./DoctorCard";
 // this only offers the one-click button when it'll actually work.
 const RELEASES_URL = "https://github.com/ethannortharc/fonos/releases/latest";
 
+// The webview blocks target="_blank" navigation (no opener plugin), so the
+// backend opens the page via the OS opener; window.open covers the browser demo.
+async function openReleasesPage() {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_releases_page");
+  } catch {
+    window.open(RELEASES_URL, "_blank", "noreferrer,noopener");
+  }
+}
+
 type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
@@ -152,14 +163,12 @@ function UpdatesSection() {
           <span className="text-[10.5px] text-[var(--accent)]">
             {td("general.update.manual", [state.version])}
           </span>
-          <a
-            href={RELEASES_URL}
-            target="_blank"
-            rel="noreferrer noopener"
+          <button
+            onClick={() => void openReleasesPage()}
             className="text-[10px] px-2.5 py-1 rounded-lg border border-[rgba(242,184,75,0.3)] bg-[rgba(242,184,75,0.12)] text-[var(--accent)] hover:bg-[rgba(242,184,75,0.18)] transition-colors"
           >
             {t("general.update.download")}
-          </a>
+          </button>
         </>
       );
       break;

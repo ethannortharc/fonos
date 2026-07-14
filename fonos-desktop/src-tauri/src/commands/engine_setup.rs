@@ -183,6 +183,9 @@ pub struct HardwareInfo {
     pub tier: fonos_core::engine_setup::HardwareTier,
 }
 
+// Only the macOS sysctl path calls this; gate it so Linux builds stay
+// warning-free.
+#[cfg(target_os = "macos")]
 fn cmd_stdout(cmd: &str, args: &[&str]) -> Option<String> {
     std::process::Command::new(cmd)
         .args(args)

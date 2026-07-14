@@ -73,17 +73,28 @@ pub fn downgrade(tier: HardwareTier) -> Option<HardwareTier> {
     }
 }
 
-/// Parse `df -k <path>` output: available KB is column 4 of the data line.
-/// Handles both GNU and BSD df (header line + one data line; a data line may
-/// wrap only when the device name is very long, in which case the numbers
-/// land on the following line — handled by scanning for the first line whose
-/// 4th column parses).
+/// Parse `df -k <path>` output: locate the Use%/Capacity column — the first
+/// whitespace-separated field on the data line that ends with `%` — and take
+/// the field immediately before it as the Available KB count.
+///
+/// A fixed column index is not safe here. GNU `df` wraps the data line onto
+/// a continuation line when the device name is long (common on Linux LVM,
+/// e.g. `/dev/mapper/ubuntu--vg-ubuntu--lv`); the continuation line drops
+/// the device-name column, shifting every following column one to the left.
+/// Scanning for the `%` column instead of assuming a fixed index handles
+/// both the normal (device-present) line and the wrapped continuation line.
+/// It also handles macOS/BSD `df -k`, which can append extra `iused`/
+/// `ifree`/`%iused` columns after `Available`/`Capacity` — the *first* `%`
+/// column on the line is always `Capacity`/`Use%`, never the trailing
+/// `%iused`. Returns the value parsed from the first line that yields one.
 pub fn parse_df_available_kb(output: &str) -> Option<u64> {
     for line in output.lines().skip(1) {
         let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() >= 4 {
-            if let Ok(kb) = cols[3].parse::<u64>() {
-                return Some(kb);
+        if let Some(pct_idx) = cols.iter().position(|c| c.ends_with('%')) {
+            if pct_idx > 0 {
+                if let Ok(kb) = cols[pct_idx - 1].parse::<u64>() {
+                    return Some(kb);
+                }
             }
         }
     }
@@ -141,6 +152,9 @@ mod tests {
         assert_eq!(classify_tier(128 * GB, "Intel Xeon", true), HardwareTier::Max);
         // Pure CPU is always Light, even with lots of RAM.
         assert_eq!(classify_tier(128 * GB, "Intel Core i9", false), HardwareTier::Light);
+        // Exact boundaries: >= semantics, not >.
+        assert_eq!(classify_tier(32 * GB, "Apple M3", false), HardwareTier::Balanced);
+        assert_eq!(classify_tier(64 * GB, "NVIDIA Jetson AGX", true), HardwareTier::Max);
     }
 
     #[test]
@@ -156,6 +170,30 @@ mod tests {
                    /dev/disk3s5  971350180 250000000 536870912    32%    /System/Volumes/Data\n";
         assert_eq!(parse_df_available_kb(bsd), Some(536870912));
         assert_eq!(parse_df_available_kb("garbage"), None);
+    }
+
+    #[test]
+    fn df_output_survives_wrapped_gnu_device_line() {
+        // GNU `df -k` wraps onto a continuation line when the device name is
+        // long (common on Linux LVM). The continuation line has no device
+        // column, so a fixed column index would misread "21%" as Available.
+        let gnu_wrapped = "Filesystem                     1K-blocks   Used Available Use% Mounted on\n\
+                            /dev/mapper/ubuntu--vg-ubuntu--lv\n\
+                             52428800 10485760 39942840  21% /\n";
+        assert_eq!(parse_df_available_kb(gnu_wrapped), Some(39942840));
+    }
+
+    #[test]
+    fn df_output_parses_real_macos_df_k_shape() {
+        // Captured via `df -k /` on macOS (Darwin 25.2.0, arm64):
+        //   Filesystem     1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on
+        //   /dev/disk3s1s1   971350180  17381012  15737864    53%  453019 157378640    0%   /
+        // Note the trailing `%iused` column: this is a second field ending
+        // in `%`, so the parser must pick the FIRST such column (Capacity),
+        // not the last, to land on the correct Available value.
+        let macos = "Filesystem     1024-blocks      Used Available Capacity iused     ifree %iused  Mounted on\n\
+                     /dev/disk3s1s1   971350180  17381012  15737864    53%  453019 157378640    0%   /\n";
+        assert_eq!(parse_df_available_kb(macos), Some(15737864));
     }
 
     #[test]

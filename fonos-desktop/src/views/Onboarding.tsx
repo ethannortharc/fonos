@@ -16,7 +16,7 @@ import {
 import { ensureAppleSttDefault } from "../lib/appleSttSeed";
 import { isMacOS } from "../lib/platform";
 import { t, useT } from "../lib/i18n";
-import Scenarios from "./Scenarios";
+import Scenarios, { isSttConfigured } from "./Scenarios";
 
 /** Ordered steps. Linux front-loads engine setup because it has no built-in
  *  STT (spec §P1 Linux 差异); "engines" renders <Scenarios mode="overlay">. */
@@ -37,6 +37,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [playText, setPlayText] = useState("");
   const [axWaiting, setAxWaiting] = useState(false);
   const [guidedDone, setGuidedDone] = useState(false);
+  // Whether an STT engine is configured; gates the "no engine" warning in the
+  // playground. Re-computed every time the playground step is (re-)entered.
+  const [sttReady, setSttReady] = useState(true);
   // macOS reaches "engines" only via skip, where it is terminal. On Linux it
   // sits mid-flow and continues to the playground.
   const enginesTerminal = useRef(isMacOS);
@@ -74,7 +77,13 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     getConfig()
       .then((cfg) => {
         const patch = ensureAppleSttDefault(cfg, isMacOS);
-        if (patch) return saveConfig(JSON.stringify(patch));
+        if (patch) {
+          // The seed makes STT usable even though `cfg` (read before the
+          // patch) still looks unconfigured.
+          setSttReady(true);
+          return saveConfig(JSON.stringify(patch));
+        }
+        setSttReady(isSttConfigured(cfg));
       })
       .catch(() => {});
     let unlisten: (() => void) | undefined;
@@ -209,6 +218,20 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             )}
           </div>
           {playText && <p className="text-[11px] text-[#7ed492]">{t("ob.playground.ready")}</p>}
+          {!sttReady && (
+            <>
+              <p data-testid="ob-no-stt" className="text-[11px] text-[#e8a72e]">
+                {t("ob.play.no-stt")}
+              </p>
+              <button
+                data-testid="ob-to-engines"
+                onClick={() => setStep("engines")}
+                className={ghost}
+              >
+                {t("ob.play.setup-engine")}
+              </button>
+            </>
+          )}
           <button data-testid="ob-next" onClick={next} disabled={!playText} className={pill}>
             {t("ob.playground.next")}
           </button>

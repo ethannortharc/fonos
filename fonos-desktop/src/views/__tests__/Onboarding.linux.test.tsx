@@ -36,4 +36,17 @@ describe("Onboarding (Linux flow)", () => {
     fireEvent.click(await screen.findByTestId("scenarios-stub"));
     expect(await screen.findByTestId("ob-playground-box")).toBeInTheDocument();
   });
+
+  it("warns and offers an engines shortcut when the overlay was closed unconfigured", async () => {
+    render(<Onboarding onDone={() => {}} />);
+    fireEvent.click(screen.getByTestId("ob-start"));
+    // Close the engines overlay via its ✕ (mocked as onDone) without
+    // configuring anything — lands on the playground with no STT.
+    fireEvent.click(await screen.findByTestId("scenarios-stub"));
+    expect(await screen.findByTestId("ob-no-stt")).toBeInTheDocument();
+    const toEngines = screen.getByTestId("ob-to-engines");
+    expect(toEngines).toBeInTheDocument();
+    fireEvent.click(toEngines);
+    expect(await screen.findByTestId("scenarios-stub")).toBeInTheDocument();
+  });
 });

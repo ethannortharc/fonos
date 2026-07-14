@@ -577,7 +577,8 @@ fn main() {
     // frontend uses to hide the in-place install button for deb/rpm.
     builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init());
 
     // Register global-shortcut plugin on Linux
     #[cfg(target_os = "linux")]

@@ -40,9 +40,6 @@ pub enum RowState {
 }
 
 /// Which unlock notification (Task 3 consumes the copy pair).
-// Not yet called from the bin target — Task 3 wires the notification that
-// consumes this (mirrors `move_note_panel_to_cursor` in main.rs).
-#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UnlockRole {
     Llm,
@@ -98,8 +95,6 @@ pub fn settings_text(lang: Lang) -> &'static str {
 
 /// Unlock notification copy: (title, body) — "capability + a sentence you
 /// can literally say", never an abstract explanation (spec §P2 formula).
-// Not yet called from the bin target — Task 3 wires the notification.
-#[allow(dead_code)]
 pub fn unlock_body(lang: Lang, role: UnlockRole) -> (&'static str, &'static str) {
     match (role, lang) {
         (UnlockRole::Llm, Lang::En) => (
@@ -118,6 +113,31 @@ pub fn unlock_body(lang: Lang, role: UnlockRole) -> (&'static str, &'static str)
             "语音回复与通话已就绪",
             "按住热键问“今天日历上有什么？”，它会说给你听。",
         ),
+    }
+}
+
+/// The unlock transition: a role's default profile going from empty to
+/// non-empty. Swapping one profile for another is not an unlock.
+pub fn unlocked(old: &str, new: &str) -> bool {
+    old.trim().is_empty() && !new.trim().is_empty()
+}
+
+/// Fire the once-ever unlock notification. Permission is requested lazily on
+/// first use; a denial is silently absorbed — notifications are a nicety,
+/// never a gate (spec: 拒绝不阻塞).
+pub fn notify_unlock(app: &AppHandle, role: UnlockRole, lang: Lang) {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+
+    let n = app.notification();
+    let granted = matches!(n.permission_state(), Ok(PermissionState::Granted))
+        || matches!(n.request_permission(), Ok(PermissionState::Granted));
+    if !granted {
+        eprintln!("fonos: unlock notification skipped — permission not granted");
+        return;
+    }
+    let (title, body) = unlock_body(lang, role);
+    if let Err(e) = n.builder().title(title).body(body).show() {
+        eprintln!("fonos: unlock notification failed: {e}");
     }
 }
 
@@ -325,5 +345,14 @@ mod tests {
         let (t, b) = unlock_body(Lang::En, UnlockRole::Tts);
         assert!(t.contains("Voice replies"));
         assert!(b.contains("calendar"));
+    }
+
+    #[test]
+    fn unlocked_fires_only_on_empty_to_nonempty() {
+        assert!(unlocked("", "scenario-openai-llm"));
+        assert!(unlocked("  ", "p1"));
+        assert!(!unlocked("p0", "p1")); // swap ≠ unlock
+        assert!(!unlocked("p0", "")); // clearing ≠ unlock
+        assert!(!unlocked("", ""));
     }
 }

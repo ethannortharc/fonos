@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { getStats, getToday, getDictationLatency } from "../lib/api";
 import { t, useT } from "../lib/i18n";
 import type { DailyStat, TodaySummary, LatencyStats } from "../types";
+import FirstRunTimeline from "./stats/FirstRunTimeline";
 
 type Period = "7d" | "30d" | "90d";
 type Metric = "words" | "sessions" | "time";
@@ -417,6 +418,9 @@ export default function Stats() {
 
       {/* Activity mix */}
       <ActivityMix stats={stats} />
+
+      {/* First-run funnel (onboarding P4) — one-time diagnostics, local only */}
+      <FirstRunTimeline />
     </div>
   );
 }

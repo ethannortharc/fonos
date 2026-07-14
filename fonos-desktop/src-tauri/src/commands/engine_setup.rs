@@ -46,7 +46,12 @@ impl SetupInFlightGuard {
 struct EngineSpec {
     key: &'static str,
     url: &'static str,
-    /// `pgrep -f` pattern for a running-but-not-listening process.
+    /// `pgrep -f` **extended-regex** pattern for a running process. `-f`
+    /// matches the whole command line, so a bare brand name would substring-
+    /// match any unrelated process whose cwd/args merely contain it (e.g. a
+    /// venv path `…/omlx/.venv/bin/python3`). Each pattern is therefore
+    /// anchored to the launcher binary at a path boundary — see the per-engine
+    /// notes in [`ENGINES`].
     process: &'static str,
     /// Binaries whose presence on PATH means "installed".
     binaries: &'static [&'static str],
@@ -67,7 +72,12 @@ const ENGINES: &[EngineSpec] = &[
     EngineSpec {
         key: "omlx",
         url: "http://localhost:8000",
-        process: "omlx",
+        // Matches the launcher `omlx-server …` (cmdline start) and a bare
+        // `omlx`/`/usr/local/bin/omlx`, but deliberately NOT the venv worker
+        // `…/omlx/.venv/bin/python3 …`: after `/omlx` there comes `/`, which is
+        // neither end-of-string nor a space, so the trailing `($| )` fails. We
+        // count only the launcher process, not oMLX's Python subprocess.
+        process: "(^|/)omlx(-server)?($| )",
         binaries: &["omlx", "omlx-server"],
         app_paths: &[],
         shared_port: true,
@@ -75,6 +85,8 @@ const ENGINES: &[EngineSpec] = &[
     EngineSpec {
         key: "lmstudio",
         url: "http://localhost:1234",
+        // The embedded space already makes this specific enough that no path
+        // fragment collides with it, so it stays as a plain substring match.
         process: "LM Studio",
         binaries: &["lms"],
         app_paths: &["/Applications/LM Studio.app"],
@@ -83,7 +95,9 @@ const ENGINES: &[EngineSpec] = &[
     EngineSpec {
         key: "ollama",
         url: "http://localhost:11434",
-        process: "ollama",
+        // Anchored to a path boundary so a cwd/arg containing "ollama" can't
+        // false-positive; matches `ollama serve`, `/usr/local/bin/ollama …`.
+        process: "(^|/)ollama($| )",
         binaries: &["ollama"],
         app_paths: &["/Applications/Ollama.app"],
         shared_port: false,
@@ -91,7 +105,10 @@ const ENGINES: &[EngineSpec] = &[
     EngineSpec {
         key: "vllm",
         url: "http://localhost:8000",
-        process: "vllm",
+        // Anchored likewise; matches the `vllm` launcher binary. (vLLM's
+        // `python -m vllm.entrypoints…` form is not matched here — the packaged
+        // `vllm` console script is the invocation shape fonos expects.)
+        process: "(^|/)vllm($| )",
         binaries: &["vllm"],
         app_paths: &[],
         shared_port: true,
@@ -130,10 +147,29 @@ pub struct EngineDetection {
     /// engines, a matching brand process is also running — see struct doc).
     pub running: bool,
     /// Installed on this machine (binary on PATH, app bundle, or a live
-    /// process) even if not currently listening.
+    /// brand process) even if not currently listening. Crucially this is
+    /// **not** implied by the port answering: a shared-port responder proves
+    /// only that *something* owns the port, not that this brand is installed.
     pub installed: bool,
     /// Default base URL for the engine.
     pub url: String,
+    /// Machine tokens for the raw signals that produced this verdict, so the
+    /// UI can show *why* an engine reads installed/running: `"path"` (binary
+    /// on PATH), `"app"` (app bundle present), `"process"` (brand process
+    /// matched), `"port"` (the base URL answered). Emptiness means "no signal
+    /// at all" (i.e. not detected).
+    pub evidence: Vec<String>,
+}
+
+/// Pure decision for the `installed` verdict. A brand is installed when there
+/// is brand-specific evidence — a binary on PATH or an app bundle
+/// (`binary_or_app`), or a matching brand process — OR when it is currently
+/// running (a running engine is definitionally installed). Note this takes
+/// **no** `http_ok`: a bare port responder is not brand evidence, which is the
+/// whole point (omlx and vllm share `:8000`, so vllm must not read "installed"
+/// merely because omlx is answering there).
+fn installed_verdict(binary_or_app: bool, process: bool, running: bool) -> bool {
+    binary_or_app || process || running
 }
 
 /// Pure decision for the `running` verdict from the two independent
@@ -153,35 +189,56 @@ fn running_verdict(shared_port: bool, http_ok: bool, process_ok: bool) -> bool {
 async fn detect_one(spec: &'static EngineSpec) -> EngineDetection {
     let (http_ok, _ms, _models) =
         super::scenarios::fetch_models(spec.url, "", Duration::from_secs(2)).await;
-    let mut installed = http_ok;
-    if !installed {
-        for b in spec.binaries {
-            if binary_on_path(b).await {
-                installed = true;
-                break;
-            }
+
+    // Brand-specific "installed" evidence, gathered cheap→expensive: PATH
+    // binaries first (short-circuit on the first hit), then app bundles. The
+    // port answering is intentionally NOT counted here — see `installed_verdict`.
+    let mut binary_ok = false;
+    for b in spec.binaries {
+        if binary_on_path(b).await {
+            binary_ok = true;
+            break;
         }
     }
-    if !installed {
-        installed = spec.app_paths.iter().any(|p| std::path::Path::new(p).exists());
-    }
-    // Shared-port engines need this probe's result for `running_verdict`
-    // regardless of whether `installed` is already settled, so run it
-    // whenever either consumer needs it — never more than once either way.
-    let process_matches = if spec.shared_port || !installed {
+    let app_ok = spec.app_paths.iter().any(|p| std::path::Path::new(p).exists());
+    let binary_or_app = binary_ok || app_ok;
+
+    // The brand process probe (the one expensive signal) feeds two consumers:
+    // the shared-port `running` verdict and the `installed` verdict. Run it at
+    // most once, only when someone needs it — shared-port engines always need
+    // it to disambiguate the port; other engines need it only as installed-
+    // evidence when no binary/app was already found.
+    let process_matches = if spec.shared_port || !binary_or_app {
         super::doctor::process_running(spec.process).await
     } else {
         false
     };
-    if !installed {
-        installed = process_matches;
-    }
+
     let running = running_verdict(spec.shared_port, http_ok, process_matches);
+    let installed = installed_verdict(binary_or_app, process_matches, running);
+
+    // Machine tokens for the raw signals that actually fired (order: path,
+    // app, process, port). `process` only appears when the probe above ran.
+    let mut evidence = Vec::new();
+    if binary_ok {
+        evidence.push("path".to_string());
+    }
+    if app_ok {
+        evidence.push("app".to_string());
+    }
+    if process_matches {
+        evidence.push("process".to_string());
+    }
+    if http_ok {
+        evidence.push("port".to_string());
+    }
+
     EngineDetection {
         engine: spec.key.to_string(),
         running,
         installed,
         url: spec.url.to_string(),
+        evidence,
     }
 }
 
@@ -607,6 +664,46 @@ mod tests {
         assert!(running_verdict(false, true, false), "non-shared T* should claim running regardless of process signal");
         assert!(!running_verdict(false, false, true), "non-shared F* must not claim running");
         assert!(!running_verdict(false, false, false), "non-shared F* must not claim running");
+    }
+
+    /// Truth table for `installed_verdict`: any one of brand evidence
+    /// (binary/app), a matching brand process, or a live `running` verdict is
+    /// sufficient; a bare port responder (which never reaches this fn) is not.
+    #[test]
+    fn installed_verdict_truth_table() {
+        assert!(installed_verdict(true, false, false), "binary/app alone → installed");
+        assert!(installed_verdict(false, true, false), "brand process alone → installed");
+        assert!(installed_verdict(false, false, true), "running is definitionally installed");
+        assert!(!installed_verdict(false, false, false), "no signal → not installed");
+    }
+
+    /// This developer's machine: oMLX is serving on :8000 (a 401 still counts
+    /// as reachable → `http_ok`), with the `omlx-server` launcher running and
+    /// the binary on PATH; nothing else is up. vllm shares :8000 so its HTTP
+    /// probe *also* answers, but with no vllm process and no vllm binary it must
+    /// report neither installed nor running — the exact false-positive this fix
+    /// removes. Composes the two pure verdict fns over each engine's real signal
+    /// combo (no I/O), so it's deterministic on any host.
+    #[test]
+    fn this_machine_omlx_only() {
+        // omlx: shared port, http answers, process matches, binary on PATH.
+        let omlx_running = running_verdict(true, true, true);
+        let omlx_installed = installed_verdict(true, true, omlx_running);
+        assert!(omlx_running && omlx_installed, "omlx must be installed + running");
+
+        // vllm: shared port, http answers (omlx owns :8000), NO vllm process,
+        // NO vllm binary/app → the previously-broken case.
+        let vllm_running = running_verdict(true, true, false);
+        let vllm_installed = installed_verdict(false, false, vllm_running);
+        assert!(!vllm_running, "vllm must NOT read running off omlx's port");
+        assert!(!vllm_installed, "vllm must NOT read installed off omlx's port");
+
+        // ollama / lmstudio: distinct ports, nothing listening, no evidence.
+        for shared in [false, false] {
+            let running = running_verdict(shared, false, false);
+            let installed = installed_verdict(false, false, running);
+            assert!(!running && !installed, "idle non-shared engines are absent");
+        }
     }
 
     /// `advance_progress` only reports forward movement: equal pct and the

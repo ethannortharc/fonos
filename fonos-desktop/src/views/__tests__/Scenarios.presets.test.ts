@@ -56,4 +56,15 @@ describe("Scenarios · provider presets", () => {
     // OpenAI is 3/3 — TTS stays a real model, not a null marker.
     expect(byKey("openai")!.bundle.tts).toBe("gpt-4o-mini-tts");
   });
+
+  it("adds the Custom cloud entry — empty base URL, empty bundle, not key-gated (R3)", () => {
+    expect(CLOUD_PROVIDER_KEYS).toContain("custom");
+    const custom = byKey("custom");
+    expect(custom).toBeDefined();
+    expect(custom!.name).toBe("Custom");
+    expect(custom!.baseUrl).toBe("");
+    expect(custom!.bundle).toEqual({});
+    // Keyless LAN servers are valid — no "needs key" preview chip for custom.
+    expect(KEY_PROVIDERS.has("custom")).toBe(false);
+  });
 });

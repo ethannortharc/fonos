@@ -53,7 +53,11 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 
 type ScenarioKey = "local" | "cloud" | "zero";
 // EngineKey is imported from ../lib/engineSetup (single source of truth shared
-// with buildSetupPlan / EngineSetupReview).
+// with buildSetupPlan / EngineSetupReview). "custom" is a frontend-only local
+// tile (R3) — a manual LAN/base-URL entry with no detection, no install/start
+// orchestration, and no EngineSpec on the Rust side — so it widens the local
+// key here without touching engineSetup's backend-mirroring EngineKey.
+type LocalKey = EngineKey | "custom";
 // Single source of truth for the provider-key union — every CLOUD_PROVIDERS
 // entry's `key` must appear here (a Scenarios test enforces parity). Exported so
 // tests can assert cerebras/custom presence + ProviderKey derivation.
@@ -64,11 +68,12 @@ export const CLOUD_PROVIDER_KEYS = [
   "google",
   "fireworks",
   "cerebras",
+  "custom",
 ] as const;
 type ProviderKey = (typeof CLOUD_PROVIDER_KEYS)[number];
 
 interface EngineDef {
-  key: EngineKey;
+  key: LocalKey;
   name: string;
   url: string;
   /** Full pipeline (STT+LLM+TTS probing). False = LLM-only server. */
@@ -80,6 +85,9 @@ const LOCAL_ENGINES: EngineDef[] = [
   { key: "lmstudio", name: "LM Studio", url: "http://localhost:1234", full: false },
   { key: "ollama", name: "Ollama", url: "http://localhost:11434", full: false },
   { key: "vllm", name: "vLLM", url: "http://localhost:8000", full: true },
+  // Manual entry: user types the LAN/base URL; probed as a potential full
+  // pipeline. No detection badge (shows a muted "manual" line) and no CTA.
+  { key: "custom", name: "Custom", url: "", full: true },
 ];
 
 // Detection-evidence token → i18n label. Backend tokens ("path"/"app"/
@@ -95,11 +103,14 @@ const EVIDENCE_KEY: Record<string, TKey> = {
 // Provider label for created local profiles. omlx/ollama skip the LLM api-key
 // requirement, which keyless local servers need; base_url is always set
 // explicitly so the provider's default URL is never used.
-const ENGINE_PROVIDER: Record<EngineKey, string> = {
+const ENGINE_PROVIDER: Record<LocalKey, string> = {
   omlx: "omlx",
   vllm: "omlx",
   ollama: "ollama",
   lmstudio: "omlx",
+  // A custom LAN/base-URL server: keep the api-key requirement (some gateways
+  // need one) and route through fonos-core's OpenAI-compatible fallthrough.
+  custom: "custom",
 };
 
 interface CloudBundle {
@@ -170,6 +181,17 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
     name: "Cerebras",
     baseUrl: "https://api.cerebras.ai/v1",
     bundle: { llm: "qwen-3-32b", sttApple: true, tts: null },
+  },
+  {
+    // Any OpenAI-compatible endpoint (self-hosted, LAN gateway, a provider we
+    // don't preset). No roles preset — every row is an editable input with the
+    // "type anything" hint; the in-card base-URL field is where the user points
+    // it. The apply gate is relaxed for custom (baseUrl + ≥1 row, no key) since
+    // LAN servers are often keyless — see canApply.
+    key: "custom",
+    name: "Custom",
+    baseUrl: "",
+    bundle: {},
   },
 ];
 
@@ -355,9 +377,9 @@ export default function Scenarios({
   const [selected, setSelected] = useState<ScenarioKey | null>(null);
   // Platform-optimal default: macOS ships the OMLX full pipeline; Linux has no
   // Apple STT, so Ollama (LLM-only + auto-installable) is the sensible start.
-  const [engine, setEngine] = useState<EngineKey>(isMacOS ? "omlx" : "ollama");
+  const [engine, setEngine] = useState<LocalKey>(isMacOS ? "omlx" : "ollama");
   const [provider, setProvider] = useState<ProviderKey>("openai");
-  const [detected, setDetected] = useState<Partial<Record<EngineKey, EngineDetection | null>>>({});
+  const [detected, setDetected] = useState<Partial<Record<LocalKey, EngineDetection | null>>>({});
   const [hardware, setHardware] = useState<HardwareInfo | null>(null);
   const [diskKb, setDiskKb] = useState(0);
   const [tierOverride, setTierOverride] = useState<Tier | null>(null);
@@ -455,7 +477,7 @@ export default function Scenarios({
       setCloudBaseUrl(currentProvider.baseUrl);
     }
   };
-  const selectEngine = (k: EngineKey) => {
+  const selectEngine = (k: LocalKey) => {
     setEngine(k);
     setProbe(null);
     setProbeErr("");
@@ -513,6 +535,10 @@ export default function Scenarios({
   // recommendation; else the safe floor.
   const tier: Tier = tierOverride ?? hardware?.tier ?? "light";
   const openReview = (forTier: Tier) => {
+    // Custom is manual — no install/start plan, no review card (the CTA never
+    // renders for it). Guarding here also narrows `engine` to EngineKey for
+    // buildSetupPlan, whose backend-mirroring type has no "custom".
+    if (engine === "custom") return;
     const det = detected[engine];
     if (!det) return;
     setTierOverride(forTier);
@@ -589,11 +615,14 @@ export default function Scenarios({
   const canApply = (): boolean => {
     if (selected === "local") return !!probe?.reachable;
     if (selected === "cloud") {
-      const hasKey = cloudKey.trim().length > 0;
       const hasRole = (Object.keys(cloudSel) as RoleKey[]).some(
         (r) => cloudSel[r].trim().length > 0
       );
-      return hasKey && hasRole;
+      // Custom endpoints are often keyless LAN servers — require a base URL and
+      // ≥1 model row instead of an API key (R3). Preset providers still gate on
+      // the key.
+      if (provider === "custom") return cloudBaseUrl.trim().length > 0 && hasRole;
+      return cloudKey.trim().length > 0 && hasRole;
     }
     if (selected === "zero") return true;
     return false;
@@ -807,7 +836,13 @@ export default function Scenarios({
             {applying ? t("scen.applying") : t("scen.apply")}
           </button>
           <span className="text-[10px] text-[rgba(255,255,255,0.35)]">
-            {canApply() ? t("scen.apply.note") : selected === "cloud" ? t("scen.needkey") : t("scen.apply.note")}
+            {canApply()
+              ? t("scen.apply.note")
+              : selected === "cloud"
+              ? provider === "custom"
+                ? t("scen.custom.needurl")
+                : t("scen.needkey")
+              : t("scen.apply.note")}
           </span>
         </div>
       )}
@@ -885,9 +920,9 @@ function LocalStep({
   onSetup,
   review,
 }: {
-  engine: EngineKey;
-  detected: Partial<Record<EngineKey, EngineDetection | null>>;
-  onEngine: (k: EngineKey) => void;
+  engine: LocalKey;
+  detected: Partial<Record<LocalKey, EngineDetection | null>>;
+  onEngine: (k: LocalKey) => void;
   baseUrl: string;
   apiKey: string;
   setBaseUrl: (v: string) => void;
@@ -915,6 +950,9 @@ function LocalStep({
           {LOCAL_ENGINES.map((e) => {
             const on = e.key === engine;
             const det = detected[e.key];
+            // Custom is manual — no detection three-state and no evidence line,
+            // just a muted "manual" label (the URL/probe path drives it).
+            const isCustom = e.key === "custom";
             return (
               <button
                 key={e.key}
@@ -930,7 +968,9 @@ function LocalStep({
                   {e.name}
                 </div>
                 <div className="text-[8.5px] mt-0.5">
-                  {det === null || det === undefined ? (
+                  {isCustom ? (
+                    <span data-testid="engine-manual-custom" className="text-[rgba(255,255,255,0.3)]">{t("scen.manual")}</span>
+                  ) : det === null || det === undefined ? (
                     <span className="text-[rgba(255,255,255,0.3)]">{t("scen.detecting")}</span>
                   ) : det.running ? (
                     <span className="text-[#4ade80]">{t("scen.detected")}</span>
@@ -940,7 +980,7 @@ function LocalStep({
                     <span className="text-[rgba(255,255,255,0.25)]">{t("scen.notdetected")}</span>
                   )}
                 </div>
-                {det && det.evidence.length > 0 && (
+                {!isCustom && det && det.evidence.length > 0 && (
                   <div
                     data-testid={`engine-evidence-${e.key}`}
                     className="text-[8px] mt-0.5 text-[rgba(255,255,255,0.3)] tabular-nums"
@@ -988,6 +1028,9 @@ function LocalStep({
       {/* One-click setup CTA — only while the selected engine isn't running.
           Opens the pre-execution review card (rendered via the `review` slot). */}
       {(() => {
+        // Custom has no install/start orchestration — never a CTA (the manual
+        // URL + Probe path is the whole flow).
+        if (engine === "custom") return null;
         const d = detected[engine];
         if (!d || d.running) return null;
         return (

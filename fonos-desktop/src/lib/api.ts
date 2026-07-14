@@ -44,6 +44,12 @@ export async function openSettingsPane(pane: string): Promise<void> {
   return invoke<void>("open_settings_pane", { pane });
 }
 
+/** Trigger the OS Accessibility permission prompt (macOS). Returns the
+ *  current trusted state; poll checkAccessibility() afterwards. */
+export async function requestAccessibility(): Promise<boolean> {
+  return invoke<boolean>("request_accessibility");
+}
+
 /** Start capturing audio from the microphone. */
 export async function startRecording(): Promise<void> {
   return invoke<void>("start_recording");
@@ -464,4 +470,11 @@ export async function hideDialogPanel(): Promise<void> {
 export async function dialogSaveNotebook(containerId: number): Promise<number> {
   // dialog_save_notebook is rename_all="snake_case" → pass the snake_case key.
   return invoke<number>("dialog_save_notebook", { container_id: containerId });
+}
+
+// ─── Onboarding funnel (local-only, P1) ──────────────────────────────────────
+
+/** Record a first-experience milestone once (backend ignores repeats). */
+export async function recordOnboardingEvent(step: string): Promise<boolean> {
+  return invoke<boolean>("record_onboarding_event", { step });
 }

@@ -46,12 +46,20 @@ pub async fn diarize_download_models(
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
             match v.get("type").and_then(|t| t.as_str()) {
-                Some("progress") => emit_download(&app2, serde_json::json!({
-                    "kind": "progress", "pct": v.get("pct").and_then(|p| p.as_u64()).unwrap_or(0) })),
-                Some("done") => { finished_ok = true; emit_download(&app2, serde_json::json!({"kind": "done"})); }
+                Some("progress") => {
+                    let pct = v.get("pct").and_then(|p| p.as_u64()).unwrap_or(0);
+                    emit_download(&app2, serde_json::json!({ "kind": "progress", "pct": pct }));
+                    crate::tray::refresh_tray_status(&app2, Some((crate::tray::TrayRow::Stt, pct.min(100) as u8)));
+                }
+                Some("done") => {
+                    finished_ok = true;
+                    emit_download(&app2, serde_json::json!({"kind": "done"}));
+                    crate::tray::refresh_tray_status(&app2, None);
+                }
                 Some("error") => {
                     let msg = v.get("message").and_then(|m| m.as_str()).unwrap_or("download failed").to_string();
                     emit_download(&app2, serde_json::json!({"kind": "error", "message": msg.clone()}));
+                    crate::tray::refresh_tray_status(&app2, None);
                     let _ = child.wait(); // reap — early return must not skip this
                     return Err(msg);
                 }
@@ -61,6 +69,7 @@ pub async fn diarize_download_models(
         let _ = child.wait();
         if finished_ok { Ok(()) } else {
             emit_download(&app2, serde_json::json!({"kind": "error", "message": "download ended without done"}));
+            crate::tray::refresh_tray_status(&app2, None);
             Err("download ended without done".into())
         }
     }).await.map_err(|e| format!("join: {e}"))?

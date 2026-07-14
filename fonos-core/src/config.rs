@@ -562,6 +562,32 @@ impl AppConfig {
 
         Ok(())
     }
+
+    /// True when any model profile advertises `cap` in its capabilities array.
+    fn has_capability_profile(&self, cap: &str) -> bool {
+        self.model_profiles.iter().any(|p| {
+            p.get("capabilities")
+                .and_then(|c| c.as_array())
+                .map(|arr| arr.iter().any(|v| v.as_str() == Some(cap)))
+                .unwrap_or(false)
+        })
+    }
+
+    /// Mirrors the frontend `isSttConfigured` (Scenarios.tsx): a default STT
+    /// profile is assigned, or any profile is capability-tagged "stt".
+    pub fn is_stt_configured(&self) -> bool {
+        !self.stt_profile.trim().is_empty() || self.has_capability_profile("stt")
+    }
+
+    /// Same semantics for the LLM role (tray 🧠 row / unlock notification).
+    pub fn is_llm_configured(&self) -> bool {
+        !self.llm_profile.trim().is_empty() || self.has_capability_profile("llm")
+    }
+
+    /// Same semantics for the TTS role (tray 🔊 row / unlock notification).
+    pub fn is_tts_configured(&self) -> bool {
+        !self.tts_profile.trim().is_empty() || self.has_capability_profile("tts")
+    }
 }
 
 /// One-time migration: convert the legacy quick-transform pair
@@ -628,5 +654,28 @@ mod tests {
         let j = serde_json::to_string(&c2).unwrap();
         let c3: AppConfig = serde_json::from_str(&j).unwrap();
         assert_eq!(c3.diarization_hf_endpoint, "https://hf-mirror.com");
+    }
+
+    #[test]
+    fn capability_configured_checks() {
+        let mut cfg = AppConfig::default();
+        assert!(!cfg.is_stt_configured());
+        assert!(!cfg.is_llm_configured());
+        assert!(!cfg.is_tts_configured());
+
+        // Direct profile assignment counts.
+        cfg.llm_profile = "p1".to_string();
+        assert!(cfg.is_llm_configured());
+
+        // A capability-tagged profile counts even without a default assignment.
+        cfg.model_profiles = vec![serde_json::json!({
+            "id": "p2", "name": "x", "provider": "openai",
+            "model": "m", "capabilities": ["tts", "stt"]
+        })];
+        assert!(cfg.is_tts_configured());
+        assert!(cfg.is_stt_configured());
+        // Capabilities list without "llm" does not flip llm off its direct assignment.
+        cfg.llm_profile = String::new();
+        assert!(!cfg.is_llm_configured());
     }
 }

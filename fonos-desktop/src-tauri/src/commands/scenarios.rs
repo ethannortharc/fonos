@@ -50,7 +50,7 @@ fn parse_model_ids(json: &serde_json::Value) -> Vec<String> {
 }
 
 /// GET `<base>/v1/models` with a bounded timeout. Returns `(reachable, latency_ms, models)`.
-async fn fetch_models(base_url: &str, api_key: &str, timeout: Duration) -> (bool, u64, Vec<String>) {
+pub(crate) async fn fetch_models(base_url: &str, api_key: &str, timeout: Duration) -> (bool, u64, Vec<String>) {
     let base = base_url.trim_end_matches('/');
     let url = if base.ends_with("/v1") {
         format!("{base}/models")

@@ -8,19 +8,26 @@
 // default assignments (never overwriting existing profiles). A "Saved setups"
 // section lists switchable bundles with apply / delete / import / export.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  checkDiskSpace,
+  detectHardware,
+  engineDetect,
   getConfig,
   saveConfig,
-  scanModels,
   scenarioProbe,
 } from "../lib/api";
 import type {
   AppConfig,
+  EngineDetection,
+  HardwareInfo,
   ModelProfile,
   ScenarioProbe,
 } from "../types";
+import { buildSetupPlan, type BuiltPlan, type EngineKey, type Tier } from "../lib/engineSetup";
+import EngineSetupReview from "../components/EngineSetupReview";
 import { t, td, useT, type TKey } from "../lib/i18n";
+import { isMacOS } from "../lib/platform";
 
 export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -45,11 +52,28 @@ export function isSttConfigured(cfg: AppConfig): boolean {
 // ── scenario / engine / provider definitions ────────────────────────────────
 
 type ScenarioKey = "local" | "cloud" | "zero";
-type EngineKey = "omlx" | "lmstudio" | "ollama" | "vllm";
-type ProviderKey = "openai" | "openrouter";
+// EngineKey is imported from ../lib/engineSetup (single source of truth shared
+// with buildSetupPlan / EngineSetupReview). "custom" is a frontend-only local
+// tile (R3) — a manual LAN/base-URL entry with no detection, no install/start
+// orchestration, and no EngineSpec on the Rust side — so it widens the local
+// key here without touching engineSetup's backend-mirroring EngineKey.
+type LocalKey = EngineKey | "custom";
+// Single source of truth for the provider-key union — every CLOUD_PROVIDERS
+// entry's `key` must appear here (a Scenarios test enforces parity). Exported so
+// tests can assert cerebras/custom presence + ProviderKey derivation.
+export const CLOUD_PROVIDER_KEYS = [
+  "openai",
+  "openrouter",
+  "anthropic",
+  "google",
+  "fireworks",
+  "cerebras",
+  "custom",
+] as const;
+type ProviderKey = (typeof CLOUD_PROVIDER_KEYS)[number];
 
 interface EngineDef {
-  key: EngineKey;
+  key: LocalKey;
   name: string;
   url: string;
   /** Full pipeline (STT+LLM+TTS probing). False = LLM-only server. */
@@ -61,23 +85,42 @@ const LOCAL_ENGINES: EngineDef[] = [
   { key: "lmstudio", name: "LM Studio", url: "http://localhost:1234", full: false },
   { key: "ollama", name: "Ollama", url: "http://localhost:11434", full: false },
   { key: "vllm", name: "vLLM", url: "http://localhost:8000", full: true },
+  // Manual entry: user types the LAN/base URL; probed as a potential full
+  // pipeline. No detection badge (shows a muted "manual" line) and no CTA.
+  { key: "custom", name: "Custom", url: "", full: true },
 ];
+
+// Detection-evidence token → i18n label. Backend tokens ("path"/"app"/
+// "process"/"port") are mapped here so the local step can show *why* an engine
+// reads installed/running under the state badge.
+const EVIDENCE_KEY: Record<string, TKey> = {
+  path: "scen.evidence.path",
+  app: "scen.evidence.app",
+  process: "scen.evidence.process",
+  port: "scen.evidence.port",
+};
 
 // Provider label for created local profiles. omlx/ollama skip the LLM api-key
 // requirement, which keyless local servers need; base_url is always set
 // explicitly so the provider's default URL is never used.
-const ENGINE_PROVIDER: Record<EngineKey, string> = {
+const ENGINE_PROVIDER: Record<LocalKey, string> = {
   omlx: "omlx",
   vllm: "omlx",
   ollama: "ollama",
   lmstudio: "omlx",
+  // A custom LAN/base-URL server: keep the api-key requirement (some gateways
+  // need one) and route through fonos-core's OpenAI-compatible fallthrough.
+  custom: "custom",
 };
 
 interface CloudBundle {
   stt?: { model: string; stt_api: "whisper" | "chat" };
   sttApple?: boolean;
   llm?: string;
-  tts?: string;
+  // Role-coverage metadata (R4): a real model id = prefilled default; `null` =
+  // the provider genuinely lacks this role (drives an explanatory placeholder);
+  // absent/`undefined` = unknown (e.g. Custom, where the user types anything).
+  tts?: string | null;
 }
 interface ProviderDef {
   key: ProviderKey;
@@ -86,7 +129,8 @@ interface ProviderDef {
   bundle: CloudBundle;
 }
 
-const CLOUD_PROVIDERS: ProviderDef[] = [
+// Exported so tests can assert provider presence + ProviderKey/keys parity.
+export const CLOUD_PROVIDERS: ProviderDef[] = [
   {
     key: "openai",
     name: "OpenAI",
@@ -101,11 +145,78 @@ const CLOUD_PROVIDERS: ProviderDef[] = [
     key: "openrouter",
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
-    bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true },
+    bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true, tts: null },
+  },
+  {
+    key: "anthropic",
+    name: "Anthropic",
+    baseUrl: "https://api.anthropic.com",
+    bundle: { llm: "claude-sonnet-4-5", sttApple: true, tts: null },
+  },
+  {
+    key: "google",
+    name: "Google",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    bundle: { llm: "gemini-2.5-flash", sttApple: true, tts: null },
+  },
+  {
+    key: "fireworks",
+    name: "Fireworks",
+    baseUrl: "https://api.fireworks.ai/inference/v1",
+    bundle: {
+      // Fireworks serves an OpenAI-compatible Whisper endpoint; "whisper-v3-turbo"
+      // is their documented id — the row stays editable if it drifts.
+      stt: { model: "whisper-v3-turbo", stt_api: "whisper" },
+      llm: "accounts/fireworks/models/kimi-k2-instruct",
+      tts: null, // no Fireworks TTS today → no-tts hint on the voice rows
+    },
+  },
+  {
+    // LLM-only. Cerebras is OpenAI-compatible, so the generic fallthrough in
+    // fonos-core (llm.rs → call_openai_compatible; not caught by the
+    // anthropic/google branches) drives it — no Rust change needed.
+    // "qwen-3-32b" is their documented fast Qwen; the row stays editable so
+    // model drift is user-fixable. macOS keeps the Apple STT fallback.
+    key: "cerebras",
+    name: "Cerebras",
+    baseUrl: "https://api.cerebras.ai/v1",
+    bundle: { llm: "qwen-3-32b", sttApple: true, tts: null },
+  },
+  {
+    // Any OpenAI-compatible endpoint (self-hosted, LAN gateway, a provider we
+    // don't preset). No roles preset — every row is an editable input with the
+    // "type anything" hint; the in-card base-URL field is where the user points
+    // it. The apply gate is relaxed for custom (baseUrl + ≥1 row, no key) since
+    // LAN servers are often keyless — see canApply.
+    key: "custom",
+    name: "Custom",
+    baseUrl: "",
+    bundle: {},
   },
 ];
 
-const OPENROUTER_FREE_LLM = "meta-llama/llama-3.3-70b-instruct:free";
+// live-verified against openrouter.ai/api/v1/models on 2026-07-14; rows stay editable if the pool rotates
+export const OPENROUTER_FREE_LLM = "qwen/qwen3-next-80b-a3b-instruct:free";
+
+/** Placeholder i18n key for a cloud plan row, by provider bundle + role
+ *  (R4 role-coverage). PRINCIPLE: prefill is a default, never a lock — every
+ *  row is an editable input; the placeholder just explains *why* a role is
+ *  blank so the user knows where to point it instead. A real model id → the
+ *  generic model-id hint; an explicit `null` → the role is genuinely absent
+ *  (no-tts / off-macOS no-stt); absent metadata → Custom, type anything. */
+export function cloudRowPlaceholder(b: CloudBundle, role: RoleKey): TKey {
+  if (role === "conv" || role === "listen") {
+    if (b.tts === null) return "scen.cloud.ph.no-tts";
+    return b.tts ? "scen.cloud.row.ph" : "scen.cloud.ph.custom";
+  }
+  if (role === "stt") {
+    if (b.stt) return "scen.cloud.row.ph";
+    // No real cloud STT model: sttApple providers explain the on-device / local
+    // route; a bare bundle (Custom) just invites a model id.
+    return b.sttApple ? "scen.cloud.ph.no-stt" : "scen.cloud.ph.custom";
+  }
+  return b.llm ? "scen.cloud.row.ph" : "scen.cloud.ph.custom";
+}
 
 const CARD_META: Record<
   ScenarioKey,
@@ -118,7 +229,7 @@ const CARD_META: Record<
 
 // ── profile-build helpers (Apply) ────────────────────────────────────────────
 
-interface ProfileSpec {
+export interface ProfileSpec {
   provider: string;
   base_url: string;
   model: string;
@@ -152,8 +263,15 @@ function uniqueId(base: string, taken: Set<string>): string {
 
 /** Build the merged profile array + default-field updates for a set of desired
  *  role specs, reusing existing profiles by base_url+model and never mutating
- *  them. Returns a partial AppConfig to persist. */
-function buildUpdates(
+ *  them. Returns a partial AppConfig to persist.
+ *
+ *  Only includes a role-default key when `specs` actually assigned that role
+ *  — partial bundles (e.g. an Anthropic apply that's LLM-only) must never
+ *  clear role defaults the specs didn't touch, since the backend's save_config
+ *  merges by key (absent keys keep their current value; see
+ *  src-tauri/src/commands/config.rs). A full bundle (all four roles present)
+ *  still sets all five fields, same as before. */
+export function buildUpdates(
   existing: ModelProfile[],
   source: string,
   specs: { role: RoleKey; spec: ProfileSpec }[]
@@ -215,17 +333,20 @@ function buildUpdates(
     roleToId[role] = id;
   }
 
-  const conv = roleToId.conv ?? roleToId.listen ?? "";
-  const listen = roleToId.listen ?? roleToId.conv ?? "";
-  return {
+  const conv = roleToId.conv ?? roleToId.listen;
+  const listen = roleToId.listen ?? roleToId.conv;
+  const updates: Partial<AppConfig> = {
     model_profiles: profiles,
-    stt_profile: roleToId.stt ?? "",
-    llm_profile: roleToId.llm ?? "",
-    tts_profile: conv,
-    sts_voice_profile: conv,
-    listen_voice_profile: listen,
     has_completed_onboarding: true,
   };
+  if (roleToId.stt) updates.stt_profile = roleToId.stt;
+  if (roleToId.llm) updates.llm_profile = roleToId.llm;
+  if (conv) {
+    updates.tts_profile = conv;
+    updates.sts_voice_profile = conv;
+  }
+  if (listen) updates.listen_voice_profile = listen;
+  return updates;
 }
 
 // ── small presentational pieces ──────────────────────────────────────────────
@@ -254,9 +375,15 @@ export default function Scenarios({
   useT();
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [selected, setSelected] = useState<ScenarioKey | null>(null);
-  const [engine, setEngine] = useState<EngineKey>("omlx");
+  // Platform-optimal default: macOS ships the OMLX full pipeline; Linux has no
+  // Apple STT, so Ollama (LLM-only + auto-installable) is the sensible start.
+  const [engine, setEngine] = useState<LocalKey>(isMacOS ? "omlx" : "ollama");
   const [provider, setProvider] = useState<ProviderKey>("openai");
-  const [detected, setDetected] = useState<Partial<Record<EngineKey, boolean | null>>>({});
+  const [detected, setDetected] = useState<Partial<Record<LocalKey, EngineDetection | null>>>({});
+  const [hardware, setHardware] = useState<HardwareInfo | null>(null);
+  const [diskKb, setDiskKb] = useState(0);
+  const [tierOverride, setTierOverride] = useState<Tier | null>(null);
+  const [review, setReview] = useState<BuiltPlan | null>(null);
 
   // Step 2 (local probe) state.
   const [baseUrl, setBaseUrl] = useState("http://localhost:8000");
@@ -269,6 +396,11 @@ export default function Scenarios({
   // Cloud / zero key inputs.
   const [cloudKey, setCloudKey] = useState("");
   const [zeroKey, setZeroKey] = useState("");
+  // Cloud plan rows — editable copies of the provider bundle (spec: 每步有缺省、逐项可改).
+  const [cloudSel, setCloudSel] = useState<Record<RoleKey, string>>({ stt: "", llm: "", conv: "", listen: "" });
+  // Editable endpoint — defaults to the provider's URL; hand-editing it IS the
+  // "custom OpenAI-compatible endpoint" path (spec: 自定义 endpoint 就在卡内).
+  const [cloudBaseUrl, setCloudBaseUrl] = useState(CLOUD_PROVIDERS[0].baseUrl);
 
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -287,18 +419,44 @@ export default function Scenarios({
     reloadConfig();
   }, [reloadConfig]);
 
-  // Detect local engines on mount (parallel, best-effort).
+  // Two-layer engine detection + hardware/disk facts on mount (best-effort).
+  // `autoTakeoverDone` fires the running-engine take-over below at most once,
+  // so it never fights a later, deliberate user engine choice.
+  const autoTakeoverDone = useRef(false);
   useEffect(() => {
     let alive = true;
     setDetected(Object.fromEntries(LOCAL_ENGINES.map((e) => [e.key, null])));
-    LOCAL_ENGINES.forEach((e) => {
-      scanModels(e.url, "")
-        .then((r) => alive && setDetected((d) => ({ ...d, [e.key]: r.reachable })))
-        .catch(() => alive && setDetected((d) => ({ ...d, [e.key]: false })));
-    });
+    engineDetect()
+      .then((list) => {
+        if (!alive) return;
+        setDetected(Object.fromEntries(list.map((d) => [d.engine, d])));
+        // Running-engine auto-take-over (spec: 在跑的服务直接接管) — if the
+        // currently-selected engine isn't running but another local engine
+        // already is, switch to it via the normal engine-switch path (so
+        // baseUrl etc. follow), once, on mount.
+        if (!autoTakeoverDone.current) {
+          autoTakeoverDone.current = true;
+          const selectedDet = list.find((d) => d.engine === engine);
+          if (!selectedDet?.running) {
+            // Cross-reference against LOCAL_ENGINES (not the detection list
+            // directly) so the match comes back typed as EngineKey rather
+            // than EngineDetection's backend-mirroring `string`.
+            const runningOther = LOCAL_ENGINES.find(
+              (e) => e.key !== engine && list.find((d) => d.engine === e.key)?.running
+            );
+            if (runningOther) selectEngine(runningOther.key);
+          }
+        }
+      })
+      .catch(() => alive && setDetected({}));
+    detectHardware().then((h) => alive && setHardware(h)).catch(() => {});
+    checkDiskSpace().then((d) => alive && setDiskKb(d.available_kb)).catch(() => {});
     return () => {
       alive = false;
     };
+    // Mount-only: intentionally ignores `engine`/`selectEngine` churn — the
+    // ref above enforces the single-shot semantics, not the dep array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentEngine = LOCAL_ENGINES.find((e) => e.key === engine)!;
@@ -314,14 +472,34 @@ export default function Scenarios({
       setBaseUrl(currentEngine.url);
       setApiKey("");
     }
+    if (s === "cloud") {
+      setCloudSel(bundleToSel(provider));
+      setCloudBaseUrl(currentProvider.baseUrl);
+    }
   };
-  const selectEngine = (k: EngineKey) => {
+  const selectEngine = (k: LocalKey) => {
     setEngine(k);
     setProbe(null);
     setProbeErr("");
+    setReview(null);
+    setTierOverride(null);
     const e = LOCAL_ENGINES.find((x) => x.key === k)!;
     setBaseUrl(e.url);
     setApiKey("");
+  };
+  const bundleToSel = (key: ProviderKey): Record<RoleKey, string> => {
+    const b = CLOUD_PROVIDERS.find((p) => p.key === key)!.bundle;
+    return {
+      stt: b.stt?.model ?? (b.sttApple && isMacOS ? "apple" : ""),
+      llm: b.llm ?? "",
+      conv: b.tts ?? "",
+      listen: b.tts ?? "",
+    };
+  };
+  const selectProvider = (k: ProviderKey) => {
+    setProvider(k);
+    setCloudSel(bundleToSel(k));
+    setCloudBaseUrl(CLOUD_PROVIDERS.find((p) => p.key === k)!.baseUrl);
   };
 
   const runProbe = useCallback(async () => {
@@ -337,7 +515,10 @@ export default function Scenarios({
       }
       const p = result.plan;
       setPlanSel({
-        stt: currentEngine.full ? p.stt ?? "apple" : "apple",
+        // Apple on-device Speech is macOS-only (the backend errors explicitly
+        // off-platform) — never sentinel-fall to it on Linux, for full or
+        // non-full engines alike (mirrors the cloud-branch guard below).
+        stt: currentEngine.full ? p.stt ?? (isMacOS ? "apple" : "") : isMacOS ? "apple" : "",
         llm: p.llm ?? "",
         conv: p.conversation_tts ?? "",
         listen: p.listen_tts ?? "",
@@ -348,6 +529,29 @@ export default function Scenarios({
       setProbing(false);
     }
   }, [baseUrl, apiKey, currentEngine.full]);
+
+  // ── one-click setup: detection → review card → auto-probe ────────────────────
+  // A user-chosen tier (from a disk/failure downgrade) wins; else the hardware's
+  // recommendation; else the safe floor.
+  const tier: Tier = tierOverride ?? hardware?.tier ?? "light";
+  const openReview = (forTier: Tier) => {
+    // Custom is manual — no install/start plan, no review card (the CTA never
+    // renders for it). Guarding here also narrows `engine` to EngineKey for
+    // buildSetupPlan, whose backend-mirroring type has no "custom".
+    if (engine === "custom") return;
+    const det = detected[engine];
+    if (!det) return;
+    setTierOverride(forTier);
+    setReview(buildSetupPlan(det, forTier, diskKb, engine));
+  };
+  const reviewDone = () => {
+    setReview(null);
+    // Engine came up — re-detect and hand off to the normal probe flow.
+    engineDetect()
+      .then((list) => setDetected(Object.fromEntries(list.map((d) => [d.engine, d]))))
+      .catch(() => {});
+    runProbe();
+  };
 
   // Build the desired role specs for the current selection.
   const buildSpecs = (): { source: string; specs: { role: RoleKey; spec: ProfileSpec }[] } | null => {
@@ -361,31 +565,32 @@ export default function Scenarios({
         capabilities: caps,
         stt_api,
       });
-      if (planSel.stt === "apple") specs.push({ role: "stt", spec: appleSpec() });
-      else if (planSel.stt) specs.push({ role: "stt", spec: local(planSel.stt, ["stt"], "whisper") });
+      if (planSel.stt === "apple") {
+        if (isMacOS) specs.push({ role: "stt", spec: appleSpec() });
+      } else if (planSel.stt) specs.push({ role: "stt", spec: local(planSel.stt, ["stt"], "whisper") });
       if (planSel.llm) specs.push({ role: "llm", spec: local(planSel.llm, ["llm"]) });
       if (planSel.conv) specs.push({ role: "conv", spec: local(planSel.conv, ["tts"]) });
       if (planSel.listen) specs.push({ role: "listen", spec: local(planSel.listen, ["tts"]) });
       return { source: engine, specs };
     }
     if (selected === "cloud") {
-      const b = currentProvider.bundle;
       const specs: { role: RoleKey; spec: ProfileSpec }[] = [];
       const cloud = (model: string, caps: string[], stt_api?: "whisper" | "chat"): ProfileSpec => ({
         provider: currentProvider.key,
-        base_url: currentProvider.baseUrl,
+        base_url: cloudBaseUrl.trim() || currentProvider.baseUrl,
         model,
         api_key: cloudKey,
         capabilities: caps,
         stt_api,
       });
-      if (b.stt) specs.push({ role: "stt", spec: cloud(b.stt.model, ["stt"], b.stt.stt_api) });
-      else if (b.sttApple) specs.push({ role: "stt", spec: appleSpec() });
-      if (b.llm) specs.push({ role: "llm", spec: cloud(b.llm, ["llm"]) });
-      if (b.tts) {
-        specs.push({ role: "conv", spec: cloud(b.tts, ["tts"]) });
-        specs.push({ role: "listen", spec: cloud(b.tts, ["tts"]) });
+      if (cloudSel.stt === "apple") {
+        if (isMacOS) specs.push({ role: "stt", spec: appleSpec() });
+      } else if (cloudSel.stt) {
+        specs.push({ role: "stt", spec: cloud(cloudSel.stt, ["stt"], currentProvider.bundle.stt?.stt_api ?? "whisper") });
       }
+      if (cloudSel.llm) specs.push({ role: "llm", spec: cloud(cloudSel.llm, ["llm"]) });
+      if (cloudSel.conv) specs.push({ role: "conv", spec: cloud(cloudSel.conv, ["tts"]) });
+      if (cloudSel.listen) specs.push({ role: "listen", spec: cloud(cloudSel.listen, ["tts"]) });
       return { source: currentProvider.key, specs };
     }
     if (selected === "zero") {
@@ -409,7 +614,16 @@ export default function Scenarios({
 
   const canApply = (): boolean => {
     if (selected === "local") return !!probe?.reachable;
-    if (selected === "cloud") return cloudKey.trim().length > 0;
+    if (selected === "cloud") {
+      const hasRole = (Object.keys(cloudSel) as RoleKey[]).some(
+        (r) => cloudSel[r].trim().length > 0
+      );
+      // Custom endpoints are often keyless LAN servers — require a base URL and
+      // ≥1 model row instead of an API key (R3). Preset providers still gate on
+      // the key.
+      if (provider === "custom") return cloudBaseUrl.trim().length > 0 && hasRole;
+      return cloudKey.trim().length > 0 && hasRole;
+    }
     if (selected === "zero") return true;
     return false;
   };
@@ -432,7 +646,7 @@ export default function Scenarios({
       setApplying(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, engine, baseUrl, apiKey, planSel, provider, cloudKey, zeroKey, probe, config, reloadConfig]);
+  }, [selected, engine, baseUrl, apiKey, planSel, provider, cloudKey, cloudSel, cloudBaseUrl, zeroKey, probe, config, reloadConfig]);
 
   const skip = useCallback(async () => {
     try {
@@ -480,8 +694,17 @@ export default function Scenarios({
       {error && <div className="text-[11px] text-[#f87171] text-center">{error}</div>}
 
       {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-4">
-        {(Object.keys(CARD_META) as ScenarioKey[]).map((key) => {
+      <div
+        className={[
+          "grid grid-cols-1 gap-2.5 mt-4",
+          isMacOS ? "sm:grid-cols-3" : "sm:grid-cols-2",
+        ].join(" ")}
+      >
+        {(Object.keys(CARD_META) as ScenarioKey[])
+          // Zero relies on Apple on-device Speech — macOS only (spec §P1
+          // Linux 差异; the backend errors explicitly off-macOS anyway).
+          .filter((key) => key !== "zero" || isMacOS)
+          .map((key) => {
           const m = CARD_META[key];
           const active = selected === key;
           return (
@@ -548,15 +771,37 @@ export default function Scenarios({
           planSel={planSel}
           setPlanSel={setPlanSel}
           full={currentEngine.full}
+          onSetup={() => openReview(tier)}
+          review={
+            review && (
+              <EngineSetupReview
+                // Remount when the plan's engine/tier changes (e.g. a disk
+                // downgrade) so the editable pull list reseeds from the new
+                // plan; in-place edits keep the same key and persist.
+                key={`${engine}-${tier}`}
+                built={review}
+                engineName={currentEngine.name}
+                tier={tier}
+                diskAvailableKb={diskKb}
+                onRetier={openReview}
+                onCancel={() => setReview(null)}
+                onDone={reviewDone}
+              />
+            )
+          }
         />
       )}
 
       {selected === "cloud" && (
         <CloudStep
           provider={provider}
-          onProvider={setProvider}
+          onProvider={selectProvider}
           cloudKey={cloudKey}
           setCloudKey={setCloudKey}
+          cloudSel={cloudSel}
+          setCloudSel={setCloudSel}
+          baseUrl={cloudBaseUrl}
+          setBaseUrl={setCloudBaseUrl}
         />
       )}
 
@@ -591,7 +836,13 @@ export default function Scenarios({
             {applying ? t("scen.applying") : t("scen.apply")}
           </button>
           <span className="text-[10px] text-[rgba(255,255,255,0.35)]">
-            {canApply() ? t("scen.apply.note") : selected === "cloud" ? t("scen.needkey") : t("scen.apply.note")}
+            {canApply()
+              ? t("scen.apply.note")
+              : selected === "cloud"
+              ? provider === "custom"
+                ? t("scen.custom.needurl")
+                : t("scen.needkey")
+              : t("scen.apply.note")}
           </span>
         </div>
       )}
@@ -666,10 +917,12 @@ function LocalStep({
   planSel,
   setPlanSel,
   full,
+  onSetup,
+  review,
 }: {
-  engine: EngineKey;
-  detected: Partial<Record<EngineKey, boolean | null>>;
-  onEngine: (k: EngineKey) => void;
+  engine: LocalKey;
+  detected: Partial<Record<LocalKey, EngineDetection | null>>;
+  onEngine: (k: LocalKey) => void;
   baseUrl: string;
   apiKey: string;
   setBaseUrl: (v: string) => void;
@@ -681,6 +934,8 @@ function LocalStep({
   planSel: Record<RoleKey, string>;
   setPlanSel: (v: Record<RoleKey, string>) => void;
   full: boolean;
+  onSetup: () => void;
+  review: React.ReactNode;
 }) {
   const set = (role: RoleKey, v: string) => setPlanSel({ ...planSel, [role]: v });
   const ttsCandidates = probe?.classified.tts ?? [];
@@ -695,6 +950,9 @@ function LocalStep({
           {LOCAL_ENGINES.map((e) => {
             const on = e.key === engine;
             const det = detected[e.key];
+            // Custom is manual — no detection three-state and no evidence line,
+            // just a muted "manual" label (the URL/probe path drives it).
+            const isCustom = e.key === "custom";
             return (
               <button
                 key={e.key}
@@ -710,14 +968,29 @@ function LocalStep({
                   {e.name}
                 </div>
                 <div className="text-[8.5px] mt-0.5">
-                  {det === null ? (
+                  {isCustom ? (
+                    <span data-testid="engine-manual-custom" className="text-[rgba(255,255,255,0.3)]">{t("scen.manual")}</span>
+                  ) : det === null || det === undefined ? (
                     <span className="text-[rgba(255,255,255,0.3)]">{t("scen.detecting")}</span>
-                  ) : det ? (
+                  ) : det.running ? (
                     <span className="text-[#4ade80]">{t("scen.detected")}</span>
+                  ) : det.installed ? (
+                    <span className="text-[var(--accent)]">{t("scen.installed.stopped")}</span>
                   ) : (
                     <span className="text-[rgba(255,255,255,0.25)]">{t("scen.notdetected")}</span>
                   )}
                 </div>
+                {!isCustom && det && det.evidence.length > 0 && (
+                  <div
+                    data-testid={`engine-evidence-${e.key}`}
+                    className="text-[8px] mt-0.5 text-[rgba(255,255,255,0.3)] tabular-nums"
+                  >
+                    {det.evidence
+                      .filter((ev) => EVIDENCE_KEY[ev])
+                      .map((ev) => t(EVIDENCE_KEY[ev]))
+                      .join(" · ")}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -752,6 +1025,29 @@ function LocalStep({
         </button>
       </div>
 
+      {/* One-click setup CTA — only while the selected engine isn't running.
+          Opens the pre-execution review card (rendered via the `review` slot). */}
+      {(() => {
+        // Custom has no install/start orchestration — never a CTA (the manual
+        // URL + Probe path is the whole flow).
+        if (engine === "custom") return null;
+        const d = detected[engine];
+        if (!d || d.running) return null;
+        return (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              data-testid="engine-setup-cta"
+              onClick={onSetup}
+              className="px-4 py-2 rounded-lg bg-[rgba(242,184,75,0.14)] border border-[rgba(242,184,75,0.35)] text-[var(--accent)] text-[11px] font-semibold hover:bg-[rgba(242,184,75,0.2)] transition-colors"
+            >
+              {d.installed ? t("scen.setup.start") : t("scen.setup.install")}
+            </button>
+            <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("scen.setup.note")}</span>
+          </div>
+        );
+      })()}
+      {review}
+
       {/* Banner */}
       {probeErr && (
         <div className="text-[11px] text-[#f87171] px-3 py-2 rounded-lg bg-[rgba(248,113,113,0.06)] border border-[rgba(248,113,113,0.15)]">
@@ -777,7 +1073,10 @@ function LocalStep({
             role="stt"
             value={planSel.stt}
             options={[
-              { value: "apple", label: t("scen.apple") },
+              // Apple on-device Speech is macOS-only — don't offer it as a
+              // choice off-macOS (mirrors the `key !== "zero" || isMacOS`
+              // scenario-card filter above).
+              ...(isMacOS ? [{ value: "apple", label: t("scen.apple") }] : []),
               ...(probe.classified.stt.map((m) => ({ value: m, label: m }))),
             ]}
             onChange={(v) => set("stt", v)}
@@ -824,19 +1123,28 @@ function CloudStep({
   onProvider,
   cloudKey,
   setCloudKey,
+  cloudSel,
+  setCloudSel,
+  baseUrl,
+  setBaseUrl,
 }: {
   provider: ProviderKey;
   onProvider: (k: ProviderKey) => void;
   cloudKey: string;
   setCloudKey: (v: string) => void;
+  cloudSel: Record<RoleKey, string>;
+  setCloudSel: (v: Record<RoleKey, string>) => void;
+  baseUrl: string;
+  setBaseUrl: (v: string) => void;
 }) {
-  const def = CLOUD_PROVIDERS.find((p) => p.key === provider)!;
-  const b = def.bundle;
+  const set = (role: RoleKey, v: string) => setCloudSel({ ...cloudSel, [role]: v });
+  const bundle = CLOUD_PROVIDERS.find((p) => p.key === provider)!.bundle;
+  const ph = (role: RoleKey) => t(cloudRowPlaceholder(bundle, role));
   return (
     <div className="mt-4 rounded-xl border border-[rgba(255,255,255,0.07)] bg-[rgba(255,255,255,0.02)] p-4 flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] uppercase tracking-wider text-[rgba(255,255,255,0.3)]">{t("scen.provider")}</span>
-        <div className="grid grid-cols-2 gap-1.5 max-w-[280px]">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-w-[420px]">
           {CLOUD_PROVIDERS.map((p) => {
             const on = p.key === provider;
             return (
@@ -857,28 +1165,38 @@ function CloudStep({
         </div>
       </div>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.apikey")}</span>
-        <input
-          value={cloudKey}
-          onChange={(e) => setCloudKey(e.target.value)}
-          placeholder={t("scen.apikey.ph")}
-          className={`${control} font-mono w-full`}
-        />
-      </label>
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex flex-col gap-1 flex-1 min-w-[220px]">
+          <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.baseurl")}</span>
+          <input
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            className={`${control} font-mono w-full`}
+            data-testid="cloud-base-url"
+          />
+        </label>
+        <label className="flex flex-col gap-1 w-[200px]">
+          <span className="text-[9px] text-[rgba(255,255,255,0.35)]">{t("scen.apikey")}</span>
+          <input
+            value={cloudKey}
+            onChange={(e) => setCloudKey(e.target.value)}
+            placeholder={t("scen.apikey.ph")}
+            className={`${control} font-mono w-full`}
+          />
+        </label>
+      </div>
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.06)] divide-y divide-[rgba(255,255,255,0.04)]">
-        <PlanRowStatic role="stt" value={b.stt ? b.stt.model : t("scen.apple")} />
-        {b.llm && <PlanRowStatic role="llm" value={b.llm} />}
-        {b.tts ? (
-          <>
-            <PlanRowStatic role="conv" value={b.tts} />
-            <PlanRowStatic role="listen" value={b.tts} />
-          </>
+        {cloudSel.stt === "apple" ? (
+          <PlanRowStatic role="stt" value={t("scen.apple")} />
         ) : (
-          <PlanRowStatic role="conv" value={t("scen.unassigned")} note={t("scen.tts.note")} />
+          <PlanRowInput role="stt" value={cloudSel.stt} onChange={(v) => set("stt", v)} placeholder={ph("stt")} />
         )}
+        <PlanRowInput role="llm" value={cloudSel.llm} onChange={(v) => set("llm", v)} placeholder={ph("llm")} />
+        <PlanRowInput role="conv" value={cloudSel.conv} onChange={(v) => set("conv", v)} placeholder={ph("conv")} />
+        <PlanRowInput role="listen" value={cloudSel.listen} onChange={(v) => set("listen", v)} placeholder={ph("listen")} />
       </div>
+      <span className="text-[10px] text-[rgba(255,255,255,0.35)]">{t("scen.cloud.editable.note")}</span>
     </div>
   );
 }
@@ -946,6 +1264,33 @@ function PlanRowStatic({ role, value, note }: { role: RoleKey; value: string; no
   );
 }
 
+/** Editable plan row: role label + free-text mono input (cloud bundles have
+ *  no candidate list to select from — every default stays hand-editable). */
+function PlanRowInput({
+  role,
+  value,
+  onChange,
+  placeholder,
+}: {
+  role: RoleKey;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5">
+      <span className="w-[92px] flex-none text-[10.5px] text-[rgba(255,255,255,0.4)]">{t(ROLE_LABEL[role])}</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "—"}
+        className={`${control} font-mono flex-1 min-w-0`}
+        data-testid={`cloud-row-${role}`}
+      />
+    </div>
+  );
+}
+
 // ── saved-scenario preview helpers (shared with Settings › Scenarios) ─────────
 
 /** Relative "saved N ago" label from an epoch-seconds string. */
@@ -959,7 +1304,9 @@ export function relDate(epochSecs: string): string {
   return td("scen.saved.day", [String(Math.floor(diff / 86400))]);
 }
 
-export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google"]);
+// Providers whose saved-scenario preview shows a "needs key" chip when the key
+// is blank. "custom" is intentionally absent — keyless LAN servers are valid.
+export const KEY_PROVIDERS = new Set(["openai", "openrouter", "anthropic", "google", "fireworks", "cerebras"]);
 
 /** Host (with port) of a base URL — "http://localhost:8000" → "localhost:8000",
  *  "https://api.openai.com" → "api.openai.com". Empty for keyless/local. */

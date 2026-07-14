@@ -1,6 +1,36 @@
 //! Global hotkey registration via CGEventTapCreate; emits Tauri events on keypress/release.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// The process-wide hotkey manager, stashed by `main`'s setup via
+/// [`store_manager`] so [`restart_after_ax_grant`] can re-arm the CGEventTap
+/// after the user grants Accessibility. Held as an `Arc` because the listener
+/// thread also holds clones of the manager's inner fields.
+static MANAGER: OnceLock<Arc<HotkeyManager>> = OnceLock::new();
+
+/// Stash the live [`HotkeyManager`] for later re-arming. Called once at setup.
+/// Only the bin (`main.rs`) calls this; the lib compilation of this source
+/// never does, hence the `allow(dead_code)` for the lib build.
+#[allow(dead_code)]
+pub fn store_manager(hm: Arc<HotkeyManager>) {
+    let _ = MANAGER.set(hm);
+}
+
+/// Re-arm the global hotkey listener after an Accessibility grant.
+///
+/// `CGEventTapCreate` fails (and the listener thread exits) when the process
+/// launches without Accessibility; a `hotkey:reload` only swaps bindings and
+/// never re-installs the tap. Once the user grants Accessibility we must spawn a
+/// fresh tap. [`HotkeyManager::start`]'s `running` guard makes this a no-op when
+/// the tap is already alive, so calling it on every false→true flip is safe.
+pub fn restart_after_ax_grant() {
+    if let Some(hm) = MANAGER.get() {
+        match hm.start() {
+            Ok(()) => eprintln!("fonos: hotkey tap re-armed after Accessibility grant"),
+            Err(e) => eprintln!("fonos: hotkey restart skipped ({e})"),
+        }
+    }
+}
 
 use core_graphics::event::{
     CallbackResult, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,

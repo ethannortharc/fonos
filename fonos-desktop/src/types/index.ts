@@ -191,6 +191,60 @@ export interface ScenarioProbe {
   plan: ModelPlan;
 }
 
+/** Two-layer engine detection — mirrors commands::engine_setup::EngineDetection. */
+export interface EngineDetection {
+  engine: string;
+  running: boolean;
+  installed: boolean;
+  url: string;
+  /** Raw signals behind the verdict — machine tokens the UI maps to labels:
+   *  "path" (binary on PATH), "app" (app bundle), "process" (brand process),
+   *  "port" (base URL answered). Empty means nothing was detected. */
+  evidence: string[];
+}
+
+/** Hardware facts + derived tier — mirrors commands::engine_setup::HardwareInfo.
+ *  `tier` mirrors fonos_core::engine_setup::HardwareTier, which serializes
+ *  lowercase (`#[serde(rename_all = "lowercase")]`). */
+export interface HardwareInfo {
+  mem_bytes: number;
+  chip: string;
+  has_nvidia_gpu: boolean;
+  tier: "light" | "balanced" | "max";
+}
+
+/** Free disk space — mirrors commands::engine_setup::DiskInfo. */
+export interface DiskInfo {
+  available_kb: number;
+}
+
+/** Confirmed setup plan — mirrors commands::engine_setup::SetupPlanDto. */
+export interface SetupPlan {
+  engine: string;
+  install: boolean;
+  start: boolean;
+  pulls: string[];
+  base_url: string;
+}
+
+/** One `engine:setup` progress event (JSON-parsed payload — the event itself
+ *  carries a JSON string, mirroring the `diarize:download` double-parse
+ *  pattern; parse with `JSON.parse(e.payload) as EngineSetupEvent`).
+ *
+ *  Mirrors every `emit_setup`/`emit_error` call site in
+ *  commands::engine_setup: `engine` is present on every variant (not just
+ *  errors). `failed_stage` is only set when `stage === "error"` and
+ *  includes `"busy"` for the re-entrancy rejection (a second `engine_setup`
+ *  invocation while one is already running). */
+export interface EngineSetupEvent {
+  stage: "install" | "start" | "wait" | "pull" | "manual" | "done" | "error";
+  engine: string;
+  pct?: number;
+  model?: string;
+  message?: string;
+  failed_stage?: "install" | "start" | "wait" | "pull" | "busy";
+}
+
 /** Default-service assignments captured in a SavedScenario's models section. */
 export interface ScenarioAssignments {
   stt_profile: string;

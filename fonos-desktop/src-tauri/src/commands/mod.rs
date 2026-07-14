@@ -10,6 +10,8 @@ pub mod dialog;
 pub mod diarize;
 pub mod dictation;
 pub mod doctor;
+pub mod engine_setup;
+pub mod funnel;
 pub mod llm;
 pub mod meeting;
 pub mod meeting_widget;
@@ -495,4 +497,7 @@ pub struct AppState {
     /// run and the settings CRUD commands. Built exactly once — `run_workflow`
     /// and `workflow_cfg` both borrow this instance rather than rebuilding.
     pub registry: Arc<fonos_core::workflow::registry::Registry>,
+    /// Tray health-panel menu-item handles (onboarding P2). `None` until
+    /// `tray::setup_tray` runs in `.setup()`; refreshed in place afterwards.
+    pub tray_menu: Arc<Mutex<Option<crate::tray::TrayHandles>>>,
 }

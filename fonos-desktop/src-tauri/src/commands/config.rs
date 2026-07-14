@@ -26,6 +26,11 @@ pub fn save_config(
 
     let mut guard = state.config.lock().map_err(|e| e.to_string())?;
 
+    // Unlock detection (onboarding P2): capture the role defaults before the
+    // merge so the empty→non-empty transition is observable after it.
+    let old_llm = guard.llm_profile.clone();
+    let old_tts = guard.tts_profile.clone();
+
     // Round-trip: serialize current config → merge updates → deserialize back.
     let mut current =
         serde_json::to_value(&*guard).map_err(|e| format!("serialize error: {e}"))?;
@@ -66,6 +71,8 @@ pub fn save_config(
     // before `updated` is moved into the shared state.
     let saved_ui_language = updated.ui_language.clone();
     let saved_active_voice_workflow = updated.active_voice_workflow.clone();
+    let saved_llm = updated.llm_profile.clone();
+    let saved_tts = updated.tts_profile.clone();
 
     // Update in-memory state.
     *guard = updated;
@@ -91,6 +98,37 @@ pub fn save_config(
             "active_voice_workflow": saved_active_voice_workflow,
         }),
     );
+
+    // Onboarding P2: unlock notifications (once ever, funnel-gated) + tray
+    // repaint. Every branch is best-effort — config saving must never fail
+    // on notification/tray issues.
+    {
+        use fonos_core::workflow::builtin::resolve_lang;
+        let lang = resolve_lang(&saved_ui_language);
+        if crate::tray::unlocked(&old_llm, &saved_llm) {
+            let newly = state
+                .db
+                .lock()
+                .ok()
+                .map(|db| fonos_core::funnel::record(&db, "llm_unlock_notified").unwrap_or(false))
+                .unwrap_or(false);
+            if newly {
+                crate::tray::notify_unlock(&app, crate::tray::UnlockRole::Llm, lang);
+            }
+        }
+        if crate::tray::unlocked(&old_tts, &saved_tts) {
+            let newly = state
+                .db
+                .lock()
+                .ok()
+                .map(|db| fonos_core::funnel::record(&db, "tts_unlock_notified").unwrap_or(false))
+                .unwrap_or(false);
+            if newly {
+                crate::tray::notify_unlock(&app, crate::tray::UnlockRole::Tts, lang);
+            }
+        }
+        crate::tray::refresh_tray_status(&app, None);
+    }
 
     Ok(())
 }

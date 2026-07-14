@@ -116,7 +116,7 @@ async fn check_endpoints(config: &AppConfig) -> Vec<Finding> {
                     // double-count one failure.
                     let message_key = if omlx_stale_process_decision(
                         tcp_port_refused(&host).await,
-                        omlx_process_running().await,
+                        process_running("omlx").await,
                     ) {
                         "doctor.omlx_stale_process"
                     } else {
@@ -161,7 +161,7 @@ fn omlx_stale_process_decision(tcp_refused: bool, process_exists: bool) -> bool 
 /// a firewalled drop (which times out, not refuses), or a TLS/HTTP-level
 /// problem that a live process could still produce. `host_port` is already
 /// `host:port` (see [`host_of`]); malformed input degrades to `false`.
-async fn tcp_port_refused(host_port: &str) -> bool {
+pub(crate) async fn tcp_port_refused(host_port: &str) -> bool {
     match tokio::time::timeout(
         Duration::from_millis(800),
         tokio::net::TcpStream::connect(host_port),
@@ -173,15 +173,14 @@ async fn tcp_port_refused(host_port: &str) -> bool {
     }
 }
 
-/// True when a process whose command line matches `omlx` is running
-/// (`pgrep -f omlx`). Best-effort: any failure to run `pgrep` at all (not on
-/// PATH, unsupported platform, …) degrades silently to `false` rather than
-/// erroring the whole doctor run.
-async fn omlx_process_running() -> bool {
-    tokio::task::spawn_blocking(|| {
+/// True when a process whose command line matches `pattern` is running
+/// (`pgrep -f <pattern>`). Best-effort: any failure to run `pgrep` at all
+/// degrades silently to `false`.
+pub(crate) async fn process_running(pattern: &'static str) -> bool {
+    tokio::task::spawn_blocking(move || {
         std::process::Command::new("pgrep")
             .arg("-f")
-            .arg("omlx")
+            .arg(pattern)
             .output()
             .map(|out| out.status.success() && !out.stdout.is_empty())
             .unwrap_or(false)

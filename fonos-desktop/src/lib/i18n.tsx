@@ -143,6 +143,7 @@ const en = {
   "general.update.download": "Download",
 
   // models tab
+  "models.add-engine": "＋ Add engine (guided)",
   "models.defaults": "Default Services",
   "models.notset": "Not set",
   "models.notconfigured": "Not configured",
@@ -199,6 +200,15 @@ const en = {
   "stats.avg": "Avg",
   "stats.fastest": "Fastest",
   "stats.unknown-model": "(unknown)",
+  "stats.firstrun.title": "First-run timeline",
+  "stats.firstrun.empty": "No first-run data yet",
+  "stats.firstrun.launch": "Launch",
+  "stats.firstrun.mic_granted": "Microphone granted",
+  "stats.firstrun.first_transcript": "First transcript",
+  "stats.firstrun.ax_granted": "Accessibility granted",
+  "stats.firstrun.first_insert": "First system-wide insert",
+  "stats.firstrun.first_command": "First command",
+  "stats.firstrun.target-met": "✓ within {secs}s",
 
   // notes page
   "notes.title": "Notes",
@@ -479,6 +489,11 @@ const en = {
   "scen.detected": "detected ✓",
   "scen.notdetected": "not detected",
   "scen.detecting": "checking…",
+  // Detection evidence tokens (why an engine reads installed/running)
+  "scen.evidence.path": "command",
+  "scen.evidence.app": "app",
+  "scen.evidence.process": "process",
+  "scen.evidence.port": "port",
   // Pickers
   "scen.engine": "Engine",
   "scen.provider": "Provider",
@@ -565,6 +580,53 @@ const en = {
   "scen.sum.vocabbooks": "{0} books",
   "scen.sum.vocabnone": "No vocab books",
   "scen.sum.hotkeysnone": "No custom hotkeys",
+
+  // onboarding (P1)
+  "ob.welcome.title": "Hold to speak. Words land at your cursor.",
+  "ob.welcome.tagline": "Local-first · No account needed",
+  "ob.welcome.start": "Get started",
+  "ob.skip": "Used tools like this before? Skip to engine setup →",
+  "ob.playground.title": "Fonos only listens while you hold the hotkey",
+  "ob.playground.privacy": "Release to stop. Audio is processed on this Mac.",
+  "ob.playground.hint": "Hold {hotkey} and speak — your words appear here.",
+  "ob.playground.ready": "✓ Built-in speech recognition — nothing to download",
+  "ob.playground.next": "Continue",
+  "ob.play.no-stt": "No dictation engine is set up yet — the playground can't hear you.",
+  "ob.play.setup-engine": "Set up an engine",
+  "ob.play.ptt": "Hold to talk",
+  "ob.play.ptt-active": "Listening… release to stop",
+  "ob.play.ptt-hint": "No response from the hotkey? Hold this button and speak — same result.",
+  "ob.ax.title": "Make it work in every app",
+  "ob.ax.desc": "Grant Accessibility so Fonos can type where your cursor is. Deny it and Fonos still works — results show in a popup instead.",
+  "ob.ax.demo1": "Dear team, ",
+  "ob.ax.demo2": "this sentence was spoken, ",
+  "ob.ax.demo3": "not typed.",
+  "ob.ax.grant": "Grant Accessibility",
+  "ob.ax.waiting": "Waiting for approval…",
+  "ob.ax.later": "Not now — use popups",
+  "ob.guided.title": "Say one sentence in any app",
+  "ob.guided.desc": "Switch to any other app, hold {hotkey}, and speak.",
+  "ob.guided.waiting": "Listening for your first insertion…",
+  "ob.guided.success": "✓ Inserted — you're all set!",
+  "ob.guided.finish": "Finish",
+  "ob.linux.hotkey-hint": "On Wayland the global hotkey may be unavailable — trigger dictation from the tray, or bind a shortcut that sends SIGUSR2 to Fonos.",
+
+  // onboarding (P3)
+  "scen.cloud.row.ph": "model id — leave empty to skip",
+  "scen.cloud.editable.note": "Every row is a default — edit or clear any of them.",
+  "scen.installed.stopped": "installed, not running",
+  "scen.setup.install": "Install & start for me",
+  "scen.setup.start": "Start the engine",
+  "scen.setup.note": "Everything is confirmed on a review card before anything runs.",
+
+  // Role-coverage placeholders (R4) — explain why a cloud row is blank; the row
+  // stays an editable input either way.
+  "scen.cloud.ph.no-tts": "This provider has no speech synthesis — configure OpenAI or local Kokoro later",
+  "scen.cloud.ph.no-stt": "No dictation model here — use the built-in voice (macOS), a local engine, or Fireworks/OpenAI",
+  "scen.cloud.ph.custom": "Type the model id your endpoint serves for this role — leave empty to skip",
+  // Local Custom tile (R3) — manual, no detection three-state, no install CTA.
+  "scen.manual": "manual",
+  "scen.custom.needurl": "Enter the server URL and at least one model to continue",
 
   // ── Workflows tab (Workflow P1) — preset/custom workflow list + editor ────
   "wf.section.preset": "Preset",
@@ -785,6 +847,28 @@ const en = {
   "wb.bench.mic-idle": "Mock input · microphone — tap to record and run",
   "wb.bench.mic-live": "Recording… tap again to stop",
   "wb.bench.text-hint": "Mock input · text — the bench stages the input for you",
+
+  // engine setup review card (onboarding P3)
+  "engine.review.title": "Confirm the plan",
+  "engine.review.install": "Install {0}",
+  "engine.review.start": "Start {0}",
+  "engine.review.ondemand": "Models are downloaded on demand by the engine",
+  "engine.review.manual": "{0} has no automated install — set it up manually, then re-detect",
+  "engine.review.size": "≈{0} GB",
+  "engine.review.size.unknown": "size unknown",
+  "engine.review.custom": "Custom…",
+  "engine.review.custom.placeholder": "model name",
+  "engine.review.remove": "Remove",
+  "engine.review.addmodel": "＋ Add model",
+  "engine.review.disk.low": "Not enough free disk for ≈{0} GB",
+  "engine.review.downgrade": "Use a smaller model instead",
+  "engine.review.confirm": "Start",
+  "engine.review.running": "Working…",
+  "engine.review.busy": "Setup is already running",
+  "engine.review.stage.install": "Installing",
+  "engine.review.stage.start": "Starting",
+  "engine.review.stage.wait": "Waiting for the engine",
+  "engine.review.stage.pull": "Downloading",
 };
 
 export type TKey = keyof typeof en;
@@ -891,6 +975,7 @@ const zh: Partial<Record<Key, string>> = {
   "general.update.download": "下载",
 
   // models tab
+  "models.add-engine": "＋ 添加引擎（引导）",
   "models.defaults": "默认服务",
   "models.notset": "未设置",
   "models.notconfigured": "未配置",
@@ -947,6 +1032,15 @@ const zh: Partial<Record<Key, string>> = {
   "stats.avg": "平均",
   "stats.fastest": "最快",
   "stats.unknown-model": "（未知）",
+  "stats.firstrun.title": "首次体验时间线",
+  "stats.firstrun.empty": "尚无首启记录",
+  "stats.firstrun.launch": "启动",
+  "stats.firstrun.mic_granted": "麦克风授权",
+  "stats.firstrun.first_transcript": "首次转写",
+  "stats.firstrun.ax_granted": "辅助功能授权",
+  "stats.firstrun.first_insert": "首次系统级插入",
+  "stats.firstrun.first_command": "首次命令",
+  "stats.firstrun.target-met": "✓ 目标 {secs}s",
 
   // notes page
   "notes.title": "笔记",
@@ -1217,6 +1311,10 @@ const zh: Partial<Record<Key, string>> = {
   "scen.detected": "已检测到 ✓",
   "scen.notdetected": "未检测到",
   "scen.detecting": "检测中…",
+  "scen.evidence.path": "命令",
+  "scen.evidence.app": "应用",
+  "scen.evidence.process": "进程",
+  "scen.evidence.port": "端口",
   "scen.engine": "引擎",
   "scen.provider": "提供方",
   "scen.baseurl": "服务地址",
@@ -1296,6 +1394,52 @@ const zh: Partial<Record<Key, string>> = {
   "scen.sum.vocabbooks": "{0} 个词汇本",
   "scen.sum.vocabnone": "无词汇本",
   "scen.sum.hotkeysnone": "无自定义快捷键",
+
+  // onboarding (P1)
+  "ob.welcome.title": "按住说话，文字落在光标处。",
+  "ob.welcome.tagline": "本地优先 · 无需账号",
+  "ob.welcome.start": "开始",
+  "ob.skip": "用过同类工具？跳过演示，直接配引擎 →",
+  "ob.playground.title": "Fonos 只在你按住热键时聆听",
+  "ob.playground.privacy": "松开即停，音频在本机处理。",
+  "ob.playground.hint": "按住 {hotkey} 说话——文字会出现在这里。",
+  "ob.playground.ready": "✓ 内置语音识别，无需下载",
+  "ob.playground.next": "继续",
+  "ob.play.no-stt": "还没有配置听写引擎——试音区听不到你说话。",
+  "ob.play.setup-engine": "去配置引擎",
+  "ob.play.ptt": "按住说话",
+  "ob.play.ptt-active": "聆听中…松开结束",
+  "ob.play.ptt-hint": "热键没反应？按住这个按钮说话，效果一样。",
+  "ob.ax.title": "让它在所有 App 里生效",
+  "ob.ax.desc": "授权辅助功能后，Fonos 能把文字打进光标所在的地方。拒绝也能用——结果会以弹窗显示。",
+  "ob.ax.demo1": "亲爱的评审组，",
+  "ob.ax.demo2": "这一段文字是说出来的，",
+  "ob.ax.demo3": "不是敲出来的。",
+  "ob.ax.grant": "授权辅助功能",
+  "ob.ax.waiting": "等待授权…",
+  "ob.ax.later": "先不用，弹窗里看结果",
+  "ob.guided.title": "切到任意 App 说一句话",
+  "ob.guided.desc": "切换到任何其他应用，按住 {hotkey} 说话。",
+  "ob.guided.waiting": "等待第一次插入…",
+  "ob.guided.success": "✓ 插入成功——一切就绪！",
+  "ob.guided.finish": "完成",
+  "ob.linux.hotkey-hint": "Wayland 下全局热键可能不可用——可从托盘触发听写，或在系统里绑定快捷键向 Fonos 发送 SIGUSR2。",
+
+  // onboarding (P3)
+  "scen.cloud.row.ph": "模型 id——留空则不指派",
+  "scen.cloud.editable.note": "每一行都是缺省值，可改可清空。",
+  "scen.installed.stopped": "已安装，未运行",
+  "scen.setup.install": "一键安装并启动",
+  "scen.setup.start": "启动引擎",
+  "scen.setup.note": "执行前会先弹出确认卡，逐行可改。",
+
+  // 角色覆盖占位（R4）—— 解释某一行为何留空；无论如何该行都可编辑。
+  "scen.cloud.ph.no-tts": "该服务商无朗读模型——可稍后接 OpenAI 或本地 Kokoro",
+  "scen.cloud.ph.no-stt": "此处无听写模型——可用内置语音(macOS)、本地引擎，或 Fireworks/OpenAI",
+  "scen.cloud.ph.custom": "填入你的服务在该角色下提供的模型 id——留空则跳过",
+  // 本地「自定义」卡片（R3）—— 手动，无检测三态，无安装 CTA。
+  "scen.manual": "手动",
+  "scen.custom.needurl": "请填入服务地址和至少一个模型以继续",
 
   // ── 工作流页 (Workflow P1) ──────────────────────────────────────────────
   "wf.section.preset": "预置",
@@ -1514,6 +1658,28 @@ const zh: Partial<Record<Key, string>> = {
   "wb.bench.mic-idle": "模拟输入 · 麦克风 — 点按即录音开跑",
   "wb.bench.mic-live": "正在录音… 再点一下停止",
   "wb.bench.text-hint": "模拟输入 · 文本 — 台架替你备好输入",
+
+  // engine setup review card (onboarding P3)
+  "engine.review.title": "确认计划",
+  "engine.review.install": "安装 {0}",
+  "engine.review.start": "启动 {0}",
+  "engine.review.ondemand": "模型由引擎按需下载",
+  "engine.review.manual": "{0} 暂不支持自动安装——请手动装好后重新检测",
+  "engine.review.size": "约 {0} GB",
+  "engine.review.size.unknown": "体积未知",
+  "engine.review.custom": "自定义…",
+  "engine.review.custom.placeholder": "模型名称",
+  "engine.review.remove": "移除",
+  "engine.review.addmodel": "＋ 添加模型",
+  "engine.review.disk.low": "磁盘剩余空间不足（需约 {0} GB）",
+  "engine.review.downgrade": "改用小一档的模型",
+  "engine.review.confirm": "开始执行",
+  "engine.review.running": "执行中…",
+  "engine.review.busy": "已在进行中",
+  "engine.review.stage.install": "安装中",
+  "engine.review.stage.start": "启动中",
+  "engine.review.stage.wait": "等待引擎就绪",
+  "engine.review.stage.pull": "下载中",
 };
 
 const dicts: Record<Locale, Partial<Record<Key, string>>> = { en, zh };

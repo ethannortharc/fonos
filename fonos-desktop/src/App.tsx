@@ -3,13 +3,14 @@ import Stats from "./views/Stats";
 import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
-import Scenarios, { isSttConfigured } from "./views/Scenarios";
+import { isSttConfigured } from "./views/Scenarios";
+import Onboarding from "./views/Onboarding";
 import Workbench, { type FocusRecipe } from "./views/Workbench";
 import HomePage from "./views/HomePage";
 import ModelsPage from "./views/ModelsPage";
 import VocabPage from "./views/VocabPage";
 import { FonosMark } from "./components/Icons";
-import { getConfig } from "./lib/api";
+import { getConfig, recordOnboardingEvent } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
 type Tab = "home" | "workbench" | "models" | "vocab" | "history" | "stats" | "settings";
@@ -124,7 +125,11 @@ export default function App() {
         // is unset AND there's no usable STT config. Existing installs that
         // already configured models via Settings skip the wizard even with the
         // flag unset; skipping still persists the flag.
-        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) setShowSetup(true);
+        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) {
+          setShowSetup(true);
+          // Funnel t0 — local-only, record-once (backend ignores repeats).
+          recordOnboardingEvent("launch").catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => setGateReady(true));
@@ -151,7 +156,7 @@ export default function App() {
             // "overview" is the pre-rename tab name — float pill / tray may
             // still emit it; both map to the same tab.
             setActiveTab("home");
-          } else if (["stats", "settings"].includes(raw)) {
+          } else if (["stats", "settings", "models"].includes(raw)) {
             // "voice" (the retired Talk page) is no longer a tab — a stale
             // pill/tray emitter for it simply no-ops here (Workbench P2 T9).
             setActiveTab(raw as Tab);
@@ -170,7 +175,7 @@ export default function App() {
     return <div className="h-screen bg-[var(--bg)]" />;
   }
   if (showSetup) {
-    return <Scenarios mode="fullscreen" onDone={() => setShowSetup(false)} />;
+    return <Onboarding onDone={() => setShowSetup(false)} />;
   }
 
   return (

@@ -627,7 +627,7 @@ function PropsForm({
 // ─── Main WidgetForm ────────────────────────────────────────────────────────
 
 export default function WidgetForm({
-  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, readOnly = false,
+  value, config, containers, widgets, typeTags, onSave, onCancel, onDelete, deleteError, onContainerCreated, readOnly = false,
 }: {
   value: WidgetFormValue;
   config: AppConfig;
@@ -654,6 +654,14 @@ export default function WidgetForm({
    *  rendered inline in the card's footer, near the Delete button, instead
    *  of the caller having to render it as a detached sibling below the form. */
   deleteError?: string;
+  /** Fired after a "notebook" widget's pending title is turned into a real
+   *  container at save time. The `containers` list an owner threads in is
+   *  loaded once, so it goes stale the moment we mint a new notebook here;
+   *  the owner reloads its list in response, keeping name-is-identity honest
+   *  — a sibling widget typing the same title then exact-matches this new
+   *  notebook instead of forking a duplicate. Read-only consumers (Building
+   *  Blocks catalog) never create containers, so they may omit it. */
+  onContainerCreated?: () => void;
   /** Read-only detail view (Building Blocks catalog): every field is disabled
    *  (via a wrapping disabled <fieldset>) and the footer shows only a Close
    *  button wired to onCancel. Never combined with isNew. Default false keeps
@@ -706,6 +714,14 @@ export default function WidgetForm({
           const created = await createContainer(pending, "notebook");
           props = { ...props, container_id: created.id };
           delete (props as Record<string, unknown>).container_title;
+          // Commit the exchanged props into form state right away: if the
+          // create succeeds but onSave below rejects, a retry must bind the
+          // already-created id — not re-run createContainer off the stale
+          // container_title and fork a duplicate notebook (spec §1).
+          setForm((f) => ({ ...f, props }));
+          // The owner's `containers` list is now stale — ask it to reload so a
+          // sibling widget can exact-match this new notebook by name.
+          onContainerCreated?.();
         }
       }
       await onSave(formToWidget({ ...form, props }));

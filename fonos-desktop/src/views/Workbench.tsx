@@ -22,9 +22,10 @@ export default function Workbench({ focus }: { focus?: FocusRecipe } = {}) {
   const [seg, setSeg] = useState<WorkbenchSeg>("recipes");
   const [benchTarget, setBenchTarget] = useState<BenchTarget>(null);
   const [containers, setContainers] = useState<Container[]>([]);
-  useEffect(() => {
+  const reloadContainers = () => {
     listContainers().then(setContainers).catch(() => { /* no backend / ignore */ });
-  }, []);
+  };
+  useEffect(() => { reloadContainers(); }, []);
   // Jump-to-recipe intent from the Home page: land on the Recipes
   // segment so RecipesSection's own effect (keyed on the same nonce) can
   // expand + scroll to the target card.
@@ -78,6 +79,7 @@ export default function Workbench({ focus }: { focus?: FocusRecipe } = {}) {
           <WidgetsSection
             config={config}
             containers={containers}
+            onContainerCreated={reloadContainers}
             onTest={(id) => openBench({ kind: "widget", id })}
           />
         )}
@@ -85,6 +87,7 @@ export default function Workbench({ focus }: { focus?: FocusRecipe } = {}) {
           <TestRunSection
             config={config}
             containers={containers}
+            onContainerCreated={reloadContainers}
             target={benchTarget ?? { kind: "recipe", id: "wf.dictation" }}
             onTargetChange={setBenchTarget}
           />

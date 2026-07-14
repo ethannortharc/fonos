@@ -21,6 +21,7 @@ import type {
   ScenarioProbe,
 } from "../types";
 import { t, td, useT, type TKey } from "../lib/i18n";
+import { isMacOS } from "../lib/platform";
 
 export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -481,7 +482,11 @@ export default function Scenarios({
 
       {/* Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mt-4">
-        {(Object.keys(CARD_META) as ScenarioKey[]).map((key) => {
+        {(Object.keys(CARD_META) as ScenarioKey[])
+          // Zero relies on Apple on-device Speech — macOS only (spec §P1
+          // Linux 差异; the backend errors explicitly off-macOS anyway).
+          .filter((key) => key !== "zero" || isMacOS)
+          .map((key) => {
           const m = CARD_META[key];
           const active = selected === key;
           return (

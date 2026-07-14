@@ -91,6 +91,17 @@ pub fn effective_widgets(config: &AppConfig) -> Vec<WidgetDef> {
     overlay_by_id(built_in_widgets(), &config.widgets, |w| w.id.as_str())
 }
 
+/// True when any of the workflow's processors is an LLM widget — the
+/// "command mode" discriminator for the onboarding funnel (P2). Raw
+/// dictation has no LLM processor and is not a command; LLM-backed outputs
+/// (dialog/agent composites) are conversations, not commands, so only
+/// processors are consulted.
+pub fn workflow_has_llm(wf: &WorkflowDef, widgets: &[WidgetDef]) -> bool {
+    wf.processors
+        .iter()
+        .any(|pid| widgets.iter().any(|w| &w.id == pid && w.type_tag == "llm"))
+}
+
 /// The effective workflow set: the built-ins overlaid by
 /// [`AppConfig::workflows`], with the same replace-by-id / append semantics as
 /// [`effective_widgets`].
@@ -1337,5 +1348,31 @@ mod tests {
             "should emit Delivered with empty final_text"
         );
         assert_eq!(out.entry_id, None, "no recorder invocation, so no entry_id");
+    }
+
+    #[test]
+    fn workflow_has_llm_looks_at_processors_only() {
+        let widgets: Vec<WidgetDef> = serde_json::from_value(serde_json::json!([
+            { "id": "proc.llm-1", "role": "processor", "type_tag": "llm",
+              "name": "LLM", "icon": "", "props": {}, "builtin": false },
+            { "id": "proc.upper", "role": "processor", "type_tag": "uppercase",
+              "name": "Upper", "icon": "", "props": {}, "builtin": false },
+            { "id": "out.dialog", "role": "output", "type_tag": "dialog",
+              "name": "Dialog", "icon": "", "props": {}, "builtin": false }
+        ]))
+        .unwrap();
+        let wf = |procs: Vec<&str>| -> WorkflowDef {
+            serde_json::from_value(serde_json::json!({
+                "id": "wf.t", "name": "t", "source": "src.mic",
+                "processors": procs, "outputs": ["out.dialog"]
+            }))
+            .unwrap()
+        };
+        assert!(super::workflow_has_llm(&wf(vec!["proc.llm-1"]), &widgets));
+        assert!(super::workflow_has_llm(&wf(vec!["proc.upper", "proc.llm-1"]), &widgets));
+        // No LLM processor: raw dictation / non-LLM transforms are not commands,
+        // and an LLM-backed *output* (dialog) does not count either.
+        assert!(!super::workflow_has_llm(&wf(vec![]), &widgets));
+        assert!(!super::workflow_has_llm(&wf(vec!["proc.upper"]), &widgets));
     }
 }

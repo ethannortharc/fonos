@@ -188,11 +188,14 @@ impl RunRecorder for DbRecorder {
         // History row/panel header. A poisoned config lock degrades to the
         // raw `wf.name` rather than failing the record (same error policy as
         // the DB lock below — this must never return `Err`).
-        let workflow_name = match state.config.lock() {
-            Ok(config) => localized_workflow_name(&wf.id, &wf.name, &config.ui_language),
+        let (workflow_name, has_llm) = match state.config.lock() {
+            Ok(config) => (
+                localized_workflow_name(&wf.id, &wf.name, &config.ui_language),
+                engine::workflow_has_llm(wf, &engine::effective_widgets(&config)),
+            ),
             Err(e) => {
                 eprintln!("fonos: DbRecorder — config lock poisoned, workflow_name not localized: {e}");
-                wf.name.clone()
+                (wf.name.clone(), false)
             }
         };
 
@@ -224,7 +227,18 @@ impl RunRecorder for DbRecorder {
             }
         };
         match fonos_core::storage::insert_entry(&db, &entry) {
-            Ok(id) => Ok(id),
+            Ok(id) => {
+                // Onboarding funnel (P2): the first successful LLM-processed
+                // run is "first_command". Record-once semantics live in the
+                // funnel table; failures are absorbed — same never-Err policy
+                // as the rest of this recorder.
+                if has_llm {
+                    if let Ok(true) = fonos_core::funnel::record(&db, "first_command") {
+                        eprintln!("fonos: funnel first_command recorded");
+                    }
+                }
+                Ok(id)
+            }
             Err(e) => {
                 eprintln!("fonos: DbRecorder — history insert failed, entry not recorded: {e}");
                 Ok(0)

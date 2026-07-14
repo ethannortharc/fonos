@@ -12,6 +12,7 @@ pub mod config;
 pub mod doctor;
 pub mod echo;
 pub mod error;
+pub mod funnel;
 pub mod hotkey;
 pub mod listen;
 pub mod llm;

@@ -489,6 +489,11 @@ const en = {
   "scen.detected": "detected ✓",
   "scen.notdetected": "not detected",
   "scen.detecting": "checking…",
+  // Detection evidence tokens (why an engine reads installed/running)
+  "scen.evidence.path": "command",
+  "scen.evidence.app": "app",
+  "scen.evidence.process": "process",
+  "scen.evidence.port": "port",
   // Pickers
   "scen.engine": "Engine",
   "scen.provider": "Provider",
@@ -1292,6 +1297,10 @@ const zh: Partial<Record<Key, string>> = {
   "scen.detected": "已检测到 ✓",
   "scen.notdetected": "未检测到",
   "scen.detecting": "检测中…",
+  "scen.evidence.path": "命令",
+  "scen.evidence.app": "应用",
+  "scen.evidence.process": "进程",
+  "scen.evidence.port": "端口",
   "scen.engine": "引擎",
   "scen.provider": "提供方",
   "scen.baseurl": "服务地址",

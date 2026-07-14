@@ -29,10 +29,10 @@ vi.mock("../../components/EngineSetupReview", () => ({
 }));
 
 const DETECTION: EngineDetection[] = [
-  { engine: "omlx", running: false, installed: false, url: "http://localhost:8000" },
-  { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234" },
-  { engine: "ollama", running: false, installed: false, url: "http://localhost:11434" },
-  { engine: "vllm", running: false, installed: false, url: "http://localhost:8000" },
+  { engine: "omlx", running: false, installed: false, url: "http://localhost:8000", evidence: [] },
+  { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234", evidence: [] },
+  { engine: "ollama", running: false, installed: false, url: "http://localhost:11434", evidence: [] },
+  { engine: "vllm", running: false, installed: false, url: "http://localhost:8000", evidence: [] },
 ];
 
 const saveConfigMock = vi.fn(async (..._args: unknown[]) => {});

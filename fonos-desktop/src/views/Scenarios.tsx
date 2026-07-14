@@ -72,6 +72,16 @@ const LOCAL_ENGINES: EngineDef[] = [
   { key: "vllm", name: "vLLM", url: "http://localhost:8000", full: true },
 ];
 
+// Detection-evidence token → i18n label. Backend tokens ("path"/"app"/
+// "process"/"port") are mapped here so the local step can show *why* an engine
+// reads installed/running under the state badge.
+const EVIDENCE_KEY: Record<string, TKey> = {
+  path: "scen.evidence.path",
+  app: "scen.evidence.app",
+  process: "scen.evidence.process",
+  port: "scen.evidence.port",
+};
+
 // Provider label for created local profiles. omlx/ollama skip the LLM api-key
 // requirement, which keyless local servers need; base_url is always set
 // explicitly so the provider's default URL is never used.
@@ -876,6 +886,17 @@ function LocalStep({
                     <span className="text-[rgba(255,255,255,0.25)]">{t("scen.notdetected")}</span>
                   )}
                 </div>
+                {det && det.evidence.length > 0 && (
+                  <div
+                    data-testid={`engine-evidence-${e.key}`}
+                    className="text-[8px] mt-0.5 text-[rgba(255,255,255,0.3)] tabular-nums"
+                  >
+                    {det.evidence
+                      .filter((ev) => EVIDENCE_KEY[ev])
+                      .map((ev) => t(EVIDENCE_KEY[ev]))
+                      .join(" · ")}
+                  </div>
+                )}
               </button>
             );
           })}

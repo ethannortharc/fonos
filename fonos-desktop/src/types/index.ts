@@ -197,6 +197,10 @@ export interface EngineDetection {
   running: boolean;
   installed: boolean;
   url: string;
+  /** Raw signals behind the verdict — machine tokens the UI maps to labels:
+   *  "path" (binary on PATH), "app" (app bundle), "process" (brand process),
+   *  "port" (base URL answered). Empty means nothing was detected. */
+  evidence: string[];
 }
 
 /** Hardware facts + derived tier — mirrors commands::engine_setup::HardwareInfo.

@@ -10,6 +10,7 @@ const det = (running: boolean, installed: boolean): EngineDetection => ({
   running,
   installed,
   url: "http://localhost:11434",
+  evidence: [],
 });
 
 describe("suggestDowngrade", () => {
@@ -59,7 +60,7 @@ describe("buildSetupPlan (ollama)", () => {
 
 describe("buildSetupPlan (omlx)", () => {
   it("no pulls — models load on demand; brew install when missing", () => {
-    const d: EngineDetection = { engine: "omlx", running: false, installed: false, url: "http://localhost:8000" };
+    const d: EngineDetection = { engine: "omlx", running: false, installed: false, url: "http://localhost:8000", evidence: [] };
     const b = buildSetupPlan(d, "max", 500_000_000, "omlx");
     expect(b.plan.pulls).toEqual([]);
     expect(b.plan.install).toBe(true);
@@ -70,7 +71,7 @@ describe("buildSetupPlan (omlx)", () => {
 
 describe("buildSetupPlan (manual engines)", () => {
   it("lmstudio never auto-installs; uninstalled yields a manual row", () => {
-    const d: EngineDetection = { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234" };
+    const d: EngineDetection = { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234", evidence: [] };
     const b = buildSetupPlan(d, "balanced", 500_000_000, "lmstudio");
     expect(b.plan.install).toBe(false);
     expect(b.plan.start).toBe(false);

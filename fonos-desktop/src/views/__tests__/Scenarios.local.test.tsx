@@ -48,10 +48,10 @@ vi.mock("../../components/EngineSetupReview", () => ({
 // running-engine auto-take-over (Finding 2 fix) never fires here — this is the
 // fixture most tests use to exercise the platform-default CTA/probe flow.
 const DETECTION: EngineDetection[] = [
-  { engine: "omlx", running: false, installed: true, url: "http://localhost:8000" }, // mac default → installed, stopped
-  { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234" }, // absent
-  { engine: "ollama", running: false, installed: true, url: "http://localhost:11434" }, // installed, stopped
-  { engine: "vllm", running: false, installed: false, url: "http://localhost:8000" },
+  { engine: "omlx", running: false, installed: true, url: "http://localhost:8000", evidence: ["path"] }, // mac default → installed, stopped
+  { engine: "lmstudio", running: false, installed: false, url: "http://localhost:1234", evidence: [] }, // absent
+  { engine: "ollama", running: false, installed: true, url: "http://localhost:11434", evidence: ["path"] }, // installed, stopped
+  { engine: "vllm", running: false, installed: false, url: "http://localhost:8000", evidence: [] },
 ];
 
 // Variant where Ollama is actually running while the mac default (OMLX) isn't
@@ -110,6 +110,17 @@ describe("Scenarios · LocalStep wiring (macOS)", () => {
     await screen.findByText("scen.detected");
     expect(screen.getByText("scen.installed.stopped")).toBeInTheDocument();
     expect(screen.getAllByText("scen.notdetected").length).toBeGreaterThan(0);
+  });
+
+  it("renders the detection evidence tokens under each engine's badge", async () => {
+    await openLocal();
+    await waitFor(() => expect(engineDetectMock).toHaveBeenCalled());
+    // omlx/ollama carry a "path" signal → the mapped label shows; absent
+    // engines (empty evidence) render no evidence line.
+    const omlxEvidence = await screen.findByTestId("engine-evidence-omlx");
+    expect(omlxEvidence.textContent).toBe("scen.evidence.path");
+    expect(screen.queryByTestId("engine-evidence-lmstudio")).toBeNull();
+    expect(screen.queryByTestId("engine-evidence-vllm")).toBeNull();
   });
 
   it("offers a Start CTA for the installed-but-stopped platform default and opens the review card", async () => {

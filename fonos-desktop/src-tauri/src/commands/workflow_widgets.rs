@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use fonos_core::workflow::llm_step::{run_llm_step, LlmProps};
 use fonos_core::workflow::model::{AudioBuf, Data, DataKind, PanelSize};
@@ -292,6 +292,17 @@ impl Processor for SttProcessor {
             fonos_core::vocab::apply_rules(&out.transcript, &vocab_refs)
         };
 
+        // Funnel: first non-empty transcript on the engine path (record-once).
+        // Hotkey dictation now runs through this processor rather than
+        // `transcribe_samples`, so this is where the milestone gets hit on the
+        // live path; the legacy `transcribe_samples` site records the same step
+        // (record-once makes the double-instrumentation harmless).
+        if !transcript.is_empty() {
+            if let Ok(db) = self.app.state::<AppState>().db.lock() {
+                let _ = fonos_core::funnel::record(&db, "first_transcript");
+            }
+        }
+
         Ok(Data::Text(transcript))
     }
 }
@@ -408,6 +419,21 @@ impl Output for InsertOutput {
     async fn deliver(&self, result: &Data, _ctx: &RunCtx) -> Result<(), String> {
         let text = expect_text(result)?;
 
+        // No-AX degrade (macOS): without Accessibility, `inject_text_with_strategy`
+        // can't post keystrokes and hard-errors — which would fail the flow and
+        // make the onboarding promise ("Deny it and Fonos still works — results
+        // show in a popup instead") a lie. Instead, render the final text in the
+        // shared panel and return Ok, reusing PanelOutput's exact display path.
+        #[cfg(target_os = "macos")]
+        if !crate::injection::accessibility_trusted() {
+            let panel = PanelOutput {
+                app: self.app.clone(),
+                markdown: false,
+                size: PanelSize::default(),
+            };
+            return panel.deliver(result, _ctx).await;
+        }
+
         // Clone the live config out of the lock (its per-app overrides drive the
         // strategy) so no std Mutex is held across the blocking inject.
         let config = {
@@ -425,6 +451,22 @@ impl Output for InsertOutput {
             &config, app_name.as_deref(), crate::injection::InjectionStrategy::parse(&self.strategy),
         );
         crate::injection::inject_text_with_strategy(text, strategy)?;
+
+        // Funnel + guided-task signal: this is the engine path's equivalent of
+        // the legacy `transcribe_samples` raw-injection site. Record the
+        // first successful system-level insertion (record-once), then emit
+        // `dictation:delivered` so Onboarding's guided task completes on an
+        // insertion into any non-Fonos app. The `frontmost_app` lookup is one
+        // osascript/xdotool round-trip — acceptable on this blocking path.
+        if let Ok(db) = self.app.state::<AppState>().db.lock() {
+            let _ = fonos_core::funnel::record(&db, "first_insert");
+        }
+        let target = crate::commands::selection::frontmost_app();
+        let target_app: Option<String> = if target.is_empty() { None } else { Some(target) };
+        let _ = self.app.emit(
+            "dictation:delivered",
+            serde_json::json!({ "target_app": target_app }),
+        );
 
         // Optional Return, after the same settle delay the core pipeline uses.
         // A press_enter failure is non-fatal — the text already landed.

@@ -156,7 +156,7 @@ export default function App() {
             // "overview" is the pre-rename tab name — float pill / tray may
             // still emit it; both map to the same tab.
             setActiveTab("home");
-          } else if (["stats", "settings"].includes(raw)) {
+          } else if (["stats", "settings", "models"].includes(raw)) {
             // "voice" (the retired Talk page) is no longer a tab — a stale
             // pill/tray emitter for it simply no-ops here (Workbench P2 T9).
             setActiveTab(raw as Tab);

@@ -8,89 +8,15 @@ mod error_surface;
 mod hotkey;
 mod injection;
 mod skills;
+mod tray;
 mod trigger_label;
+mod window;
 
 use commands::AppState;
 use fonos_core::config::AppConfig;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
-use tauri::menu::{Menu, MenuItem};
-
-/// Bring the main window to the front on the *currently active* Space.
-///
-/// Dock clicks (`RunEvent::Reopen`), the tray "Open Fonos" item and the float
-/// pill all funnel through here. tao's `set_focus` relies on the deprecated
-/// `activateIgnoringOtherApps:`; under macOS 14+ cooperative activation that
-/// request can lose the race against the Dock-click activation already in
-/// flight and hand focus back to the previously active app. The window also
-/// re-opens on whichever Space it last lived on, which from another desktop
-/// reads as "nothing happened" (the always-visible float pill suppresses the
-/// system's own Space switch, since the app already "has visible windows").
-fn raise_main_window(app: &tauri::AppHandle) {
-    let Some(w) = app.get_webview_window("main") else { return };
-
-    #[cfg(target_os = "macos")]
-    {
-        let win = w;
-        // NSWindow calls must run on the main thread; Reopen and tray events
-        // already do, the float-pill event listener may not.
-        let _ = win.clone().run_on_main_thread(move || {
-            use objc2::runtime::AnyObject;
-            let Ok(ptr) = win.ns_window() else { return };
-            if ptr.is_null() {
-                return;
-            }
-            let ns_window = ptr as *mut AnyObject;
-            let nil = std::ptr::null_mut::<AnyObject>();
-            // SAFETY: `ptr` is the live NSWindow backing `win` (the captured
-            // handle keeps it alive) and we are on the main thread — same
-            // contract as `commands::refresh_ns_window`.
-            unsafe {
-                // NSWindowCollectionBehaviorMoveToActiveSpace (1 << 1): when
-                // ordered in, the window joins the Space the user is on. Must
-                // be set before the window is ordered front.
-                let behavior: usize = objc2::msg_send![ns_window, collectionBehavior];
-                let _: () =
-                    objc2::msg_send![ns_window, setCollectionBehavior: behavior | (1_usize << 1)];
-                // MoveToActiveSpace only applies while ordering in — a window
-                // still visible on another Space must be ordered out first.
-                let visible: bool = objc2::msg_send![ns_window, isVisible];
-                let on_active: bool = objc2::msg_send![ns_window, isOnActiveSpace];
-                if visible && !on_active {
-                    let _: () = objc2::msg_send![ns_window, orderOut: nil];
-                }
-            }
-            let _ = win.show();
-            let _ = win.unminimize();
-            unsafe {
-                // Cooperative, non-deprecated activation — a no-op when the
-                // Dock click already activated us, so it cannot bounce focus
-                // back to the previously active app the way the deprecated
-                // call inside tao's `set_focus` can.
-                let ns_app: *mut AnyObject =
-                    objc2::msg_send![objc2::class!(NSApplication), sharedApplication];
-                let responds: bool =
-                    objc2::msg_send![ns_app, respondsToSelector: objc2::sel!(activate)];
-                if responds {
-                    let _: () = objc2::msg_send![ns_app, activate];
-                } else {
-                    // macOS < 14 never had cooperative activation.
-                    let _: () = objc2::msg_send![ns_app, activateIgnoringOtherApps: true];
-                }
-                let _: () = objc2::msg_send![ns_window, makeKeyAndOrderFront: nil];
-                // Raise even if the activation request is declined.
-                let _: () = objc2::msg_send![ns_window, orderFrontRegardless];
-            }
-        });
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
-    }
-}
+use window::raise_main_window;
 
 /// Position the note-panel window centered horizontally near the cursor,
 /// slightly below the macOS menu bar — mirrors agent panel placement.
@@ -806,6 +732,7 @@ fn main() {
                 dialog_session: Arc::new(tokio::sync::Mutex::new(None)),
                 call_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 registry: Arc::new(commands::workflow_widgets::build_registry(app.handle().clone())),
+                tray_menu: Arc::new(Mutex::new(None)),
             };
             app.manage(app_state);
 
@@ -1053,62 +980,8 @@ fn main() {
             #[cfg(target_os = "macos")]
             commands::dictation::register_display_reconfig_callback(app.handle());
 
-            // 3. Tray menu.
-            use tauri::menu::PredefinedMenuItem;
-
-            let show_item = MenuItem::with_id(app, "show_app", "Open Fonos", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit Fonos", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[
-                &show_item,
-                &PredefinedMenuItem::separator(app)?,
-                &quit_item,
-            ])?;
-
-            if let Some(tray) = app.tray_by_id("main") {
-                tray.set_menu(Some(menu))?;
-                tray.set_show_menu_on_left_click(true)?;
-
-                // On Linux, use light icon for dark panel backgrounds
-                #[cfg(target_os = "linux")]
-                {
-                    use tauri::image::Image;
-                    if let Ok(icon) = Image::from_path("resources/tray_icon_light.png")
-                        .or_else(|_| Image::from_path("/usr/lib/Fonos/resources/tray_icon_light.png"))
-                    {
-                        let _ = tray.set_icon(Some(icon));
-                    }
-                }
-
-                let app_handle_menu = app.handle().clone();
-                tray.on_menu_event(move |_tray, event| {
-                    let id = event.id().0.as_str();
-                    match id {
-                        "show_app" => {
-                            raise_main_window(&app_handle_menu);
-                        }
-                        "quit" => {
-                            // Hide every window up front (most importantly the
-                            // always-on-top `float` pill) so nothing is left
-                            // visible on screen while the process winds down —
-                            // on Linux, GTK/WebKit teardown can take a moment
-                            // or hang outright, which previously stranded the
-                            // pill frozen mid-dictation. RunEvent::Exit below
-                            // is what actually guarantees the process dies.
-                            for (_, window) in app_handle_menu.webview_windows() {
-                                let _ = window.hide();
-                            }
-                            // Stop any live mic capture (e.g. quitting
-                            // mid-dictation) via the same stop path the
-                            // dictation commands use, so the cpal stream is
-                            // dropped instead of left running past exit.
-                            let state: tauri::State<'_, AppState> = app_handle_menu.state();
-                            let _ = commands::dictation::stop_and_drain(state.inner());
-                            app_handle_menu.exit(0);
-                        }
-                        _ => {}
-                    }
-                });
-            }
+            // 3. Tray menu — health panel (onboarding P2), built in tray.rs.
+            tray::setup_tray(app)?;
 
             // Listen for show-main-window event from float pill
             use tauri::Listener;

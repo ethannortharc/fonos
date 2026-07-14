@@ -3,17 +3,42 @@
 //! Used by the float pill (clickable permission errors) and the first-run
 //! onboarding wizard.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Process-level latch tracking whether we've observed Accessibility trust yet.
+/// Drives the false→true flip detection: the first time trust flips on we must
+/// re-arm the hotkey tap and repaint the tray (not on every poll). Reset when
+/// trust is observed as *false* so a later re-grant re-fires. Process-scoped
+/// (not the persistent funnel row) so it works across sessions.
+static AX_TRUSTED_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// Whether this process is trusted for Accessibility (needed for global
 /// hotkeys and text injection on macOS). Always true on other platforms.
-/// Records the `ax_granted` funnel milestone the first time it reads true
-/// (record-once; cheap INSERT OR IGNORE afterwards).
+///
+/// On the false→true flip (first observation this process): records the
+/// `ax_granted` funnel milestone (record-once), re-arms the global hotkey tap
+/// (its listener thread exits at launch when AX is missing — `hotkey:reload`
+/// only swaps bindings, never re-installs the tap), and refreshes the tray
+/// health panel so the Dictation row clears its ⚠️.
 #[tauri::command]
-pub fn check_accessibility(state: tauri::State<'_, super::AppState>) -> bool {
+pub fn check_accessibility(app: tauri::AppHandle, state: tauri::State<'_, super::AppState>) -> bool {
     let trusted = crate::injection::accessibility_trusted();
     if trusted {
-        if let Ok(db) = state.db.lock() {
-            let _ = fonos_core::funnel::record(&db, "ax_granted");
+        // `swap` returns the prior value; `false` here means this is the flip.
+        if !AX_TRUSTED_SEEN.swap(true, Ordering::SeqCst) {
+            if let Ok(db) = state.db.lock() {
+                let _ = fonos_core::funnel::record(&db, "ax_granted");
+            }
+            // Re-arm the CGEventTap now that AX is granted (macOS only; no-op if
+            // the tap is already alive — `start`'s `running` guard covers that).
+            #[cfg(target_os = "macos")]
+            crate::hotkey::restart_after_ax_grant();
+            // Repaint the tray: the Dictation row's AX-gated ⚠️ can now clear.
+            crate::tray::refresh_tray_status(&app, None);
         }
+    } else {
+        // Trust is (still) missing — re-arm the latch so a later grant re-fires.
+        AX_TRUSTED_SEEN.store(false, Ordering::SeqCst);
     }
     trusted
 }

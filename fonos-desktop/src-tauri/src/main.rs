@@ -831,6 +831,11 @@ fn main() {
             }
 
             if any_hotkey {
+                // Wrap in an Arc and stash it so `check_accessibility` can re-arm
+                // the CGEventTap after the user grants Accessibility (the listener
+                // thread exits at launch when AX is missing). All later calls are
+                // `&self`, so the Arc is a drop-in for the owned `hm`.
+                let hm = std::sync::Arc::new(hm);
                 let app_handle = app.handle().clone();
                 // Toggle debounce state lives in the shared `TOGGLE_DEBOUNCE_LAST`
                 // static (see above) so it's usable from the free-standing
@@ -919,6 +924,9 @@ fn main() {
                 if let Err(e) = hm.start() {
                     eprintln!("fonos: hotkey registration failed: {}", e);
                 }
+
+                // Keep the manager reachable for a post-AX-grant re-arm.
+                hotkey::store_manager(hm.clone());
 
                 // The CGEventTap that backs global hotkeys is installed on a
                 // background thread and silently no-ops without the Accessibility

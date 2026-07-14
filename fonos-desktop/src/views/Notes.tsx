@@ -1,6 +1,5 @@
-// Notes view — two-level: notebook list → notebook detail.
-// Level 1: Quick Notes section + notebook grid + new notebook creation.
-// Level 2: Chronological entries with edit, delete, and export.
+// Notes view — a document-flow reading experience: notebooks as flowing,
+// borderless journal pages (oldest-first, day-grouped, hover-revealed actions).
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { PinIcon, NotebookIcon } from "../components/Icons";
@@ -18,34 +17,11 @@ import { t, useT } from "../lib/i18n";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function relativeTime(isoDate: string): string {
-  const d = new Date(isoDate);
-  const now = new Date();
-  const today = now.toDateString();
-  const yesterday = new Date(now.getTime() - 86400000).toDateString();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (d.toDateString() === today) return `${t("notes.today")}, ${time}`;
-  if (d.toDateString() === yesterday) return `${t("notes.yesterday")}, ${time}`;
-  return `${d.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-  })}, ${time}`;
+/** Paragraph-tail timestamp: just the clock time — the day is already given
+ *  by the group header above. */
+function timeOnly(isoDate: string): string {
+  return new Date(isoDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
-
-// Used by relativeTime — keep for future notebook card view
-// @ts-ignore unused temporarily
-function shortRelative(isoDate: string): string {
-  const d = new Date(isoDate);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return t("notes.today");
-  if (diffDays === 1) return t("notes.yesterday");
-  if (diffDays < 7) return `${diffDays}${t("notes.d-ago")}`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}${t("notes.w-ago")}`;
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
 
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -232,58 +208,8 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
   return (
     <div
       data-testid="entry-card"
-      className="rounded-lg bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.05)] px-4 py-3 flex flex-col gap-2"
+      className="group relative rounded-md px-2 py-1.5 -mx-2 hover:bg-[rgba(255,255,255,0.025)] transition-colors"
     >
-      {/* Top row: timestamp + actions */}
-      <div className="flex items-center gap-2">
-        <time
-          data-testid="entry-time"
-          dateTime={entry.created_at}
-          className="text-[11px] text-[rgba(255,255,255,0.35)]"
-        >
-          {relativeTime(entry.created_at)}
-        </time>
-        <span className="flex-1" />
-
-        {/* Audio play button (only if audio_ref present AND onPlay provided) */}
-        {onPlay && entry.audio_ref && (
-          <button
-            data-testid="audio-play-btn"
-            onClick={() => onPlay(entry.audio_ref!)}
-            title={t("notes.play-audio")}
-            className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.3)] hover:text-[var(--accent)] hover:bg-[rgba(242,184,75,0.08)] transition-colors"
-          >
-            {PLAY_ICON}
-          </button>
-        )}
-
-        {/* Edit button */}
-        <button
-          data-testid="edit-entry-btn"
-          onClick={handleEditClick}
-          title={t("notes.edit")}
-          className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-[rgba(255,255,255,0.25)] hover:text-[rgba(255,255,255,0.6)] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
-        >
-          {PENCIL_ICON}
-        </button>
-
-        {/* Delete button */}
-        <button
-          data-testid="delete-entry-btn"
-          onClick={handleDeleteClick}
-          title={confirmDelete ? t("notes.confirm-delete") : t("notes.delete")}
-          className={[
-            "w-[22px] h-[22px] rounded-md flex items-center justify-center transition-colors",
-            confirmDelete
-              ? "text-[#ef4444] bg-[rgba(239,68,68,0.1)]"
-              : "text-[rgba(255,255,255,0.25)] hover:text-[#ef4444] hover:bg-[rgba(239,68,68,0.08)]",
-          ].join(" ")}
-        >
-          {TRASH_ICON}
-        </button>
-      </div>
-
-      {/* Text content or edit mode */}
       {editMode ? (
         <div className="flex flex-col gap-2">
           <textarea
@@ -315,12 +241,56 @@ function EntryItem({ entry, onEdit, onDelete, onPlay }: EntryItemProps) {
       ) : (
         <p
           data-testid="entry-text"
-          className="text-[13px] text-[rgba(255,255,255,0.7)] leading-relaxed whitespace-pre-wrap"
+          className="text-[13px] text-[rgba(255,255,255,0.72)] leading-relaxed whitespace-pre-wrap"
         >
           {displayText || (
             <span className="text-[rgba(255,255,255,0.25)] italic">{t("notes.no-text")}</span>
           )}
+          <time
+            data-testid="entry-time"
+            dateTime={entry.created_at}
+            className="ml-2 text-[10px] text-[rgba(255,255,255,0.22)] whitespace-nowrap select-none"
+          >
+            · {timeOnly(entry.created_at)}
+          </time>
         </p>
+      )}
+
+      {/* Hover actions — CSS-only reveal so paragraphs stay clean. */}
+      {!editMode && (
+        <div className="absolute right-0 -top-2 hidden group-hover:flex items-center gap-0.5 rounded-md bg-[#242220] border border-[rgba(255,255,255,0.08)] px-1 py-0.5 shadow-lg">
+          {onPlay && entry.audio_ref && (
+            <button
+              data-testid="audio-play-btn"
+              onClick={() => onPlay(entry.audio_ref!)}
+              title={t("notes.play-audio")}
+              className="w-[22px] h-[22px] rounded flex items-center justify-center text-[rgba(255,255,255,0.3)] hover:text-[var(--accent)] transition-colors"
+            >
+              {PLAY_ICON}
+            </button>
+          )}
+          <button
+            data-testid="edit-entry-btn"
+            onClick={handleEditClick}
+            title={t("notes.edit")}
+            className="w-[22px] h-[22px] rounded flex items-center justify-center text-[rgba(255,255,255,0.35)] hover:text-[rgba(255,255,255,0.7)] transition-colors"
+          >
+            {PENCIL_ICON}
+          </button>
+          <button
+            data-testid="delete-entry-btn"
+            onClick={handleDeleteClick}
+            title={confirmDelete ? t("notes.confirm-delete") : t("notes.delete")}
+            className={[
+              "w-[22px] h-[22px] rounded flex items-center justify-center transition-colors",
+              confirmDelete
+                ? "text-[#ef4444] bg-[rgba(239,68,68,0.1)]"
+                : "text-[rgba(255,255,255,0.35)] hover:text-[#ef4444]",
+            ].join(" ")}
+          >
+            {TRASH_ICON}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -579,7 +549,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
     getContainerEntries(selectedId)
       .then((entries) => {
         const sorted = [...entries].sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
         setSelectedEntries(sorted);
       })
@@ -590,6 +560,15 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
   }, [selectedId, loadNotebooks]);
 
   const selectedNotebook = sortedNotebooks.find((nb) => nb.id === selectedId);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // A real notebook opens at its latest page: pin to bottom whenever the
+  // selected notebook's entries finish loading.
+  useEffect(() => {
+    if (loadingEntries) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [selectedId, loadingEntries]);
 
   return (
     <div
@@ -629,7 +608,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
       <div className="mx-5 border-t border-[rgba(255,255,255,0.04)]" />
 
       {/* Selected notebook entries */}
-      <div className="flex-1 overflow-y-auto px-5 py-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-3">
         {loading ? (
           <div className="text-[rgba(255,255,255,0.2)] text-[11px] py-4 text-center">{t("notes.loading")}</div>
         ) : loadingEntries ? (
@@ -639,12 +618,12 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
             {selectedNotebook ? `${t("notes.no-entries-in")} ${selectedNotebook.title}` : t("notes.select-notebook")}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
             {(() => {
               const refresh = () => {
                 if (selectedId !== null) {
                   getContainerEntries(selectedId)
-                    .then((e) => setSelectedEntries([...e].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())))
+                    .then((e) => setSelectedEntries([...e].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())))
                     .catch(() => {});
                   loadNotebooks(); // refresh counts
                 }
@@ -666,7 +645,7 @@ function NotebookList({ embedded, initialNotebookId }: { embedded?: boolean; ini
                     <div className="flex-1 border-t border-[rgba(255,255,255,0.04)]" />
                     <span className="text-[9px] text-[rgba(255,255,255,0.15)]">{g.items.length}</span>
                   </div>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-0.5">
                     {g.items.map((entry) => (
                       <EntryItem
                         key={entry.id}

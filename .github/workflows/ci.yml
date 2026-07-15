@@ -52,6 +52,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # fonos-diarize is a gitignored SwiftPM build product, but tauri.conf.json
+      # lists it as a resource and tauri-build hard-errors on missing resources.
+      # Same placeholder trick build-linux.yml uses; runtime degrades gracefully
+      # when the helper is missing, and no test executes it.
+      - name: Stub gitignored diarize sidecar
+        run: touch fonos-desktop/src-tauri/resources/fonos-diarize
+
       # NOTE: `cargo fmt --all --check` is intentionally not run here.
       # Verified locally (2026-07-14) against a clean workspace: it fails
       # across ~96 files / 1365 diff hunks repo-wide (pre-existing drift,

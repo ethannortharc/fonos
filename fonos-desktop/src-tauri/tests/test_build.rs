@@ -1,14 +1,14 @@
 //! Build gate tests.
-//! Covers: INV-01 (App launches — Cargo.toml and tauri.conf.json parse correctly,
-//!          cargo check succeeds)
+//! Covers: INV-01 (App launches — Cargo.toml and tauri.conf.json parse correctly)
 //!
-//! Note: `cargo check` is implicitly validated by running `cargo test` at all.
-//! These tests provide explicit artifact-level checks.
+//! Note: compilation itself is implicitly validated by running `cargo test` at
+//! all. These tests provide explicit artifact-level checks of the config files.
 
 use std::path::Path;
-use std::process::Command;
 
-const WORKSPACE: &str = "/Users/ethan/Projects/design/fonos/fonos-desktop";
+/// The src-tauri directory, wherever the checkout lives — never a hardcoded
+/// absolute path (those pass locally and break on CI).
+const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
 // ---------------------------------------------------------------------------
 // INV-01 Level 1: Static config file validation
@@ -17,7 +17,7 @@ const WORKSPACE: &str = "/Users/ethan/Projects/design/fonos/fonos-desktop";
 /// INV-01: Cargo.toml exists and is a valid TOML file.
 #[test]
 fn test_cargo_toml_parses() {
-    let cargo_toml_path = Path::new(WORKSPACE).join("src-tauri").join("Cargo.toml");
+    let cargo_toml_path = Path::new(MANIFEST_DIR).join("Cargo.toml");
     assert!(
         cargo_toml_path.exists(),
         "INV-01: Cargo.toml not found at {:?}",
@@ -49,8 +49,7 @@ fn test_cargo_toml_parses() {
 /// INV-01: tauri.conf.json exists and is valid JSON with expected top-level keys.
 #[test]
 fn test_tauri_conf_parses() {
-    // tauri.conf.json may be in src-tauri/ directly.
-    let conf_path = Path::new(WORKSPACE).join("src-tauri").join("tauri.conf.json");
+    let conf_path = Path::new(MANIFEST_DIR).join("tauri.conf.json");
     assert!(
         conf_path.exists(),
         "INV-01: tauri.conf.json not found at {:?}",
@@ -71,30 +70,5 @@ fn test_tauri_conf_parses() {
     assert!(
         conf.get("identifier").is_some() || conf.get("tauri").is_some(),
         "INV-01: tauri.conf.json missing expected top-level key ('identifier' or 'tauri')"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// INV-01 Level 2: cargo check
-// ---------------------------------------------------------------------------
-
-/// INV-01: `cargo check` in the src-tauri directory exits with code 0.
-/// This verifies the Rust code compiles without errors.
-///
-/// Note: This test is inherently validated by `cargo test` succeeding, but
-/// we make it explicit so the ratchet can track it independently.
-#[test]
-fn test_cargo_check() {
-    let output = Command::new("cargo")
-        .args(["check", "--manifest-path", "src-tauri/Cargo.toml"])
-        .current_dir(WORKSPACE)
-        .output()
-        .expect("INV-01: failed to run cargo check");
-
-    assert!(
-        output.status.success(),
-        "INV-01: cargo check failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
     );
 }

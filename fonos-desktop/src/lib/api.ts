@@ -351,6 +351,13 @@ export async function saveConfig(configJson: string): Promise<void> {
   return invoke<void>("save_config", { configJson });
 }
 
+/** Whether dictation will actually transcribe with the live config — the
+ *  runtime-backed STT gate (backend mirror of the retired isSttConfigured; the
+ *  rule now lives in fonos-core so it can't drift from the dictation pipeline). */
+export async function sttConfigured(): Promise<boolean> {
+  return invoke<boolean>("stt_configured");
+}
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 
 /** Resize the float window. */

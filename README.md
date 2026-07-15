@@ -14,6 +14,25 @@ prompts, vocabulary, models, hotkeys, and output behavior.
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
+![Latest release](https://img.shields.io/github/v/release/ethannortharc/fonos)
+
+**[Download the latest release](https://github.com/ethannortharc/fonos/releases/latest)**
+— macOS `.dmg` or Linux AppImage / `.deb` / `.rpm`.
+macOS 13+ (Apple Silicon) · Linux x86_64/aarch64.
+
+## First dictation in 60 seconds
+
+1. Download and open Fonos ([Releases](https://github.com/ethannortharc/fonos/releases/latest)).
+2. Hold the default hotkey (⌘⇧Space) — or the hold-to-talk button in the
+   first-run playground — and speak.
+3. Grant Accessibility when asked, or skip it. Skipping degrades gracefully:
+   results show in a popup instead of inserting at the cursor.
+4. With Accessibility granted, dictate into any app: hold the hotkey, speak,
+   and the words land at your cursor.
+
+On macOS there is nothing to download or sign up for. Built-in Apple Speech is
+seeded automatically as the default STT engine on first run, and audio is
+processed on-device when on-device recognition is available.
 
 ![Fonos recipe workbench](assets/screenshots/v07-workbench-recipes.png)
 

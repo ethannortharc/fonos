@@ -591,6 +591,7 @@ fn main() {
             // Config commands
             commands::config::get_config,
             commands::config::save_config,
+            commands::config::stt_configured,
             // Dictation commands
             commands::dictation::has_microphone,
             commands::dictation::list_audio_inputs,

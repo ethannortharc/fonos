@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getConfig,
   saveConfig,
+  sttConfigured,
   checkAccessibility,
   requestAccessibility,
   startRecording,
@@ -18,7 +19,7 @@ import {
 import { ensureAppleSttDefault } from "../lib/appleSttSeed";
 import { isMacOS } from "../lib/platform";
 import { t, useT } from "../lib/i18n";
-import Scenarios, { isSttConfigured } from "./Scenarios";
+import Scenarios from "./Scenarios";
 
 /** Ordered steps. Linux front-loads engine setup because it has no built-in
  *  STT (spec §P1 Linux 差异); "engines" renders <Scenarios mode="overlay">. */
@@ -62,6 +63,9 @@ const FLOW: ObStep[] = isMacOS
   ? ["welcome", "playground", "accessibility", "guided"]
   : ["welcome", "engines", "playground", "accessibility", "guided"];
 
+/** Local mirror of Scenarios' errStr — a backend rejection's human message. */
+const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 const pill =
   "mt-4 px-8 py-2.5 rounded-full bg-gradient-to-r from-[#f4c063] to-[#e8a72e] text-[#1a1917] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40";
 const ghost =
@@ -83,6 +87,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // pointerup + pointerleave pair can't double-fire the recording commands.
   const [ptt, setPtt] = useState(false);
   const pttActive = useRef(false);
+  // Playground readiness (Fix 4). 'loading' until the Apple-STT seed is sought
+  // and — when a patch is needed — actually persisted; 'ready' arms hold-to-talk;
+  // 'error' keeps it disabled after a config failure. Guards the init race where
+  // recording could start against a not-yet-seeded config. `playErr` is the
+  // visible amber line: the raw backend text for a config failure, or the
+  // ob.play.error template (raw message appended) for a recording failure.
+  const [playState, setPlayState] = useState<"loading" | "ready" | "error">("loading");
+  const [playErr, setPlayErr] = useState("");
   // macOS reaches "engines" only via skip, where it is terminal. On Linux it
   // sits mid-flow and continues to the playground.
   const enginesTerminal = useRef(isMacOS);
@@ -105,7 +117,15 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     if (pttActive.current) return;
     pttActive.current = true;
     setPtt(true);
-    startRecording().catch(() => {});
+    setPlayErr(""); // a fresh press clears any prior recording error
+    startRecording().catch((e) => {
+      // Mic-permission / device / engine failures used to vanish into a
+      // no-op catch (Fix 4). Reset the button and surface the raw reason so
+      // the user sees why nothing happened.
+      pttActive.current = false;
+      setPtt(false);
+      setPlayErr(t("ob.play.error").replace("{msg}", errStr(e)));
+    });
   }, []);
   const stopPtt = useCallback(() => {
     if (!pttActive.current) return;
@@ -118,7 +138,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       .then((r) => {
         if (r?.text) setPlayText(r.text);
       })
-      .catch(() => {});
+      .catch((e) => {
+        setPlayErr(t("ob.play.error").replace("{msg}", errStr(e)));
+      });
   }, []);
 
   const finish = useCallback(async () => {
@@ -149,22 +171,41 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
   // Playground: seed Apple STT (macOS, unconfigured installs) the moment the
   // playground needs it, and listen for the dictation pipeline's transcript.
+  // Hold-to-talk stays disabled (playState !== 'ready') until the seed's
+  // saveConfig RESOLVES — arming it earlier lets a recording start against a
+  // not-yet-persisted config, the init race (Fix 4).
   useEffect(() => {
     if (step !== "playground") return;
-    getConfig()
-      .then((cfg) => {
-        const patch = ensureAppleSttDefault(cfg, isMacOS);
-        if (patch) {
-          // The seed makes STT usable even though `cfg` (read before the
-          // patch) still looks unconfigured.
-          setSttReady(true);
-          return saveConfig(JSON.stringify(patch));
-        }
-        setSttReady(isSttConfigured(cfg));
-      })
-      .catch(() => {});
-    let unlisten: (() => void) | undefined;
     let disposed = false;
+    setPlayState("loading");
+    setPlayErr("");
+    // Fetch the config and the runtime-backed "is STT usable?" answer together;
+    // the seed decision and the sttReady flag both derive from the backend gate
+    // (sttConfigured) instead of re-deriving the rule in TS.
+    Promise.all([getConfig(), sttConfigured()])
+      .then(async ([cfg, configured]) => {
+        const patch = ensureAppleSttDefault(cfg, isMacOS, configured);
+        if (patch) {
+          // The seed makes STT usable even though `configured` (read before the
+          // patch) is still false. Await the write so the button only arms once
+          // the config is actually on disk.
+          setSttReady(true);
+          await saveConfig(JSON.stringify(patch));
+        } else {
+          setSttReady(configured);
+        }
+        if (!disposed) setPlayState("ready");
+      })
+      .catch((e) => {
+        // getConfig/saveConfig failures used to be swallowed, leaving the
+        // button live against a broken config. Surface the reason and keep
+        // recording disabled (Fix 4).
+        if (!disposed) {
+          setPlayState("error");
+          setPlayErr(errStr(e));
+        }
+      });
+    let unlisten: (() => void) | undefined;
     void (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -278,7 +319,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       {step === "playground" && (
         <div className="flex flex-col items-center gap-3 text-center max-w-[480px] w-full px-6">
           <div className="text-[18px] font-semibold text-[#fafaf9]">{t("ob.playground.title")}</div>
-          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">{t("ob.playground.privacy")}</p>
+          {/* Platform-honest privacy copy: the macOS line promises on-device
+              recognition; Linux transcribes via the configured engine (Fix C). */}
+          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">
+            {t(isMacOS ? "ob.playground.privacy" : "ob.playground.privacy-linux")}
+          </p>
           <div
             data-testid="ob-playground-box"
             className="w-full min-h-[96px] rounded-xl bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] px-4 py-3 text-left"
@@ -296,18 +341,36 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               </p>
             )}
           </div>
-          {playText && <p className="text-[11px] text-[#7ed492]">{t("ob.playground.ready")}</p>}
+          {playText && (
+            <p className="text-[11px] text-[#7ed492]">
+              {t(isMacOS ? "ob.playground.ready" : "ob.playground.ready-linux")}
+            </p>
+          )}
           {/* AX-independent fallback: the hotkey hint above stays primary. */}
           <button
             data-testid="ob-ptt"
             onPointerDown={startPtt}
             onPointerUp={stopPtt}
             onPointerLeave={stopPtt}
+            // Fix B: arm only once the config is settled AND STT is usable — on
+            // Linux with no engine seeded, playState reaches "ready" but sttReady
+            // stays false, so a live record button must not sit under the warning.
+            disabled={playState !== "ready" || !sttReady}
             className={pill}
           >
             {ptt ? t("ob.play.ptt-active") : t("ob.play.ptt")}
           </button>
           <p className="text-[11px] text-[rgba(255,255,255,0.35)]">{t("ob.play.ptt-hint")}</p>
+          {playState === "loading" && (
+            <p data-testid="ob-play-preparing" className="text-[11px] text-[rgba(255,255,255,0.35)]">
+              {t("ob.play.preparing")}
+            </p>
+          )}
+          {playErr && (
+            <p data-testid="ob-play-error" className="text-[11px] text-[#e8a72e]">
+              {playErr}
+            </p>
+          )}
           {!sttReady && (
             <>
               <p data-testid="ob-no-stt" className="text-[11px] text-[#e8a72e]">
@@ -357,7 +420,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             >
               {axWaiting ? t("ob.ax.waiting") : t("ob.ax.grant")}
             </button>
-            <button data-testid="ob-ax-later" onClick={next} className={ghost}>
+            {/* "Not now" finishes the wizard rather than advancing to the
+                guided task. Without Accessibility that task is impossible:
+                InsertOutput (workflow_widgets.rs) delivers via the popup Panel
+                and returns BEFORE it emits dictation:delivered — which is the
+                only thing that enables guided's Finish — and the global hotkey
+                itself is a CGEventTap that can't exist without AX. So Finish
+                could never enable; complete onboarding here (popups still work). */}
+            <button data-testid="ob-ax-later" onClick={() => void finish()} className={ghost}>
               {t("ob.ax.later")}
             </button>
           </div>

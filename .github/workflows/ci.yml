@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: fonos-desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: fonos-desktop
+        run: npm ci
+
+      - name: Test (vitest)
+        working-directory: fonos-desktop
+        run: npm test
+
+      - name: Build (tsc -b && vite build)
+        working-directory: fonos-desktop
+        run: npm run build
+
+  rust:
+    # macOS runner doubles as the macOS smoke build (Tauri macOS deps ship
+    # with Xcode CLT, so no extra system deps are needed here — unlike
+    # build-linux.yml's apt-get step for the Linux webkit/gtk stack).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # fonos-diarize is a gitignored SwiftPM build product, but tauri.conf.json
+      # lists it as a resource and tauri-build hard-errors on missing resources.
+      # Same placeholder trick build-linux.yml uses; runtime degrades gracefully
+      # when the helper is missing, and no test executes it.
+      - name: Stub gitignored diarize sidecar
+        run: touch fonos-desktop/src-tauri/resources/fonos-diarize
+
+      # NOTE: `cargo fmt --all --check` is intentionally not run here.
+      # Verified locally (2026-07-14) against a clean workspace: it fails
+      # across ~96 files / 1365 diff hunks repo-wide (pre-existing drift,
+      # not something this workflow should gate on). Revisit once the
+      # codebase has been reformatted in a dedicated pass.
+      - name: Clippy
+        run: cargo clippy --workspace
+
+      # `ci` feature (fonos-desktop/src-tauri/Cargo.toml) skips hardware-
+      # dependent tests (mic, accessibility) that can't run on a CI runner.
+      - name: Test
+        run: cargo test --workspace --features ci
+
+      - name: Build (smoke)
+        run: cargo build --workspace
+
+  rust-linux:
+    # fonos-desktop/src-tauri has substantial Linux/Wayland-specific Rust
+    # code that otherwise only compiles on tag-triggered build-linux.yml,
+    # so regressions there would surface at release time. This is a compile
+    # gate only (no tests/packaging, unlike build-linux.yml) — the apt-get
+    # deps below are copied from build-linux.yml's "Install system
+    # dependencies" step, since the -sys crates (webkit2gtk/gtk stack) need
+    # their pkg-config deps present just to type-check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libasound2-dev \
+            rpm \
+            xdg-utils \
+            libfuse2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # fonos-diarize is a gitignored SwiftPM build product, but tauri.conf.json
+      # lists it as a resource and tauri-build hard-errors on missing resources.
+      # Same placeholder trick build-linux.yml uses; runtime degrades gracefully
+      # when the helper is missing, and no test executes it.
+      - name: Stub gitignored diarize sidecar
+        run: touch fonos-desktop/src-tauri/resources/fonos-diarize
+
+      - name: Check (compile gate)
+        run: cargo check --workspace

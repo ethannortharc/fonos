@@ -38,16 +38,10 @@ export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e
 export const control =
   "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(242,184,75,0.35)] transition-colors";
 
-/** Whether the app already has a usable STT configuration — a set default STT
- *  profile, or any model profile advertising the "stt" capability. Used by the
- *  first-run gate so existing installs never see the setup screen. */
-export function isSttConfigured(cfg: AppConfig): boolean {
-  const hasDefault = (cfg.stt_profile ?? "") !== "";
-  const hasSttCapable = (cfg.model_profiles ?? []).some(
-    (p) => Array.isArray(p.capabilities) && p.capabilities.includes("stt")
-  );
-  return hasDefault || hasSttCapable;
-}
+// The former `isSttConfigured` lived here; it moved into fonos-core (Fix A) as
+// `services::is_stt_effectively_configured`, exposed via the `stt_configured`
+// command and read through `api.sttConfigured()`. Keeping the STT gate on the
+// Rust side means it can't drift from the dictation pipeline's own resolution.
 
 // ── scenario / engine / provider definitions ────────────────────────────────
 
@@ -320,7 +314,7 @@ export function buildUpdates(
     takenIds.add(id);
     const profile: ModelProfile = {
       id,
-      name: spec.provider === "apple" ? "Apple on-device Speech" : spec.model,
+      name: spec.provider === "apple" ? "Apple Speech (on-device first)" : spec.model,
       provider: spec.provider,
       model: spec.model,
       capabilities: [...spec.capabilities],

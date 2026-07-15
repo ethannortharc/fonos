@@ -3,14 +3,13 @@ import Stats from "./views/Stats";
 import Settings from "./views/Settings";
 import History from "./views/History";
 import type { HistoryFilter } from "./views/History";
-import { isSttConfigured } from "./views/Scenarios";
 import Onboarding from "./views/Onboarding";
 import Workbench, { type FocusRecipe } from "./views/Workbench";
 import HomePage from "./views/HomePage";
 import ModelsPage from "./views/ModelsPage";
 import VocabPage from "./views/VocabPage";
 import { FonosMark } from "./components/Icons";
-import { getConfig, recordOnboardingEvent } from "./lib/api";
+import { getConfig, recordOnboardingEvent, sttConfigured } from "./lib/api";
 import { useT, setLocale, resolveLocale, type TKey } from "./lib/i18n";
 
 type Tab = "home" | "workbench" | "models" | "vocab" | "history" | "stats" | "settings";
@@ -119,13 +118,15 @@ export default function App() {
 
   useEffect(() => {
     getConfig()
-      .then((cfg) => {
+      .then(async (cfg) => {
         setLocale(resolveLocale(cfg.ui_language));
         // Show the wizard only for genuinely-unconfigured first runs: the flag
-        // is unset AND there's no usable STT config. Existing installs that
+        // is unset AND there's no usable STT config. The usable-STT check is the
+        // backend runtime-backed gate (sttConfigured), so it can't drift from
+        // what the dictation pipeline actually resolves. Existing installs that
         // already configured models via Settings skip the wizard even with the
         // flag unset; skipping still persists the flag.
-        if (!cfg.has_completed_onboarding && !isSttConfigured(cfg)) {
+        if (!cfg.has_completed_onboarding && !(await sttConfigured())) {
           setShowSetup(true);
           // Funnel t0 — local-only, record-once (backend ignores repeats).
           recordOnboardingEvent("launch").catch(() => {});

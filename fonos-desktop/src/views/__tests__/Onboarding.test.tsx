@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import Onboarding from "../Onboarding";
-import { saveConfig, requestAccessibility, startRecording, stopRecording } from "../../lib/api";
+import { saveConfig, requestAccessibility, startRecording, stopRecording, checkAccessibility } from "../../lib/api";
 
 const listeners: Record<string, (e: unknown) => void> = {};
 
@@ -33,13 +33,15 @@ vi.mock("../../lib/api", () => ({
   recordOnboardingEvent: vi.fn(async () => true),
 }));
 
-/** Drive the flow from welcome into the guided step. */
+/** Drive the flow from welcome into the guided step. "Not now" no longer routes
+ *  here (Fix 1: it finishes the wizard) — a *granted* Accessibility check is the
+ *  only path to guided, and it auto-advances accessibility → guided. */
 async function intoGuided() {
   fireEvent.click(screen.getByTestId("ob-start"));
   await waitFor(() => expect(listeners["float:stop"]).toBeDefined());
   act(() => listeners["float:stop"]({ payload: "hi" }));
-  fireEvent.click(screen.getByTestId("ob-next")); // → accessibility
-  fireEvent.click(await screen.findByTestId("ob-ax-later")); // → guided
+  vi.mocked(checkAccessibility).mockResolvedValue(true);
+  fireEvent.click(screen.getByTestId("ob-next")); // → accessibility → (auto) guided
   await waitFor(() => expect(listeners["dictation:delivered"]).toBeDefined());
 }
 
@@ -74,6 +76,8 @@ describe("Onboarding (macOS flow)", () => {
     render(<Onboarding onDone={() => {}} />);
     fireEvent.click(screen.getByTestId("ob-start"));
     const ptt = await screen.findByTestId("ob-ptt");
+    // Fix 4: the button only arms once the Apple-STT seed save resolves.
+    await waitFor(() => expect(ptt).not.toBeDisabled());
     fireEvent.pointerDown(ptt);
     expect(startRecording).toHaveBeenCalledTimes(1);
     expect(stopRecording).not.toHaveBeenCalled();
@@ -95,6 +99,8 @@ describe("Onboarding (macOS flow)", () => {
   });
 
   it("grant button asks the OS for the accessibility prompt", async () => {
+    // Keep AX untrusted so the step doesn't auto-advance past the grant button.
+    vi.mocked(checkAccessibility).mockResolvedValue(false);
     render(<Onboarding onDone={() => {}} />);
     fireEvent.click(screen.getByTestId("ob-start"));
     await waitFor(() => expect(listeners["float:stop"]).toBeDefined());
@@ -102,6 +108,28 @@ describe("Onboarding (macOS flow)", () => {
     fireEvent.click(screen.getByTestId("ob-next"));
     fireEvent.click(await screen.findByTestId("ob-ax-grant"));
     expect(requestAccessibility).toHaveBeenCalled();
+  });
+
+  it("Fix 1: 'Not now' on the accessibility step finishes the wizard and never reaches guided", async () => {
+    // Without AX the guided task is impossible (InsertOutput returns via the
+    // popup Panel before dictation:delivered fires; the global hotkey is a
+    // CGEventTap that can't exist without AX) — so "Not now" must complete
+    // onboarding, not advance to a guided step whose Finish can never enable.
+    vi.mocked(checkAccessibility).mockResolvedValue(false);
+    const onDone = vi.fn();
+    render(<Onboarding onDone={onDone} />);
+    fireEvent.click(screen.getByTestId("ob-start"));
+    await waitFor(() => expect(listeners["float:stop"]).toBeDefined());
+    act(() => listeners["float:stop"]({ payload: "hi" }));
+    fireEvent.click(screen.getByTestId("ob-next")); // → accessibility
+    fireEvent.click(await screen.findByTestId("ob-ax-later"));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const persisted = vi
+      .mocked(saveConfig)
+      .mock.calls.map((c) => JSON.parse(c[0] as string));
+    expect(persisted.some((p) => p.has_completed_onboarding === true)).toBe(true);
+    // The guided step (and its Finish button) never rendered.
+    expect(screen.queryByTestId("ob-finish")).toBeNull();
   });
 
   it("guided task completes on dictation:delivered from another app", async () => {
@@ -117,5 +145,37 @@ describe("Onboarding (macOS flow)", () => {
     await intoGuided();
     act(() => listeners["dictation:delivered"]({ payload: { target_app: "Fonos" } }));
     expect(screen.queryByTestId("ob-guided-done")).toBeNull();
+  });
+
+  it("Fix 4: hold-to-talk stays disabled until the Apple-STT seed save resolves (init race)", async () => {
+    // Hold the seeding write pending so we can observe the button is not armed.
+    let resolveSave!: () => void;
+    vi.mocked(saveConfig).mockImplementationOnce(
+      () => new Promise<void>((res) => { resolveSave = () => res(); })
+    );
+    render(<Onboarding onDone={() => {}} />);
+    fireEvent.click(screen.getByTestId("ob-start"));
+    const ptt = await screen.findByTestId("ob-ptt");
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled());
+    // Seed save still pending → recording must not be armed yet.
+    expect(ptt).toBeDisabled();
+    // Resolve the seed → the button arms.
+    await act(async () => { resolveSave(); });
+    await waitFor(() => expect(ptt).not.toBeDisabled());
+  });
+
+  it("Fix 4: a recording failure shows a visible error and clears on the next successful press", async () => {
+    vi.mocked(startRecording).mockRejectedValueOnce(new Error("mic blocked"));
+    render(<Onboarding onDone={() => {}} />);
+    fireEvent.click(screen.getByTestId("ob-start"));
+    const ptt = await screen.findByTestId("ob-ptt");
+    await waitFor(() => expect(ptt).not.toBeDisabled());
+    // First press: startRecording rejects → error line appears, button resets.
+    fireEvent.pointerDown(ptt);
+    expect(await screen.findByTestId("ob-play-error")).toBeInTheDocument();
+    // Second (successful) press clears the error.
+    fireEvent.pointerDown(ptt);
+    await waitFor(() => expect(screen.queryByTestId("ob-play-error")).toBeNull());
+    fireEvent.pointerUp(ptt);
   });
 });

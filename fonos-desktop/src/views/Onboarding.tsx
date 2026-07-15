@@ -62,6 +62,9 @@ const FLOW: ObStep[] = isMacOS
   ? ["welcome", "playground", "accessibility", "guided"]
   : ["welcome", "engines", "playground", "accessibility", "guided"];
 
+/** Local mirror of Scenarios' errStr — a backend rejection's human message. */
+const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 const pill =
   "mt-4 px-8 py-2.5 rounded-full bg-gradient-to-r from-[#f4c063] to-[#e8a72e] text-[#1a1917] text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-40";
 const ghost =
@@ -83,6 +86,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   // pointerup + pointerleave pair can't double-fire the recording commands.
   const [ptt, setPtt] = useState(false);
   const pttActive = useRef(false);
+  // Playground readiness (Fix 4). 'loading' until the Apple-STT seed is sought
+  // and — when a patch is needed — actually persisted; 'ready' arms hold-to-talk;
+  // 'error' keeps it disabled after a config failure. Guards the init race where
+  // recording could start against a not-yet-seeded config. `playErr` is the
+  // visible amber line: the raw backend text for a config failure, or the
+  // ob.play.error template (raw message appended) for a recording failure.
+  const [playState, setPlayState] = useState<"loading" | "ready" | "error">("loading");
+  const [playErr, setPlayErr] = useState("");
   // macOS reaches "engines" only via skip, where it is terminal. On Linux it
   // sits mid-flow and continues to the playground.
   const enginesTerminal = useRef(isMacOS);
@@ -105,7 +116,15 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     if (pttActive.current) return;
     pttActive.current = true;
     setPtt(true);
-    startRecording().catch(() => {});
+    setPlayErr(""); // a fresh press clears any prior recording error
+    startRecording().catch((e) => {
+      // Mic-permission / device / engine failures used to vanish into a
+      // no-op catch (Fix 4). Reset the button and surface the raw reason so
+      // the user sees why nothing happened.
+      pttActive.current = false;
+      setPtt(false);
+      setPlayErr(t("ob.play.error").replace("{msg}", errStr(e)));
+    });
   }, []);
   const stopPtt = useCallback(() => {
     if (!pttActive.current) return;
@@ -118,7 +137,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       .then((r) => {
         if (r?.text) setPlayText(r.text);
       })
-      .catch(() => {});
+      .catch((e) => {
+        setPlayErr(t("ob.play.error").replace("{msg}", errStr(e)));
+      });
   }, []);
 
   const finish = useCallback(async () => {
@@ -149,22 +170,38 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
   // Playground: seed Apple STT (macOS, unconfigured installs) the moment the
   // playground needs it, and listen for the dictation pipeline's transcript.
+  // Hold-to-talk stays disabled (playState !== 'ready') until the seed's
+  // saveConfig RESOLVES — arming it earlier lets a recording start against a
+  // not-yet-persisted config, the init race (Fix 4).
   useEffect(() => {
     if (step !== "playground") return;
+    let disposed = false;
+    setPlayState("loading");
+    setPlayErr("");
     getConfig()
-      .then((cfg) => {
+      .then(async (cfg) => {
         const patch = ensureAppleSttDefault(cfg, isMacOS);
         if (patch) {
           // The seed makes STT usable even though `cfg` (read before the
-          // patch) still looks unconfigured.
+          // patch) still looks unconfigured. Await the write so the button
+          // only arms once the config is actually on disk.
           setSttReady(true);
-          return saveConfig(JSON.stringify(patch));
+          await saveConfig(JSON.stringify(patch));
+        } else {
+          setSttReady(isSttConfigured(cfg));
         }
-        setSttReady(isSttConfigured(cfg));
+        if (!disposed) setPlayState("ready");
       })
-      .catch(() => {});
+      .catch((e) => {
+        // getConfig/saveConfig failures used to be swallowed, leaving the
+        // button live against a broken config. Surface the reason and keep
+        // recording disabled (Fix 4).
+        if (!disposed) {
+          setPlayState("error");
+          setPlayErr(errStr(e));
+        }
+      });
     let unlisten: (() => void) | undefined;
-    let disposed = false;
     void (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -303,11 +340,22 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             onPointerDown={startPtt}
             onPointerUp={stopPtt}
             onPointerLeave={stopPtt}
+            disabled={playState !== "ready"}
             className={pill}
           >
             {ptt ? t("ob.play.ptt-active") : t("ob.play.ptt")}
           </button>
           <p className="text-[11px] text-[rgba(255,255,255,0.35)]">{t("ob.play.ptt-hint")}</p>
+          {playState === "loading" && (
+            <p data-testid="ob-play-preparing" className="text-[11px] text-[rgba(255,255,255,0.35)]">
+              {t("ob.play.preparing")}
+            </p>
+          )}
+          {playErr && (
+            <p data-testid="ob-play-error" className="text-[11px] text-[#e8a72e]">
+              {playErr}
+            </p>
+          )}
           {!sttReady && (
             <>
               <p data-testid="ob-no-stt" className="text-[11px] text-[#e8a72e]">
@@ -357,7 +405,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             >
               {axWaiting ? t("ob.ax.waiting") : t("ob.ax.grant")}
             </button>
-            <button data-testid="ob-ax-later" onClick={next} className={ghost}>
+            {/* "Not now" finishes the wizard rather than advancing to the
+                guided task. Without Accessibility that task is impossible:
+                InsertOutput (workflow_widgets.rs) delivers via the popup Panel
+                and returns BEFORE it emits dictation:delivered — which is the
+                only thing that enables guided's Finish — and the global hotkey
+                itself is a CGEventTap that can't exist without AX. So Finish
+                could never enable; complete onboarding here (popups still work). */}
+            <button data-testid="ob-ax-later" onClick={() => void finish()} className={ghost}>
               {t("ob.ax.later")}
             </button>
           </div>

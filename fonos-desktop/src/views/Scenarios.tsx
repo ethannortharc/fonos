@@ -38,15 +38,22 @@ export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e
 export const control =
   "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(242,184,75,0.35)] transition-colors";
 
-/** Whether the app already has a usable STT configuration — a set default STT
- *  profile, or any model profile advertising the "stt" capability. Used by the
- *  first-run gate so existing installs never see the setup screen. */
+/** Whether the app has a *usable* STT configuration, matching what the backend
+ *  will actually resolve at runtime. fonos-core's resolve_service("stt") reads
+ *  ONLY config.stt_profile — so an stt-capable profile that isn't assigned as
+ *  the default is unusable, and an stt_profile id pointing at a since-deleted
+ *  profile resolves to an empty service. Configured therefore ⇔ stt_profile is
+ *  non-empty AND still references an existing entry in model_profiles (by id).
+ *
+ *  Deliberately does NOT require the referenced profile to advertise the "stt"
+ *  capability: older profiles predate the capabilities array, and the assigned
+ *  default is authoritative regardless. Used by the first-run gate (App.tsx) and
+ *  the Apple-STT seed (appleSttSeed.ts) — a false positive here would both skip
+ *  onboarding and skip seeding the Apple default, silently breaking dictation. */
 export function isSttConfigured(cfg: AppConfig): boolean {
-  const hasDefault = (cfg.stt_profile ?? "") !== "";
-  const hasSttCapable = (cfg.model_profiles ?? []).some(
-    (p) => Array.isArray(p.capabilities) && p.capabilities.includes("stt")
-  );
-  return hasDefault || hasSttCapable;
+  const id = cfg.stt_profile ?? "";
+  if (id === "") return false;
+  return (cfg.model_profiles ?? []).some((p) => p.id === id);
 }
 
 // ── scenario / engine / provider definitions ────────────────────────────────

@@ -573,10 +573,17 @@ impl AppConfig {
         })
     }
 
-    /// Mirrors the frontend `isSttConfigured` (Scenarios.tsx): a default STT
-    /// profile is assigned, or any profile is capability-tagged "stt".
+    /// The single source of truth for "will dictation actually transcribe?" —
+    /// delegates to [`crate::services::is_stt_effectively_configured`], which
+    /// mirrors the runtime STT resolution in `commands/dictation.rs` exactly:
+    /// the `stt.default` widget's `model_profile` (the `"apple-speech"` sentinel
+    /// or an existing profile) wins over the global `stt_profile` and, being set,
+    /// never falls back — so a dangling widget ref poisons even a valid global
+    /// default. Unlike LLM/TTS below, capability tags are irrelevant here: only
+    /// the assigned default is authoritative. Read by the tray STT row and the
+    /// `stt_configured` command that backs the frontend first-run gate.
     pub fn is_stt_configured(&self) -> bool {
-        !self.stt_profile.trim().is_empty() || self.has_capability_profile("stt")
+        crate::services::is_stt_effectively_configured(self)
     }
 
     /// Same semantics for the LLM role (tray 🧠 row / unlock notification).
@@ -667,13 +674,22 @@ mod tests {
         cfg.llm_profile = "p1".to_string();
         assert!(cfg.is_llm_configured());
 
-        // A capability-tagged profile counts even without a default assignment.
+        // A capability-tagged profile counts for TTS even without a default
+        // assignment (LLM/TTS keep the loose capability semantics).
         cfg.model_profiles = vec![serde_json::json!({
             "id": "p2", "name": "x", "provider": "openai",
             "model": "m", "capabilities": ["tts", "stt"]
         })];
         assert!(cfg.is_tts_configured());
+        // STT no longer honors capability-only (Fix A: it mirrors the runtime,
+        // which reads the assigned default, not the capabilities array). The
+        // stt-capable profile above is unusable until it's the assigned default.
+        assert!(!cfg.is_stt_configured());
+        cfg.stt_profile = "p2".to_string();
         assert!(cfg.is_stt_configured());
+        // A stt_profile pointing at a since-deleted profile is not configured.
+        cfg.stt_profile = "ghost".to_string();
+        assert!(!cfg.is_stt_configured());
         // Capabilities list without "llm" does not flip llm off its direct assignment.
         cfg.llm_profile = String::new();
         assert!(!cfg.is_llm_configured());

@@ -28,9 +28,9 @@ guide.
 ## Tests
 
 ```bash
-cd fonos-desktop && npm test              # vitest (frontend unit tests)
+npm --prefix fonos-desktop test           # vitest (frontend unit tests)
 cargo test --workspace --features ci      # Rust, both crates; ci skips hardware-dependent tests
-cd fonos-desktop && npm run build         # tsc -b, the type-check gate
+npm --prefix fonos-desktop run build      # tsc -b, the type-check gate
 ```
 
 Some desktop tests need Microphone, Accessibility, or Screen Recording

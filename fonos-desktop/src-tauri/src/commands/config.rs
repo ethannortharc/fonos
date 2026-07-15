@@ -10,6 +10,17 @@ pub fn get_config(state: tauri::State<'_, AppState>) -> Result<serde_json::Value
     Ok(json)
 }
 
+/// Whether dictation will actually transcribe with the live config — the single
+/// runtime-backed STT gate. Delegates to the core resolver
+/// ([`fonos_core::services::is_stt_effectively_configured`]) so the frontend
+/// first-run gate and Apple-STT seed read the same rule the dictation pipeline
+/// obeys, instead of re-deriving it in TypeScript.
+#[tauri::command]
+pub fn stt_configured(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let guard = state.config.lock().map_err(|e| e.to_string())?;
+    Ok(fonos_core::services::is_stt_effectively_configured(&guard))
+}
+
 /// Merge the provided JSON fields into the config and persist to disk.
 ///
 /// Only keys present in `config_json` are updated; unrecognised keys are

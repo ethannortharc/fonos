@@ -38,23 +38,10 @@ export const errStr = (e: unknown) => (e instanceof Error ? e.message : String(e
 export const control =
   "bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)] rounded-lg px-2.5 py-1.5 text-[11px] text-[#fafaf9] focus:outline-none focus:border-[rgba(242,184,75,0.35)] transition-colors";
 
-/** Whether the app has a *usable* STT configuration, matching what the backend
- *  will actually resolve at runtime. fonos-core's resolve_service("stt") reads
- *  ONLY config.stt_profile — so an stt-capable profile that isn't assigned as
- *  the default is unusable, and an stt_profile id pointing at a since-deleted
- *  profile resolves to an empty service. Configured therefore ⇔ stt_profile is
- *  non-empty AND still references an existing entry in model_profiles (by id).
- *
- *  Deliberately does NOT require the referenced profile to advertise the "stt"
- *  capability: older profiles predate the capabilities array, and the assigned
- *  default is authoritative regardless. Used by the first-run gate (App.tsx) and
- *  the Apple-STT seed (appleSttSeed.ts) — a false positive here would both skip
- *  onboarding and skip seeding the Apple default, silently breaking dictation. */
-export function isSttConfigured(cfg: AppConfig): boolean {
-  const id = cfg.stt_profile ?? "";
-  if (id === "") return false;
-  return (cfg.model_profiles ?? []).some((p) => p.id === id);
-}
+// The former `isSttConfigured` lived here; it moved into fonos-core (Fix A) as
+// `services::is_stt_effectively_configured`, exposed via the `stt_configured`
+// command and read through `api.sttConfigured()`. Keeping the STT gate on the
+// Rust side means it can't drift from the dictation pipeline's own resolution.
 
 // ── scenario / engine / provider definitions ────────────────────────────────
 
@@ -327,7 +314,7 @@ export function buildUpdates(
     takenIds.add(id);
     const profile: ModelProfile = {
       id,
-      name: spec.provider === "apple" ? "Apple on-device Speech" : spec.model,
+      name: spec.provider === "apple" ? "Apple Speech (on-device first)" : spec.model,
       provider: spec.provider,
       model: spec.model,
       capabilities: [...spec.capabilities],

@@ -74,3 +74,47 @@ jobs:
 
       - name: Build (smoke)
         run: cargo build --workspace
+
+  rust-linux:
+    # fonos-desktop/src-tauri has substantial Linux/Wayland-specific Rust
+    # code that otherwise only compiles on tag-triggered build-linux.yml,
+    # so regressions there would surface at release time. This is a compile
+    # gate only (no tests/packaging, unlike build-linux.yml) — the apt-get
+    # deps below are copied from build-linux.yml's "Install system
+    # dependencies" step, since the -sys crates (webkit2gtk/gtk stack) need
+    # their pkg-config deps present just to type-check.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libasound2-dev \
+            rpm \
+            xdg-utils \
+            libfuse2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # fonos-diarize is a gitignored SwiftPM build product, but tauri.conf.json
+      # lists it as a resource and tauri-build hard-errors on missing resources.
+      # Same placeholder trick build-linux.yml uses; runtime degrades gracefully
+      # when the helper is missing, and no test executes it.
+      - name: Stub gitignored diarize sidecar
+        run: touch fonos-desktop/src-tauri/resources/fonos-diarize
+
+      - name: Check (compile gate)
+        run: cargo check --workspace

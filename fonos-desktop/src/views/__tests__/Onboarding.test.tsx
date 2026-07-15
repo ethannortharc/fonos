@@ -12,8 +12,6 @@ vi.mock("../Scenarios", () => ({
       engines
     </button>
   ),
-  // appleSttSeed imports this from the same module — the mock must keep it.
-  isSttConfigured: () => false,
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, cb: (e: unknown) => void) => {
@@ -26,6 +24,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("../../lib/api", () => ({
   getConfig: vi.fn(async () => ({ model_profiles: [], stt_profile: "", hotkey_dictation: "cmd+shift+space" })),
   saveConfig: vi.fn(async () => {}),
+  // Fix A: the runtime-backed STT gate. Unconfigured fresh install → false, so
+  // the macOS playground seeds Apple STT.
+  sttConfigured: vi.fn(async () => false),
   checkAccessibility: vi.fn(async () => false),
   requestAccessibility: vi.fn(async () => false),
   startRecording: vi.fn(async () => {}),

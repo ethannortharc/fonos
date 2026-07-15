@@ -27,8 +27,8 @@ macOS 13+ (Apple Silicon) · Linux x86_64/aarch64.
    first-run playground — and speak.
 3. Grant Accessibility when asked, or skip it. Skipping degrades gracefully:
    results show in a popup instead of inserting at the cursor.
-4. Dictate into any app: hold the hotkey, speak, and the words land at your
-   cursor.
+4. With Accessibility granted, dictate into any app: hold the hotkey, speak,
+   and the words land at your cursor.
 
 On macOS there is nothing to download or sign up for. Built-in Apple Speech is
 seeded automatically as the default STT engine on first run, and audio is

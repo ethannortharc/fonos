@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getConfig,
   saveConfig,
+  sttConfigured,
   checkAccessibility,
   requestAccessibility,
   startRecording,
@@ -18,7 +19,7 @@ import {
 import { ensureAppleSttDefault } from "../lib/appleSttSeed";
 import { isMacOS } from "../lib/platform";
 import { t, useT } from "../lib/i18n";
-import Scenarios, { isSttConfigured } from "./Scenarios";
+import Scenarios from "./Scenarios";
 
 /** Ordered steps. Linux front-loads engine setup because it has no built-in
  *  STT (spec §P1 Linux 差异); "engines" renders <Scenarios mode="overlay">. */
@@ -178,17 +179,20 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     let disposed = false;
     setPlayState("loading");
     setPlayErr("");
-    getConfig()
-      .then(async (cfg) => {
-        const patch = ensureAppleSttDefault(cfg, isMacOS);
+    // Fetch the config and the runtime-backed "is STT usable?" answer together;
+    // the seed decision and the sttReady flag both derive from the backend gate
+    // (sttConfigured) instead of re-deriving the rule in TS.
+    Promise.all([getConfig(), sttConfigured()])
+      .then(async ([cfg, configured]) => {
+        const patch = ensureAppleSttDefault(cfg, isMacOS, configured);
         if (patch) {
-          // The seed makes STT usable even though `cfg` (read before the
-          // patch) still looks unconfigured. Await the write so the button
-          // only arms once the config is actually on disk.
+          // The seed makes STT usable even though `configured` (read before the
+          // patch) is still false. Await the write so the button only arms once
+          // the config is actually on disk.
           setSttReady(true);
           await saveConfig(JSON.stringify(patch));
         } else {
-          setSttReady(isSttConfigured(cfg));
+          setSttReady(configured);
         }
         if (!disposed) setPlayState("ready");
       })
@@ -315,7 +319,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       {step === "playground" && (
         <div className="flex flex-col items-center gap-3 text-center max-w-[480px] w-full px-6">
           <div className="text-[18px] font-semibold text-[#fafaf9]">{t("ob.playground.title")}</div>
-          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">{t("ob.playground.privacy")}</p>
+          {/* Platform-honest privacy copy: the macOS line promises on-device
+              recognition; Linux transcribes via the configured engine (Fix C). */}
+          <p className="text-[12px] text-[rgba(255,255,255,0.5)]">
+            {t(isMacOS ? "ob.playground.privacy" : "ob.playground.privacy-linux")}
+          </p>
           <div
             data-testid="ob-playground-box"
             className="w-full min-h-[96px] rounded-xl bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.07)] px-4 py-3 text-left"
@@ -333,14 +341,21 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               </p>
             )}
           </div>
-          {playText && <p className="text-[11px] text-[#7ed492]">{t("ob.playground.ready")}</p>}
+          {playText && (
+            <p className="text-[11px] text-[#7ed492]">
+              {t(isMacOS ? "ob.playground.ready" : "ob.playground.ready-linux")}
+            </p>
+          )}
           {/* AX-independent fallback: the hotkey hint above stays primary. */}
           <button
             data-testid="ob-ptt"
             onPointerDown={startPtt}
             onPointerUp={stopPtt}
             onPointerLeave={stopPtt}
-            disabled={playState !== "ready"}
+            // Fix B: arm only once the config is settled AND STT is usable — on
+            // Linux with no engine seeded, playState reaches "ready" but sttReady
+            // stays false, so a live record button must not sit under the warning.
+            disabled={playState !== "ready" || !sttReady}
             className={pill}
           >
             {ptt ? t("ob.play.ptt-active") : t("ob.play.ptt")}

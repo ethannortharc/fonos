@@ -314,8 +314,8 @@ formats are published for each release:
   points you to it.
 
   ```bash
-  sudo apt install ./fonos_*.deb    # Debian / Ubuntu
-  sudo dnf install ./fonos-*.rpm    # Fedora / RHEL
+  sudo apt install ./Fonos_*.deb    # Debian / Ubuntu
+  sudo dnf install ./Fonos-*.rpm    # Fedora / RHEL
   ```
 
 Text injection on Linux needs `xdotool`:

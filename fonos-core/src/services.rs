@@ -118,8 +118,9 @@ pub fn effective_stt_profile(config: &AppConfig) -> Option<String> {
 /// resolution (the plain-run, no-override arms) **exactly**:
 ///
 /// - `stt.default` widget's `model_profile` set → the `"apple-speech"` sentinel
-///   is always usable (on-device engine); any other id is usable iff a
-///   `model_profiles` entry with that id still exists.
+///   is usable on macOS only (on-device engine; see the platform gate below);
+///   any other id is usable iff a `model_profiles` entry with that id still
+///   exists.
 /// - `model_profile` empty → the global [`AppConfig::stt_profile`] must be
 ///   non-empty **and** still reference an existing `model_profiles` entry. The
 ///   global arm is a plain `resolve_service("stt")` with no sentinel handling,
@@ -133,7 +134,12 @@ pub fn effective_stt_profile(config: &AppConfig) -> Option<String> {
 pub fn is_stt_effectively_configured(config: &AppConfig) -> bool {
     let widget = stt_default_model_profile(config);
     if !widget.is_empty() {
-        return widget == "apple-speech" || profile_exists(config, &widget);
+        // The "apple-speech" sentinel only counts on macOS: the helper binary
+        // cannot exist elsewhere and the dictation pipeline returns an explicit
+        // error there — a macOS config imported onto Linux must NOT pass this
+        // gate (it would skip onboarding and then fail every dictation).
+        return (widget == "apple-speech" && cfg!(target_os = "macos"))
+            || profile_exists(config, &widget);
     }
     !config.stt_profile.is_empty() && profile_exists(config, &config.stt_profile)
 }
@@ -177,10 +183,22 @@ mod tests {
 
     #[test]
     fn widget_apple_speech_sentinel_is_configured() {
-        // The sentinel is not a model_profiles entry, yet it's always usable.
+        // The sentinel is not a model_profiles entry, and it's only usable on
+        // macOS (see is_stt_effectively_configured's platform gate) — a plain
+        // `assert!` here would fail when this suite runs on Linux CI.
         let cfg = cfg_with_widget_mp("apple-speech", vec![], "");
-        assert!(is_stt_effectively_configured(&cfg));
+        assert_eq!(is_stt_effectively_configured(&cfg), cfg!(target_os = "macos"));
         assert_eq!(effective_stt_profile(&cfg).as_deref(), Some("apple-speech"));
+    }
+
+    #[test]
+    fn apple_speech_sentinel_only_counts_on_macos() {
+        // The helper binary behind the "apple-speech" sentinel can't exist off
+        // macOS, so the gate must reject it there even though the widget is
+        // "assigned" — otherwise a macOS config imported onto Linux would skip
+        // onboarding and then fail every dictation attempt.
+        let cfg = cfg_with_widget_mp("apple-speech", vec![], "");
+        assert_eq!(is_stt_effectively_configured(&cfg), cfg!(target_os = "macos"));
     }
 
     #[test]

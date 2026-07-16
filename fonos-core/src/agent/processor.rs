@@ -124,24 +124,33 @@ impl LlmCaller for HttpLlmCaller {
                     }]
                 }))
             } else {
-                // Build the request body with tools.
-                let url = if service.base_url.is_empty() {
-                    "https://api.openai.com/v1/chat/completions".to_string()
+                // Build the request body with tools. URL + parameter-dialect
+                // rules are shared with `crate::llm` so this path can't drift
+                // from the plain-text one: Google's OpenAI-compat layer lives
+                // under /v1beta/openai/ (its native /v1 path is not
+                // OpenAI-shaped and would 404 the preset base URL), and
+                // api.openai.com rejects the deprecated `max_tokens` on
+                // current models.
+                let url = if service.provider == "google" {
+                    crate::llm::google_openai_compat_chat_url(&service.base_url)
                 } else {
-                    let base = service.base_url.trim_end_matches('/');
-                    if base.ends_with("/v1") {
-                        format!("{}/chat/completions", base)
-                    } else {
-                        format!("{}/v1/chat/completions", base)
-                    }
+                    crate::llm::openai_compatible_chat_url(&service.base_url)
                 };
 
                 let mut body = json!({
                     "model": service.model,
                     "messages": messages,
                     "temperature": 0.7,
-                    "max_tokens": 256,
                 });
+                // Google is pinned to `max_tokens` regardless of base_url —
+                // an empty base would otherwise satisfy the openai-dialect
+                // check, but it means "Google's default host" here, not
+                // api.openai.com.
+                let openai_dialect = service.provider != "google"
+                    && crate::llm::is_openai_param_dialect(&service.provider, &service.base_url);
+                let max_tokens_key =
+                    if openai_dialect { "max_completion_tokens" } else { "max_tokens" };
+                body[max_tokens_key] = json!(256);
 
                 if !tools.is_empty() {
                     body["tools"] = json!(tools);

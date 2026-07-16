@@ -128,80 +128,182 @@ pub fn lint_config(config: &AppConfig) -> Vec<Finding> {
     out
 }
 
-// ── hotkey duplication ──────────────────────────────────────────────────────
+// ── hotkey conflicts ────────────────────────────────────────────────────────
+//
+// Which keys the OS actually *grabs* is NOT the legacy `config.hotkey_*` fields.
+// The workflow migration (`workflow::migrate`) moved every legacy value onto a
+// workflow Hotkey trigger chip and `std::mem::take`-cleared the source field, so
+// on every migrated machine (i.e. every real one) those fields are empty and a
+// check that reads them can never find a conflict — "No hotkey conflicts" comes
+// back vacuously true. The live binding set is the one the desktop's
+// `main.rs::hotkey_bindings` registers: one binding per Hotkey chip on every
+// effective workflow, plus the floating pill's own key. fonos-core can't depend
+// on the desktop crate, but it owns every input needed to re-derive that same
+// set, which is what this check now inspects.
 
-/// All hotkey fields on the config, paired with a stable action id.
-fn hotkey_fields(config: &AppConfig) -> Vec<(&'static str, &str)> {
-    vec![
-        ("dictation", config.hotkey_dictation.as_str()),
-        ("dictation_toggle", config.hotkey_dictation_toggle.as_str()),
-        ("tts", config.hotkey_tts.as_str()),
-        ("agent", config.hotkey_agent.as_str()),
-        ("agent_panel", config.hotkey_agent_panel.as_str()),
-        ("note", config.hotkey_note.as_str()),
-        ("note_1", config.hotkey_note_1.as_str()),
-        ("note_2", config.hotkey_note_2.as_str()),
-        ("note_3", config.hotkey_note_3.as_str()),
-        ("meeting", config.hotkey_meeting.as_str()),
-        ("transform", config.hotkey_transform.as_str()),
-        ("listen", config.hotkey_listen.as_str()),
-        ("sts", config.hotkey_sts.as_str()),
-    ]
+/// The live hotkey binding set as `(label, combo)`, mirroring what
+/// `main.rs::hotkey_bindings` registers but labeled for humans: every non-empty
+/// `Trigger::Hotkey` chip on every [`effective_workflows`] entry (tagged with the
+/// workflow's display name, suffixed with the chip's trigger index only when a
+/// workflow carries more than one hotkey chip), followed by the floating pill's
+/// own `config.pill_hotkey`. This is the exact set the OS grabs, so it is the set
+/// the conflict checks must reason about — not the migration-emptied legacy
+/// fields.
+fn hotkey_bindings(config: &AppConfig) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for wf in effective_workflows(config) {
+        // Disambiguate with the chip index only when a workflow has several
+        // hotkey chips, so the common single-chip case reads as a bare name.
+        let multi = wf.hotkey_triggers().filter(|(_, c, _)| !c.is_empty()).count() > 1;
+        for (idx, combo, _capture) in wf.hotkey_triggers() {
+            if combo.is_empty() {
+                continue;
+            }
+            let label = if multi { format!("{} #{idx}", wf.name) } else { wf.name.clone() };
+            out.push((label, combo.to_string()));
+        }
+    }
+    // The floating pill owns a global key separate from any recipe's chips
+    // (Workbench P1, spec §3c), registered under the desktop's `"pill"` arm.
+    if !config.pill_hotkey.is_empty() {
+        out.push(("pill".to_string(), config.pill_hotkey.clone()));
+    }
+    out
 }
 
-/// Canonicalize a hotkey combo so `"cmd+shift+space"` and `"Shift+Command+Space"`
-/// compare equal. Returns `None` for an empty (unbound) combo.
-fn normalize_hotkey(combo: &str) -> Option<String> {
+/// Canonicalize a combo so spelling / case / alias variants compare equal:
+/// `"Cmd+Shift+A"`, `"command+shift+a"`, and `"Shift+Command+A"` all collapse to
+/// one string. Split on `+`; the final token is the key, earlier tokens are
+/// modifiers alias-folded to canonical names (`command`→`cmd`, `control`→`ctrl`,
+/// `option`/`opt`→`alt`), then sorted + deduped so modifier order is irrelevant.
+/// Returns `None` for an empty (unbound) combo.
+///
+/// When `fold_cmd_ctrl` is set, `cmd` is additionally mapped to `ctrl` *before*
+/// sorting: on Linux the desktop layer sends `cmd` through `CommandOrControl`,
+/// which X11 resolves to Control (see `to_plugin_shortcut`'s doc comment in
+/// `main.rs`), so `cmd` and `ctrl` become the same physical grab. Pure and
+/// `cfg!`-free, so both the plain and folded forms are unit-testable on macOS.
+fn canonical_combo(combo: &str, fold_cmd_ctrl: bool) -> Option<String> {
     let combo = combo.trim();
     if combo.is_empty() {
         return None;
     }
-    let parts: Vec<&str> = combo.split('+').filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() {
-        return None;
-    }
-    let key = parts.last().unwrap().to_lowercase();
-    let mut mods: Vec<&str> = parts[..parts.len() - 1]
+    let parts: Vec<&str> = combo.split('+').filter(|p| !p.trim().is_empty()).collect();
+    let (key_tok, mod_toks) = parts.split_last()?; // parts non-empty ⇒ Some
+    let key = key_tok.trim().to_lowercase();
+    let mut mods: Vec<&'static str> = mod_toks
         .iter()
-        .map(|m| match m.to_lowercase().as_str() {
+        .map(|m| match m.trim().to_lowercase().as_str() {
             "command" | "cmd" => "cmd",
             "option" | "opt" | "alt" => "alt",
             "control" | "ctrl" => "ctrl",
             "shift" => "shift",
             _ => "?",
         })
+        .map(|m| if fold_cmd_ctrl && m == "cmd" { "ctrl" } else { m })
         .collect();
     mods.sort_unstable();
     mods.dedup();
     Some(format!("{}+{}", mods.join("+"), key))
 }
 
-/// Detect the same combo bound to more than one action.
-fn check_hotkeys(config: &AppConfig) -> Vec<Finding> {
-    // Map normalized combo → (first raw combo seen, count).
-    let mut seen: BTreeMap<String, (String, usize)> = BTreeMap::new();
-    for (_action, combo) in hotkey_fields(config) {
-        if let Some(norm) = normalize_hotkey(combo) {
-            let entry = seen.entry(norm).or_insert_with(|| (combo.trim().to_string(), 0));
-            entry.1 += 1;
+/// Group `bindings` by canonical combo and flag any combo claimed by more than
+/// one binding — the same physical key bound to two actions, where the OS
+/// registers whichever comes first and silently drops the loser (logged only).
+///
+/// Pure. The finding shape is unchanged from the pre-fix check (Warn, id
+/// `hotkey_dup:{canonical}`, message `doctor.duplicate_hotkey` carrying the raw
+/// combo) — only its *input* moved, from the dead legacy fields to the live
+/// binding set.
+fn collect_hotkey_conflicts(bindings: &[(String, String)]) -> Vec<Finding> {
+    let mut groups: BTreeMap<String, Vec<&(String, String)>> = BTreeMap::new();
+    for b in bindings {
+        if let Some(canon) = canonical_combo(&b.1, false) {
+            groups.entry(canon).or_default().push(b);
         }
     }
-    let mut dups: Vec<Finding> = seen
+    groups
         .into_iter()
-        .filter(|(_, (_, count))| *count > 1)
-        .map(|(norm, (raw, _))| Finding {
-            id: format!("hotkey_dup:{norm}"),
+        .filter(|(_, members)| members.len() > 1)
+        .map(|(canon, members)| Finding {
+            id: format!("hotkey_dup:{canon}"),
             severity: Severity::Warn,
             message_key: "doctor.duplicate_hotkey".to_string(),
-            message_params: vec![raw],
+            message_params: vec![members[0].1.trim().to_string()],
             fix: None,
         })
-        .collect();
-    if dups.is_empty() {
+        .collect()
+}
+
+/// The Linux-only overlay: pairs of bindings that do NOT collide as typed but DO
+/// collide once `cmd` folds into `ctrl` at the X11 grab layer. Reported
+/// separately from [`collect_hotkey_conflicts`] because the failure is
+/// platform-specific and needs its own explanation — on macOS `cmd+…` and
+/// `ctrl+…` are two distinct keys and both work; only on Linux does the second
+/// registration silently fail (first-registered wins, loser only logged). Pairs
+/// that already collide *pre*-collapse are left to the regular check, never
+/// double-reported here.
+///
+/// Pure and `cfg!`-free so the macOS test suite exercises it; only the *call
+/// site* in [`check_hotkeys`] is `cfg!(target_os = "linux")`-gated — this repo's
+/// convention for platform-split logic (cf. `main.rs::non_mic_fires_on_key_up`).
+fn collect_linux_collapse_conflicts(bindings: &[(String, String)]) -> Vec<Finding> {
+    // Bucket by the cmd→ctrl-folded canonical form.
+    let mut groups: BTreeMap<String, Vec<&(String, String)>> = BTreeMap::new();
+    for b in bindings {
+        if let Some(folded) = canonical_combo(&b.1, true) {
+            groups.entry(folded).or_default().push(b);
+        }
+    }
+    let mut out = Vec::new();
+    for (folded, members) in groups {
+        // Keep one representative binding per *distinct un-folded* form. Fewer
+        // than two means every member already shares an un-folded form — a plain
+        // duplicate the regular check owns — so there is no collapse-only clash.
+        let mut reps: BTreeMap<String, &(String, String)> = BTreeMap::new();
+        for m in members {
+            if let Some(plain) = canonical_combo(&m.1, false) {
+                reps.entry(plain).or_insert(m);
+            }
+        }
+        if reps.len() < 2 {
+            continue;
+        }
+        let picks: Vec<&(String, String)> = reps.into_values().collect();
+        let (a, b) = (picks[0], picks[1]);
+        out.push(Finding {
+            id: format!("hotkey_linux_collapse:{folded}"),
+            severity: Severity::Warn,
+            message_key: "doctor.hotkey_linux_collapse".to_string(),
+            message_params: vec![
+                a.0.clone(),
+                a.1.trim().to_string(),
+                b.0.clone(),
+                b.1.trim().to_string(),
+            ],
+            fix: None,
+        });
+    }
+    out
+}
+
+/// Flag any live hotkey bound to more than one action. The input is
+/// [`hotkey_bindings`] — the keys the OS actually grabs (workflow chips + pill) —
+/// NOT the legacy `config.hotkey_*` fields, which the workflow migration empties
+/// and no runtime path reads.
+fn check_hotkeys(config: &AppConfig) -> Vec<Finding> {
+    let bindings = hotkey_bindings(config);
+    let mut problems = collect_hotkey_conflicts(&bindings);
+    // Only Linux collapses `cmd` into `ctrl` at the X11 grab, so only there can
+    // two macOS-distinct combos fight over a single registration.
+    if cfg!(target_os = "linux") {
+        problems.extend(collect_linux_collapse_conflicts(&bindings));
+    }
+    if problems.is_empty() {
         vec![Finding::pass("hotkeys_ok", "doctor.hotkeys_ok")]
     } else {
-        dups.sort_by(|a, b| a.id.cmp(&b.id));
-        dups
+        problems.sort_by(|a, b| a.id.cmp(&b.id));
+        problems
     }
 }
 
@@ -498,30 +600,16 @@ pub fn apply_config_fix(config: &mut AppConfig, fix: &FixAction) -> Result<(), S
 mod tests {
     use super::*;
     use crate::vocab::VocabBook;
-    use crate::workflow::model::WidgetRole;
+    use crate::workflow::model::{Trigger, WidgetRole};
     use serde_json::json;
 
     fn cfg() -> AppConfig {
-        // Start from a clean slate with no hotkeys so tests opt into fields.
-        let mut c = AppConfig::default();
-        for f in [
-            &mut c.hotkey_dictation,
-            &mut c.hotkey_dictation_toggle,
-            &mut c.hotkey_tts,
-            &mut c.hotkey_agent,
-            &mut c.hotkey_agent_panel,
-            &mut c.hotkey_note,
-            &mut c.hotkey_note_1,
-            &mut c.hotkey_note_2,
-            &mut c.hotkey_note_3,
-            &mut c.hotkey_meeting,
-            &mut c.hotkey_transform,
-            &mut c.hotkey_listen,
-            &mut c.hotkey_sts,
-        ] {
-            f.clear();
-        }
-        c
+        // A clean slate. The legacy `config.hotkey_*` fields are no longer read
+        // by any doctor check (the workflow migration empties them and moves
+        // their values onto workflow Hotkey chips), so we no longer bother
+        // clearing them here — a test that wants a hotkey binding sets it on
+        // `config.workflows` (a Hotkey chip) or `config.pill_hotkey`.
+        AppConfig::default()
     }
 
     fn book(id: &str, enabled: bool) -> VocabBook {
@@ -564,26 +652,126 @@ mod tests {
         }
     }
 
+    /// A workflow carrying one `Trigger::Hotkey` chip on `combo`, named `name`.
+    /// A new id (not a built-in), so `effective_workflows` appends it — the only
+    /// hotkey chip in the effective set (built-ins carry only PillSlot chips).
+    fn hk_workflow(id: &str, name: &str, combo: &str) -> WorkflowDef {
+        WorkflowDef {
+            id: id.to_string(),
+            name: name.to_string(),
+            icon: String::new(),
+            hotkey: String::new(),
+            triggers: vec![Trigger::Hotkey { combo: combo.to_string(), capture: None }],
+            source: "src.selection".to_string(),
+            processors: Vec::new(),
+            outputs: vec!["out.panel".to_string()],
+            builtin: false,
+        }
+    }
+
     #[test]
-    fn duplicate_hotkeys_flagged_normalized() {
+    fn duplicate_hotkey_across_workflows_flagged_normalized() {
+        // Two workflow chips on the same combo, spelled differently — the fix's
+        // whole point: the conflict lives on Hotkey chips, not legacy fields.
         let mut c = cfg();
-        c.hotkey_dictation = "cmd+shift+space".into();
-        c.hotkey_agent = "Shift+Command+Space".into(); // same combo, different spelling
+        c.workflows = vec![
+            hk_workflow("wf.a", "Alpha", "Cmd+Shift+E"),
+            hk_workflow("wf.b", "Bravo", "command+shift+e"),
+        ];
         let f = check_hotkeys(&c);
         let dup = f.iter().find(|f| f.id.starts_with("hotkey_dup:")).expect("dup finding");
         assert_eq!(dup.severity, Severity::Warn);
+        assert_eq!(dup.message_key, "doctor.duplicate_hotkey");
         assert!(f.iter().all(|f| f.severity != Severity::Pass));
+    }
+
+    #[test]
+    fn workflow_chip_colliding_with_pill_flagged() {
+        // A recipe's Hotkey chip and the floating pill's own key are the same
+        // combo (case-insensitively) — a real conflict the old field-based check
+        // could never see (the pill key isn't a legacy field).
+        let mut c = cfg();
+        c.workflows = vec![hk_workflow("wf.a", "Alpha", "cmd+shift+space")];
+        c.pill_hotkey = "Command+Shift+Space".into();
+        let f = check_hotkeys(&c);
+        let dup = f.iter().find(|f| f.id.starts_with("hotkey_dup:")).expect("dup finding");
+        assert_eq!(dup.severity, Severity::Warn);
     }
 
     #[test]
     fn distinct_hotkeys_pass() {
         let mut c = cfg();
-        c.hotkey_dictation = "cmd+shift+space".into();
-        c.hotkey_listen = "option+l".into();
+        c.workflows = vec![
+            hk_workflow("wf.a", "Alpha", "cmd+shift+space"),
+            hk_workflow("wf.b", "Bravo", "option+l"),
+        ];
+        c.pill_hotkey = "ctrl+alt+p".into();
         let f = check_hotkeys(&c);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].id, "hotkeys_ok");
         assert_eq!(f[0].severity, Severity::Pass);
+    }
+
+    #[test]
+    fn legacy_hotkey_fields_are_not_consulted() {
+        // Post-migration every legacy field is empty; even a populated one (a
+        // config predating the migration, or a hand-edit) can't be a conflict
+        // because no doctor check reads it any more. A single legacy value alone
+        // therefore produces the passing finding, never a `hotkey_dup:` warning.
+        let mut c = cfg();
+        c.hotkey_dictation = "cmd+shift+space".into();
+        let f = check_hotkeys(&c);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].id, "hotkeys_ok");
+        assert!(f.iter().all(|f| !f.id.starts_with("hotkey_dup:")));
+    }
+
+    #[test]
+    fn canonical_combo_folds_cmd_into_ctrl_only_when_asked() {
+        // The pure collapse-comparison primitive: cmd+shift+a and ctrl+shift+a
+        // are distinct as typed (macOS reality) but the same X11 grab once
+        // folded (Linux reality).
+        assert_ne!(
+            canonical_combo("cmd+shift+a", false),
+            canonical_combo("ctrl+shift+a", false),
+            "distinct pre-collapse"
+        );
+        assert_eq!(
+            canonical_combo("cmd+shift+a", true),
+            canonical_combo("ctrl+shift+a", true),
+            "same grab post-collapse"
+        );
+        assert!(canonical_combo("cmd+shift+a", true).is_some());
+    }
+
+    #[test]
+    fn linux_collapse_collector_reports_post_collapse_only_pairs() {
+        // A macOS-distinct pair that folds to one X11 grab: the regular check
+        // sees nothing, but the (pure, cfg!-free) collapse collector flags it.
+        let collide = vec![
+            ("Voice".to_string(), "cmd+shift+a".to_string()),
+            ("Agent".to_string(), "ctrl+shift+a".to_string()),
+        ];
+        assert!(
+            collect_hotkey_conflicts(&collide).is_empty(),
+            "pre-collapse these are two different keys"
+        );
+        let collapse = collect_linux_collapse_conflicts(&collide);
+        assert_eq!(collapse.len(), 1);
+        assert_eq!(collapse[0].message_key, "doctor.hotkey_linux_collapse");
+        assert_eq!(collapse[0].severity, Severity::Warn);
+
+        // A genuine pre-collapse duplicate is the regular check's job and must
+        // NOT be double-reported by the collapse collector.
+        let plain_dup = vec![
+            ("Voice".to_string(), "cmd+shift+a".to_string()),
+            ("Agent".to_string(), "Command+Shift+A".to_string()),
+        ];
+        assert_eq!(collect_hotkey_conflicts(&plain_dup).len(), 1);
+        assert!(
+            collect_linux_collapse_conflicts(&plain_dup).is_empty(),
+            "identical pre-collapse forms aren't a collapse-only clash"
+        );
     }
 
     #[test]
@@ -769,7 +957,7 @@ mod tests {
     #[test]
     fn lint_config_healthy_setup_is_all_pass() {
         let mut c = cfg();
-        c.hotkey_dictation = "cmd+shift+space".into();
+        c.pill_hotkey = "cmd+shift+space".into(); // one live binding, no conflict
         c.model_profiles = vec![profile("p")];
         c.llm_profile = "p".into();
         let findings = lint_config(&c);

@@ -450,6 +450,7 @@ const en = {
   // Findings — config lint (core)
   "doctor.hotkeys_ok": "No hotkey conflicts",
   "doctor.duplicate_hotkey": "Hotkey {0} is assigned to more than one action — only one will respond",
+  "doctor.hotkey_linux_collapse": "On Linux, \"{0}\" ({1}) and \"{2}\" ({3}) register as the same shortcut — Cmd collapses to Ctrl under X11, so only one will respond",
   "doctor.vocab_ok": "Vocabulary books are attached and within budget",
   "doctor.vocab_unattached": "Vocabulary book \"{0}\" isn't attached anywhere — its terms and rules never apply",
   "doctor.vocab_budget": "Vocabulary terms total {0} characters, over the {1}-char budget — the extras are dropped from recognition",
@@ -1280,6 +1281,7 @@ const zh: Partial<Record<Key, string>> = {
   "doctor.rtf_slow": "对话语音 RTF 为 {0}×,慢于实时 — 会逐句停顿",
   "doctor.hotkeys_ok": "热键无冲突",
   "doctor.duplicate_hotkey": "热键 {0} 被分配给了多个操作 — 只有一个会响应",
+  "doctor.hotkey_linux_collapse": "在 Linux 上,「{0}」({1}) 与「{2}」({3}) 会注册成同一个快捷键 — X11 下 Cmd 会折叠为 Ctrl,只有一个会响应",
   "doctor.vocab_ok": "词汇本均已挂载且在预算内",
   "doctor.vocab_unattached": "词汇本「{0}」未挂载到任何地方 — 词条和规则不会生效",
   "doctor.vocab_budget": "词汇本词条共 {0} 字,超过 {1} 字预算 — 超出部分会从识别中丢弃",

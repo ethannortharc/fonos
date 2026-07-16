@@ -157,13 +157,43 @@ fn to_plugin_shortcut(combo: &str) -> Option<String> {
 static TOGGLE_DEBOUNCE_LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
 const TOGGLE_DELAY_MS: u64 = 500;
 
+/// Which key edge fires a non-mic (e.g. selection-sourced) workflow trigger:
+/// `true` ⇒ key-up, `false` ⇒ key-down. Exactly one edge fires per gesture.
+///
+/// macOS fires on key-down: the CGEventTap intercepts without grabbing the
+/// keyboard, so the synthetic Cmd+C that `grab_selection` posts reaches the
+/// frontmost app even while the combo is still physically held.
+///
+/// Linux must fire on key-up: the global-shortcut plugin's `XGrabKey` holds an
+/// active keyboard grab from the combo's key-down until the grabbed key is
+/// released, and during that window the X server delivers ALL keyboard events —
+/// including the synthetic `xdotool key ctrl+c` the selection grab sends — to
+/// the grabbing client (fonos) instead of the focused app. A key-down dispatch
+/// therefore always read back an empty clipboard, which the engine surfaced as
+/// a bogus "no speech" on selection recipes. Mic-sourced triggers are
+/// unaffected (their key-down only starts the mic; injection happens after
+/// release).
+///
+/// `cfg!`-based (not `#[cfg]`) so both arms compile and the macOS test suite
+/// pins the per-platform contract.
+fn non_mic_fires_on_key_up() -> bool {
+    cfg!(target_os = "linux")
+}
+
+/// Whether this key event is the edge that should run a non-mic workflow —
+/// see [`non_mic_fires_on_key_up`] for why the edge differs per platform.
+fn non_mic_should_fire(is_down: bool) -> bool {
+    is_down != non_mic_fires_on_key_up()
+}
+
 /// The shared mic hold/toggle dispatch dance for every workflow-triggering
 /// hotkey arm (`workflow-{id}` and `pill` alike): given the resolved target
 /// workflow id, whether its source is a microphone widget, this trigger's
 /// capture mode ("hold" or "toggle"), and the key event, either runs the
 /// workflow — mic sources on the correct hold/toggle edge (toggle key-downs
-/// debounced via [`TOGGLE_DEBOUNCE_LAST`]), non-mic sources once on
-/// key-down — or finishes an in-flight capture.
+/// debounced via [`TOGGLE_DEBOUNCE_LAST`]), non-mic sources once per gesture
+/// on the platform edge ([`non_mic_should_fire`]) — or finishes an in-flight
+/// capture.
 ///
 /// `cfg`-free (platform-neutral): the macOS CGEventTap callback and the Linux
 /// global-shortcut callback share it verbatim, so dictation and every recipe
@@ -222,8 +252,9 @@ async fn dispatch_workflow_trigger(
             }
             _ => {}
         }
-    } else if is_down {
-        // Non-mic sources (e.g. selection) fire once on key-down.
+    } else if non_mic_should_fire(is_down) {
+        // Non-mic sources (e.g. selection) fire once per gesture — key-down on
+        // macOS, key-up on Linux (see `non_mic_fires_on_key_up`).
         commands::workflow_exec::run_workflow(handle.clone(), wf_id).await;
     }
 }
@@ -375,7 +406,24 @@ fn register_workflow_shortcuts(app: &tauri::AppHandle) {
 }
 
 fn main() {
+    // A missing config file marks a FRESH install (an upgrade always has one).
+    // Checked before `load()` — which is what would make the distinction
+    // unobservable — so the legacy default hotkeys can be suppressed before
+    // the migration chain below folds them into workflow trigger chips.
+    // Without this, every new machine silently grabbed eight global keys the
+    // user never chose (Ctrl+Shift+A/G/T, Alt+N/M/L/S under X11) — see
+    // `migrate::suppress_default_hotkey_seeds`.
+    let fresh_install = !fonos_core::config::AppConfig::config_path().exists();
     let mut config = AppConfig::load();
+    if fresh_install && fonos_core::workflow::migrate::suppress_default_hotkey_seeds(&mut config) {
+        // Persist immediately: if this blanking were lost before a later
+        // migration's save, the next launch would see an existing file (not
+        // fresh) and seed the chips after all.
+        match config.save() {
+            Ok(()) => eprintln!("fonos: fresh install — legacy default hotkeys will not seed trigger chips"),
+            Err(e) => eprintln!("fonos: fresh-install hotkey suppression save failed: {e}"),
+        }
+    }
     // One-time migration: legacy quick-transform hotkey → text_actions binding.
     if fonos_core::config::migrate_transform_to_text_actions(&mut config) {
         match config.save() {
@@ -1070,6 +1118,20 @@ mod tests {
             .unwrap_or_else(|| panic!("`{combo}` should map to Some"));
         Shortcut::from_str(&mapped)
             .unwrap_or_else(|e| panic!("`{combo}` → `{mapped}` failed to parse: {e}"));
+    }
+
+    /// Exactly one edge of a non-mic gesture fires, and it is the platform's
+    /// documented one: key-down on macOS (CGEventTap doesn't grab the
+    /// keyboard), key-up on Linux (the XGrabKey active grab would swallow the
+    /// synthetic ctrl+c a key-down selection grab sends — the "no speech on a
+    /// text-only recipe" bug).
+    #[test]
+    fn non_mic_fires_exactly_once_on_the_platform_edge() {
+        assert_ne!(super::non_mic_should_fire(true), super::non_mic_should_fire(false));
+        #[cfg(target_os = "macos")]
+        assert!(super::non_mic_should_fire(true), "macOS keeps key-down dispatch");
+        #[cfg(target_os = "linux")]
+        assert!(super::non_mic_should_fire(false), "Linux fires on key-up");
     }
 
     #[test]

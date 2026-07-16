@@ -129,9 +129,23 @@ fn grab_selection_blocking() -> Result<SelectionContext, String> {
     unsafe { simulate_cmd_key(0x08); } // 0x08 = 'c'
     #[cfg(target_os = "linux")]
     { let _ = Command::new("xdotool").args(["key", "--clearmodifiers", "ctrl+c"]).output(); }
-    std::thread::sleep(std::time::Duration::from_millis(100));
 
-    let text = clipboard.get_text().unwrap_or_default();
+    // The clipboard was cleared above, so "the copy landed" == "text turned
+    // non-empty". Poll instead of one fixed sleep: X11 clipboard transfer is
+    // an async request the owning app answers (a busy Chrome tab can take
+    // several hundred ms), while a fast owner exits on the first round.
+    // Bounded so a genuinely empty selection still returns (empty ⇒ the
+    // engine's empty-input event) within ~600 ms.
+    let mut text = String::new();
+    for _ in 0..12 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Ok(t) = clipboard.get_text() {
+            if !t.is_empty() {
+                text = t;
+                break;
+            }
+        }
+    }
 
     // Restore original clipboard
     if let Some(ref prev) = saved {

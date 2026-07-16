@@ -95,6 +95,82 @@ fn activate_app(name: &str) {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn activate_app(_name: &str) {}
 
+// ── Clipboard snapshot / restore ─────────────────────────────────────────────
+//
+// The selection commands hijack the system clipboard: they clear it, drive a
+// synthetic Cmd/Ctrl+C (grab) or +V (replace), then must hand the user back
+// exactly what they had. Saving only `get_text()` — the behavior before this
+// fix — silently destroyed a copied image, a Finder/file-manager selection, or
+// rich text, degrading it to plain text or to nothing at all. These helpers
+// capture and restore the richest content this arboard version can carry across
+// the round-trip.
+
+/// A best-effort capture of every clipboard flavor arboard 3.6.1 can *read* on
+/// this platform, taken before the selection commands clobber the clipboard.
+///
+/// Every getter is implemented on both backends we ship against — macOS's
+/// NSPasteboard and Linux's default X11 backend (used even under Wayland,
+/// because we don't enable arboard's `wayland-data-control` feature) — so text,
+/// HTML, image, and file list are each genuinely readable, not text fallbacks.
+struct ClipboardSnapshot {
+    text: Option<String>,
+    html: Option<String>,
+    /// `arboard::ImageData` is in scope because we build arboard with its default
+    /// features, which include `image-data`. Turning those off would make this a
+    /// compile error rather than a silent regression to text-only save/restore.
+    image: Option<arboard::ImageData<'static>>,
+    files: Option<Vec<std::path::PathBuf>>,
+}
+
+/// Capture the current clipboard. Every probe is best-effort: a flavor that is
+/// absent (or that the backend declines) simply stays `None` instead of
+/// aborting the capture.
+fn snapshot_clipboard(clipboard: &mut arboard::Clipboard) -> ClipboardSnapshot {
+    ClipboardSnapshot {
+        text: clipboard.get_text().ok(),
+        html: clipboard.get().html().ok(),
+        image: clipboard.get_image().ok(),
+        files: clipboard.get().file_list().ok(),
+    }
+}
+
+/// Restore a snapshot with the single richest write that reproduces the most of
+/// what was captured. arboard's `set_*` calls each replace the *entire*
+/// clipboard, so there is no way to layer flavors — we pick one in priority
+/// order:
+///
+///   image → `set_image`            (screenshots, copied pictures)
+///   html  → `set_html(html, text)` (rich text; the plain-text alt rides along)
+///   files → `set().file_list`      (Finder / file-manager selections)
+///   text  → `set_text`             (the common case)
+///
+/// Gaps this cannot round-trip (arboard 3.6.1):
+///   * Only one flavor group survives. `set_html` carrying its plain-text alt is
+///     the *only* two-flavor write available, so a clipboard holding a richer
+///     mix (e.g. image + file list, or image + html) keeps just the top-priority
+///     flavor and drops the rest. Every individual flavor — text, html, image,
+///     and file lists (yes, file lists too, on both X11 and Wayland) — is
+///     otherwise fully round-trippable in 3.6.1, so this is the sole hard gap.
+///   * macOS: `get().html()` returns HTML wrapped in arboard's own
+///     `<html><head>…</head><body>…</body></html>`, and `set_html` wraps once
+///     more, so a round-tripped fragment gains one nested wrapper. The markup is
+///     preserved; only the envelope doubles.
+///   * Linux X11: `set().file_list` canonicalizes paths and silently skips any
+///     that no longer exist; if all are gone the file-list restore no-ops.
+fn restore_clipboard(clipboard: &mut arboard::Clipboard, snap: ClipboardSnapshot) {
+    if let Some(image) = snap.image {
+        let _ = clipboard.set_image(image);
+    } else if let Some(html) = snap.html {
+        // `set_html` also takes the plain-text alternative, so text/html and
+        // text/plain both come back from this single write.
+        let _ = clipboard.set_html(html, snap.text);
+    } else if let Some(files) = snap.files {
+        let _ = clipboard.set().file_list(&files);
+    } else if let Some(text) = snap.text {
+        let _ = clipboard.set_text(text);
+    }
+}
+
 /// Grab the currently selected text from the frontmost application.
 ///
 /// Flow: save clipboard → Cmd+C via CGEvent → read clipboard → restore.
@@ -115,8 +191,10 @@ fn grab_selection_blocking() -> Result<SelectionContext, String> {
     let mut clipboard = Clipboard::new()
         .map_err(|e| format!("clipboard error: {e}"))?;
 
-    // Save current clipboard
-    let saved = clipboard.get_text().ok();
+    // Save the user's clipboard — every flavor we can read, not just text — so
+    // the synthetic Cmd/Ctrl+C below can't destroy a copied image, file
+    // selection, or rich text (see [`snapshot_clipboard`]).
+    let snapshot = snapshot_clipboard(&mut clipboard);
 
     // Clear clipboard
     let _ = clipboard.set_text("");
@@ -147,10 +225,8 @@ fn grab_selection_blocking() -> Result<SelectionContext, String> {
         }
     }
 
-    // Restore original clipboard
-    if let Some(ref prev) = saved {
-        let _ = clipboard.set_text(prev);
-    }
+    // Restore the user's original clipboard (richest single write).
+    restore_clipboard(&mut clipboard, snapshot);
 
     eprintln!(
         "fonos: grab_selection app={} text_len={}",
@@ -174,8 +250,11 @@ pub async fn replace_selection(text: String, target_app: Option<String>) -> Resu
     let mut clipboard = Clipboard::new()
         .map_err(|e| format!("clipboard error: {e}"))?;
 
-    // Save current clipboard
-    let saved = clipboard.get_text().ok();
+    // Save the user's clipboard — every flavor we can read — before we overwrite
+    // it with the replacement text, so it survives the paste (see
+    // [`snapshot_clipboard`]). Captured synchronously here, before any await, so
+    // the snapshot (not a live Clipboard borrow) is what crosses the awaits.
+    let snapshot = snapshot_clipboard(&mut clipboard);
 
     // Set replacement text
     clipboard.set_text(&text)
@@ -200,9 +279,7 @@ pub async fn replace_selection(text: String, target_app: Option<String>) -> Resu
     // Wait for paste to complete, then restore. Async sleep so the tokio
     // worker isn't blocked while other hotkey events are pending.
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    if let Some(ref prev) = saved {
-        let _ = clipboard.set_text(prev);
-    }
+    restore_clipboard(&mut clipboard, snapshot);
 
     Ok(())
 }

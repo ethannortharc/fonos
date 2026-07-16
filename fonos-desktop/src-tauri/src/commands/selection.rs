@@ -134,15 +134,21 @@ fn snapshot_clipboard(clipboard: &mut arboard::Clipboard) -> ClipboardSnapshot {
     }
 }
 
-/// Restore a snapshot with the single richest write that reproduces the most of
-/// what was captured. arboard's `set_*` calls each replace the *entire*
-/// clipboard, so there is no way to layer flavors — we pick one in priority
-/// order:
+/// Restore a snapshot with the richest write that actually SUCCEEDS. arboard's
+/// `set_*` calls each replace the *entire* clipboard, so there is no way to
+/// layer flavors — we attempt one in priority order, and a failed write falls
+/// through to the next-richest available flavor rather than giving up and
+/// leaving the clipboard clobbered:
 ///
 ///   image → `set_image`            (screenshots, copied pictures)
 ///   html  → `set_html(html, text)` (rich text; the plain-text alt rides along)
 ///   files → `set().file_list`      (Finder / file-manager selections)
 ///   text  → `set_text`             (the common case)
+///
+/// A backend can decline any of these (e.g. an X11 clipboard manager that's
+/// gone away, or a permission hiccup on macOS) — when it does, the write is a
+/// no-op for that flavor, not a fatal error, so we keep trying flavors instead
+/// of stopping on the first (failed) attempt.
 ///
 /// Gaps this cannot round-trip (arboard 3.6.1):
 ///   * Only one flavor group survives. `set_html` carrying its plain-text alt is
@@ -158,15 +164,33 @@ fn snapshot_clipboard(clipboard: &mut arboard::Clipboard) -> ClipboardSnapshot {
 ///   * Linux X11: `set().file_list` canonicalizes paths and silently skips any
 ///     that no longer exist; if all are gone the file-list restore no-ops.
 fn restore_clipboard(clipboard: &mut arboard::Clipboard, snap: ClipboardSnapshot) {
-    if let Some(image) = snap.image {
-        let _ = clipboard.set_image(image);
-    } else if let Some(html) = snap.html {
+    let ClipboardSnapshot { text, html, image, files } = snap;
+
+    // Each `if let` below attempts one flavor and returns on success; a
+    // failed write (backend declined it — e.g. a gone-away X11 clipboard
+    // manager, or a macOS permission hiccup) falls through to the next
+    // priority tier instead of leaving the clipboard clobbered by whatever
+    // cleared it earlier, which is what a bare `let _ = ...` would do.
+    if let Some(image) = image {
+        if clipboard.set_image(image).is_ok() {
+            return;
+        }
+    }
+    if let Some(html) = html {
         // `set_html` also takes the plain-text alternative, so text/html and
-        // text/plain both come back from this single write.
-        let _ = clipboard.set_html(html, snap.text);
-    } else if let Some(files) = snap.files {
-        let _ = clipboard.set().file_list(&files);
-    } else if let Some(text) = snap.text {
+        // text/plain both come back from this single write. Clone `text`
+        // here (rather than moving it) so it's still available as the final
+        // fallback if this write itself fails.
+        if clipboard.set_html(html, text.clone()).is_ok() {
+            return;
+        }
+    }
+    if let Some(files) = files {
+        if clipboard.set().file_list(&files).is_ok() {
+            return;
+        }
+    }
+    if let Some(text) = text {
         let _ = clipboard.set_text(text);
     }
 }

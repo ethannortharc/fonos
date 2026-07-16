@@ -27,11 +27,15 @@
 //! on-device `"apple-speech"` sentinel, which the generic `SttProcessor` can
 //! drive but the meeting capture loop cannot (it always transcribes via
 //! `commands::dictation::transcribe_http`, HTTP-only, no on-device path).
-//! [`MeetingOutput::start`] now treats both the same as an absent ref —
-//! falling through to `meeting_stt_profile` → global `"stt"` — instead of
-//! resolving them blindly into a credential-less/broken `ServiceConfig` that
-//! silently failed every chunk. See [`meeting_stt_profile_usable`] and
-//! [`resolve_meeting_stt_tier`].
+//! The same is true of a REAL profile whose `provider == "apple"` (the shape
+//! first-run seeding writes: `scenario-apple-stt`) — Apple Speech has no HTTP
+//! endpoint on ANY platform, so it is rejected unconditionally, unlike
+//! dictation's macOS-gated check. [`MeetingOutput::start`] treats all of these
+//! the same as an absent ref — falling through to `meeting_stt_profile` →
+//! global `"stt"` (each tier apple-filtered too, with a final hard error when
+//! nothing HTTP-capable remains) — instead of resolving them blindly into a
+//! credential-less/broken `ServiceConfig` that silently failed every chunk.
+//! See [`meeting_stt_profile_usable`] and [`resolve_meeting_stt_tier`].
 //!
 //! [`MeetingProps::llm_widget`] resolves the same way, falling back to the
 //! pre-existing `meeting_llm_profile`→`llm_profile` chain (unchanged from
@@ -91,6 +95,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use fonos_core::config::AppConfig;
 use fonos_core::workflow::model::{Data, DataKind, WidgetDef};
 use fonos_core::workflow::registry::{Output, RunCtx};
 
@@ -190,14 +195,25 @@ const MEETING_APPLE_SPEECH_SENTINEL: &str = "apple-speech";
 /// actually use for its STT tier — mirrors `SttProcessor`'s three-way
 /// semantics (`workflow_widgets.rs`'s `SttProcessor::process`): not empty
 /// (the `"use global"` convention a `stt_widget`'s own `model_profile` may
-/// carry, e.g. `stt.default`) and not [`MEETING_APPLE_SPEECH_SENTINEL`]
-/// (on-device-only, which meeting's HTTP-only `transcribe_http` cannot
-/// drive). Both cases mean "this tier has nothing usable" — the caller must
-/// fall through exactly as it would for an absent ref, rather than resolving
+/// carry, e.g. `stt.default`), not [`MEETING_APPLE_SPEECH_SENTINEL`]
+/// (on-device-only), and not a real profile whose `provider == "apple"`
+/// (the shape first-run seeding writes: `scenario-apple-stt`) — meeting's
+/// HTTP-only `transcribe_http` cannot drive Apple Speech in either spelling,
+/// on ANY platform, so the provider rejection is unconditional (unlike
+/// dictation's `cfg!(macos)`-gated gate in `fonos-core::services`). Every
+/// unusable case means "this tier has nothing usable" — the caller must fall
+/// through exactly as it would for an absent ref, rather than resolving
 /// blindly into a credential-less/broken `ServiceConfig` (review Fix Round
-/// 1's Critical item).
-pub(crate) fn meeting_stt_profile_usable(profile: &str) -> bool {
-    !profile.is_empty() && profile != MEETING_APPLE_SPEECH_SENTINEL
+/// 1's Critical item; the provider half is review Fix Round 3).
+///
+/// A DANGLING id (no such profile) still counts as usable here: it resolves
+/// to an empty `ServiceConfig` exactly as before this check learned about
+/// providers — preserving that pre-existing behavior keeps this change scoped
+/// to the apple gap.
+pub(crate) fn meeting_stt_profile_usable(config: &AppConfig, profile: &str) -> bool {
+    !profile.is_empty()
+        && profile != MEETING_APPLE_SPEECH_SENTINEL
+        && fonos_core::services::resolve_profile(config, profile).provider != "apple"
 }
 
 /// Decide the effective STT profile-id tier for [`MeetingOutput::start`]'s
@@ -208,19 +224,29 @@ pub(crate) fn meeting_stt_profile_usable(profile: &str) -> bool {
 /// `legacy_profile` is `config.meeting_stt_profile`.
 ///
 /// `ref_profile` wins when [`meeting_stt_profile_usable`]; otherwise
-/// `legacy_profile` wins when non-empty; otherwise `None` — meaning the
-/// caller should resolve the global `"stt"` service instead of a specific
-/// profile id.
+/// `legacy_profile` wins under the same usability check (it too can name an
+/// apple-provider profile — or even the literal sentinel — and meeting's
+/// HTTP-only loop can't drive either, so it falls through like an absent
+/// ref); otherwise `None` — meaning the caller should resolve the global
+/// `"stt"` service instead of a specific profile id (and apply its own final
+/// apple backstop, since the global default can be apple-shaped as well —
+/// see [`MeetingOutput::start`]).
+///
+/// Takes `config` since usability now depends on the resolved provider, not
+/// just the id's spelling — the price of closing the `scenario-apple-stt`
+/// gap. Still synchronous and side-effect-free, so the unit tests below just
+/// build an `AppConfig` with the profiles they need.
 pub(crate) fn resolve_meeting_stt_tier(
+    config: &AppConfig,
     ref_profile: Option<&str>,
     legacy_profile: &str,
 ) -> Option<String> {
     if let Some(p) = ref_profile {
-        if meeting_stt_profile_usable(p) {
+        if meeting_stt_profile_usable(config, p) {
             return Some(p.to_string());
         }
     }
-    if !legacy_profile.is_empty() {
+    if meeting_stt_profile_usable(config, legacy_profile) {
         return Some(legacy_profile.to_string());
     }
     None
@@ -379,10 +405,29 @@ impl MeetingOutput {
                 );
             }
 
-            match resolve_meeting_stt_tier(ref_profile.as_deref(), &config.meeting_stt_profile) {
+            let svc = match resolve_meeting_stt_tier(
+                &config,
+                ref_profile.as_deref(),
+                &config.meeting_stt_profile,
+            ) {
                 Some(profile_id) => fonos_core::services::resolve_profile(&config, &profile_id),
                 None => fonos_core::services::resolve_service(&config, "stt"),
+            };
+            // Final backstop: the tier cascade filters apple-provider profiles,
+            // but the global "stt" fallback above can still resolve to one (the
+            // first-run scenario-apple-stt default). Meetings transcribe over
+            // HTTP only — Apple Speech has no HTTP endpoint on any platform —
+            // so fail with a clear message here rather than letting every
+            // captured chunk die in transcribe_http with a raw error.
+            if svc.provider == "apple" {
+                return Err(
+                    "meeting transcription runs over HTTP and cannot use the on-device \
+                     Apple Speech engine — assign a different STT profile to the meeting \
+                     (or change the global STT default)"
+                        .to_string(),
+                );
             }
+            svc
         };
 
         #[cfg(target_os = "macos")]
@@ -569,11 +614,40 @@ mod tests {
 
     // ── meeting_stt_profile_usable / resolve_meeting_stt_tier ────────────────
 
+    /// A config whose `model_profiles` holds one entry per (id, provider)
+    /// pair — the minimum `meeting_stt_profile_usable`'s provider lookup
+    /// needs (mirrors fonos-core services.rs's own test fixture style).
+    fn cfg_with_profiles(entries: &[(&str, &str)]) -> AppConfig {
+        AppConfig {
+            model_profiles: entries
+                .iter()
+                .map(|(id, provider)| {
+                    serde_json::json!({ "id": id, "name": id, "provider": provider, "model": "m" })
+                })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn meeting_stt_profile_usable_rejects_empty_and_apple_speech() {
-        assert!(!meeting_stt_profile_usable(""));
-        assert!(!meeting_stt_profile_usable("apple-speech"));
-        assert!(meeting_stt_profile_usable("some-profile"));
+        let cfg = cfg_with_profiles(&[("some-profile", "openai")]);
+        assert!(!meeting_stt_profile_usable(&cfg, ""));
+        assert!(!meeting_stt_profile_usable(&cfg, "apple-speech"));
+        assert!(meeting_stt_profile_usable(&cfg, "some-profile"));
+    }
+
+    #[test]
+    fn meeting_stt_profile_usable_rejects_apple_provider_profile() {
+        // The first-run shape: a REAL profile (scenario-apple-stt) whose
+        // provider is "apple". Meeting transcribes over HTTP only, so this is
+        // unusable on EVERY platform — no cfg! gate, unlike dictation's.
+        let cfg = cfg_with_profiles(&[("scenario-apple-stt", "apple"), ("p-openai", "openai")]);
+        assert!(!meeting_stt_profile_usable(&cfg, "scenario-apple-stt"));
+        assert!(meeting_stt_profile_usable(&cfg, "p-openai"));
+        // Dangling id: preserved pre-existing behavior — counts as usable and
+        // resolves to an empty ServiceConfig downstream (documented on the fn).
+        assert!(meeting_stt_profile_usable(&cfg, "no-such-profile"));
     }
 
     #[test]
@@ -581,49 +655,78 @@ mod tests {
         // Ref resolved (widget exists) but its own model_profile is empty —
         // stt.default's "use global" convention — so the legacy
         // meeting_stt_profile field wins instead of resolving "" blindly.
+        let cfg = cfg_with_profiles(&[("legacy-profile", "openai")]);
         assert_eq!(
-            resolve_meeting_stt_tier(Some(""), "legacy-profile"),
+            resolve_meeting_stt_tier(&cfg, Some(""), "legacy-profile"),
             Some("legacy-profile".to_string())
         );
     }
 
     #[test]
     fn resolve_meeting_stt_tier_ref_empty_profile_and_empty_legacy_falls_to_global() {
-        assert_eq!(resolve_meeting_stt_tier(Some(""), ""), None);
+        assert_eq!(resolve_meeting_stt_tier(&cfg_with_profiles(&[]), Some(""), ""), None);
     }
 
     #[test]
     fn resolve_meeting_stt_tier_ref_apple_speech_falls_to_legacy_field() {
         // The on-device sentinel is treated exactly like an empty profile —
         // meeting's HTTP-only transcribe_http can't drive it.
+        let cfg = cfg_with_profiles(&[("legacy-profile", "openai")]);
         assert_eq!(
-            resolve_meeting_stt_tier(Some("apple-speech"), "legacy-profile"),
+            resolve_meeting_stt_tier(&cfg, Some("apple-speech"), "legacy-profile"),
             Some("legacy-profile".to_string())
         );
     }
 
     #[test]
     fn resolve_meeting_stt_tier_ref_apple_speech_and_empty_legacy_falls_to_global() {
-        assert_eq!(resolve_meeting_stt_tier(Some("apple-speech"), ""), None);
+        assert_eq!(
+            resolve_meeting_stt_tier(&cfg_with_profiles(&[]), Some("apple-speech"), ""),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_meeting_stt_tier_apple_provider_ref_falls_to_legacy_field() {
+        // A real apple-provider profile in the ref tier falls through exactly
+        // like the sentinel does.
+        let cfg =
+            cfg_with_profiles(&[("scenario-apple-stt", "apple"), ("legacy-profile", "openai")]);
+        assert_eq!(
+            resolve_meeting_stt_tier(&cfg, Some("scenario-apple-stt"), "legacy-profile"),
+            Some("legacy-profile".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_meeting_stt_tier_apple_provider_legacy_falls_to_global() {
+        // The legacy field can name an apple-provider profile too — it must
+        // fall through to the global tier (None), where start()'s backstop
+        // takes over, instead of winning the tier and dying in transcribe_http.
+        let cfg = cfg_with_profiles(&[("scenario-apple-stt", "apple")]);
+        assert_eq!(resolve_meeting_stt_tier(&cfg, None, "scenario-apple-stt"), None);
     }
 
     #[test]
     fn resolve_meeting_stt_tier_no_ref_falls_to_legacy_field() {
+        let cfg = cfg_with_profiles(&[("legacy-profile", "openai")]);
         assert_eq!(
-            resolve_meeting_stt_tier(None, "legacy-profile"),
+            resolve_meeting_stt_tier(&cfg, None, "legacy-profile"),
             Some("legacy-profile".to_string())
         );
     }
 
     #[test]
     fn resolve_meeting_stt_tier_no_ref_and_empty_legacy_falls_to_global() {
-        assert_eq!(resolve_meeting_stt_tier(None, ""), None);
+        assert_eq!(resolve_meeting_stt_tier(&cfg_with_profiles(&[]), None, ""), None);
     }
 
     #[test]
     fn resolve_meeting_stt_tier_usable_ref_wins_over_legacy_field() {
+        let cfg =
+            cfg_with_profiles(&[("tuned-profile", "openai"), ("legacy-profile", "openai")]);
         assert_eq!(
-            resolve_meeting_stt_tier(Some("tuned-profile"), "legacy-profile"),
+            resolve_meeting_stt_tier(&cfg, Some("tuned-profile"), "legacy-profile"),
             Some("tuned-profile".to_string())
         );
     }

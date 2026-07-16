@@ -236,29 +236,51 @@ pub(crate) fn google_openai_compat_chat_url(base_url: &str) -> String {
 /// rejects the deprecated `max_tokens` on current models and wants
 /// `max_completion_tokens` instead, while most compatible servers (Ollama,
 /// OpenRouter, Cerebras, Google's compat layer, …) still take `max_tokens`.
-pub(crate) fn is_openai_param_dialect(provider: &str, base_url: &str) -> bool {
+///
+/// Google is excluded first, unconditionally: its OpenAI-compat layer takes
+/// the standard `max_tokens` and always accepts `temperature`, regardless of
+/// `base_url`. An *empty* `base_url` on a google service means "Google's
+/// default host", not `api.openai.com` — unlike every other provider, where
+/// an empty `base_url` really does mean the OpenAI default. (The plain-text
+/// path never reaches this function with `provider == "google"` in the first
+/// place — it routes to [`call_google`] instead — so this rule only matters
+/// for the agent path's `openai_compatible_body` call.)
+fn is_openai_param_dialect(provider: &str, base_url: &str) -> bool {
+    if provider == "google" {
+        return false;
+    }
     provider == "openai" || base_url.is_empty() || base_url.contains("api.openai.com")
 }
 
-/// Call an OpenAI-compatible chat completions endpoint.
+/// Build the base OpenAI-compatible chat-completions request body — `model` +
+/// `messages`, plus the two dialect rules that must never drift between the
+/// plain-text path ([`call_openai_compatible`]) and the agent path
+/// (`agent::processor::HttpLlmCaller`), which used to hand-roll its own copy
+/// and unconditionally sent `temperature: 0.7` — an o-series/nano OpenAI model
+/// fails there before it ever gets to tool-calling. This is now the ONE place
+/// either rule is expressed:
 ///
-/// Handles both the default `api.openai.com` endpoint and custom `base_url`
-/// overrides (e.g. for Ollama or local MLX servers).
+/// - **temperature**: omitted entirely for OpenAI reasoning models (`o1`/`o3`/
+///   `o4*`) and `-nano` variants, which reject the field outright rather than
+///   ignoring it — see [`is_openai_param_dialect`]'s doc for why "OpenAI" here
+///   means the parameter dialect, not just `provider == "openai"`.
+/// - **token limit key**: `max_completion_tokens` under the OpenAI dialect,
+///   `max_tokens` otherwise (see [`is_openai_param_dialect`]).
 ///
-/// This function is public so that callers such as model-capability probing
-/// can send arbitrary test messages directly without going through [`process_text`].
-pub async fn call_openai_compatible(
-    api_key: &str,
+/// `provider`/`base_url` decide the dialect via [`is_openai_param_dialect`],
+/// which excludes `provider == "google"` as its first rule — so a google
+/// model always gets `temperature` and `max_tokens` here, with no
+/// caller-side post-fix required.
+///
+/// Callers append anything dialect-neutral (`tools`, etc.) after this returns.
+pub(crate) fn openai_compatible_body(
     model: &str,
-    base_url: &str,
     messages: &[serde_json::Value],
     temperature: f64,
     max_tokens: u32,
     provider: &str,
-) -> Result<LlmResponse> {
-    let url = openai_compatible_chat_url(base_url);
-
-    // Adapt parameters per provider
+    base_url: &str,
+) -> serde_json::Value {
     let is_openai = is_openai_param_dialect(provider, base_url);
 
     let mut body = serde_json::json!({
@@ -282,6 +304,29 @@ pub async fn call_openai_compatible(
     } else {
         body["max_tokens"] = serde_json::json!(max_tokens);
     }
+
+    body
+}
+
+/// Call an OpenAI-compatible chat completions endpoint.
+///
+/// Handles both the default `api.openai.com` endpoint and custom `base_url`
+/// overrides (e.g. for Ollama or local MLX servers).
+///
+/// This function is public so that callers such as model-capability probing
+/// can send arbitrary test messages directly without going through [`process_text`].
+pub async fn call_openai_compatible(
+    api_key: &str,
+    model: &str,
+    base_url: &str,
+    messages: &[serde_json::Value],
+    temperature: f64,
+    max_tokens: u32,
+    provider: &str,
+) -> Result<LlmResponse> {
+    let url = openai_compatible_chat_url(base_url);
+
+    let body = openai_compatible_body(model, messages, temperature, max_tokens, provider, base_url);
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -700,5 +745,82 @@ mod tests {
             "cerebras",
             "https://api.cerebras.ai/v1"
         ));
+    }
+
+    // ─── openai_compatible_body ──────────────────────────────────────────────
+    //
+    // The one place all three OpenAI-compat body rules live (model+messages,
+    // conditional temperature, dialect-correct token key) — shared verbatim by
+    // call_openai_compatible (this file) and the agent's HttpLlmCaller
+    // (agent/processor.rs), so an o-series/nano model behaves identically
+    // whether it's answering a plain-text request or planning tool calls.
+
+    #[test]
+    fn openai_compatible_body_o_series_model_skips_temperature_and_uses_max_completion_tokens() {
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body("o3-mini", &msgs, 0.7, 256, "openai", "");
+        assert!(body.get("temperature").is_none(), "o-series must not send temperature: {body}");
+        assert_eq!(body["max_completion_tokens"], 256);
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["model"], "o3-mini");
+    }
+
+    #[test]
+    fn openai_compatible_body_ordinary_openai_model_keeps_temperature() {
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body("gpt-5.6-luna", &msgs, 0.7, 256, "openai", "");
+        assert_eq!(body["temperature"], 0.7);
+        assert_eq!(body["max_completion_tokens"], 256);
+    }
+
+    #[test]
+    fn openai_compatible_body_cerebras_keeps_temperature_and_uses_max_tokens() {
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body(
+            "gemma-4-31b",
+            &msgs,
+            0.7,
+            256,
+            "cerebras",
+            "https://api.cerebras.ai/v1",
+        );
+        assert_eq!(body["temperature"], 0.7);
+        assert_eq!(body["max_tokens"], 256);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn openai_compatible_body_nano_variant_skips_temperature() {
+        // "-nano" models reject temperature just like the o-series, even
+        // though they don't match the o1/o3/o4 name prefixes.
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body("gpt-4.1-nano", &msgs, 0.7, 256, "openai", "");
+        assert!(body.get("temperature").is_none(), "nano variant must not send temperature: {body}");
+        assert_eq!(body["max_completion_tokens"], 256);
+    }
+
+    #[test]
+    fn openai_compatible_body_google_nano_named_model_keeps_temperature_and_uses_max_tokens() {
+        // Regression guard: a google model whose name happens to contain
+        // "-nano" must NOT be treated like an OpenAI nano variant. Empty
+        // base_url here means "Google's default host", not api.openai.com —
+        // is_openai_param_dialect must not conflate the two for google.
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body("gemini-2.0-flash-nano", &msgs, 0.7, 256, "google", "");
+        assert_eq!(body["temperature"], 0.7, "google must keep temperature: {body}");
+        assert_eq!(body["max_tokens"], 256);
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn openai_compatible_body_google_empty_base_url_keeps_temperature_and_uses_max_tokens() {
+        // Same regression, ordinary model name: an empty base_url must not
+        // push google onto the OpenAI param dialect (max_completion_tokens),
+        // which previously required a caller-side post-fix in processor.rs.
+        let msgs = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let body = openai_compatible_body("gemini-2.0-flash", &msgs, 0.7, 256, "google", "");
+        assert_eq!(body["temperature"], 0.7, "google must keep temperature: {body}");
+        assert_eq!(body["max_tokens"], 256);
+        assert!(body.get("max_completion_tokens").is_none());
     }
 }

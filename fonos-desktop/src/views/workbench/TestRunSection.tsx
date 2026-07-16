@@ -28,7 +28,7 @@ import type { AppConfig, WidgetDef, WorkflowRow } from "../../types";
 type BenchEvent =
   | { type: "step_started"; step_id: string; index: number; role: string }
   | { type: "step_finished"; step_id: string; index: number; role: string; preview: string; ms: number; error: string | null; intercepted: boolean }
-  | { type: "processing" } | { type: "no_speech" }
+  | { type: "processing" } | { type: "no_speech" } | { type: "empty_input" }
   | { type: "done"; raw: string; final: string }
   | { type: "failed"; message: string };
 
@@ -205,6 +205,12 @@ export default function TestRunSection({
           setRunning(false);
           setRecording(false);
           setStatus(t("wb.bench.status-nospeech"));
+        } else if (ev.type === "empty_input") {
+          // A text source produced no input — distinct from "no speech"
+          // (audio heard nothing); its own status string.
+          setRunning(false);
+          setRecording(false);
+          setStatus(t("wb.bench.status-emptyinput"));
         }
       });
       if (disposed) {

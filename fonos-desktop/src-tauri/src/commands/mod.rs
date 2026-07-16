@@ -58,7 +58,7 @@ pub use config::{get_config, save_config};
 #[allow(unused_imports)]
 pub use stats::{record_event, delete_event, get_stats, get_history, get_today};
 #[allow(unused_imports)]
-pub use agent::{agent_process, agent_reset, list_skills, toggle_skill, save_custom_skill, delete_custom_skill, test_skill};
+pub use agent::{agent_process, agent_reset, agent_llm_provider, list_skills, toggle_skill, save_custom_skill, delete_custom_skill, test_skill};
 
 use std::sync::{Arc, Mutex};
 

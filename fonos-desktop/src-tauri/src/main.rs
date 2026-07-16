@@ -721,6 +721,7 @@ fn main() {
             // Agent commands
             commands::agent::agent_process,
             commands::agent::agent_reset,
+            commands::agent::agent_llm_provider,
             commands::agent::list_skills,
             commands::agent::toggle_skill,
             commands::agent::save_custom_skill,

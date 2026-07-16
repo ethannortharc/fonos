@@ -3,6 +3,9 @@
 //! All copy lives in the bilingual table below (resolve_lang decides EN/ZH);
 //! menu ids never change across languages.
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use fonos_core::workflow::builtin::{resolve_lang, Lang};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, Wry};
@@ -122,23 +125,91 @@ pub fn unlocked(old: &str, new: &str) -> bool {
     old.trim().is_empty() && !new.trim().is_empty()
 }
 
-/// Fire the once-ever unlock notification. Permission is requested lazily on
-/// first use; a denial is silently absorbed — notifications are a nicety,
-/// never a gate (spec: 拒绝不阻塞).
-pub fn notify_unlock(app: &AppHandle, role: UnlockRole, lang: Lang) {
+/// Empty-selection notice copy: (title, body). The whole message is
+/// "No text selected — select some text and try again"; the em-dash maps
+/// onto this notification's (title, body) split, mirroring `unlock_body`'s
+/// shape (a state title + an actionable sentence). This is a *notice*, not an
+/// error and not "no speech" — a text source produced empty input.
+pub fn empty_input_body(lang: Lang) -> (&'static str, &'static str) {
+    match lang {
+        Lang::En => ("No text selected", "Select some text and try again."),
+        Lang::Zh => ("未选中文本", "请选中文本后重试。"),
+    }
+}
+
+/// Minimum gap between empty-input notices. Unlike [`notify_unlock`] (fires
+/// at most once ever, funnel-gated), this is on the hotkey's hot path: mashing
+/// a selection hotkey with nothing selected would otherwise re-run the
+/// permission-check/request/show sequence on every single attempt. Same
+/// pattern as `main.rs`'s `TOGGLE_DEBOUNCE_LAST`.
+static EMPTY_INPUT_LAST: Mutex<Option<Instant>> = Mutex::new(None);
+const EMPTY_INPUT_DEBOUNCE: Duration = Duration::from_secs(10);
+
+/// Shared permission-check/request/show boilerplate for this module's two OS
+/// notifications ([`notify_empty_input`], [`notify_unlock`]): request
+/// permission lazily if not already granted, silently skip on denial (a
+/// notification must never gate the flow — spec: 拒绝不阻塞), then show.
+/// `context` labels the `eprintln!` diagnostics so a skipped/failed
+/// notification is traceable to its caller.
+fn show_notification(app: &AppHandle, context: &str, title: &str, body: &str) {
     use tauri_plugin_notification::{NotificationExt, PermissionState};
 
     let n = app.notification();
     let granted = matches!(n.permission_state(), Ok(PermissionState::Granted))
         || matches!(n.request_permission(), Ok(PermissionState::Granted));
     if !granted {
-        eprintln!("fonos: unlock notification skipped — permission not granted");
+        eprintln!("fonos: {context} skipped — notification permission not granted");
         return;
     }
-    let (title, body) = unlock_body(lang, role);
     if let Err(e) = n.builder().title(title).body(body).show() {
-        eprintln!("fonos: unlock notification failed: {e}");
+        eprintln!("fonos: {context} failed: {e}");
     }
+}
+
+/// Fire the "no text selected" notice for the hotkey path (float pill only
+/// flashes red, which alone doesn't say *why*). Language is resolved from
+/// live config, like [`refresh_tray_status`].
+///
+/// Two things this must NOT do on the caller's path — the pipeline's event
+/// emit, i.e. every single empty-input attempt: (1) re-run the permission
+/// check/request/show boilerplate back-to-back on a mashed hotkey, guarded by
+/// [`EMPTY_INPUT_LAST`]; (2) block on the notification-permission calls
+/// themselves ([`show_notification`] can request permission synchronously),
+/// deferred via `tauri::async_runtime::spawn` so the engine's call path never
+/// waits on it.
+pub fn notify_empty_input(app: &AppHandle) {
+    {
+        let mut last = EMPTY_INPUT_LAST.lock().unwrap();
+        let debounced = last.map(|t| t.elapsed() < EMPTY_INPUT_DEBOUNCE).unwrap_or(false);
+        if debounced {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state: tauri::State<'_, AppState> = app.state();
+        let lang = match state.config.lock() {
+            Ok(cfg) => resolve_lang(&cfg.ui_language),
+            Err(e) => {
+                eprintln!("fonos: notify_empty_input — config lock poisoned: {e}");
+                Lang::En
+            }
+        };
+        let (title, body) = empty_input_body(lang);
+        show_notification(&app, "empty-input notice", title, body);
+    });
+}
+
+/// Fire the once-ever unlock notification. Permission is requested lazily on
+/// first use; a denial is silently absorbed — notifications are a nicety,
+/// never a gate (spec: 拒绝不阻塞). Call sites (`commands/config.rs`) already
+/// funnel-gate this to once-ever, so unlike [`notify_empty_input`] it neither
+/// debounces nor needs to get off the caller's path.
+pub fn notify_unlock(app: &AppHandle, role: UnlockRole, lang: Lang) {
+    let (title, body) = unlock_body(lang, role);
+    show_notification(app, "unlock notification", title, body);
 }
 
 /// Build the health-panel menu, stash the handles, wire click routing.
@@ -366,6 +437,18 @@ mod tests {
         let (t, b) = unlock_body(Lang::En, UnlockRole::Tts);
         assert!(t.contains("Voice replies"));
         assert!(b.contains("calendar"));
+    }
+
+    #[test]
+    fn empty_input_body_is_a_notice_not_no_speech() {
+        let (t, b) = empty_input_body(Lang::En);
+        assert_eq!(t, "No text selected");
+        assert!(b.contains("Select some text"));
+        // The reserved "no speech" vocabulary must never leak into this notice.
+        assert!(!t.to_lowercase().contains("speech") && !b.to_lowercase().contains("speech"));
+        let (t, b) = empty_input_body(Lang::Zh);
+        assert_eq!(t, "未选中文本");
+        assert!(b.contains("请选中文本"));
     }
 
     #[test]

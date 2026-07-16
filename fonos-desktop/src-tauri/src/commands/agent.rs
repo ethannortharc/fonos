@@ -261,6 +261,116 @@ pub async fn agent_reset(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Pure core of [`agent_llm_provider`] (issue #69): does **any** resolution
+/// path a shared-agent-panel exchange might take land on the Anthropic
+/// provider? Takes `&AppConfig` (not a Tauri `State`) so it is unit-testable.
+///
+/// Two kinds of exchange surface in that one panel, resolved *differently*, so
+/// an honest notice must consider both:
+///
+/// - **The panel's own typed/mic buttons** call [`agent_process`], whose
+///   *model* is resolved purely from the legacy `agent_llm_profile`→
+///   `llm_profile` config chain — it never consults any widget's `llm_widget`.
+///   Checked as path (b).
+/// - **The voice recipe and any workflow-wired agent widget** run through
+///   `commands::agent_widget::run_agent_exchange`, whose model comes from the
+///   *triggering* `agent`-type widget's own `llm_widget` ref (falling through
+///   to that same legacy chain when the ref is absent or its `model_profile`
+///   is empty). Checked as path (a), over **every** effective agent widget —
+///   `agent.default` *and* any custom agent widgets a user wired into a
+///   workflow, not just the hardcoded singleton the first cut checked.
+///
+/// `agent::processor::HttpLlmCaller`'s Anthropic arm drops the `tools` array,
+/// so an Anthropic-backed exchange still chats but silently runs no skills;
+/// the panel shows a "chat-only" notice whenever this returns `true`. Firing
+/// on *any* Anthropic-reaching path — rather than mirroring only
+/// `run_agent_exchange`'s widget-ref chain, as the first cut did — closes both
+/// a false negative (the legacy chain on Anthropic while the widget ref points
+/// elsewhere silently reproduced #69 for the panel's typed/mic path) and a
+/// false positive.
+///
+/// A **dangling or mistyped `llm_widget` ref is skipped**, *not* treated as a
+/// fall-through to the legacy chain (the behaviour the first cut's
+/// `.unwrap_or(None)` produced, contradicting its own doc): `run_agent_exchange`
+/// hard-errors on such a ref — surfacing its own message the instant the user
+/// sends — so that widget can never *silently* reach Anthropic, and counting
+/// it would misreport a send that will visibly fail. The panel's typed/mic
+/// path is unaffected by a dangling widget ref; path (b) covers it
+/// independently.
+///
+/// Read-only and never panics: every resolution failure (missing/unconfigured
+/// profile, unparseable props) counts as "not Anthropic" for that path rather
+/// than aborting this display-only lookup — the real send path still surfaces
+/// the true error once the user actually sends.
+pub(crate) fn agent_any_anthropic(config: &fonos_core::config::AppConfig) -> bool {
+    let widgets = fonos_core::workflow::engine::effective_widgets(config);
+
+    // A profile id resolves to Anthropic? Resolution failure ⇒ "not Anthropic"
+    // (never blocks — this is a display-only lookup).
+    let hits_anthropic = |profile_id: &str| -> bool {
+        resolve_agent_llm_service(config, profile_id)
+            .map(|svc| svc.provider == "anthropic")
+            .unwrap_or(false)
+    };
+
+    // (a) Every agent-type widget's own model resolution, exactly as
+    // `run_agent_exchange` would resolve it (ref → tier → provider).
+    let widget_hit = widgets
+        .iter()
+        .filter(|w| w.type_tag == "agent")
+        .any(|w| {
+            let Ok(props) =
+                serde_json::from_value::<super::agent_widget::AgentProps>(w.props.clone())
+            else {
+                return false; // unparseable props: the send path can't run this widget
+            };
+            // Dangling / mistyped ref: skip. `run_agent_exchange` hard-errors
+            // on it, so it never silently reaches Anthropic (see doc above).
+            let Ok(ref_payload) =
+                super::agent_widget::resolve_agent_llm_widget_ref(&props, &widgets)
+            else {
+                return false;
+            };
+            let (profile_id, _persona) = super::agent_widget::resolve_agent_llm_tier(
+                ref_payload,
+                &config.agent_llm_profile,
+                &config.llm_profile,
+                &props.system,
+            );
+            hits_anthropic(&profile_id)
+        });
+    if widget_hit {
+        return true;
+    }
+
+    // (b) The legacy chain `agent_process` uses for the panel's typed/mic sends.
+    let legacy_profile = if !config.agent_llm_profile.is_empty() {
+        config.agent_llm_profile.as_str()
+    } else {
+        config.llm_profile.as_str()
+    };
+    hits_anthropic(legacy_profile)
+}
+
+/// Report whether the shared agent panel should show issue #69's "chat-only,
+/// no tools" notice: returns `"anthropic"` when **any** resolution path an
+/// agent exchange might take lands on the Anthropic provider, `""` otherwise.
+///
+/// Thin `State`-bound wrapper over [`agent_any_anthropic`], which carries the
+/// full contract (what "any path" means, why dangling refs are skipped, and
+/// why it never hard-errors). Kept returning a provider-ish string rather than
+/// a bool so the panel's existing `p === 'anthropic'` check — and this
+/// command's `generate_handler!` registration name — are both unchanged.
+#[tauri::command]
+pub fn agent_llm_provider(state: State<'_, AppState>) -> Result<String, String> {
+    let config = state.config.lock().map_err(|e| e.to_string())?;
+    Ok(if agent_any_anthropic(&config) {
+        "anthropic".to_string()
+    } else {
+        String::new()
+    })
+}
+
 /// List all registered skills with their name, description, type, and status.
 #[tauri::command]
 pub async fn list_skills(state: State<'_, AppState>) -> Result<Vec<SkillInfo>, String> {
@@ -411,4 +521,144 @@ fn sanitize_skill_name(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fonos_core::config::AppConfig;
+    use fonos_core::workflow::model::{WidgetDef, WidgetRole};
+
+    /// A model profile carrying an explicit `provider` — `config_from_profile`
+    /// reads `provider` straight off this JSON (see `services::service_from_profile`).
+    fn profile(id: &str, provider: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "name": id,
+            "provider": provider,
+            "base_url": "http://x.example",
+            "api_key": "",
+            "model": "m",
+            "capabilities": ["llm"],
+        })
+    }
+
+    /// A tuned `llm` widget pointing at `model_profile`.
+    fn llm_widget(id: &str, model_profile: &str) -> WidgetDef {
+        WidgetDef {
+            id: id.to_string(),
+            role: WidgetRole::Processor,
+            type_tag: "llm".to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            props: serde_json::json!({ "model_profile": model_profile }),
+            builtin: false,
+        }
+    }
+
+    /// An `agent`-type widget wired to `llm_widget` (empty ⇒ legacy chain).
+    /// Pushed into `config.widgets`: id `"agent.default"` REPLACES the builtin
+    /// (overlay-by-id); any other id APPENDS a custom agent widget.
+    fn agent_widget(id: &str, llm_widget_ref: &str) -> WidgetDef {
+        WidgetDef {
+            id: id.to_string(),
+            role: WidgetRole::Output,
+            type_tag: "agent".to_string(),
+            name: id.to_string(),
+            icon: String::new(),
+            props: serde_json::json!({ "llm_widget": llm_widget_ref }),
+            builtin: false,
+        }
+    }
+
+    #[test]
+    fn default_config_is_not_anthropic() {
+        // Builtin agent.default ships llm_widget:"" and the default legacy
+        // chain resolves to no anthropic profile.
+        assert!(!agent_any_anthropic(&AppConfig::default()));
+    }
+
+    #[test]
+    fn legacy_chain_anthropic_fires_even_when_widget_ref_points_elsewhere() {
+        // agent_process (the panel's typed/mic path) resolves its model ONLY
+        // from the legacy chain, so an Anthropic llm_profile must fire the
+        // notice even though agent.default's llm_widget ref resolves to a
+        // NON-anthropic profile. The first cut mirrored only the widget ref
+        // and returned "" here — finding 1's silent #69.
+        let mut cfg = AppConfig::default();
+        cfg.model_profiles.push(profile("anthropic-llm", "anthropic"));
+        cfg.model_profiles.push(profile("local-llm", "openai"));
+        cfg.agent_llm_profile = String::new();
+        cfg.llm_profile = "anthropic-llm".into();
+        cfg.widgets.push(agent_widget("agent.default", "llm.local"));
+        cfg.widgets.push(llm_widget("llm.local", "local-llm"));
+        assert!(agent_any_anthropic(&cfg));
+    }
+
+    #[test]
+    fn custom_agent_widget_ref_anthropic_fires() {
+        // A user-created agent widget (finding 2) wired into a workflow resolves
+        // to Anthropic even though agent.default and the legacy chain do not.
+        // The first cut hardcoded "agent.default" and missed this.
+        let mut cfg = AppConfig::default();
+        cfg.model_profiles.push(profile("anthropic-llm", "anthropic"));
+        cfg.model_profiles.push(profile("local-llm", "openai"));
+        cfg.agent_llm_profile = "local-llm".into();
+        cfg.llm_profile = "local-llm".into();
+        cfg.widgets.push(agent_widget("agent.default", "llm.local"));
+        cfg.widgets.push(llm_widget("llm.local", "local-llm"));
+        cfg.widgets.push(agent_widget("agent.custom", "llm.claude"));
+        cfg.widgets.push(llm_widget("llm.claude", "anthropic-llm"));
+        assert!(agent_any_anthropic(&cfg));
+    }
+
+    #[test]
+    fn agent_default_ref_anthropic_fires() {
+        let mut cfg = AppConfig::default();
+        cfg.model_profiles.push(profile("anthropic-llm", "anthropic"));
+        cfg.llm_profile = "local-llm".into(); // absent id ⇒ legacy path resolves to nothing
+        cfg.widgets.push(agent_widget("agent.default", "llm.claude"));
+        cfg.widgets.push(llm_widget("llm.claude", "anthropic-llm"));
+        assert!(agent_any_anthropic(&cfg));
+    }
+
+    #[test]
+    fn dangling_widget_ref_is_skipped_not_treated_as_fallthrough() {
+        // A dangling llm_widget ref (finding 4): run_agent_exchange hard-errors
+        // on it, so it must NOT contribute an Anthropic hit. With the legacy
+        // chain non-Anthropic, the notice stays off — the first cut swallowed
+        // the Err and fell through to the legacy chain, contradicting its doc.
+        // Also proves error-tolerance: the resolution failure never panics.
+        let mut cfg = AppConfig::default();
+        cfg.model_profiles.push(profile("anthropic-llm", "anthropic"));
+        cfg.model_profiles.push(profile("local-llm", "openai"));
+        cfg.agent_llm_profile = "local-llm".into();
+        cfg.llm_profile = "local-llm".into();
+        cfg.widgets.push(agent_widget("agent.default", "llm.missing"));
+        assert!(!agent_any_anthropic(&cfg));
+    }
+
+    #[test]
+    fn dangling_widget_ref_does_not_hide_anthropic_legacy_chain() {
+        // Even with agent.default's ref dangling (its voice path would error),
+        // the panel's typed/mic path still uses the legacy chain — so an
+        // Anthropic legacy chain must fire. Path (b) is independent of path (a).
+        let mut cfg = AppConfig::default();
+        cfg.model_profiles.push(profile("anthropic-llm", "anthropic"));
+        cfg.agent_llm_profile = "anthropic-llm".into();
+        cfg.llm_profile = "anthropic-llm".into();
+        cfg.widgets.push(agent_widget("agent.default", "llm.missing"));
+        assert!(agent_any_anthropic(&cfg));
+    }
+
+    #[test]
+    fn unresolvable_profile_counts_as_not_anthropic() {
+        // Refs resolve OK but point at absent profile ids ⇒ resolution fails ⇒
+        // "not Anthropic", never a panic (error-tolerant, never blocks).
+        let mut cfg = AppConfig::default();
+        cfg.llm_profile = "ghost-profile".into();
+        cfg.widgets.push(agent_widget("agent.default", "llm.ghost"));
+        cfg.widgets.push(llm_widget("llm.ghost", "also-ghost"));
+        assert!(!agent_any_anthropic(&cfg));
+    }
 }

@@ -9,7 +9,46 @@ permissions:
   contents: write
 
 jobs:
+  # Single owner of "does the release exist yet" — GH's release API has no
+  # atomic create-if-missing, so having exactly one job run the
+  # view-then-create sequence (instead of every matrix leg racing it) is what
+  # eliminates the race where two legs reach "Upload to release" near
+  # simultaneously, both see the tag missing, and the loser's `gh release
+  # create` fails the job. `build-linux` (below) depends on this job and
+  # waits for it, so by the time any matrix leg uploads, the release is
+  # guaranteed to already exist.
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release if it doesn't exist yet
+        run: |
+          # --draft: only the Linux assets exist at this point — macOS artifacts are
+          # built and uploaded locally afterward (scripts/release-macos.sh), which also
+          # publishes the release once all platforms' assets are in place. `gh release
+          # view/upload/download` all work against draft releases via the API, so the
+          # rest of this workflow (and merge-latest-json.sh) needs no other changes.
+          gh release view "$TAG_NAME" >/dev/null 2>&1 || \
+            gh release create "$TAG_NAME" --title "Fonos $TAG_NAME" --generate-notes --draft
+
   build-linux:
+    needs: prepare-release
+    # This workflow also runs via workflow_dispatch on non-tag refs, where
+    # prepare-release's own `if` skips it entirely. A job's default `if` is
+    # implicitly `success()`, and GitHub Actions' `success()` treats a
+    # *skipped* needed job the same as a *failed* one — both cause dependents
+    # to be skipped. So without the explicit `|| result == 'skipped'` branch
+    # below, this job would never run on workflow_dispatch (prepare-release
+    # always skips there). Only a real prepare-release failure (or
+    # cancellation) should block this job.
+    if: ${{ !cancelled() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -134,14 +173,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          # Create release if it doesn't exist yet (first matrix job to reach here creates it).
-          # --draft: only the Linux assets exist at this point — macOS artifacts are
-          # built and uploaded locally afterward (scripts/release-macos.sh), which also
-          # publishes the release once all platforms' assets are in place. `gh release
-          # view/upload/download` all work against draft releases via the API, so the
-          # rest of this workflow (and merge-latest-json.sh) needs no other changes.
-          gh release view "$TAG_NAME" >/dev/null 2>&1 || \
-            gh release create "$TAG_NAME" --title "Fonos $TAG_NAME" --generate-notes --draft
+          # The release itself is created exactly once, by the prepare-release
+          # job this job `needs:` — see that job's comment. By the time either
+          # matrix leg reaches this step, the release is guaranteed to exist,
+          # so this step only ever uploads assets (`--clobber` handles both
+          # legs writing their own arch-suffixed files with no overlap, and a
+          # re-run of this job overwriting its own prior attempt).
           for f in target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm target/release/bundle/appimage/*.AppImage target/release/bundle/appimage/*.AppImage.sig; do
             gh release upload "$TAG_NAME" "$f" --clobber
           done

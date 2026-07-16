@@ -171,12 +171,53 @@ fn hotkey_bindings(config: &AppConfig) -> Vec<(String, String)> {
     out
 }
 
+/// Fold a lowercased key token to the canonical spelling for its alias group,
+/// so two combos that `hotkey.rs::key_name_to_code` maps to the SAME macOS
+/// virtual keycode also compare equal here — the conflict check must agree
+/// with what the OS actually grabs, not just with string spelling.
+///
+/// Source of truth: `fonos-desktop/src-tauri/src/hotkey.rs`'s
+/// `key_name_to_code` match arms. Every multi-name group there gets one
+/// canonical spelling here (arbitrary pick, doesn't matter which as long as
+/// it's consistent); single-name keys (letters, digits, function keys, `tab`)
+/// need no entry — they already compare equal after lowercasing. Deliberately
+/// does NOT fold `forwarddelete` into `delete`/`backspace` — `key_name_to_code`
+/// maps it to a distinct `KeyCode::FORWARD_DELETE`, a different physical key
+/// (fn+Delete) from `KeyCode::DELETE`, so folding them would manufacture a
+/// conflict that doesn't exist on the actual keyboard.
+fn canonical_key_token(key: &str) -> &str {
+    match key {
+        "enter" => "return",
+        "esc" => "escape",
+        "backspace" => "delete",
+        "arrowup" => "up",
+        "arrowdown" => "down",
+        "arrowleft" => "left",
+        "arrowright" => "right",
+        " " => "space",
+        "-" => "minus",
+        "=" => "equal",
+        "[" => "bracketleft",
+        "]" => "bracketright",
+        "'" => "quote",
+        ";" => "semicolon",
+        "\\" => "backslash",
+        "," => "comma",
+        "/" => "slash",
+        "." => "period",
+        "backquote" | "`" => "grave",
+        other => other,
+    }
+}
+
 /// Canonicalize a combo so spelling / case / alias variants compare equal:
 /// `"Cmd+Shift+A"`, `"command+shift+a"`, and `"Shift+Command+A"` all collapse to
 /// one string. Split on `+`; the final token is the key, earlier tokens are
 /// modifiers alias-folded to canonical names (`command`→`cmd`, `control`→`ctrl`,
 /// `option`/`opt`→`alt`), then sorted + deduped so modifier order is irrelevant.
-/// Returns `None` for an empty (unbound) combo.
+/// The key token is likewise alias-folded via [`canonical_key_token`] — see its
+/// doc for why this must mirror `hotkey.rs::key_name_to_code`, not just
+/// lowercase the token. Returns `None` for an empty (unbound) combo.
 ///
 /// When `fold_cmd_ctrl` is set, `cmd` is additionally mapped to `ctrl` *before*
 /// sorting: on Linux the desktop layer sends `cmd` through `CommandOrControl`,
@@ -190,7 +231,7 @@ fn canonical_combo(combo: &str, fold_cmd_ctrl: bool) -> Option<String> {
     }
     let parts: Vec<&str> = combo.split('+').filter(|p| !p.trim().is_empty()).collect();
     let (key_tok, mod_toks) = parts.split_last()?; // parts non-empty ⇒ Some
-    let key = key_tok.trim().to_lowercase();
+    let key = canonical_key_token(&key_tok.trim().to_lowercase()).to_string();
     let mut mods: Vec<&'static str> = mod_toks
         .iter()
         .map(|m| match m.trim().to_lowercase().as_str() {
@@ -742,6 +783,101 @@ mod tests {
             "same grab post-collapse"
         );
         assert!(canonical_combo("cmd+shift+a", true).is_some());
+    }
+
+    #[test]
+    fn canonical_combo_folds_key_aliases_that_share_a_macos_keycode() {
+        // Every multi-name group in hotkey.rs::key_name_to_code must collapse
+        // to the same canonical form here, or the conflict check misses two
+        // combos that grab the identical physical key.
+        let pairs = [
+            ("cmd+return", "cmd+enter"),
+            ("cmd+escape", "cmd+esc"),
+            ("cmd+delete", "cmd+backspace"),
+            ("alt+up", "alt+arrowup"),
+            ("alt+down", "alt+arrowdown"),
+            ("alt+left", "alt+arrowleft"),
+            ("alt+right", "alt+arrowright"),
+            // NOTE: "space" vs the literal " " character is deliberately not
+            // tested here — `canonical_combo`'s `+`-split filters out any
+            // token that trims to empty, so a bare " " key token vanishes
+            // before key-alias folding ever runs (pre-existing parser
+            // behavior, out of scope for this fix). Real configs always
+            // spell the space key as `"space"`, never as a literal space.
+            ("cmd+minus", "cmd+-"),
+            ("cmd+equal", "cmd+="),
+            ("cmd+bracketleft", "cmd+["),
+            ("cmd+bracketright", "cmd+]"),
+            ("cmd+quote", "cmd+'"),
+            ("cmd+semicolon", "cmd+;"),
+            ("cmd+backslash", "cmd+\\"),
+            ("cmd+comma", "cmd+,"),
+            ("cmd+slash", "cmd+/"),
+            ("cmd+period", "cmd+."),
+            ("cmd+grave", "cmd+`"),
+            ("cmd+grave", "cmd+backquote"),
+        ];
+        for (a, b) in pairs {
+            assert_eq!(
+                canonical_combo(a, false),
+                canonical_combo(b, false),
+                "{a} and {b} should canonicalize equal (same macOS keycode)"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_combo_does_not_fold_forwarddelete_into_delete() {
+        // hotkey.rs maps "forwarddelete" to a DISTINCT keycode
+        // (KeyCode::FORWARD_DELETE, the fn+Delete key) from "delete"/"backspace"
+        // (KeyCode::DELETE) — folding them would manufacture a conflict that
+        // doesn't exist on the actual keyboard.
+        assert_ne!(
+            canonical_combo("cmd+delete", false),
+            canonical_combo("cmd+forwarddelete", false)
+        );
+        assert_ne!(
+            canonical_combo("cmd+backspace", false),
+            canonical_combo("cmd+forwarddelete", false)
+        );
+    }
+
+    #[test]
+    fn key_alias_return_vs_enter_flagged_as_duplicate() {
+        // End-to-end through check_hotkeys, not just the pure primitive: two
+        // workflow chips spelled "return" and "enter" are the same physical
+        // key and must surface as a real conflict finding.
+        let mut c = cfg();
+        c.workflows = vec![
+            hk_workflow("wf.a", "Alpha", "cmd+return"),
+            hk_workflow("wf.b", "Bravo", "cmd+enter"),
+        ];
+        let f = check_hotkeys(&c);
+        let dup = f.iter().find(|f| f.id.starts_with("hotkey_dup:")).expect("dup finding");
+        assert_eq!(dup.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn key_alias_up_vs_arrowup_flagged_as_duplicate() {
+        let mut c = cfg();
+        c.workflows = vec![
+            hk_workflow("wf.a", "Alpha", "alt+up"),
+            hk_workflow("wf.b", "Bravo", "alt+arrowup"),
+        ];
+        let f = check_hotkeys(&c);
+        let dup = f.iter().find(|f| f.id.starts_with("hotkey_dup:")).expect("dup finding");
+        assert_eq!(dup.severity, Severity::Warn);
+    }
+
+    #[test]
+    fn key_alias_delete_vs_forwarddelete_is_not_a_duplicate() {
+        let mut c = cfg();
+        c.workflows = vec![
+            hk_workflow("wf.a", "Alpha", "cmd+delete"),
+            hk_workflow("wf.b", "Bravo", "cmd+forwarddelete"),
+        ];
+        let f = check_hotkeys(&c);
+        assert!(f.iter().all(|f| !f.id.starts_with("hotkey_dup:")), "distinct physical keys: {f:?}");
     }
 
     #[test]

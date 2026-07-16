@@ -35,6 +35,15 @@ body{background:transparent;overflow:hidden}
 .hB{font-size:9px;color:rgba(255,255,255,.15);background:0;border:0;cursor:pointer;padding:2px 4px;font-family:inherit}
 .hB:hover{color:rgba(255,255,255,.4)}
 
+/* Provider capability notice (#69 mitigation): same amber "degraded, not
+   broken" tone meeting-panel.html uses for its diarize-degradation notice —
+   dismissible-not-required, so it's a thin strip rather than a blocking modal. */
+#pn{display:none;align-items:center;gap:8px;padding:6px 14px;flex-shrink:0;border-bottom:1px solid rgba(255,255,255,.04)}
+#pn.on{display:flex}
+#pnt{flex:1;font-size:10px;line-height:1.4;color:rgba(245,158,11,.75)}
+#pn .hB{color:rgba(245,158,11,.4)}
+#pn .hB:hover{color:rgba(245,158,11,.7)}
+
 #cv{overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:6px;min-height:0;max-height:300px}
 
 .ru{display:flex;justify-content:flex-end}
@@ -100,6 +109,7 @@ body{background:transparent;overflow:hidden}
 <body>
 <div id="drop">
   <div id="hdr"><span class="hL"><span style="font-size:11px">&#x2728;</span> Agent</span><div style="display:flex;gap:8px"><button class="hB" onclick="clearC()">Clear</button><button class="hB" style="font-size:10px" onclick="hide()">&#10005;</button></div></div>
+  <div id="pn"><span id="pnt"></span><button class="hB" onclick="dismissPn()">&#10005;</button></div>
   <div id="cv">
     <div id="es"><div class="el">Ask anything</div><div id="ch"><button class="cp" onclick="chip(this)">What&#x27;s my IP?</button><button class="cp" onclick="chip(this)">Open Safari</button><button class="cp" onclick="chip(this)">System memory</button></div></div>
   </div>
@@ -107,10 +117,51 @@ body{background:transparent;overflow:hidden}
   <div id="mf"><button id="mb" onclick="mic()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="9" y="1" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button></div>
 </div>
 <script>
-var M=[],P=false,ri=null,rs=0,ma=false,tk=null;
-var cv=document.getElementById('cv'),es=document.getElementById('es'),rb=document.getElementById('rb'),rt=document.getElementById('rt'),hd=document.getElementById('hdr'),mf=document.getElementById('mf'),mb=document.getElementById('mb');
+var M=[],P=false,ri=null,rs=0,ma=false,tk=null,pnDismissed=false;
+var cv=document.getElementById('cv'),es=document.getElementById('es'),rb=document.getElementById('rb'),rt=document.getElementById('rt'),hd=document.getElementById('hdr'),mf=document.getElementById('mf'),mb=document.getElementById('mb'),pn=document.getElementById('pn'),pnt=document.getElementById('pnt');
 function $t(){return typeof window.__TAURI_INTERNALS__!=='undefined'?window.__TAURI_INTERNALS__:null}
 function iv(c,a){var t=$t();return t?t.invoke(c,a||{}).catch(function(e){console.error(c,e)}):Promise.resolve()}
+
+/* ── Tiny inline i18n (meeting-panel.html pattern, trimmed to this task's
+   one key) ── This standalone webview can't import the main app's
+   lib/i18n (a React/TS module bundled with the main window only), so it
+   owns a minimal STR dictionary covering just the #69 provider-capability
+   notice — everything else in this panel stays hardcoded English (matches
+   every other satellite panel; out of scope here). Locale follows
+   config.ui_language, resolved at setup() and live-updated on the app-wide
+   config:saved event (see setup()'s listener) so a language switch reaches
+   the notice text without a panel restart. */
+var STR={
+  en:{ 'anthropic-no-tools':"Anthropic models can't run agent actions yet — replies are chat-only (#69)" },
+  zh:{ 'anthropic-no-tools':'Anthropic 模型暂不支持执行操作 — 仅对话回复（#69）' }
+};
+var LOCALE='en';
+function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
+function applyLocale(s){ LOCALE=(s==='en'||s==='zh')?s:((navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en'); }
+
+/* ── #69 mitigation: tell the user up front when ANY agent exchange this
+   panel can drive would resolve to Anthropic, whose processor arm
+   (fonos-core/src/agent/processor.rs) drops the tools array — the agent still
+   chats but silently can't run skills. The backend weighs every resolution
+   path (the typed/mic agent_process legacy chain AND every agent widget's own
+   llm_widget ref) and returns 'anthropic' if any one hits — see
+   commands::agent::agent_any_anthropic. Re-evaluated on every show()
+   (persistent open AND each voice/text exchange) AND — for a panel left open
+   across a live config edit — on the app-wide config:saved event (setup()'s
+   listener), so swapping the model never leaves this notice stale. */
+function checkProviderNotice(){
+  iv('agent_llm_provider').then(function(p){
+    if(p==='anthropic')showProviderNotice();else hideProviderNotice();
+  }).catch(function(){});
+}
+function showProviderNotice(){
+  if(pnDismissed)return;
+  pnt.textContent=L('anthropic-no-tools');
+  pn.classList.add('on');
+  rz();
+}
+function hideProviderNotice(){pn.classList.remove('on');rz();}
+function dismissPn(){pnDismissed=true;hideProviderNotice()}
 
 /* ── Minimal, injection-safe markdown (escape first, then a tiny subset) ──── */
 /* Copied verbatim from dialog-panel.html's renderer — these panels are
@@ -250,7 +301,7 @@ function showTk(){if(!tk){tk=document.createElement('div');tk.className='tw';var
 function hideTk(){tk=null;render()}
 function showRec(){rb.classList.add('on');rs=Date.now();if(ri)clearInterval(ri);ri=setInterval(function(){rt.textContent=((Date.now()-rs)/1000).toFixed(1)+'s'},100);render()}
 function hideRec(){rb.classList.remove('on');if(ri){clearInterval(ri);ri=null}render()}
-function show(p){P=!!p;hd.classList.toggle('on',P);mf.classList.toggle('on',P);render()}
+function show(p){P=!!p;hd.classList.toggle('on',P);mf.classList.toggle('on',P);pnDismissed=false;checkProviderNotice();render()}
 function hide(){iv('hide_agent_panel')}
 function clearC(){M=[];hideTk();hideRec();render();iv('agent_reset')}
 function chip(b){proc(b.textContent)}
@@ -309,6 +360,7 @@ function recvClear(){clearC()}
 /* Event listeners kept as fallback (for test harness compatibility) */
 function setup(){
   var t=$t();if(!t){setTimeout(setup,100);return}
+  iv('get_config').then(function(c){applyLocale(c&&c.ui_language)}).catch(function(){});
   var tr=t.transformCallback;
   function on(e,f){t.invoke('plugin:event|listen',{event:e,target:{kind:'Any'},handler:tr(f)}).catch(function(x){console.error('listen:'+e,x)})}
   on('agent-panel:show',function(e){show(e&&e.payload&&e.payload.persistent)});
@@ -322,6 +374,14 @@ function setup(){
   on('agent-panel:error',function(e){var x=e&&e.payload&&e.payload.text||'Error';recvError(x)});
   on('agent-panel:clear',function(){recvClear()});
   on('agent-panel:dismiss',function(){recvDismiss()});
+  // Settings changed while the panel is open (finding 3): re-evaluate the #69
+  // provider notice against the freshly-saved config and live-update the notice
+  // locale — mirrors float.html's config:saved listener. checkProviderNotice
+  // re-queries the backend, so the small emitted payload subset
+  // (ui_language/active_voice_workflow) is used only for the locale here. A
+  // prior dismiss (pnDismissed) is deliberately preserved: dismiss is per-open
+  // and this is the same open — show() stays the only reset point.
+  on('config:saved',function(e){var p=e&&e.payload;if(!p)return;applyLocale(p.ui_language);checkProviderNotice();});
   render();
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',function(){setTimeout(setup,40)}):setTimeout(setup,40);

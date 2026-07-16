@@ -124,33 +124,35 @@ impl LlmCaller for HttpLlmCaller {
                     }]
                 }))
             } else {
-                // Build the request body with tools. URL + parameter-dialect
-                // rules are shared with `crate::llm` so this path can't drift
-                // from the plain-text one: Google's OpenAI-compat layer lives
-                // under /v1beta/openai/ (its native /v1 path is not
-                // OpenAI-shaped and would 404 the preset base URL), and
-                // api.openai.com rejects the deprecated `max_tokens` on
-                // current models.
+                // Build the request body with tools. URL + body rules are
+                // shared with `crate::llm` so this path can't drift from the
+                // plain-text one: Google's OpenAI-compat layer lives under
+                // /v1beta/openai/ (its native /v1 path is not OpenAI-shaped
+                // and would 404 the preset base URL), and api.openai.com
+                // rejects the deprecated `max_tokens` on current models —
+                // and, previously, this path unconditionally sent
+                // `temperature: 0.7`, which o-series/nano OpenAI models
+                // reject outright, failing the agent before it ever got to
+                // tool-calling.
                 let url = if service.provider == "google" {
                     crate::llm::google_openai_compat_chat_url(&service.base_url)
                 } else {
                     crate::llm::openai_compatible_chat_url(&service.base_url)
                 };
 
-                let mut body = json!({
-                    "model": service.model,
-                    "messages": messages,
-                    "temperature": 0.7,
-                });
-                // Google is pinned to `max_tokens` regardless of base_url —
-                // an empty base would otherwise satisfy the openai-dialect
-                // check, but it means "Google's default host" here, not
-                // api.openai.com.
-                let openai_dialect = service.provider != "google"
-                    && crate::llm::is_openai_param_dialect(&service.provider, &service.base_url);
-                let max_tokens_key =
-                    if openai_dialect { "max_completion_tokens" } else { "max_tokens" };
-                body[max_tokens_key] = json!(256);
+                // `openai_compatible_body` excludes `provider == "google"`
+                // from the OpenAI param dialect as its first rule (see its
+                // doc and `is_openai_param_dialect`'s), so this always comes
+                // back with `temperature` + `max_tokens` for google — no
+                // caller-side post-fix needed.
+                let mut body = crate::llm::openai_compatible_body(
+                    &service.model,
+                    &messages,
+                    0.7,
+                    256,
+                    &service.provider,
+                    &service.base_url,
+                );
 
                 if !tools.is_empty() {
                     body["tools"] = json!(tools);

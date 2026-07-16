@@ -1,5 +1,13 @@
 {
   "bundle": {
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "linux": {
+      "deb": {
+        "depends": ["xdotool"]
+      },
+      "rpm": {
+        "depends": ["xdotool"]
+      }
+    }
   }
 }

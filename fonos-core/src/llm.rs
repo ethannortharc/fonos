@@ -194,6 +194,52 @@ pub async fn chat(
 
 // ─── API callers ─────────────────────────────────────────────────────────────
 
+/// Resolve the chat-completions URL for an OpenAI-compatible endpoint: the
+/// default `api.openai.com` when `base_url` is empty, otherwise the override
+/// with `/v1/chat/completions` appended (or just `/chat/completions` when the
+/// override already ends in `/v1`). Shared by [`call_openai_compatible`] and
+/// the agent's [`crate::agent::processor::HttpLlmCaller`] so the two paths
+/// can never drift.
+pub(crate) fn openai_compatible_chat_url(base_url: &str) -> String {
+    if base_url.is_empty() {
+        return "https://api.openai.com/v1/chat/completions".to_string();
+    }
+    let base = base_url.trim_end_matches('/');
+    if base.ends_with("/v1") {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    }
+}
+
+/// Resolve the chat-completions URL for **Google's OpenAI-compatibility
+/// layer**, which lives under `/v1beta/openai/` — the `/v1/chat/completions`
+/// shape [`openai_compatible_chat_url`] builds does not exist on
+/// `generativelanguage.googleapis.com`. Used by the agent path, which needs
+/// OpenAI-shaped tool calls; the plain-text path routes `google` to the
+/// native [`call_google`] instead and never needs this.
+pub(crate) fn google_openai_compat_chat_url(base_url: &str) -> String {
+    let base = if base_url.is_empty() {
+        "https://generativelanguage.googleapis.com"
+    } else {
+        base_url
+    };
+    let base = base.trim_end_matches('/');
+    if base.ends_with("/v1beta/openai") {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1beta/openai/chat/completions", base)
+    }
+}
+
+/// Whether the target speaks OpenAI's parameter dialect — `api.openai.com`
+/// rejects the deprecated `max_tokens` on current models and wants
+/// `max_completion_tokens` instead, while most compatible servers (Ollama,
+/// OpenRouter, Cerebras, Google's compat layer, …) still take `max_tokens`.
+pub(crate) fn is_openai_param_dialect(provider: &str, base_url: &str) -> bool {
+    provider == "openai" || base_url.is_empty() || base_url.contains("api.openai.com")
+}
+
 /// Call an OpenAI-compatible chat completions endpoint.
 ///
 /// Handles both the default `api.openai.com` endpoint and custom `base_url`
@@ -210,20 +256,10 @@ pub async fn call_openai_compatible(
     max_tokens: u32,
     provider: &str,
 ) -> Result<LlmResponse> {
-    let url = if base_url.is_empty() {
-        "https://api.openai.com/v1/chat/completions".to_string()
-    } else {
-        let base = base_url.trim_end_matches('/');
-        if base.ends_with("/v1") {
-            format!("{}/chat/completions", base)
-        } else {
-            format!("{}/v1/chat/completions", base)
-        }
-    };
+    let url = openai_compatible_chat_url(base_url);
 
     // Adapt parameters per provider
-    let is_openai = provider == "openai"
-        || (base_url.is_empty() || base_url.contains("api.openai.com"));
+    let is_openai = is_openai_param_dialect(provider, base_url);
 
     let mut body = serde_json::json!({
         "model": model,
@@ -579,5 +615,90 @@ mod tests {
             out,
             "Translate to French: {text}\n\nIMPORTANT: Output in Spanish."
         );
+    }
+
+    // ─── openai_compatible_chat_url ──────────────────────────────────────────
+
+    #[test]
+    fn openai_compatible_chat_url_defaults_to_api_openai_com_when_base_empty() {
+        let url = openai_compatible_chat_url("");
+        assert_eq!(url, "https://api.openai.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn openai_compatible_chat_url_appends_only_chat_completions_when_base_ends_in_v1() {
+        let url = openai_compatible_chat_url("https://api.cerebras.ai/v1");
+        assert_eq!(url, "https://api.cerebras.ai/v1/chat/completions");
+    }
+
+    #[test]
+    fn openai_compatible_chat_url_trims_trailing_slash_before_checking_v1_suffix() {
+        let url = openai_compatible_chat_url("https://api.cerebras.ai/v1/");
+        assert_eq!(url, "https://api.cerebras.ai/v1/chat/completions");
+    }
+
+    #[test]
+    fn openai_compatible_chat_url_appends_v1_chat_completions_when_base_has_no_v1_suffix() {
+        let url = openai_compatible_chat_url("https://example.com/");
+        assert_eq!(url, "https://example.com/v1/chat/completions");
+    }
+
+    // ─── google_openai_compat_chat_url ───────────────────────────────────────
+
+    #[test]
+    fn google_openai_compat_chat_url_defaults_to_generativelanguage_googleapis_com_when_base_empty(
+    ) {
+        let url = google_openai_compat_chat_url("");
+        assert_eq!(
+            url,
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+    }
+
+    #[test]
+    fn google_openai_compat_chat_url_appends_only_chat_completions_when_base_already_has_v1beta_openai_suffix()
+     {
+        let url = google_openai_compat_chat_url("https://generativelanguage.googleapis.com/v1beta/openai");
+        assert_eq!(
+            url,
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+    }
+
+    #[test]
+    fn google_openai_compat_chat_url_appends_full_path_for_bare_preset_base() {
+        let url = google_openai_compat_chat_url("https://generativelanguage.googleapis.com");
+        assert_eq!(
+            url,
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        );
+    }
+
+    // ─── is_openai_param_dialect ─────────────────────────────────────────────
+
+    #[test]
+    fn is_openai_param_dialect_true_for_openai_provider_regardless_of_base_url() {
+        assert!(is_openai_param_dialect("openai", "https://some-proxy.example.com"));
+    }
+
+    #[test]
+    fn is_openai_param_dialect_false_for_openrouter() {
+        assert!(!is_openai_param_dialect(
+            "openrouter",
+            "https://openrouter.ai/api/v1"
+        ));
+    }
+
+    #[test]
+    fn is_openai_param_dialect_true_for_empty_base_url_since_it_means_api_openai_com() {
+        assert!(is_openai_param_dialect("custom", ""));
+    }
+
+    #[test]
+    fn is_openai_param_dialect_false_for_cerebras() {
+        assert!(!is_openai_param_dialect(
+            "cerebras",
+            "https://api.cerebras.ai/v1"
+        ));
     }
 }

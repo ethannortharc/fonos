@@ -82,7 +82,7 @@ notarize() {
 # ── preflight: the macOS release toolchain must be on PATH ───────────────────
 # Fail fast (before the long build) if anything the later stages rely on is
 # missing. gh/jq are also needed by scripts/merge-latest-json.sh below.
-for tool in jq gh ditto hdiutil codesign spctl xcrun; do
+for tool in jq gh ditto hdiutil codesign spctl xcrun xxd; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: '$tool' is required but not on PATH" >&2; exit 1; }
 done
 
@@ -109,78 +109,34 @@ TAG="v$VERSION"
 echo "==> Releasing Fonos $TAG"
 
 # ── preflight: ensure the release exists before the long build ─────────────
-# `gh release upload` (stage (k), reached only via --publish) fails outright
+# `gh release upload` (stage (l), reached only via --publish) fails outright
 # if no release exists yet for $TAG. Normally CI's build-linux.yml
 # prepare-release job creates it (as a draft) on a tag push, but this script
 # is also meant to be runnable standalone — either producer may run first.
-# Mirror prepare-release's own view-then-create sequence here so a --publish
-# run never depends on CI having already touched this tag. Do this BEFORE the
-# multi-minute build so a missing-release failure surfaces immediately, not
-# after paying for the whole build+notarize sequence.
+# The shared ensure-release-exists.sh (also used by prepare-release) makes
+# this race-safe against the other producer creating the tag concurrently.
+# Do this BEFORE the multi-minute build so a missing-release failure surfaces
+# immediately, not after paying for the whole build+notarize sequence.
 if [[ "$PUBLISH" -eq 1 ]]; then
   step "preflight: ensure release $TAG exists"
-  gh release view "$TAG" >/dev/null 2>&1 || \
-    gh release create "$TAG" --title "Fonos $TAG" --generate-notes --draft
+  "$REPO_ROOT/scripts/ensure-release-exists.sh" "$TAG"
 fi
 
 # ── (b) build the signed .app + updater artifacts ───────────────────────────
 echo "==> cargo tauri build --bundles app"
 ( cd "$REPO_ROOT/fonos-desktop" && cargo tauri build --bundles app )
 
-# ── (c) locate the updater tarball + its detached signature ─────────────────
-BUNDLE_DIR="$REPO_ROOT/target/release/bundle"
-MACOS_DIR="$BUNDLE_DIR/macos"
-TARBALL="$MACOS_DIR/Fonos.app.tar.gz"
-SIG_FILE="$TARBALL.sig"
-
-if [[ ! -f "$TARBALL" ]]; then
-  echo "error: updater tarball not found at $TARBALL" >&2
-  echo "       (is bundle.createUpdaterArtifacts=true and the signing key valid?)" >&2
-  exit 1
-fi
-if [[ ! -f "$SIG_FILE" ]]; then
-  echo "error: signature not found at $SIG_FILE" >&2
-  exit 1
-fi
-
-SIGNATURE="$(cat "$SIG_FILE")"
-ASSET_NAME="Fonos_${VERSION}_aarch64.app.tar.gz"
-URL="https://github.com/ethannortharc/fonos/releases/download/${TAG}/${ASSET_NAME}"
-
-# ── (d) merge the darwin-aarch64 entry into latest.json ─────────────────────
-# scripts/merge-latest-json.sh (shared with build-linux.yml's Linux updater
-# job) fetches whatever latest.json already exists on the "$TAG" release and
-# merges into it, rather than clobbering it. That matters because either
-# release producer can run first:
-#   - if Linux CI already ran for this tag, it published linux-x86_64 /
-#     linux-aarch64 entries — this preserves them.
-#   - if this is the first producer for the tag, it creates latest.json with
-#     only darwin-aarch64, and the Linux job merges into *that* when it runs.
-LATEST_JSON="$BUNDLE_DIR/latest.json"
-PLATFORMS_FRAGMENT="$(mktemp)"
-# NOTE: $PLATFORMS_FRAGMENT is intentionally NOT removed here. Notarization
-# below takes several minutes, during which CI's publish-latest-json job may
-# merge fresh linux-* entries into the release's latest.json. Stage (k)
-# re-runs this exact merge immediately before uploading (reusing this same
-# fragment) so that re-merge picks up whatever landed on the release in the
-# meantime instead of clobbering it with this now-stale local copy. Cleaned
-# up by the EXIT trap below.
-trap 'rm -f "$PLATFORMS_FRAGMENT"' EXIT
-jq -n --arg signature "$SIGNATURE" --arg url "$URL" \
-  '{"darwin-aarch64": {signature: $signature, url: $url}}' > "$PLATFORMS_FRAGMENT"
-"$REPO_ROOT/scripts/merge-latest-json.sh" "$TAG" "$PLATFORMS_FRAGMENT" "$LATEST_JSON"
-
-# ── (e) copy the updater tarball to the release asset name ──────────────────
-ASSET_PATH="$BUNDLE_DIR/$ASSET_NAME"
-cp "$TARBALL" "$ASSET_PATH"
-echo "==> staged release asset: $ASSET_PATH"
-
-# ── (f) notarize + staple the .app ──────────────────────────────────────────
+# ── (c) notarize + staple the .app ──────────────────────────────────────────
 # The bundler already codesigned Fonos.app with the hardened runtime, but an
 # app must ALSO be notarized (and stapled, so Gatekeeper can verify offline)
 # before macOS will launch it without a right-click override. Notarization
 # takes a zip, not the app directory, so ditto it up first. This must happen
-# before the DMG is built, so the DMG carries the stapled app.
+# before EITHER shipped container is assembled: the DMG below carries the
+# stapled app, and the updater tarball is re-packed from it in stage (d) —
+# v0.8.3 shipped an updater tarball with no staple ticket inside because this
+# stage used to run after the bundler's tarball had already been staged.
+BUNDLE_DIR="$REPO_ROOT/target/release/bundle"
+MACOS_DIR="$BUNDLE_DIR/macos"
 APP="$MACOS_DIR/Fonos.app"
 if [[ ! -d "$APP" ]]; then
   echo "error: built app not found at $APP" >&2
@@ -193,7 +149,103 @@ notarize "$APP_NOTARIZE_ZIP"
 xcrun stapler staple "$APP"
 rm -f "$APP_NOTARIZE_ZIP"
 
-# ── (g) build the DMG headlessly ────────────────────────────────────────────
+# ── (d) re-pack + re-sign the updater tarball from the STAPLED app ──────────
+# The bundler wrote its own Fonos.app.tar.gz during the build — necessarily
+# before stage (c) ran — so the app inside it has no staple ticket. Rebuild
+# the tarball from the just-stapled bundle and re-sign it with the updater
+# key; only this re-generated signature may reach latest.json (the bundler's
+# .sig matches the pre-staple bytes and would fail updater verification).
+# --no-xattrs/--no-mac-metadata keep quarantine/provenance xattrs and
+# AppleDouble (._*) entries out of the archive; the ticket itself is a plain
+# file (Contents/CodeResources), which tar carries fine.
+TARBALL="$MACOS_DIR/Fonos.app.tar.gz"
+SIG_FILE="$TARBALL.sig"
+step "re-pack updater tarball from the stapled app + re-sign"
+rm -f "$TARBALL" "$SIG_FILE"
+tar -czf "$TARBALL" --no-xattrs --no-mac-metadata -C "$MACOS_DIR" Fonos.app
+# `tauri signer sign` reads the same env vars the bundler does, but its -k
+# form takes key CONTENT only — unlike the bundler, which accepts content or
+# a path in TAURI_SIGNING_PRIVATE_KEY. Bridge the path spelling onto -f
+# explicitly, scrubbing the env copies so clap's -k/-f conflict check can't
+# fire; the content spelling stays in the environment, off the command line
+# (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD flows via env either way).
+if [[ -f "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+  ( cd "$REPO_ROOT/fonos-desktop" && \
+    env -u TAURI_SIGNING_PRIVATE_KEY -u TAURI_SIGNING_PRIVATE_KEY_PATH \
+      cargo tauri signer sign -f "$TAURI_SIGNING_PRIVATE_KEY" "$TARBALL" )
+else
+  ( cd "$REPO_ROOT/fonos-desktop" && \
+    env -u TAURI_SIGNING_PRIVATE_KEY_PATH \
+      cargo tauri signer sign "$TARBALL" )
+fi
+if [[ ! -f "$SIG_FILE" ]]; then
+  echo "error: re-signing did not produce $SIG_FILE" >&2
+  exit 1
+fi
+
+SIGNATURE="$(cat "$SIG_FILE")"
+ASSET_NAME="Fonos_${VERSION}_aarch64.app.tar.gz"
+URL="https://github.com/ethannortharc/fonos/releases/download/${TAG}/${ASSET_NAME}"
+
+# ── (e) prove the updater tarball ships the staple ──────────────────────────
+# Extract the exact archive about to be published and assert the app inside
+# still passes signature + staple validation — updater users install THIS
+# archive, not the DMG, so it must carry the same offline-Gatekeeper
+# guarantee (this is the check v0.8.3 lacked).
+step "verify the updater tarball contents (codesign + stapler)"
+TARBALL_CHECK_DIR="$(mktemp -d)"
+tar -xzf "$TARBALL" -C "$TARBALL_CHECK_DIR"
+codesign --verify --deep --strict "$TARBALL_CHECK_DIR/Fonos.app"
+xcrun stapler validate "$TARBALL_CHECK_DIR/Fonos.app"
+rm -rf "$TARBALL_CHECK_DIR"
+
+# Re-signing in the script (rather than trusting the bundler's signature)
+# opens one new failure mode with no gate above: signing with the WRONG key —
+# e.g. a stale key file picked up via the environment — which every check so
+# far passes, yet ships a latest.json signature every user's updater rejects.
+# Both minisign blobs carry an 8-byte key id right after their 2-byte
+# algorithm tag; assert the fresh .sig's matches the updater pubkey in
+# tauri.conf.json (the .sig FILE is base64 of the whole two-line minisign
+# document; the conf pubkey is base64 of the two-line public-key document).
+step "verify the re-signed signature matches the configured updater pubkey"
+sig_keyid="$(base64 -d < "$SIG_FILE" | sed -n '2p' | base64 -d | xxd -p -c 256 | cut -c5-20)"
+pub_keyid="$(jq -r '.plugins.updater.pubkey' "$CONF" | base64 -d | sed -n '2p' | base64 -d | xxd -p -c 256 | cut -c5-20)"
+if [[ -z "$sig_keyid" || "$sig_keyid" != "$pub_keyid" ]]; then
+  echo "error: updater signature key id ($sig_keyid) does not match tauri.conf.json pubkey key id ($pub_keyid)" >&2
+  echo "       the tarball was re-signed with the wrong key — check TAURI_SIGNING_PRIVATE_KEY[_PATH]" >&2
+  exit 1
+fi
+echo "==> updater signature key id matches: $sig_keyid"
+
+# ── (f) merge the darwin-aarch64 entry into latest.json ─────────────────────
+# scripts/merge-latest-json.sh (shared with build-linux.yml's Linux updater
+# job) fetches whatever latest.json already exists on the "$TAG" release and
+# merges into it, rather than clobbering it. That matters because either
+# release producer can run first:
+#   - if Linux CI already ran for this tag, it published linux-x86_64 /
+#     linux-aarch64 entries — this preserves them.
+#   - if this is the first producer for the tag, it creates latest.json with
+#     only darwin-aarch64, and the Linux job merges into *that* when it runs.
+LATEST_JSON="$BUNDLE_DIR/latest.json"
+PLATFORMS_FRAGMENT="$(mktemp)"
+# NOTE: $PLATFORMS_FRAGMENT is intentionally NOT removed here. The DMG
+# notarization below takes several minutes, during which CI's
+# publish-latest-json job may merge fresh linux-* entries into the release's
+# latest.json. Stage (l) re-runs this exact merge immediately before uploading
+# (reusing this same fragment) so that re-merge picks up whatever landed on
+# the release in the meantime instead of clobbering it with this now-stale
+# local copy. Cleaned up by the EXIT trap below.
+trap 'rm -f "$PLATFORMS_FRAGMENT"' EXIT
+jq -n --arg signature "$SIGNATURE" --arg url "$URL" \
+  '{"darwin-aarch64": {signature: $signature, url: $url}}' > "$PLATFORMS_FRAGMENT"
+"$REPO_ROOT/scripts/merge-latest-json.sh" "$TAG" "$PLATFORMS_FRAGMENT" "$LATEST_JSON"
+
+# ── (g) copy the updater tarball to the release asset name ──────────────────
+ASSET_PATH="$BUNDLE_DIR/$ASSET_NAME"
+cp "$TARBALL" "$ASSET_PATH"
+echo "==> staged release asset: $ASSET_PATH"
+
+# ── (h) build the DMG headlessly (from the stapled app) ─────────────────────
 # Deliberately NOT `cargo tauri build --bundles dmg`: tauri's bundler shells
 # out to bundle_dmg.sh, which drives Finder via AppleScript to lay out the
 # window — that hangs / fails in a non-GUI shell (SSH, CI, `caffeinate`).
@@ -209,14 +261,14 @@ rm -f "$DMG_PATH"
 hdiutil create -volname Fonos -srcfolder "$DMG_STAGE" -format UDZO "$DMG_PATH"
 rm -rf "$DMG_STAGE"
 
-# ── (h) sign the DMG (MUST precede notarization) ────────────────────────────
+# ── (i) sign the DMG (MUST precede notarization) ────────────────────────────
 # An UNSIGNED dmg notarizes as Accepted just fine — but then `spctl` rejects it
 # with "no usable signature", because the outer container was never signed. So
 # codesign the dmg itself before submitting it.
 step "codesign the DMG"
 codesign --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
 
-# ── (i) notarize + staple the DMG, then prove it passes Gatekeeper ──────────
+# ── (j) notarize + staple the DMG, then prove it passes Gatekeeper ──────────
 step "notarize + staple the DMG"
 notarize "$DMG_PATH"
 xcrun stapler staple "$DMG_PATH"
@@ -230,7 +282,7 @@ if ! grep -q "Notarized Developer ID" <<<"$SPCTL_OUT"; then
   exit 1
 fi
 
-# ── (j) upload + verify + publish — only past the --publish gate ────────────
+# ── (k) upload + verify + publish — only past the --publish gate ────────────
 # Everything above is local and reversible; everything below mutates the public
 # release. Without --publish we stop here and print exactly what we would run.
 if [[ "$PUBLISH" -ne 1 ]]; then
@@ -266,8 +318,8 @@ if [[ "$PUBLISH" -ne 1 ]]; then
   exit 0
 fi
 
-# ── (k) re-merge latest.json, then upload the macOS assets ──────────────────
-# Re-run the SAME merge as stage (d), right before uploading, instead of
+# ── (l) re-merge latest.json, then upload the macOS assets ──────────────────
+# Re-run the SAME merge as stage (f), right before uploading, instead of
 # reusing the copy merged back then. Notarization above took several minutes,
 # during which CI's publish-latest-json job may have merged fresh linux-*
 # entries into the release's latest.json — uploading the earlier, now-stale
@@ -285,7 +337,7 @@ gh release upload "$TAG" \
   "$ASSET_PATH" \
   "$LATEST_JSON" --clobber
 
-# ── (l) pre-publish verification gate ───────────────────────────────────────
+# ── (m) pre-publish verification gate ───────────────────────────────────────
 # The release stays a draft until we can PROVE every platform's assets are
 # present — otherwise the updater endpoint (releases/latest/download) would go
 # public serving a half-built release. Collect ALL failures, then bail without
@@ -329,7 +381,7 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 echo "==> all required assets present across macOS + Linux"
 
-# ── (m) publish: flip the verified draft release public ─────────────────────
+# ── (n) publish: flip the verified draft release public ─────────────────────
 # CI creates the release as a draft so it isn't public while only some
 # platforms' assets exist; un-drafting once verification passes is what makes
 # the updater endpoint releases/latest/download start serving it.

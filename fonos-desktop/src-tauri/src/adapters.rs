@@ -39,6 +39,25 @@ impl EventSink for PillEventSink {
             PipelineEvent::NoSpeech => {
                 let _ = self.0.emit("float:stop", "");
             }
+            PipelineEvent::EmptyInput => {
+                // A dedicated pill event, NOT `float:stop("")`: float.html's
+                // stopRec("") renders its "no speech" state, whose label
+                // literally reads "No speech"/"未识别到语音" — factually wrong
+                // here, since nothing was ever listened for. `float:empty-input`
+                // gets float.html's own state (same red-cross flash visuals and
+                // ~1.2s duration as stopRec's error branch) with an accurate
+                // label ("No text selected"/"未选中文本"). Deliberately NOT
+                // `float:error` (error_surface.rs) either: that surface is for
+                // classified *errors* — clickable, System-Settings-paned,
+                // English-only — semantically wrong for a localized notice.
+                //
+                // The richer, actionable explanation still rides on the OS
+                // notice below — but that notice's permission can be denied
+                // (silently, by design: a notice must never gate the flow), so
+                // the pill's own label must never depend on it being shown.
+                let _ = self.0.emit("float:empty-input", ());
+                crate::tray::notify_empty_input(&self.0);
+            }
             PipelineEvent::Failed(surfaced) => {
                 crate::error_surface::emit_surfaced(&self.0, &surfaced);
             }

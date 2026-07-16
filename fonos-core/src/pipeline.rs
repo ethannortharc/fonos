@@ -37,8 +37,25 @@ pub enum PipelineEvent {
         /// Workflow id for engine runs; `None` for non-workflow emitters.
         workflow: Option<String>,
     },
-    /// The recording produced no usable speech.
+    /// An **audio** run heard nothing usable — the recording produced no
+    /// speech. Reserved for mic/audio flows; a text source that produces empty
+    /// input emits [`PipelineEvent::EmptyInput`] instead, so the two never
+    /// share a user-facing surface (see the `EmptyInput` doc). No production
+    /// code emits this today — the mic path currently surfaces silence
+    /// through its own error strings (e.g. `sts.rs`'s "No speech detected")
+    /// rather than this event; the variant is kept as the reserved vocabulary
+    /// for a future audio no-speech emit site, so that path never has to
+    /// reuse `EmptyInput` for something that isn't "no text".
     NoSpeech,
+    /// A **text** source (e.g. the selection) produced empty input and its
+    /// [`Source::allows_empty`] is false. Distinct from [`NoSpeech`]: nothing
+    /// was *heard* in a mic run there, whereas here there was simply no text to
+    /// act on. Adapters must explain it as "no text selected", never as "no
+    /// speech" — the two vocabularies stay separate on every surface.
+    ///
+    /// [`Source::allows_empty`]: crate::workflow::registry::Source::allows_empty
+    /// [`NoSpeech`]: PipelineEvent::NoSpeech
+    EmptyInput,
     /// The pipeline failed; the error is already classified for display.
     Failed(SurfacedError),
     /// A pipeline step began (test-run tracing; UI-agnostic).

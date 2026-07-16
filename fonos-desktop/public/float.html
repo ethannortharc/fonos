@@ -246,8 +246,8 @@ function setIconSvg(el,svg){
    roller mode names are intentionally NOT localized — that menu is slated for
    removal in P3. */
 const STR={
-  en:{proc:'Processing',done:'Done',nospeech:'No speech',error:'Error',clickSettings:' — click to open Settings',settings:'Settings'},
-  zh:{proc:'处理中',done:'完成',nospeech:'未识别到语音',error:'错误',clickSettings:' — 点按打开设置',settings:'设置'},
+  en:{proc:'Processing',done:'Done',nospeech:'No speech',emptyInput:'No text selected',error:'Error',clickSettings:' — click to open Settings',settings:'Settings'},
+  zh:{proc:'处理中',done:'完成',nospeech:'未识别到语音',emptyInput:'未选中文本',error:'错误',clickSettings:' — 点按打开设置',settings:'设置'},
 };
 let LOCALE='en';
 function L(k){return (STR[LOCALE]&&STR[LOCALE][k])||STR.en[k]||k;}
@@ -635,6 +635,33 @@ function stopRec(text){
     },1200);
   },resultW(L(key)),PH);
 }
+// ── Empty input ── PillEventSink (adapters.rs) emits `float:empty-input` for
+// PipelineEvent::EmptyInput — a text source (e.g. selection) that produced no
+// text, NOT "no speech" (nothing was ever listened for). Deliberately its own
+// function rather than routing through stopRec(""): that would land on
+// stopRec's 'nospeech' key, whose label literally reads "No speech"/
+// "未识别到语音" — wrong here. Same red-cross flash visuals (the 'error' CSS
+// class — icon/border/text color) and the same ~1.2s idle-return timing as
+// stopRec's error branch, just a different, accurate label. The richer
+// "select some text and try again" explanation rides on an OS notification
+// (tray.rs::notify_empty_input) that this pill state does not depend on —
+// permission for it can be silently denied.
+function showEmptyInput(){
+  isRec=false;clearErr();
+  if(durTm){clearInterval(durTm);durTm=null;}
+  if(animId){cancelAnimationFrame(animId);animId=null;}
+  var key='emptyInput';
+  lastResultKey=key;
+  applyVisual(()=>{
+    setIconSvg(document.getElementById('result-icon'),CHROME_SVG.cross);
+    document.getElementById('result-text').textContent=L(key);
+    enterState('error');
+    stopTm=setTimeout(()=>{
+      stopTm=null;
+      idleSz();
+    },1200);
+  },resultW(L(key)),PH);
+}
 // ── Bench reset ── Emitted by BenchEventSink (bench.rs) once a Test Run bench
 // run reaches a terminal state (Delivered/NoSpeech/Failed). A bench mic run's
 // MicSource::acquire drives float:start directly (bypassing BenchEventSink
@@ -741,6 +768,7 @@ function setup(){
   listen('float:start',()=>startRec());
   listen('float:processing',()=>showProcessing());
   listen('float:stop',e=>stopRec(e&&e.payload?e.payload:''));
+  listen('float:empty-input',()=>showEmptyInput());
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
   listen('float:reset',()=>resetPill());
   // Settings changed (not a pill terminal event): live-update the language and

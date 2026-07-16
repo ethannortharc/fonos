@@ -40,7 +40,10 @@ impl EventSink for BenchEventSink {
     fn emit(&self, event: PipelineEvent) {
         let is_terminal = matches!(
             event,
-            PipelineEvent::NoSpeech | PipelineEvent::Delivered { .. } | PipelineEvent::Failed(_)
+            PipelineEvent::NoSpeech
+                | PipelineEvent::EmptyInput
+                | PipelineEvent::Delivered { .. }
+                | PipelineEvent::Failed(_)
         );
         let payload = match event {
             PipelineEvent::StepStarted { workflow, step_id, index, role } =>
@@ -50,6 +53,7 @@ impl EventSink for BenchEventSink {
                        "role":role,"preview":preview,"ms":ms,"error":error,"intercepted":intercepted}),
             PipelineEvent::Processing => json!({"type":"processing"}),
             PipelineEvent::NoSpeech => json!({"type":"no_speech"}),
+            PipelineEvent::EmptyInput => json!({"type":"empty_input"}),
             PipelineEvent::Delivered { raw, final_text, .. } =>
                 json!({"type":"done","raw":raw,"final":final_text}),
             PipelineEvent::Failed(surfaced) => json!({"type":"failed","message":surfaced.message}),

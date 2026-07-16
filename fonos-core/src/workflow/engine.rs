@@ -8,10 +8,14 @@
 //! Every run that reaches [`Source::acquire`] emits **exactly one** terminal
 //! event:
 //!
-//! * [`PipelineEvent::NoSpeech`] — the source produced empty text and
+//! * [`PipelineEvent::EmptyInput`] — the source produced empty text and
 //!   [`Source::allows_empty`] is false (the default; a source like
 //!   `src.instant` that opts in with `allows_empty() == true` skips this and
-//!   proceeds instead, for "blank-open" composites).
+//!   proceeds instead, for "blank-open" composites). This is the *text* empty
+//!   case (e.g. a `selection` source with nothing selected); it is
+//!   deliberately **not** [`PipelineEvent::NoSpeech`], which is reserved for
+//!   audio flows that heard nothing — the two keep separate vocabularies on
+//!   every surface.
 //! * [`PipelineEvent::Failed`] — the source, a processor, the recorder, or an
 //!   output failed (the raw error is run through [`classify_error`]).
 //! * [`PipelineEvent::Delivered`] — every output accepted the final text.
@@ -374,7 +378,10 @@ pub async fn run(
     );
     if let Data::Text(text) = &current {
         if text.is_empty() && !source.allows_empty() {
-            ctx.events.emit(PipelineEvent::NoSpeech);
+            // A *text* source (e.g. `selection`) with nothing to act on — a
+            // distinct signal from an audio run that heard no speech, so it
+            // gets its own event (never `NoSpeech`).
+            ctx.events.emit(PipelineEvent::EmptyInput);
             return Err("empty input".to_string());
         }
     }
@@ -807,12 +814,12 @@ mod tests {
         assert_eq!(ev.len(), 2);
     }
 
-    /// A source that does not override `allows_empty` (the default `false`,
-    /// same as the real `microphone` / `selection` adapters) still yields
-    /// `NoSpeech` on empty text — Task 2's `allows_empty` opt-in must not
-    /// weaken this default.
+    /// A text source that does not override `allows_empty` (the default
+    /// `false`, same as the real `selection` adapter) yields `EmptyInput` — not
+    /// `NoSpeech` — on empty text: an empty selection is "no text", not "no
+    /// speech". Task 2's `allows_empty` opt-in must not weaken this default.
     #[tokio::test]
-    async fn empty_text_source_emits_no_speech_only() {
+    async fn empty_text_source_emits_empty_input_only() {
         let (reg, widgets, wf, sink) = setup("");
         let cap = Arc::new(Capture(Mutex::new(vec![])));
         let ctx = RunCtx {
@@ -833,7 +840,7 @@ mod tests {
             .cloned()
             .collect();
         assert_eq!(ev.len(), 1);
-        assert!(matches!(ev[0], PipelineEvent::NoSpeech));
+        assert!(matches!(ev[0], PipelineEvent::EmptyInput));
         assert!(sink.0.lock().unwrap().is_empty(), "nothing should be delivered");
     }
 

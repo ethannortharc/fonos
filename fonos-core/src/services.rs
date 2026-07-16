@@ -83,12 +83,36 @@ fn stt_default_model_profile(config: &AppConfig) -> String {
         .to_string()
 }
 
-/// True when `model_profiles` contains an entry whose `id` equals `id`.
-fn profile_exists(config: &AppConfig, id: &str) -> bool {
-    config
-        .model_profiles
-        .iter()
-        .any(|p| p["id"].as_str() == Some(id))
+/// Whether an STT ref — either the on-device `"apple-speech"` sentinel or a
+/// `model_profiles` entry id — will actually work as a live STT source, i.e.
+/// will NOT fall into dictation's `provider == "apple"` branch
+/// (`commands/dictation.rs:1035`) on a platform where the Apple Speech helper
+/// binary can't exist. Mirrors that branch's own `cfg!(target_os = "macos")`
+/// gate exactly, so this config-time check can never disagree with the
+/// runtime outcome:
+///
+/// - the literal `"apple-speech"` sentinel (not itself a `model_profiles`
+///   entry — see [`effective_stt_profile`]'s doc) is usable only on macOS;
+/// - a ref that doesn't resolve to any `model_profiles` entry is never
+///   usable (a dangling reference, same as before this fix);
+/// - a resolved profile whose `provider` is `"apple"` — e.g. the REAL
+///   `scenario-apple-stt` profile `appleSttSeed.ts` seeds on first run, the
+///   same on-device engine as the sentinel but addressed by a stable
+///   `model_profiles` id instead of the magic string — is usable only on
+///   macOS, for the identical reason as the sentinel: `resolve_service` /
+///   `resolve_profile` copy `provider` straight from the profile JSON, so
+///   this id reaches the exact same `svc.provider == "apple"` branch;
+/// - any other resolved profile is usable regardless of platform — its
+///   provider talks HTTP, which works everywhere.
+fn stt_ref_usable(config: &AppConfig, id: &str) -> bool {
+    if id == "apple-speech" {
+        return cfg!(target_os = "macos");
+    }
+    match config.model_profiles.iter().find(|p| p["id"].as_str() == Some(id)) {
+        None => false,
+        Some(p) if p["provider"].as_str() == Some("apple") => cfg!(target_os = "macos"),
+        Some(_) => true,
+    }
 }
 
 /// The profile id dictation will actually feed to STT for a plain (no per-call
@@ -117,14 +141,20 @@ pub fn effective_stt_profile(config: &AppConfig) -> Option<String> {
 /// single runtime-backed STT gate. Mirrors `commands/dictation.rs`'s STT
 /// resolution (the plain-run, no-override arms) **exactly**:
 ///
-/// - `stt.default` widget's `model_profile` set → the `"apple-speech"` sentinel
-///   is usable on macOS only (on-device engine; see the platform gate below);
-///   any other id is usable iff a `model_profiles` entry with that id still
-///   exists.
+/// - `stt.default` widget's `model_profile` set → usable per [`stt_ref_usable`]:
+///   the `"apple-speech"` sentinel or a real `model_profiles` entry whose
+///   `provider` is `"apple"` count only on macOS (on-device engine — the
+///   helper binary can't exist elsewhere, and dictation's `provider ==
+///   "apple"` branch returns an explicit error there); any other existing
+///   profile id counts everywhere; a dangling id never counts.
 /// - `model_profile` empty → the global [`AppConfig::stt_profile`] must be
-///   non-empty **and** still reference an existing `model_profiles` entry. The
-///   global arm is a plain `resolve_service("stt")` with no sentinel handling,
-///   so a literal `"apple-speech"` global id is *not* special-cased here.
+///   non-empty **and** [`stt_ref_usable`]. The global arm is a plain
+///   `resolve_service("stt")`, which copies `provider` straight off the
+///   resolved profile — so a global default pointing at an Apple-provider
+///   profile reaches dictation's `"apple"` branch exactly as the widget arm
+///   does, and needs the identical platform gate (not just the literal
+///   `"apple-speech"` sentinel, which `resolve_profile` can't even match
+///   since it's not a real `model_profiles` id).
 ///
 /// Poisoning: because the runtime picks the widget ref before the global and
 /// **never falls back** when it's set, a widget `model_profile` pointing at a
@@ -134,14 +164,9 @@ pub fn effective_stt_profile(config: &AppConfig) -> Option<String> {
 pub fn is_stt_effectively_configured(config: &AppConfig) -> bool {
     let widget = stt_default_model_profile(config);
     if !widget.is_empty() {
-        // The "apple-speech" sentinel only counts on macOS: the helper binary
-        // cannot exist elsewhere and the dictation pipeline returns an explicit
-        // error there — a macOS config imported onto Linux must NOT pass this
-        // gate (it would skip onboarding and then fail every dictation).
-        return (widget == "apple-speech" && cfg!(target_os = "macos"))
-            || profile_exists(config, &widget);
+        return stt_ref_usable(config, &widget);
     }
-    !config.stt_profile.is_empty() && profile_exists(config, &config.stt_profile)
+    !config.stt_profile.is_empty() && stt_ref_usable(config, &config.stt_profile)
 }
 
 #[cfg(test)]
@@ -152,6 +177,17 @@ mod tests {
     /// the STT gate is assignment-based, not capability-based).
     fn profile(id: &str) -> serde_json::Value {
         serde_json::json!({ "id": id, "name": id, "provider": "openai", "model": "m" })
+    }
+
+    /// A REAL `model_profiles` entry (a stable id, not the `"apple-speech"`
+    /// sentinel) whose `provider` is `"apple"` — the shape `appleSttSeed.ts`
+    /// actually seeds (`scenario-apple-stt`). Exercises the bug this fix
+    /// closes: `profile_exists`-only gating passed this on Linux because it's
+    /// a real `model_profiles` row, even though resolving it copies
+    /// `provider: "apple"` straight into the `ServiceConfig` and lands on
+    /// dictation's macOS-only branch exactly like the sentinel does.
+    fn apple_profile(id: &str) -> serde_json::Value {
+        serde_json::json!({ "id": id, "name": id, "provider": "apple", "model": "apple-speech" })
     }
 
     /// A config carrying an `stt.default` widget-def override whose
@@ -199,6 +235,46 @@ mod tests {
         // onboarding and then fail every dictation attempt.
         let cfg = cfg_with_widget_mp("apple-speech", vec![], "");
         assert_eq!(is_stt_effectively_configured(&cfg), cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn widget_real_apple_provider_profile_only_counts_on_macos() {
+        // Regression for the bug this fix closes: the widget's model_profile
+        // is a REAL model_profiles id (not the "apple-speech" sentinel), so
+        // the old profile_exists-only check passed unconditionally — even on
+        // Linux, where resolving this profile still yields provider: "apple"
+        // and dictation's stt_transcribe errors out.
+        let cfg = cfg_with_widget_mp("scenario-apple-stt", vec![apple_profile("scenario-apple-stt")], "");
+        assert_eq!(is_stt_effectively_configured(&cfg), cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn global_real_apple_provider_profile_only_counts_on_macos() {
+        // Same bug, global stt_profile arm: resolve_service("stt") copies
+        // provider straight off the resolved profile, so a global default
+        // pointing at an Apple-provider profile reaches the exact same
+        // dictation branch as the widget arm and needs the same gate.
+        let cfg = AppConfig {
+            model_profiles: vec![apple_profile("scenario-apple-stt")],
+            stt_profile: "scenario-apple-stt".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(is_stt_effectively_configured(&cfg), cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn openai_profile_is_configured_regardless_of_platform_via_either_arm() {
+        // Sanity check that the platform gate is specific to provider ==
+        // "apple" and doesn't over-fire on ordinary HTTP-backed profiles.
+        let widget_cfg = cfg_with_widget_mp("oa", vec![profile("oa")], "");
+        assert!(is_stt_effectively_configured(&widget_cfg));
+
+        let global_cfg = AppConfig {
+            model_profiles: vec![profile("oa")],
+            stt_profile: "oa".to_string(),
+            ..Default::default()
+        };
+        assert!(is_stt_effectively_configured(&global_cfg));
     }
 
     #[test]

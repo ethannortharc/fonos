@@ -1223,10 +1223,99 @@ pub fn migrate_legacy_call_triggers(config: &mut AppConfig) -> bool {
     true
 }
 
+/// Fresh-install suppression of the legacy default hotkeys, so the fold
+/// migrations in this module seed **no** trigger chips on a machine that never
+/// had a legacy config.
+///
+/// Several legacy hotkey fields ship non-empty defaults (`hotkey_agent`
+/// `"cmd+shift+a"`, `hotkey_agent_panel` `"cmd+shift+g"`, `hotkey_transform`
+/// `"cmd+shift+t"`, `hotkey_note`/`_1..3` `"option+n"`/`"option+1..3"`,
+/// `hotkey_meeting` `"option+m"`, `hotkey_listen` `"option+l"`, `hotkey_sts`
+/// `"option+s"`), and the fold migrations deliberately preserve them as chips
+/// so an upgrading user's working keys are never silently dropped. On a fresh
+/// install, though, that seeded eight global key grabs the user never chose —
+/// actively hostile on Linux, where `cmd` collapses onto Control and the set
+/// becomes Ctrl+Shift+A (Chrome's tab search), Ctrl+Shift+T (reopen closed
+/// tab), Ctrl+Shift+G, and Alt+N/M/L/S, silently stolen from every app
+/// system-wide. Hotkeys on a fresh install come from onboarding / Workbench
+/// binding instead.
+///
+/// Clears each seed field only while it still equals its shipped default, so
+/// a value the user (or a restored config) customized always survives — the
+/// caller additionally gates on "config file did not exist" (`main.rs`), which
+/// is what distinguishes a fresh install from an upgrade whose serde defaults
+/// filled the same values in. `hotkey_dictation` is intentionally NOT
+/// suppressed: the dictation key becoming the pill's own key is the product's
+/// core promise, not an incidental seed. Returns `true` when anything was
+/// cleared (caller should persist).
+pub fn suppress_default_hotkey_seeds(config: &mut AppConfig) -> bool {
+    let d = AppConfig::default();
+    let mut changed = false;
+    let mut clear = |field: &mut String, default: &str| {
+        if field == default && !field.is_empty() {
+            field.clear();
+            changed = true;
+        }
+    };
+    clear(&mut config.hotkey_agent, &d.hotkey_agent);
+    clear(&mut config.hotkey_agent_panel, &d.hotkey_agent_panel);
+    clear(&mut config.hotkey_transform, &d.hotkey_transform);
+    clear(&mut config.hotkey_note, &d.hotkey_note);
+    clear(&mut config.hotkey_note_1, &d.hotkey_note_1);
+    clear(&mut config.hotkey_note_2, &d.hotkey_note_2);
+    clear(&mut config.hotkey_note_3, &d.hotkey_note_3);
+    clear(&mut config.hotkey_meeting, &d.hotkey_meeting);
+    clear(&mut config.hotkey_listen, &d.hotkey_listen);
+    clear(&mut config.hotkey_sts, &d.hotkey_sts);
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::TextActionBinding;
+
+    /// Fresh install with suppression: the full main.rs migration chain seeds
+    /// ZERO hotkey chips (no silent global key grabs the user never chose),
+    /// while the dictation promise — the pill's own key — is preserved.
+    #[test]
+    fn fresh_install_with_suppressed_seeds_registers_no_hotkey_chips() {
+        let mut cfg = AppConfig::default();
+        assert!(suppress_default_hotkey_seeds(&mut cfg));
+
+        // The main.rs chain, in order (modes.json replaced by an empty map).
+        crate::config::migrate_transform_to_text_actions(&mut cfg);
+        migrate_to_workflows(&mut cfg, &BTreeMap::new());
+        migrate_settings_into_flow(&mut cfg);
+        remap_renamed_builtins(&mut cfg);
+        migrate_hotkeys_to_triggers(&mut cfg);
+        migrate_primary_hotkey_to_pill(&mut cfg);
+        migrate_legacy_agent_triggers(&mut cfg);
+        migrate_legacy_meeting_triggers(&mut cfg);
+        migrate_legacy_call_triggers(&mut cfg);
+
+        for wf in crate::workflow::engine::effective_workflows(&cfg) {
+            assert!(
+                wf.hotkey_triggers().all(|(_, combo, _)| combo.is_empty()),
+                "workflow {} unexpectedly seeded a hotkey chip on a fresh install",
+                wf.id
+            );
+        }
+        assert_eq!(cfg.pill_hotkey, "cmd+shift+space", "the pill's dictation key must survive");
+    }
+
+    /// Suppression never touches a combo the user customized — only values
+    /// still equal to the shipped default are cleared.
+    #[test]
+    fn suppression_preserves_customized_legacy_hotkeys() {
+        let mut cfg = AppConfig::default();
+        cfg.hotkey_agent = "cmd+shift+9".into();
+        assert!(suppress_default_hotkey_seeds(&mut cfg), "other defaults still clear");
+        assert_eq!(cfg.hotkey_agent, "cmd+shift+9");
+        // Second call: everything already cleared or customized → no-op.
+        assert!(!suppress_default_hotkey_seeds(&mut cfg));
+        assert_eq!(cfg.hotkey_agent, "cmd+shift+9");
+    }
 
     /// A custom mode carrying LLM content (system + user_template).
     fn llm_mode(name: &str) -> LegacyMode {

@@ -70,6 +70,20 @@ pub fn resolve_profile(config: &AppConfig, profile_id: &str) -> ServiceConfig {
         .unwrap_or_else(empty_service)
 }
 
+/// Whether `profile_id` names an existing `model_profiles` entry — the
+/// dangling-vs-real distinction [`resolve_profile`]'s empty-`ServiceConfig`
+/// fallback erases. Usability gates that must treat a since-deleted id
+/// differently from a sparse-but-real profile (this file's
+/// [`is_stt_effectively_configured`], the meeting cascade's
+/// `meeting_stt_profile_usable`) check this first, then inspect the resolved
+/// shape.
+pub fn profile_exists(config: &AppConfig, profile_id: &str) -> bool {
+    config
+        .model_profiles
+        .iter()
+        .any(|p| p["id"].as_str() == Some(profile_id))
+}
+
 /// The `stt.default` widget's `model_profile` prop from the effective widget set,
 /// or `""` when the widget is absent (never — built-ins can't be deleted) or the
 /// prop is unset/non-string.
@@ -148,13 +162,22 @@ pub fn effective_stt_profile(config: &AppConfig) -> Option<String> {
 ///   "apple"` branch returns an explicit error there); any other existing
 ///   profile id counts everywhere; a dangling id never counts.
 /// - `model_profile` empty → the global [`AppConfig::stt_profile`] must be
-///   non-empty **and** [`stt_ref_usable`]. The global arm is a plain
-///   `resolve_service("stt")`, which copies `provider` straight off the
-///   resolved profile — so a global default pointing at an Apple-provider
-///   profile reaches dictation's `"apple"` branch exactly as the widget arm
-///   does, and needs the identical platform gate (not just the literal
-///   `"apple-speech"` sentinel, which `resolve_profile` can't even match
-///   since it's not a real `model_profiles` id).
+///   non-empty, **not** the literal `"apple-speech"` sentinel, **and**
+///   [`stt_ref_usable`]. The global arm is a plain `resolve_service("stt")`,
+///   which copies `provider` straight off the resolved profile — so a global
+///   default pointing at an Apple-provider profile reaches dictation's
+///   `"apple"` branch exactly as the widget arm does, and needs the identical
+///   platform gate. The literal sentinel, however, is NOT a `model_profiles`
+///   id: only the override/widget arms special-case it (and only they are
+///   ever offered it — the UI writes real profile ids like
+///   `scenario-apple-stt` into the global slot, see `appleSttSeed.ts`).
+///   `resolve_service` can't match it and resolves an empty `ServiceConfig`,
+///   so a hand-edited/legacy global sentinel must gate as unconfigured on
+///   every platform, macOS included. (The id is reserved: a hand-crafted
+///   REAL profile named `"apple-speech"` is out of contract — dictation's
+///   widget/override arms intercept the literal before any profile lookup,
+///   so such a profile can never behave like a normal entry anyway; the gate
+///   deliberately rejects it in the global slot too.)
 ///
 /// Poisoning: because the runtime picks the widget ref before the global and
 /// **never falls back** when it's set, a widget `model_profile` pointing at a
@@ -166,7 +189,9 @@ pub fn is_stt_effectively_configured(config: &AppConfig) -> bool {
     if !widget.is_empty() {
         return stt_ref_usable(config, &widget);
     }
-    !config.stt_profile.is_empty() && stt_ref_usable(config, &config.stt_profile)
+    !config.stt_profile.is_empty()
+        && config.stt_profile != "apple-speech"
+        && stt_ref_usable(config, &config.stt_profile)
 }
 
 #[cfg(test)]
@@ -302,10 +327,37 @@ mod tests {
     }
 
     #[test]
+    fn profile_exists_finds_by_id_only() {
+        let cfg = AppConfig {
+            model_profiles: vec![profile("p1")],
+            ..Default::default()
+        };
+        assert!(profile_exists(&cfg, "p1"));
+        assert!(!profile_exists(&cfg, "ghost"));
+        assert!(!profile_exists(&cfg, ""));
+    }
+
+    #[test]
     fn global_dangling_is_not_configured() {
         let cfg = AppConfig {
             model_profiles: vec![profile("real")],
             stt_profile: "ghost".to_string(),
+            ..Default::default()
+        };
+        assert!(!is_stt_effectively_configured(&cfg));
+    }
+
+    #[test]
+    fn global_apple_speech_sentinel_is_not_configured() {
+        // The literal sentinel is only meaningful where the runtime
+        // special-cases it (dictation's override / stt.default-widget arms).
+        // The global arm is a plain resolve_service("stt"), which looks the id
+        // up in model_profiles, finds nothing (the sentinel isn't a profile),
+        // and resolves an empty ServiceConfig — so a hand-edited/legacy
+        // `stt_profile = "apple-speech"` must gate as UNCONFIGURED on every
+        // platform, macOS included (Codex review P2).
+        let cfg = AppConfig {
+            stt_profile: "apple-speech".to_string(),
             ..Default::default()
         };
         assert!(!is_stt_effectively_configured(&cfg));

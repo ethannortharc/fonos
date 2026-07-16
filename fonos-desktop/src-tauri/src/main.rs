@@ -1024,17 +1024,34 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Fonos app")
         .run(|_app_handle, _event| {
+            // The updater's relaunch() lands here as an exit request carrying
+            // RESTART_EXIT_CODE; tauri spawns the replacement process only
+            // AFTER this callback returns from RunEvent::Exit, so the hard
+            // process::exit fallback below must stand down for restarts or
+            // the new version never launches (in-app update then looks like
+            // "installed but didn't reopen").
+            static RESTARTING: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
                 raise_main_window(_app_handle);
+            }
+            if let tauri::RunEvent::ExitRequested { code, .. } = &_event {
+                if *code == Some(tauri::RESTART_EXIT_CODE) {
+                    RESTARTING.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
             }
             // Hard fallback: once the event loop reports Exit, force the
             // process down. Background threads we don't (and can't) join —
             // the detached SIGUSR2 signal-hook thread (main.rs ~698), any
             // lingering GTK/WebKit teardown on Linux — must not be able to
             // keep the process alive after the window/tray lifecycle is done.
+            // (Restarts skip this: tauri's own restart path execs the new
+            // binary and exits the process itself.)
             if let tauri::RunEvent::Exit = _event {
-                std::process::exit(0);
+                if !RESTARTING.load(std::sync::atomic::Ordering::SeqCst) {
+                    std::process::exit(0);
+                }
             }
         });
 }

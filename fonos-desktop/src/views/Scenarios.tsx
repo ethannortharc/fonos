@@ -131,7 +131,9 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
     baseUrl: "https://api.openai.com",
     bundle: {
       stt: { model: "gpt-4o-mini-transcribe", stt_api: "whisper" },
-      llm: "gpt-4o-mini",
+      // GPT-5.6 family's budget tier (GA 2026-07-09) — newest generation at
+      // roughly the old mini price, much stronger for polish/translate.
+      llm: "gpt-5.6-luna",
       tts: "gpt-4o-mini-tts",
     },
   },
@@ -139,19 +141,21 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
     key: "openrouter",
     name: "OpenRouter",
     baseUrl: "https://openrouter.ai/api/v1",
-    bundle: { llm: "meta-llama/llama-3.3-70b-instruct", sttApple: true, tts: null },
+    // Current flash generation: fast, cheap, strong multilingual — the right
+    // profile for the polish/translate/summarize roles a keyed OR user runs.
+    bundle: { llm: "google/gemini-3.5-flash", sttApple: true, tts: null },
   },
   {
     key: "anthropic",
     name: "Anthropic",
     baseUrl: "https://api.anthropic.com",
-    bundle: { llm: "claude-sonnet-4-5", sttApple: true, tts: null },
+    bundle: { llm: "claude-sonnet-5", sttApple: true, tts: null },
   },
   {
     key: "google",
     name: "Google",
     baseUrl: "https://generativelanguage.googleapis.com",
-    bundle: { llm: "gemini-2.5-flash", sttApple: true, tts: null },
+    bundle: { llm: "gemini-3.5-flash", sttApple: true, tts: null },
   },
   {
     key: "fireworks",
@@ -161,7 +165,9 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
       // Fireworks serves an OpenAI-compatible Whisper endpoint; "whisper-v3-turbo"
       // is their documented id — the row stays editable if it drifts.
       stt: { model: "whisper-v3-turbo", stt_api: "whisper" },
-      llm: "accounts/fireworks/models/kimi-k2-instruct",
+      // Kimi K2.6 — Fireworks' current default general model ("p" is their
+      // point-release id convention: k2p6 == K2.6).
+      llm: "accounts/fireworks/models/kimi-k2p6",
       tts: null, // no Fireworks TTS today → no-tts hint on the voice rows
     },
   },
@@ -169,12 +175,13 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
     // LLM-only. Cerebras is OpenAI-compatible, so the generic fallthrough in
     // fonos-core (llm.rs → call_openai_compatible; not caught by the
     // anthropic/google branches) drives it — no Rust change needed.
-    // "qwen-3-32b" is their documented fast Qwen; the row stays editable so
+    // "gemma-4-31b" is their documented current Gemma (verified against
+    // inference-docs.cerebras.ai 2026-07-16); the row stays editable so
     // model drift is user-fixable. macOS keeps the Apple STT fallback.
     key: "cerebras",
     name: "Cerebras",
     baseUrl: "https://api.cerebras.ai/v1",
-    bundle: { llm: "qwen-3-32b", sttApple: true, tts: null },
+    bundle: { llm: "gemma-4-31b", sttApple: true, tts: null },
   },
   {
     // Any OpenAI-compatible endpoint (self-hosted, LAN gateway, a provider we
@@ -189,8 +196,10 @@ export const CLOUD_PROVIDERS: ProviderDef[] = [
   },
 ];
 
-// live-verified against openrouter.ai/api/v1/models on 2026-07-14; rows stay editable if the pool rotates
-export const OPENROUTER_FREE_LLM = "qwen/qwen3-next-80b-a3b-instruct:free";
+// live-verified against openrouter.ai/api/v1/models on 2026-07-16; rows stay editable if the pool rotates.
+// Gemma 4 31B — the strongest general/multilingual model in the current free
+// pool (same model Cerebras serves as its default here).
+export const OPENROUTER_FREE_LLM = "google/gemma-4-31b-it:free";
 
 /** Placeholder i18n key for a cloud plan row, by provider bundle + role
  *  (R4 role-coverage). PRINCIPLE: prefill is a default, never a lock — every

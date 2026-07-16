@@ -28,7 +28,7 @@ describe("Scenarios · provider presets", () => {
     expect(cer).toBeDefined();
     expect(cer!.name).toBe("Cerebras");
     expect(cer!.baseUrl).toBe("https://api.cerebras.ai/v1");
-    expect(cer!.bundle.llm).toBe("qwen-3-32b");
+    expect(cer!.bundle.llm).toBe("gemma-4-31b");
     // LLM-only: no real cloud STT/TTS model, Apple STT fallback on macOS.
     expect(cer!.bundle.stt ?? null).toBeNull();
     expect(cer!.bundle.tts ?? null).toBeNull();
@@ -38,7 +38,7 @@ describe("Scenarios · provider presets", () => {
   });
 
   it("uses the live-verified OpenRouter free LLM default (R2)", () => {
-    expect(OPENROUTER_FREE_LLM).toBe("qwen/qwen3-next-80b-a3b-instruct:free");
+    expect(OPENROUTER_FREE_LLM).toBe("google/gemma-4-31b-it:free");
     expect(OPENROUTER_FREE_LLM.endsWith(":free")).toBe(true);
   });
 

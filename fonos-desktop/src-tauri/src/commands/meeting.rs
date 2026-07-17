@@ -284,6 +284,41 @@ fn schedule_delayed_hide(app: tauri::AppHandle) {
     });
 }
 
+/// Reject an STT service the meeting capture loop cannot actually drive,
+/// BEFORE any recording starts — the single choke point for both callers of
+/// [`start_meeting_with`] (the `meeting` composite's own cascade in
+/// `meeting_widget::MeetingOutput::start`, and the legacy `start_meeting`
+/// IPC shell, which resolves the global `"stt"` service with no cascade at
+/// all). Two unusable shapes exist (Codex review P1):
+///
+/// - `provider == "apple"`: meetings transcribe over HTTP only
+///   (`transcribe_http`) — the on-device Apple Speech engine has no HTTP
+///   endpoint on any platform;
+/// - empty `base_url`: the shape `resolve_profile`/`resolve_service` return
+///   for a dangling or unset profile (and for a provider with no default
+///   endpoint) — every chunk would die in `transcribe_http`, leaving a
+///   meeting that looks like it's recording but produces no transcript and
+///   no summary.
+pub(crate) fn validate_meeting_stt_svc(svc: &ServiceConfig) -> Result<(), String> {
+    if svc.provider == "apple" {
+        return Err(
+            "meeting transcription runs over HTTP and cannot use the on-device \
+             Apple Speech engine — assign a different STT profile to the meeting \
+             (or change the global STT default)"
+                .to_string(),
+        );
+    }
+    if svc.base_url.trim().is_empty() {
+        return Err(
+            "meeting transcription has no usable STT endpoint — the meeting's STT \
+             profile (or the global STT default) is missing or empty; pick a \
+             reachable STT profile in Settings before recording"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 // ─── Tauri commands ───────────────────────────────────────────────────────────
 
 /// Start a new meeting session using the global `"stt"` service profile —
@@ -351,13 +386,21 @@ pub(crate) async fn start_meeting_with(
     title: String,
     diarize: bool,
 ) -> Result<i64, String> {
-    // Guard against double-start
+    // Guard against double-start FIRST — a re-entrant start while recording
+    // must report "already in progress", not whatever the (possibly since-
+    // changed) STT config looks like now.
     {
         let ms = state.meeting.lock().await;
         if ms.recording {
             return Err("Meeting already in progress".into());
         }
     }
+
+    // Never start a recording the capture loop can't transcribe — see
+    // [`validate_meeting_stt_svc`]. Both callers resolve `stt_svc` themselves,
+    // so this choke point is what keeps a misconfigured profile from producing
+    // a meeting that records but yields no transcript and no summary.
+    validate_meeting_stt_svc(&stt_svc)?;
 
     // 1. Create meeting_session container
     let now = now_iso8601();
@@ -986,6 +1029,45 @@ mod tests {
             audio_ref: None,
             metadata: serde_json::json!({ "speaker_hint": "me", "timestamp_in_session": "00:00:01" }),
         }
+    }
+
+    /// A minimal [`ServiceConfig`] for [`validate_meeting_stt_svc`] tests.
+    fn stt_svc(provider: &str, base_url: &str) -> ServiceConfig {
+        ServiceConfig {
+            base_url: base_url.to_string(),
+            api_key: String::new(),
+            model: "m".to_string(),
+            provider: provider.to_string(),
+            stt_api: "whisper".to_string(),
+        }
+    }
+
+    #[test]
+    fn validate_meeting_stt_svc_accepts_http_backed_service() {
+        assert!(validate_meeting_stt_svc(&stt_svc("openai", "https://api.openai.com")).is_ok());
+    }
+
+    #[test]
+    fn validate_meeting_stt_svc_rejects_apple_provider() {
+        let err = validate_meeting_stt_svc(&stt_svc("apple", "")).unwrap_err();
+        assert!(err.contains("Apple Speech"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn validate_meeting_stt_svc_rejects_empty_endpoint() {
+        // The empty ServiceConfig shape resolve_profile/resolve_service return
+        // for a dangling or unset profile — recording must not start on it.
+        let err = validate_meeting_stt_svc(&stt_svc("", "")).unwrap_err();
+        assert!(err.contains("STT"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn validate_meeting_stt_svc_rejects_whitespace_endpoint() {
+        // Same trim semantics as the rest of the STT pipeline (dictation's
+        // base_url checks): a hand-edited profile whose base_url is blanks
+        // must not count as reachable.
+        let err = validate_meeting_stt_svc(&stt_svc("openai", "   ")).unwrap_err();
+        assert!(err.contains("STT"), "unexpected error: {err}");
     }
 
     #[test]

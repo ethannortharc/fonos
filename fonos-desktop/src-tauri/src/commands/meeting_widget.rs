@@ -206,14 +206,30 @@ const MEETING_APPLE_SPEECH_SENTINEL: &str = "apple-speech";
 /// blindly into a credential-less/broken `ServiceConfig` (review Fix Round
 /// 1's Critical item; the provider half is review Fix Round 3).
 ///
-/// A DANGLING id (no such profile) still counts as usable here: it resolves
-/// to an empty `ServiceConfig` exactly as before this check learned about
-/// providers — preserving that pre-existing behavior keeps this change scoped
-/// to the apple gap.
+/// A DANGLING id (a since-deleted profile) is unusable too: it resolves to an
+/// empty `ServiceConfig`, and letting it win the tier used to start a
+/// recording whose every chunk died silently in `transcribe_http` — no
+/// transcript, no summary (Codex review P1; mirrors `stt_ref_usable`'s
+/// dangling rule in `fonos-core::services`). Hence the
+/// `profile_exists` check first — `resolve_profile`'s empty fallback can't
+/// distinguish dangling from a real profile.
+///
+/// Finally the RESOLVED shape must actually be drivable: provider not
+/// `"apple"`, and a non-blank `base_url` after `resolve_profile` applies the
+/// per-provider defaults (a real profile on a provider with no default
+/// endpoint and no explicit URL has nowhere to POST). Every unusable shape
+/// falls through the cascade identically — otherwise a tier this predicate
+/// accepts gets hard-rejected by `validate_meeting_stt_svc` instead of
+/// falling to a perfectly good later tier.
 pub(crate) fn meeting_stt_profile_usable(config: &AppConfig, profile: &str) -> bool {
-    !profile.is_empty()
-        && profile != MEETING_APPLE_SPEECH_SENTINEL
-        && fonos_core::services::resolve_profile(config, profile).provider != "apple"
+    if profile.is_empty() || profile == MEETING_APPLE_SPEECH_SENTINEL {
+        return false;
+    }
+    if !fonos_core::services::profile_exists(config, profile) {
+        return false;
+    }
+    let svc = fonos_core::services::resolve_profile(config, profile);
+    svc.provider != "apple" && !svc.base_url.trim().is_empty()
 }
 
 /// Decide the effective STT profile-id tier for [`MeetingOutput::start`]'s
@@ -413,20 +429,16 @@ impl MeetingOutput {
                 Some(profile_id) => fonos_core::services::resolve_profile(&config, &profile_id),
                 None => fonos_core::services::resolve_service(&config, "stt"),
             };
-            // Final backstop: the tier cascade filters apple-provider profiles,
-            // but the global "stt" fallback above can still resolve to one (the
-            // first-run scenario-apple-stt default). Meetings transcribe over
-            // HTTP only — Apple Speech has no HTTP endpoint on any platform —
-            // so fail with a clear message here rather than letting every
-            // captured chunk die in transcribe_http with a raw error.
-            if svc.provider == "apple" {
-                return Err(
-                    "meeting transcription runs over HTTP and cannot use the on-device \
-                     Apple Speech engine — assign a different STT profile to the meeting \
-                     (or change the global STT default)"
-                        .to_string(),
-                );
-            }
+            // Final backstop: the tier cascade filters apple-provider and
+            // dangling profiles, but the global "stt" fallback above can still
+            // resolve to an apple one (the first-run scenario-apple-stt
+            // default) or to nothing at all (global default unset or itself
+            // dangling → empty ServiceConfig). Fail with a clear message here,
+            // BEFORE the panel shows, rather than letting every captured chunk
+            // die in transcribe_http with a raw error. `start_meeting_with`
+            // re-runs the same check as its own invariant (it also guards the
+            // legacy `start_meeting` IPC shell, which has no cascade).
+            meeting::validate_meeting_stt_svc(&svc)?;
             svc
         };
 
@@ -645,9 +657,66 @@ mod tests {
         let cfg = cfg_with_profiles(&[("scenario-apple-stt", "apple"), ("p-openai", "openai")]);
         assert!(!meeting_stt_profile_usable(&cfg, "scenario-apple-stt"));
         assert!(meeting_stt_profile_usable(&cfg, "p-openai"));
-        // Dangling id: preserved pre-existing behavior — counts as usable and
-        // resolves to an empty ServiceConfig downstream (documented on the fn).
-        assert!(meeting_stt_profile_usable(&cfg, "no-such-profile"));
+    }
+
+    #[test]
+    fn meeting_stt_profile_usable_rejects_dangling_id() {
+        // A since-deleted profile id must be UNUSABLE so the tier cascade falls
+        // through. Letting it win the tier resolved an empty ServiceConfig and
+        // recording started with every chunk dying silently in transcribe_http
+        // — no transcript, no summary (Codex review P1).
+        let cfg = cfg_with_profiles(&[("p-openai", "openai")]);
+        assert!(!meeting_stt_profile_usable(&cfg, "no-such-profile"));
+    }
+
+    #[test]
+    fn meeting_stt_profile_usable_rejects_existing_profile_with_no_endpoint() {
+        // Profile exists and isn't apple, but resolves to an empty/whitespace
+        // base_url (provider with no default endpoint) — the capture loop has
+        // nowhere to POST, so the tier must fall through exactly like a
+        // dangling or apple tier instead of winning the cascade and then
+        // hard-failing validate_meeting_stt_svc (adversarial-review finding).
+        let cfg = AppConfig {
+            model_profiles: vec![
+                serde_json::json!({ "id": "endpointless", "name": "x", "provider": "custom", "model": "m" }),
+                serde_json::json!({ "id": "ws-url", "name": "x", "provider": "custom", "model": "m", "base_url": "   " }),
+            ],
+            ..Default::default()
+        };
+        assert!(!meeting_stt_profile_usable(&cfg, "endpointless"));
+        assert!(!meeting_stt_profile_usable(&cfg, "ws-url"));
+    }
+
+    #[test]
+    fn resolve_meeting_stt_tier_endpointless_ref_falls_to_legacy_field() {
+        let cfg = AppConfig {
+            model_profiles: vec![
+                serde_json::json!({ "id": "endpointless", "name": "x", "provider": "custom", "model": "m" }),
+                serde_json::json!({ "id": "legacy-profile", "name": "x", "provider": "openai", "model": "m" }),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_meeting_stt_tier(&cfg, Some("endpointless"), "legacy-profile"),
+            Some("legacy-profile".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_meeting_stt_tier_dangling_ref_falls_to_legacy_field() {
+        let cfg = cfg_with_profiles(&[("legacy-profile", "openai")]);
+        assert_eq!(
+            resolve_meeting_stt_tier(&cfg, Some("ghost"), "legacy-profile"),
+            Some("legacy-profile".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_meeting_stt_tier_dangling_ref_and_dangling_legacy_falls_to_global() {
+        assert_eq!(
+            resolve_meeting_stt_tier(&cfg_with_profiles(&[]), Some("ghost"), "ghost2"),
+            None
+        );
     }
 
     #[test]

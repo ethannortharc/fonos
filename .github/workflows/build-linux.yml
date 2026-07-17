@@ -30,13 +30,10 @@ jobs:
 
       - name: Create release if it doesn't exist yet
         run: |
-          # --draft: only the Linux assets exist at this point — macOS artifacts are
-          # built and uploaded locally afterward (scripts/release-macos.sh), which also
-          # publishes the release once all platforms' assets are in place. `gh release
-          # view/upload/download` all work against draft releases via the API, so the
-          # rest of this workflow (and merge-latest-json.sh) needs no other changes.
-          gh release view "$TAG_NAME" >/dev/null 2>&1 || \
-            gh release create "$TAG_NAME" --title "Fonos $TAG_NAME" --generate-notes --draft
+          # Shared with release-macos.sh's --publish preflight (either producer may
+          # run first, and the two can race) — see the script's header for the
+          # draft/race rationale.
+          ./scripts/ensure-release-exists.sh "$TAG_NAME"
 
   build-linux:
     needs: prepare-release

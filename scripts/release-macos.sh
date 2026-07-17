@@ -41,15 +41,21 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: HONGBO ZHOU (SBU743JJ9
 # --publish: additionally upload the assets, run the pre-publish verification
 # gate, and only then flip the draft release public.
 PUBLISH=0
+ALLOW_PUBLISHED=0
 for arg in "$@"; do
   case "$arg" in
     --publish) PUBLISH=1 ;;
+    --allow-published) ALLOW_PUBLISHED=1 ;;
     -h|--help)
-      echo "usage: $(basename "$0") [--publish]"
+      echo "usage: $(basename "$0") [--publish] [--allow-published]"
       echo "  (no flag) build + sign + notarize + staple locally, then print the"
       echo "            upload/verify/publish commands WITHOUT running them (dry run)"
       echo "  --publish also upload assets, verify the release is complete across all"
       echo "            platforms, and un-draft it"
+      echo "  --allow-published let --publish target a release that is ALREADY public"
+      echo "            (deliberate in-place repair of a live release; without this,"
+      echo "            a published \$TAG aborts the preflight — the usual cause is"
+      echo "            re-running --publish without bumping the version)"
       exit 0 ;;
     *) echo "error: unknown argument: $arg (try --help)" >&2; exit 1 ;;
   esac
@@ -99,6 +105,15 @@ if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   echo "       (the key has no password; export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=\"\" if needed)" >&2
   exit 1
 fi
+# If the value names an existing file (relative to WHEREVER the operator ran
+# this from), pin it to an absolute path NOW: both the bundler (stage (b)) and
+# `tauri signer sign` (stage (d)) run from fonos-desktop/, where a relative
+# path no longer resolves — the bundler would then silently treat the value as
+# key CONTENT and fail cryptically, and the signer's -f would point nowhere.
+if [[ -f "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+  TAURI_SIGNING_PRIVATE_KEY="$(cd "$(dirname "$TAURI_SIGNING_PRIVATE_KEY")" && pwd)/$(basename "$TAURI_SIGNING_PRIVATE_KEY")"
+  export TAURI_SIGNING_PRIVATE_KEY
+fi
 
 VERSION="$(jq -r '.version' "$CONF")"
 if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
@@ -114,12 +129,19 @@ echo "==> Releasing Fonos $TAG"
 # prepare-release job creates it (as a draft) on a tag push, but this script
 # is also meant to be runnable standalone — either producer may run first.
 # The shared ensure-release-exists.sh (also used by prepare-release) makes
-# this race-safe against the other producer creating the tag concurrently.
-# Do this BEFORE the multi-minute build so a missing-release failure surfaces
-# immediately, not after paying for the whole build+notarize sequence.
+# this race-safe against the other producer creating the tag concurrently,
+# and aborts on a release that is already PUBLIC (staging assets onto a live
+# release with --clobber is only sane as a deliberate repair — see
+# --allow-published). Do this BEFORE the multi-minute build so the failure
+# surfaces immediately, not after paying for the whole build+notarize
+# sequence.
 if [[ "$PUBLISH" -eq 1 ]]; then
-  step "preflight: ensure release $TAG exists"
-  "$REPO_ROOT/scripts/ensure-release-exists.sh" "$TAG"
+  step "preflight: ensure a usable (draft) release $TAG exists"
+  ENSURE_ARGS=("$TAG")
+  if [[ "$ALLOW_PUBLISHED" -eq 1 ]]; then
+    ENSURE_ARGS+=(--allow-published)
+  fi
+  "$REPO_ROOT/scripts/ensure-release-exists.sh" "${ENSURE_ARGS[@]}"
 fi
 
 # ── (b) build the signed .app + updater artifacts ───────────────────────────

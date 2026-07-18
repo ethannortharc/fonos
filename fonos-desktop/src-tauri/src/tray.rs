@@ -50,22 +50,28 @@ pub enum UnlockRole {
 }
 
 /// Row label + state glyph → the menu-item text, bilingual.
+///
+/// Deliberately emoji-free: native menus can't render the app's stroke-SVG
+/// icon language, and color-emoji prefixes clash with it — plain labels are
+/// the macOS-native look. State glyphs are monochrome TEXT glyphs only
+/// (`\u{FE0E}` forces the warn sign's text presentation, never the color
+/// emoji).
 pub fn row_text(row: TrayRow, state: RowState, lang: Lang) -> String {
     let label = match (row, lang) {
-        (TrayRow::Mic, Lang::En) => "🎤 Microphone",
-        (TrayRow::Mic, Lang::Zh) => "🎤 麦克风",
-        (TrayRow::Stt, Lang::En) => "📝 Dictation",
-        (TrayRow::Stt, Lang::Zh) => "📝 听写",
-        (TrayRow::Llm, Lang::En) => "🧠 AI commands",
-        (TrayRow::Llm, Lang::Zh) => "🧠 AI 命令",
-        (TrayRow::Tts, Lang::En) => "🔊 Voice replies",
-        (TrayRow::Tts, Lang::Zh) => "🔊 语音回复",
+        (TrayRow::Mic, Lang::En) => "Microphone",
+        (TrayRow::Mic, Lang::Zh) => "麦克风",
+        (TrayRow::Stt, Lang::En) => "Dictation",
+        (TrayRow::Stt, Lang::Zh) => "听写",
+        (TrayRow::Llm, Lang::En) => "AI commands",
+        (TrayRow::Llm, Lang::Zh) => "AI 命令",
+        (TrayRow::Tts, Lang::En) => "Voice replies",
+        (TrayRow::Tts, Lang::Zh) => "语音回复",
     };
     let glyph = match state {
         RowState::Ok => "✓".to_string(),
         RowState::Unconfigured => "○".to_string(),
-        RowState::Warn => "⚠️".to_string(),
-        RowState::Progress(pct) => format!("⏳ {pct}%"),
+        RowState::Warn => "⚠\u{FE0E}".to_string(),
+        RowState::Progress(pct) => format!("{pct}%"),
     };
     format!("{label}  {glyph}")
 }
@@ -73,8 +79,8 @@ pub fn row_text(row: TrayRow, state: RowState, lang: Lang) -> String {
 /// Unlock/manage entry text: unconfigured → invitation, configured → manage.
 pub fn unlock_text(llm_configured: bool, lang: Lang) -> &'static str {
     match (llm_configured, lang) {
-        (false, Lang::En) => "✨ Unlock AI commands…",
-        (false, Lang::Zh) => "✨ 解锁 AI 命令模式…",
+        (false, Lang::En) => "Unlock AI commands…",
+        (false, Lang::Zh) => "解锁 AI 命令模式…",
         (true, Lang::En) => "＋ Add or manage models…",
         (true, Lang::Zh) => "＋ 添加或管理模型…",
     }
@@ -83,16 +89,16 @@ pub fn unlock_text(llm_configured: bool, lang: Lang) -> &'static str {
 /// Doctor entry text.
 pub fn doctor_text(lang: Lang) -> &'static str {
     match lang {
-        Lang::En => "🩺 Check & repair",
-        Lang::Zh => "🩺 检查与修复",
+        Lang::En => "Check & repair",
+        Lang::Zh => "检查与修复",
     }
 }
 
 /// Settings entry text.
 pub fn settings_text(lang: Lang) -> &'static str {
     match lang {
-        Lang::En => "⚙️ Settings",
-        Lang::Zh => "⚙️ 设置",
+        Lang::En => "Settings",
+        Lang::Zh => "设置",
     }
 }
 
@@ -215,13 +221,15 @@ pub fn notify_unlock(app: &AppHandle, role: UnlockRole, lang: Lang) {
 /// Build the health-panel menu, stash the handles, wire click routing.
 /// Replaces the old two-item menu built inline in `main.rs`.
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
-    let mic = MenuItem::with_id(app, "tray_mic", "🎤", true, None::<&str>)?;
-    let stt = MenuItem::with_id(app, "tray_stt", "📝", true, None::<&str>)?;
-    let llm = MenuItem::with_id(app, "tray_llm", "🧠", true, None::<&str>)?;
-    let tts = MenuItem::with_id(app, "tray_tts", "🔊", true, None::<&str>)?;
-    let unlock = MenuItem::with_id(app, "tray_unlock", "✨", true, None::<&str>)?;
-    let doctor = MenuItem::with_id(app, "tray_doctor", "🩺", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "tray_settings", "⚙️", true, None::<&str>)?;
+    // Placeholder texts only — refresh_tray_status paints the real labels
+    // before the menu is ever shown (end of this function).
+    let mic = MenuItem::with_id(app, "tray_mic", "…", true, None::<&str>)?;
+    let stt = MenuItem::with_id(app, "tray_stt", "…", true, None::<&str>)?;
+    let llm = MenuItem::with_id(app, "tray_llm", "…", true, None::<&str>)?;
+    let tts = MenuItem::with_id(app, "tray_tts", "…", true, None::<&str>)?;
+    let unlock = MenuItem::with_id(app, "tray_unlock", "…", true, None::<&str>)?;
+    let doctor = MenuItem::with_id(app, "tray_doctor", "…", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "tray_settings", "…", true, None::<&str>)?;
     let show_item = MenuItem::with_id(app, "show_app", "Open Fonos", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Fonos", true, None::<&str>)?;
     let menu = Menu::with_items(
@@ -411,21 +419,45 @@ mod tests {
 
     #[test]
     fn row_text_composes_label_and_glyph() {
-        assert_eq!(row_text(TrayRow::Mic, RowState::Ok, Lang::Zh), "🎤 麦克风  ✓");
+        assert_eq!(row_text(TrayRow::Mic, RowState::Ok, Lang::Zh), "麦克风  ✓");
         assert_eq!(
             row_text(TrayRow::Llm, RowState::Unconfigured, Lang::En),
-            "🧠 AI commands  ○"
+            "AI commands  ○"
         );
         assert_eq!(
             row_text(TrayRow::Stt, RowState::Progress(62), Lang::Zh),
-            "📝 听写  ⏳ 62%"
+            "听写  62%"
         );
-        assert_eq!(row_text(TrayRow::Tts, RowState::Warn, Lang::En), "🔊 Voice replies  ⚠️");
+        assert_eq!(row_text(TrayRow::Tts, RowState::Warn, Lang::En), "Voice replies  ⚠\u{FE0E}");
+    }
+
+    /// The tray is a native menu (no SVG): the no-emoji rule is enforced as
+    /// "every label/glyph stays out of the emoji blocks" so a color-emoji
+    /// prefix can't sneak back in.
+    #[test]
+    fn tray_texts_contain_no_emoji() {
+        let is_emoji = |s: &str| {
+            s.chars().any(|c| {
+                let cp = c as u32;
+                (0x1F000..=0x1FAFF).contains(&cp) || (0x2600..=0x27BF).contains(&cp) && c != '✓' && c != '⚠'
+            })
+        };
+        for lang in [Lang::En, Lang::Zh] {
+            for row in [TrayRow::Mic, TrayRow::Stt, TrayRow::Llm, TrayRow::Tts] {
+                for state in [RowState::Ok, RowState::Unconfigured, RowState::Warn, RowState::Progress(50)] {
+                    assert!(!is_emoji(&row_text(row, state, lang)), "emoji in {row:?}/{state:?}");
+                }
+            }
+            assert!(!is_emoji(unlock_text(false, lang)));
+            assert!(!is_emoji(unlock_text(true, lang)));
+            assert!(!is_emoji(doctor_text(lang)));
+            assert!(!is_emoji(settings_text(lang)));
+        }
     }
 
     #[test]
     fn unlock_text_switches_on_configured() {
-        assert_eq!(unlock_text(false, Lang::Zh), "✨ 解锁 AI 命令模式…");
+        assert_eq!(unlock_text(false, Lang::Zh), "解锁 AI 命令模式…");
         assert_eq!(unlock_text(true, Lang::En), "＋ Add or manage models…");
     }
 

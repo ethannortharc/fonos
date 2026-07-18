@@ -19,7 +19,7 @@ use tauri::Manager;
 use fonos_core::error_class::classify_error;
 use fonos_core::pipeline::{EventSink, PipelineEvent};
 use fonos_core::workflow::engine;
-use fonos_core::workflow::model::WorkflowDef;
+use fonos_core::workflow::model::{WidgetDef, WorkflowDef};
 use fonos_core::workflow::registry::{RunCtx, RunRecorder};
 
 use crate::adapters::PillEventSink;
@@ -125,11 +125,72 @@ pub async fn run_workflow(handle: tauri::AppHandle, workflow_id: String) {
 
     // 4. Run against the shared registry, built once in `main`'s `.setup()`
     //    (Task 11) and cloned out of `AppState` above — no longer rebuilt per run.
-    if let Err(e) = engine::run(&registry, &wf, &widgets, &ctx).await {
-        // The engine already emitted the terminal Failed / NoSpeech event for
-        // this error; only log the raw cause.
-        eprintln!("fonos: run_workflow '{}' failed: {e}", wf.id);
+    match engine::run(&registry, &wf, &widgets, &ctx).await {
+        Err(e) => {
+            // The engine already emitted the terminal Failed / NoSpeech event
+            // for this error; only log the raw cause.
+            eprintln!("fonos: run_workflow '{}' failed: {e}", wf.id);
+        }
+        Ok(outcome) => record_e2e_latency(&handle, &ctx, &wf, &widgets, &outcome),
     }
+}
+
+/// Record the end-to-end dictation latency stat (key release → text
+/// delivered) for a completed run — the rows `get_dictation_latency`
+/// aggregates for the Stats view.
+///
+/// Legacy-parity scope, enforced by early returns: mic runs only
+/// (`META_CAPTURE_END_MS` is set exclusively by `MicSource`), no LLM
+/// processor, and every output is the plain cursor-injection widget. The
+/// output check is an ALLOWLIST on purpose: session/TTS outputs
+/// (agent/dialog/speak/…) run generative work inside `deliver` — timing them
+/// would record LLM thinking time as "dictation latency" (the builtin
+/// `wf.agent-voice` is exactly mic→stt→agent) — and a blocklist would
+/// silently start timing any future slow output. An unlisted output merely
+/// skips the stat.
+fn record_e2e_latency(
+    handle: &tauri::AppHandle,
+    ctx: &RunCtx,
+    wf: &WorkflowDef,
+    widgets: &[WidgetDef],
+    outcome: &engine::RunOutcome,
+) {
+    use super::workflow_widgets::{read_meta_i64, read_meta_string, META_CAPTURE_END_MS, META_STT_MODEL};
+
+    if outcome.final_text.is_empty() || engine::workflow_has_llm(wf, widgets) {
+        return;
+    }
+    let inject_only = wf
+        .outputs
+        .iter()
+        .all(|oid| widgets.iter().any(|w| &w.id == oid && w.type_tag == "insert"));
+    if !inject_only {
+        return;
+    }
+    let Some(capture_end) = read_meta_i64(ctx, META_CAPTURE_END_MS) else {
+        return;
+    };
+    let elapsed = epoch_ms() - capture_end;
+    if elapsed <= 0 {
+        // Wall clock stepped backwards between capture end and delivery.
+        return;
+    }
+    let stt_model = read_meta_string(ctx, META_STT_MODEL).unwrap_or_default();
+    let state: tauri::State<'_, AppState> = handle.state();
+    let db = state.db.lock();
+    if let Ok(db) = &db {
+        let _ = fonos_core::stats::record_dictation_latency(db, elapsed, &wf.id, &stt_model);
+    }
+}
+
+/// Milliseconds since the Unix epoch — the wall-clock timestamps stashed in
+/// `ctx.meta` (a serde_json map can't carry an `Instant`) for the e2e
+/// dictation latency stat.
+pub(crate) fn epoch_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Frontend entry point: fire-and-forget a workflow run (same path as hotkeys).

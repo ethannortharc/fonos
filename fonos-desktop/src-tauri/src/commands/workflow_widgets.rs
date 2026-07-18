@@ -141,7 +141,7 @@ impl Source for MicSource {
         DataKind::Audio
     }
 
-    async fn acquire(&self, _ctx: &RunCtx) -> Result<Data, String> {
+    async fn acquire(&self, ctx: &RunCtx) -> Result<Data, String> {
         eprintln!("fonos: MicSource acquire (capture={})", self.capture);
 
         // Register as a CAPTURE_DONE waiter BEFORE bringing the mic up: a very
@@ -162,6 +162,16 @@ impl Source for MicSource {
 
         // Phase 2 — block until the trigger layer signals the end of capture.
         notified.await;
+
+        // Capture just ended (key release / second press) — the "t0" of the
+        // end-to-end dictation latency stat. run_workflow reads this back
+        // after delivery; only mic runs ever set it.
+        if let Ok(mut meta) = ctx.meta.lock() {
+            meta.insert(
+                META_CAPTURE_END_MS.to_string(),
+                serde_json::json!(super::workflow_exec::epoch_ms()),
+            );
+        }
 
         // Stop + drain via the shared stop-path inner (same lock discipline as
         // stop_recording, minus its transcribe/inject/stats side effects). A
@@ -228,8 +238,10 @@ impl Processor for SttProcessor {
         DataKind::Text
     }
 
-    async fn process(&self, input: Data, _ctx: &RunCtx) -> Result<Data, String> {
+    async fn process(&self, input: Data, ctx: &RunCtx) -> Result<Data, String> {
         let audio = input.into_audio()?;
+        // Spoken duration, computed before the samples are consumed below.
+        let duration_secs = audio.samples.len() as f64 / f64::from(audio.sample_rate.max(1));
 
         // Resolve everything that needs AppState up front, then drop the State +
         // config lock before the STT await — no std Mutex (or State) held across
@@ -275,6 +287,8 @@ impl Processor for SttProcessor {
 
         // Shared STT core — no float-pill side effects; the engine surfaces any
         // failure as a Failed event via classify_error.
+        let stt_model = svc.model.clone();
+        let t0 = std::time::Instant::now();
         let out = dictation::stt_transcribe(
             audio.samples,
             svc,
@@ -284,6 +298,7 @@ impl Processor for SttProcessor {
             self.props.temperature,
         )
         .await?;
+        let latency_ms = t0.elapsed().as_millis() as i64;
 
         // Same deterministic post-correction the dictation path applies.
         let transcript = if vocab_refs.is_empty() {
@@ -298,8 +313,48 @@ impl Processor for SttProcessor {
         // live path; the legacy `transcribe_samples` site records the same step
         // (record-once makes the double-instrumentation harmless).
         if !transcript.is_empty() {
+            // One meta guard for both directions: stash the model name for
+            // run_workflow's e2e latency record, pull the engine-stamped
+            // workflow id for the stats row. Meta is released before the DB
+            // lock below — meta→db is this module's lock order, never nested
+            // the other way.
+            let workflow_id = match ctx.meta.lock() {
+                Ok(mut meta) => {
+                    meta.insert(META_STT_MODEL.to_string(), serde_json::json!(stt_model));
+                    meta.get(fonos_core::workflow::registry::META_WORKFLOW_ID)
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string()
+                }
+                Err(_) => String::new(),
+            };
             if let Ok(db) = self.app.state::<AppState>().db.lock() {
                 let _ = fonos_core::funnel::record(&db, "first_transcript");
+                // Stats: the `'stt'` events row the Stats view aggregates
+                // (words/sessions/time-saved). Deliberately mic-scoped: only
+                // a real transcription counts as spoken words — text-source
+                // workflows never pass through this processor. Recording
+                // mirrors the history recorder EXACTLY: dry runs skip it, and
+                // so do recorder-less runs — bench carries `recorder: None`
+                // even with deliver=true, and benchmark speech must not
+                // pollute the user's word stats.
+                if !ctx.dry_run && ctx.recorder.is_some() {
+                    let _ = fonos_core::stats::record_event(
+                        &db,
+                        "stt",
+                        &transcript,
+                        "",
+                        duration_secs,
+                        latency_ms,
+                        &workflow_id,
+                        &stt_model,
+                        "",
+                        "",
+                        0,
+                        0,
+                        "",
+                    );
+                }
             }
         }
 
@@ -379,9 +434,16 @@ fn expect_text(data: &Data) -> Result<&str, String> {
     }
 }
 
+/// Meta key for the wall-clock millis at which mic capture ended (set only by
+/// [`MicSource`]); consumed by `workflow_exec::record_e2e_latency`.
+pub(crate) const META_CAPTURE_END_MS: &str = "capture_end_ms";
+/// Meta key for the STT model that produced the transcript (set by
+/// [`SttProcessor`]); consumed by `workflow_exec::record_e2e_latency`.
+pub(crate) const META_STT_MODEL: &str = "stt_model";
+
 /// Read a string field out of `ctx.meta`, dropping the guard within the
 /// expression (meta is a `std::sync::Mutex`, never held across an await).
-fn read_meta_string(ctx: &RunCtx, key: &str) -> Option<String> {
+pub(crate) fn read_meta_string(ctx: &RunCtx, key: &str) -> Option<String> {
     ctx.meta
         .lock()
         .ok()?
@@ -391,7 +453,7 @@ fn read_meta_string(ctx: &RunCtx, key: &str) -> Option<String> {
 }
 
 /// Read an integer field out of `ctx.meta` (see [`read_meta_string`]).
-fn read_meta_i64(ctx: &RunCtx, key: &str) -> Option<i64> {
+pub(crate) fn read_meta_i64(ctx: &RunCtx, key: &str) -> Option<i64> {
     ctx.meta.lock().ok()?.get(key).and_then(|v| v.as_i64())
 }
 

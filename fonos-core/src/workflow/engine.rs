@@ -332,6 +332,15 @@ pub async fn run(
     let (source, processors, outputs) = instantiate(reg, wf, widgets)?;
     check_chain(wf, &source, &processors, &outputs)?;
 
+    // The run's identity is ambient context for every component: components
+    // that write per-run side records (e.g. the desktop STT stats recorder)
+    // key them off `meta[META_WORKFLOW_ID]` rather than having the def
+    // threaded through their signatures.
+    ctx.meta
+        .lock()
+        .expect("run ctx meta mutex poisoned")
+        .insert(crate::workflow::registry::META_WORKFLOW_ID.to_string(), serde_json::json!(wf.id));
+
     // 2. Acquire the initial datum — or, for a test run, substitute
     //    `ctx.mock_text` in place of calling `source.acquire`. Mock text
     //    requires a text-consuming chain head; an audio source rejects it
@@ -812,6 +821,26 @@ mod tests {
                 if raw == "hello" && final_text == "HELLO" && workflow.as_deref() == Some("wf.t")
         ));
         assert_eq!(ev.len(), 2);
+    }
+
+    /// Every run stamps its workflow id into `ctx.meta` before the source
+    /// runs — the ambient identity desktop components (e.g. the STT stats
+    /// recorder) key their per-run side records off.
+    #[tokio::test]
+    async fn run_stamps_workflow_id_into_meta() {
+        let (reg, widgets, wf, _sink) = setup("hello");
+        let ctx = RunCtx {
+            events: Arc::new(Capture(Mutex::new(vec![]))),
+            meta: Mutex::new(serde_json::Map::new()),
+            recorder: None,
+            mock_text: None,
+            dry_run: false,
+        };
+        engine::run(&reg, &wf, &widgets, &ctx).await.unwrap();
+        assert_eq!(
+            ctx.meta.lock().unwrap().get("workflow_id").and_then(|v| v.as_str()),
+            Some("wf.t"),
+        );
     }
 
     /// A text source that does not override `allows_empty` (the default

@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "fonos-desktop"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "arboard",
  "async-trait",

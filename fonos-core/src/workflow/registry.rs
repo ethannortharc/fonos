@@ -9,6 +9,12 @@ use std::sync::{Arc, Mutex};
 use crate::pipeline::EventSink;
 use crate::workflow::model::{Data, DataKind, WidgetDef, WidgetRole, WorkflowDef};
 
+/// Meta key under which [`crate::workflow::engine::run`] stamps the running
+/// workflow's id before the source runs. A shared constant (rather than a
+/// literal at each site) so the stringly-typed producer/consumer pair can't
+/// drift apart silently.
+pub const META_WORKFLOW_ID: &str = "workflow_id";
+
 /// Shared, per-run context passed to every component invocation.
 ///
 /// Holds the platform event sink, out-of-band metadata components use to

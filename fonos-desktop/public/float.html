@@ -16,7 +16,10 @@
     background:rgba(22,21,18,0.95);
     backdrop-filter:blur(30px) saturate(115%);-webkit-backdrop-filter:blur(30px) saturate(115%);
     border:1px solid rgba(255,255,255,0.1);border-radius:16px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 18px 44px rgba(4,3,2,.32);
+    /* Inset highlight only — NO outer drop shadow. The window hugs the content
+       (a few px of margin), so any outer blur is clipped by the window edge
+       into a visible faint dark RECTANGLE behind the glass shape. */
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
     padding:7px;margin-bottom:9px;
     width:156px;
   }
@@ -84,7 +87,8 @@
     background:rgba(22,21,18,0.9);
     backdrop-filter:blur(22px) saturate(112%);-webkit-backdrop-filter:blur(22px) saturate(112%);
     border:1px solid rgba(255,255,255,0.1);border-radius:15px;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 8px 24px rgba(7,5,2,.24);
+    /* Inset highlight only — no outer drop shadow (see #dropdown note). */
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
     font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
     /* Scoped transition (was `all`): the only properties that ever change
        between states/hover are background, border-color and opacity, so the

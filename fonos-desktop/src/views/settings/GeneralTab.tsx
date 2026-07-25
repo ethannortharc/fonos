@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { useT, td, setLocale, resolveLocale } from "../../lib/i18n";
+import { COPYRIGHT } from "../../lib/copyright";
 import type { AppConfig } from "../../types";
 import MicrophonePicker from "./MicrophonePicker";
 import DoctorCard from "./DoctorCard";
@@ -211,17 +212,24 @@ function UpdatesSection() {
   }
 
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div>
-        <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">
-          {t("general.update.title")}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[12px] font-medium text-[#fafaf9] mb-0.5">
+            {t("general.update.title")}
+          </div>
+          <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
+            {t("general.update.current")}
+            {version ? `: ${version}` : ""}
+          </div>
         </div>
-        <div className="text-[10px] text-[rgba(255,255,255,0.3)]">
-          {t("general.update.current")}
-          {version ? `: ${version}` : ""}
-        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">{control}</div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">{control}</div>
+      {/* The app's in-app "about" line — there is no dedicated About view, so
+          the version block doubles as one. Dimmer than the version line so it
+          reads as a footer rather than another status row. Same string the
+          native About panel shows (bundle.copyright in tauri.conf.json). */}
+      <div className="text-[10px] text-[rgba(255,255,255,0.22)]">{COPYRIGHT}</div>
     </div>
   );
 }

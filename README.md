@@ -418,4 +418,6 @@ permissions. Please keep changes focused and match the surrounding style.
 
 ## License
 
-[MIT](LICENSE) (c) Ethan
+[MIT](LICENSE)
+
+© 2026 Ethan H.B. Zhou

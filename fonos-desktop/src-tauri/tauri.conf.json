@@ -150,6 +150,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "copyright": "© 2026 Ethan H.B. Zhou",
     "icon": [
       "resources/icon.icns",
       "resources/icon_32x32.png",

@@ -697,6 +697,12 @@ fn main() {
             // Window commands
             commands::resize_float,
             commands::refresh_float_window,
+            commands::float_geometry,
+            commands::nudge_float,
+            commands::commit_float_anchor,
+            commands::show_float,
+            commands::hide_float,
+            commands::reset_float_anchor,
             commands::resize_agent_panel,
             commands::hide_agent_panel,
             commands::hide_note_panel,

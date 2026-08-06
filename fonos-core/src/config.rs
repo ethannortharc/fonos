@@ -87,8 +87,59 @@ pub struct AppConfig {
     pub audio_input_device: String,
     /// Preferred audio output device name, or `"default"`.
     pub audio_output_device: String,
-    /// Whether to show the floating recording indicator pill.
+    /// DEPRECATED — superseded by [`AppConfig::float_indicator`], which folds
+    /// "don't show it" into the same field as the shape (`"off"`). Never had a
+    /// reader: no code path ever hid the float window on this being `false`.
+    /// Kept only so configs written before `float_indicator` existed still
+    /// deserialize, and for the one-time migration in [`migrated_float_indicator`]
+    /// that turns a `false` here into `"off"`. Do not add new readers.
     pub show_floating_indicator: bool,
+    /// Idle shape of the floating indicator — the single knob for how much
+    /// screen the pill occupies when it has nothing to say. One of
+    /// [`FLOAT_HAIRLINE`] / [`FLOAT_DOT`] / [`FLOAT_PILL`] / [`FLOAT_OFF`];
+    /// unknown values normalize to the default (see [`AppConfig::float_form`]).
+    ///
+    /// A `String` rather than an enum, and read through a lenient
+    /// deserializer, for the same reason: [`AppConfig::load`] ends in
+    /// `unwrap_or_default()`, so ANY value that fails to deserialize takes the
+    /// whole struct down and silently resets every unrelated setting. An enum
+    /// would reject an unknown shape; a plain `String` would still reject
+    /// `null` or a number. [`lenient`] contains those, so a bad value costs
+    /// this field and nothing else. (It cannot contain *everything* — a numeric
+    /// literal outside f64's range fails inside serde_json's own number
+    /// parsing, before any field handler runs; [`AppConfig::load`] backs the
+    /// file up before falling back for that case.)
+    ///
+    /// Only the IDLE shape is affected — the working states (recording,
+    /// processing, result) always expand to the full pill, since that is
+    /// exactly when the occluded pixels are the ones you want. That holds for
+    /// `"off"` too: it means "no idle presence", not "no feedback", so the pill
+    /// still surfaces for a dictation and disappears when it finishes.
+    /// Withholding it entirely would mean pressing a hotkey and watching text
+    /// appear with nothing on screen acknowledging it.
+    #[serde(default, deserialize_with = "lenient")]
+    pub float_indicator: String,
+    /// Seconds of idleness before the indicator fades to its dormant level.
+    /// `0` disables dormancy (it stays at the resting opacity indefinitely).
+    #[serde(default = "default_idle_fade_secs", deserialize_with = "lenient_idle_fade_secs")]
+    pub float_idle_fade_secs: u32,
+    /// Remembered indicator position as the *center* of the visible mark, in
+    /// **logical points** — `None` until the user drags it, after which it is
+    /// the anchor every resize positions from.
+    ///
+    /// Center rather than top-left because the window changes size between
+    /// states (a 44×14 hairline grows into a 122×32 recording pill): anchoring
+    /// the center makes the pill bloom symmetrically out of the mark, and keeps
+    /// a dragged position from drifting as the window resizes around it.
+    ///
+    /// Points rather than physical pixels because a multi-display desktop has
+    /// no coherent global *physical* space — see the coordinate-space notes in
+    /// the desktop crate's `commands::float_geom`.
+    #[serde(default, deserialize_with = "lenient")]
+    pub float_anchor_x: Option<f64>,
+    /// See [`AppConfig::float_anchor_x`].
+    #[serde(default, deserialize_with = "lenient")]
+    pub float_anchor_y: Option<f64>,
     /// Ping the configured local STT/LLM backend when recording starts so the
     /// first capture after idle doesn't pay a model cold start (issue #4).
     pub warmup_enabled: bool,
@@ -438,6 +489,105 @@ fn default_pill_hotkey_capture() -> String {
     "hold".into()
 }
 
+// ── Floating indicator idle shapes ──────────────────────────────────────────
+//
+// The four legal values of [`AppConfig::float_indicator`]. Named constants
+// rather than an enum for the reason documented on that field (a bad value
+// must not be able to reset the rest of the config); these keep the string
+// literals from being retyped at each of the ~6 use sites across the desktop
+// crate and the front end.
+
+/// A bare 44×3 rule — no glyph, no wordmark. The smallest shape that still
+/// reads as "the app is alive"; opt-in rather than the default, so an upgrade
+/// never changes the indicator out from under someone.
+pub const FLOAT_HAIRLINE: &str = "hairline";
+/// A 14×14 waveform dot.
+pub const FLOAT_DOT: &str = "dot";
+/// The full pill with glyph and `FONOS` wordmark — the pre-0.8.7 look, and the
+/// default: upgrading should not silently reshape an indicator people already
+/// recognize. The smaller shapes are a setting away.
+pub const FLOAT_PILL: &str = "pill";
+/// No idle presence: hidden while there is nothing to report, but still shown
+/// for the working states. See [`AppConfig::float_indicator`].
+pub const FLOAT_OFF: &str = "off";
+
+/// Resolve an arbitrary `float_indicator` string to one of the four legal
+/// shapes, falling back to [`FLOAT_PILL`].
+///
+/// Pure and free-standing so both the config accessor and the desktop crate's
+/// geometry table normalize identically — and so the fallback is unit-testable
+/// without building an `AppConfig`.
+pub fn normalize_float_indicator(raw: &str) -> &'static str {
+    match raw {
+        FLOAT_DOT => FLOAT_DOT,
+        FLOAT_PILL => FLOAT_PILL,
+        FLOAT_OFF => FLOAT_OFF,
+        FLOAT_HAIRLINE => FLOAT_HAIRLINE,
+        // The empty string, and anything a future version (or a hand-edited
+        // config) might leave behind.
+        _ => FLOAT_PILL,
+    }
+}
+
+fn default_idle_fade_secs() -> u32 {
+    8
+}
+
+/// Like [`lenient`], but falls back to [`default_idle_fade_secs`] rather than
+/// `u32::default()`. Zero is a *meaningful* value here — it means "never dim" —
+/// so a bad value must not quietly turn dormancy off; it should land on the
+/// same 8 seconds a fresh install gets.
+fn lenient_idle_fade_secs<'de, D>(d: D) -> std::result::Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(v).unwrap_or_else(|_| default_idle_fade_secs()))
+}
+
+/// Deserialize a field, falling back to its default instead of failing the
+/// whole struct when the value has the wrong shape.
+///
+/// [`AppConfig::load`] ends in `unwrap_or_default()`, so a single bad value
+/// anywhere resets EVERY setting and the next save writes those defaults to
+/// disk. That is a harsh penalty for a hand-edited `"float_indicator": null`.
+/// Routing through `Value` first contains the damage to the one field.
+///
+/// Only applied to the float-indicator fields; retrofitting the rest of the
+/// struct is a separate, larger change.
+fn lenient<'de, D, T>(d: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(v).unwrap_or_default())
+}
+
+/// One-time migration of the legacy `show_floating_indicator` bool into
+/// [`AppConfig::float_indicator`].
+///
+/// Returns `Some("off")` only when the on-disk JSON predates `float_indicator`
+/// *and* had the indicator explicitly switched off — that is the single piece
+/// of user intent the old bool ever carried. Every other case returns `None`,
+/// meaning "leave the deserialized value alone":
+/// - new key present → the user has already expressed a shape; the old bool is
+///   stale and must not override it.
+/// - old bool `true` or absent → wanted an indicator, and the new default
+///   (the pill) is one.
+///
+/// Takes the two decisions as plain arguments rather than a `serde_json::Value`
+/// so the policy is testable without constructing JSON.
+fn migrated_float_indicator(has_new_key: bool, legacy_show: Option<bool>) -> Option<&'static str> {
+    if has_new_key {
+        return None;
+    }
+    match legacy_show {
+        Some(false) => Some(FLOAT_OFF),
+        _ => None,
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -450,6 +600,10 @@ impl Default for AppConfig {
             audio_input_device: "auto".to_string(),
             audio_output_device: "default".to_string(),
             show_floating_indicator: true,
+            float_indicator: FLOAT_PILL.to_string(),
+            float_idle_fade_secs: 8,
+            float_anchor_x: None,
+            float_anchor_y: None,
             warmup_enabled: true,
             stt_language: "auto".to_string(),
             model_profiles: vec![],
@@ -543,8 +697,79 @@ impl AppConfig {
     pub fn load() -> Self {
         let path = Self::config_path();
         match std::fs::read_to_string(&path) {
-            Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+            Ok(json) => match serde_json::from_str::<Self>(&json) {
+                Ok(mut cfg) => {
+                    cfg.apply_float_indicator_migration(&json);
+                    cfg
+                }
+                // Falling back to defaults here silently discards every setting
+                // the user ever changed, and the next save writes those defaults
+                // over the file — so keep a copy first and say so loudly.
+                //
+                // `lenient` contains the common bad values (null, wrong type,
+                // negative) field-by-field, but it cannot contain everything:
+                // a numeric literal outside f64's range (`1e400`) fails inside
+                // serde_json's own number parsing, before any field-level
+                // handler runs.
+                Err(e) => {
+                    eprintln!("fonos: config.json could not be parsed ({e})");
+                    let backup = path.with_extension("json.corrupt");
+                    match std::fs::copy(&path, &backup) {
+                        Ok(_) => eprintln!(
+                            "fonos: previous config preserved at {} — falling back to defaults",
+                            backup.display()
+                        ),
+                        Err(e) => eprintln!("fonos: could not back up config.json: {e}"),
+                    }
+                    Self::default()
+                }
+            },
             Err(_) => Self::default(),
+        }
+    }
+
+    /// Fold a pre-`float_indicator` config's `show_floating_indicator: false`
+    /// into `float_indicator = "off"`.
+    ///
+    /// Needs the raw JSON, not just the deserialized struct: `#[serde(default)]`
+    /// has already filled `float_indicator` with the default by this point, so
+    /// "absent from disk" and "explicitly set to that same shape" are
+    /// indistinguishable on the struct. Re-parsing to `Value` is the cheap way
+    /// to recover that distinction, and it happens once per load.
+    ///
+    /// A malformed file cannot reach here with anything meaningful (the struct
+    /// parse above would have fallen back to defaults), so a `Value` parse
+    /// failure is simply left alone.
+    fn apply_float_indicator_migration(&mut self, raw_json: &str) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(raw_json) else {
+            return;
+        };
+        let has_new_key = v.get("float_indicator").is_some();
+        let legacy_show = v.get("show_floating_indicator").and_then(|b| b.as_bool());
+        if let Some(migrated) = migrated_float_indicator(has_new_key, legacy_show) {
+            self.float_indicator = migrated.to_string();
+        }
+    }
+
+    /// The indicator's idle shape, normalized to one of the four legal values.
+    /// Every reader should go through this rather than the raw field, so a
+    /// hand-edited or future-version config degrades to the default shape
+    /// instead of rendering nothing.
+    pub fn float_form(&self) -> &'static str {
+        normalize_float_indicator(&self.float_indicator)
+    }
+
+    /// The remembered indicator anchor (center of the visible mark, logical
+    /// points), or `None` when the user has never dragged it — in which case
+    /// callers compute the default bottom-of-screen placement instead.
+    ///
+    /// A non-finite coordinate is rejected as well as a half-written pair: NaN
+    /// would poison every comparison downstream and infinity would place the
+    /// window nowhere, and neither can be clamped back into a monitor.
+    pub fn float_anchor(&self) -> Option<(f64, f64)> {
+        match (self.float_anchor_x, self.float_anchor_y) {
+            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some((x, y)),
+            _ => None,
         }
     }
 
@@ -621,6 +846,143 @@ pub fn migrate_transform_to_text_actions(config: &mut AppConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Floating indicator ──────────────────────────────────────────────────
+
+    #[test]
+    fn float_indicator_defaults_to_pill() {
+        // The familiar pre-0.8.7 shape: an upgrade must not reshape the
+        // indicator without being asked. Hairline/dot are opt-in.
+        assert_eq!(AppConfig::default().float_form(), FLOAT_PILL);
+        assert_eq!(AppConfig::default().float_idle_fade_secs, 8);
+        assert_eq!(AppConfig::default().float_anchor(), None);
+    }
+
+    #[test]
+    fn normalize_float_indicator_passes_through_legal_values() {
+        for v in [FLOAT_HAIRLINE, FLOAT_DOT, FLOAT_PILL, FLOAT_OFF] {
+            assert_eq!(normalize_float_indicator(v), v);
+        }
+    }
+
+    #[test]
+    fn normalize_float_indicator_falls_back_on_junk() {
+        // A hand-edited config or a shape added by a newer version must
+        // degrade to the default shape, never to "render nothing".
+        for junk in ["", "HAIRLINE", "bar", "ribbon", "off "] {
+            assert_eq!(normalize_float_indicator(junk), FLOAT_PILL);
+        }
+    }
+
+    #[test]
+    fn legacy_show_false_migrates_to_off() {
+        assert_eq!(migrated_float_indicator(false, Some(false)), Some(FLOAT_OFF));
+    }
+
+    #[test]
+    fn legacy_show_true_or_absent_keeps_the_new_default() {
+        assert_eq!(migrated_float_indicator(false, Some(true)), None);
+        assert_eq!(migrated_float_indicator(false, None), None);
+    }
+
+    #[test]
+    fn new_key_always_wins_over_the_legacy_bool() {
+        // Once the user has picked a shape, a stale `show_floating_indicator:
+        // false` left in the same file must not silently hide the indicator.
+        assert_eq!(migrated_float_indicator(true, Some(false)), None);
+        assert_eq!(migrated_float_indicator(true, Some(true)), None);
+        assert_eq!(migrated_float_indicator(true, None), None);
+    }
+
+    #[test]
+    fn migration_applies_to_a_pre_float_indicator_config() {
+        let raw = r#"{"show_floating_indicator": false}"#;
+        let mut cfg: AppConfig = serde_json::from_str(raw).unwrap();
+        // serde(default) has already filled in the pill default…
+        assert_eq!(cfg.float_form(), FLOAT_PILL);
+        cfg.apply_float_indicator_migration(raw);
+        // …and the migration recovers the user's original intent.
+        assert_eq!(cfg.float_form(), FLOAT_OFF);
+    }
+
+    #[test]
+    fn migration_leaves_an_explicit_shape_untouched() {
+        let raw = r#"{"show_floating_indicator": false, "float_indicator": "dot"}"#;
+        let mut cfg: AppConfig = serde_json::from_str(raw).unwrap();
+        cfg.apply_float_indicator_migration(raw);
+        assert_eq!(cfg.float_form(), FLOAT_DOT);
+    }
+
+    #[test]
+    fn float_anchor_requires_both_coordinates() {
+        let mut cfg = AppConfig::default();
+        cfg.float_anchor_x = Some(400.0);
+        assert_eq!(cfg.float_anchor(), None, "half a pair is not a position");
+        cfg.float_anchor_y = Some(900.0);
+        assert_eq!(cfg.float_anchor(), Some((400.0, 900.0)));
+    }
+
+    #[test]
+    fn float_anchor_rejects_non_finite_coordinates() {
+        // NaN would poison every comparison downstream and infinity would place
+        // the window nowhere; neither can be clamped back onto a monitor, so
+        // both must read as "never dragged" and fall back to the default spot.
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut cfg = AppConfig::default();
+            cfg.float_anchor_x = Some(bad);
+            cfg.float_anchor_y = Some(900.0);
+            assert_eq!(cfg.float_anchor(), None, "x = {bad}");
+            cfg.float_anchor_x = Some(400.0);
+            cfg.float_anchor_y = Some(bad);
+            assert_eq!(cfg.float_anchor(), None, "y = {bad}");
+        }
+    }
+
+    #[test]
+    fn a_bad_fade_value_falls_back_to_the_field_default_not_zero() {
+        // Zero is a MEANINGFUL value here — it means "never dim" — so a bad
+        // value landing on `u32::default()` would silently disable dormancy
+        // rather than behaving like a fresh install.
+        for bad in [r#"{"float_idle_fade_secs": -1}"#, r#"{"float_idle_fade_secs": "soon"}"#, r#"{"float_idle_fade_secs": null}"#] {
+            let cfg: AppConfig = serde_json::from_str(bad).unwrap();
+            assert_eq!(cfg.float_idle_fade_secs, 8, "{bad}");
+        }
+        // An explicit 0 still means "never dim" and must survive.
+        let cfg: AppConfig = serde_json::from_str(r#"{"float_idle_fade_secs": 0}"#).unwrap();
+        assert_eq!(cfg.float_idle_fade_secs, 0);
+    }
+
+    #[test]
+    fn a_bad_float_field_costs_only_that_field() {
+        // `load()` ends in `unwrap_or_default()`, so without the lenient
+        // deserializer any one of these would fail the whole struct and
+        // silently reset every unrelated setting — which the next save would
+        // then write to disk.
+        for bad in [
+            r#"{"float_indicator": null, "tts_speed": 1.75}"#,
+            r#"{"float_indicator": 7, "tts_speed": 1.75}"#,
+            r#"{"float_idle_fade_secs": -1, "tts_speed": 1.75}"#,
+            r#"{"float_idle_fade_secs": "soon", "tts_speed": 1.75}"#,
+            r#"{"float_anchor_x": "left", "float_anchor_y": 12, "tts_speed": 1.75}"#,
+            r#"{"float_anchor_x": {}, "tts_speed": 1.75}"#,
+        ] {
+            let cfg: AppConfig = serde_json::from_str(bad)
+                .unwrap_or_else(|e| panic!("{bad} should still parse, got {e}"));
+            assert_eq!(cfg.tts_speed, 1.75, "unrelated setting lost for {bad}");
+            assert_eq!(cfg.float_form(), FLOAT_PILL, "{bad}");
+        }
+    }
+
+    #[test]
+    fn unknown_float_indicator_does_not_reset_the_rest_of_the_config() {
+        // The reason this field is a String and not an enum: `load()` ends in
+        // `unwrap_or_default()`, so a value that failed to parse would take
+        // every other setting down with it.
+        let raw = r#"{"float_indicator": "some-future-shape", "tts_speed": 1.75}"#;
+        let cfg: AppConfig = serde_json::from_str(raw).unwrap();
+        assert_eq!(cfg.tts_speed, 1.75, "unrelated settings must survive");
+        assert_eq!(cfg.float_form(), FLOAT_PILL);
+    }
 
     #[test]
     fn migrate_transform_creates_binding_and_clears_legacy_hotkey() {

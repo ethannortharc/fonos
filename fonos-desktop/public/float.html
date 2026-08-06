@@ -8,7 +8,15 @@
     -webkit-clip-path:inset(0 round 0);clip-path:inset(0 round 0)}
   body{background:transparent;overflow:visible;width:100%;height:100%}
 
-  #container{width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+  /* Hidden until the shape is known (float_geometry resolves and applyForm adds
+     .form-ready). Without this the first frame paints the pill's glyph and
+     wordmark inside whatever window size the configured shape asked for —
+     e.g. a 98px pill clipped into a 44px hairline window. `visibility` rather
+     than `opacity` so it cannot collide with the resting/hover/dormant opacity
+     rules on #pill. */
+  #container{width:100%;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;
+    visibility:hidden}
+  html.form-ready #container{visibility:visible}
 
   /* ── Dropdown ── */
   #dropdown{
@@ -83,12 +91,6 @@
   /* ── Pill ── */
   #pill{
     display:inline-flex;align-items:center;justify-content:center;
-    height:30px;
-    background:rgba(22,21,18,0.9);
-    backdrop-filter:blur(22px) saturate(112%);-webkit-backdrop-filter:blur(22px) saturate(112%);
-    border:1px solid rgba(255,255,255,0.1);border-radius:15px;
-    /* Inset highlight only — no outer drop shadow (see #dropdown note). */
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
     font-family:-apple-system,'SF Pro Text',system-ui,sans-serif;
     /* Scoped transition (was `all`): the only properties that ever change
        between states/hover are background, border-color and opacity, so the
@@ -99,10 +101,30 @@
        with respect to resize_float; only paint-only properties may tween. */
     transition:background 0.3s ease,border-color 0.3s ease,opacity 0.3s ease;
     cursor:pointer;
-    padding:0 11px;
     opacity:0.55;
   }
-  #pill:hover{background:rgba(24,23,20,0.96);border-color:rgba(255,255,255,0.16);opacity:1}
+
+  /* ── Glass chrome ──
+     Worn by the `pill` idle shape and by EVERY working state, whatever the
+     idle shape is. It is a separate class rather than part of #pill because
+     the minimal shapes (hairline, dot) exist precisely to put NO
+     backdrop-filter over your text — a blur you can barely see still smears
+     what is under it, which is strictly worse than one you can. So the blur
+     has to be opt-in, not something the small shapes have to undo. */
+  #pill.glass{
+    height:30px;padding:0 11px;
+    background:rgba(22,21,18,0.9);
+    backdrop-filter:blur(22px) saturate(112%);-webkit-backdrop-filter:blur(22px) saturate(112%);
+    border:1px solid rgba(255,255,255,0.1);border-radius:999px;
+    /* Inset highlight only — no outer drop shadow (see #dropdown note). */
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  /* Idle only. Without the :not(.working) guard this rule — id + class +
+     pseudo-class — outranks #pill.recording / .processing / .success / .error,
+     so hovering mid-recording would repaint the red-bordered recording chrome
+     as the neutral idle hover. */
+  #pill.glass:not(.working):hover{background:rgba(24,23,20,0.96);border-color:rgba(255,255,255,0.16)}
+  #pill:hover{opacity:1}
   #pill.recording{opacity:1}
 
   #idle{display:flex;align-items:center;justify-content:center;gap:6px}
@@ -111,6 +133,54 @@
   #pill-text{font-size:10px;font-weight:750;color:rgba(251,191,36,0.78);letter-spacing:0.7px;transition:color 0.15s;line-height:1}
   #pill:hover #pill-text{color:rgba(251,191,36,0.98)}
   #pill:hover #idle-mark{color:rgba(251,191,36,1)}
+
+  /* ── Idle shapes ──
+     Only the idle pane varies; the working states always render the full pill.
+     The shape class lives on <html> so it can also size #pill, which carries
+     the state classes. Shape geometry (the window size each one implies) is
+     owned by Rust's float_geom and applied from JS — the only numbers here are
+     the ones that are purely about paint. */
+  #hairline{display:none;width:44px;height:3px;border-radius:1.5px;background:rgba(251,191,36,0.85);transition:background 0.15s}
+  #pill:hover #hairline{background:rgba(251,191,36,1)}
+  html.form-hairline #idle-mark,html.form-hairline #pill-text{display:none}
+  html.form-hairline #hairline{display:block}
+  html.form-dot #pill-text{display:none}
+  html.form-dot #idle-mark{width:14px;height:14px}
+  html.form-dot #idle-mark svg{width:14px;height:14px}
+
+  /* ── Dormant ──
+     The resting state after `float_idle_fade_secs` of quiet. Dropping
+     backdrop-filter is the whole point, not an optimization: at 18% opacity
+     the glass is invisible, but a live blur would go on smearing the text
+     underneath with nothing on screen to attribute the smear to.
+
+     `#pill.dormant.glass` outranks `#pill.glass` on specificity (two classes
+     to one), so the blur removal does not depend on source order. The bare
+     `#pill.dormant` opacity DOES tie with `#pill:hover` — hence the explicit
+     `#pill.dormant:hover` below, rather than relying on which came first. */
+  #pill.dormant{opacity:0.18}
+  #pill.dormant.glass{
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+    background:rgba(22,21,18,0.5);
+  }
+  /* Pointer over it — wake instantly, without waiting for the JS timer reset. */
+  #pill.dormant:hover{opacity:1}
+
+  /* ── Growing ──
+     Set while the window is catching up to a larger state. The content is
+     already painted (state changes are synchronous — see applyVisual), so
+     without this it would be visibly clipped by the still-small window for the
+     two or three frames the native resize takes. `visibility` rather than
+     `display` so layout — and therefore the menu height measurement — is
+     unaffected, and rather than `opacity` so it cannot collide with the
+     resting/hover/dormant opacity rules. */
+  /* Covers the dropdown as well as the pill: the dropdown is a sibling inside
+     #container, and a menu open is a GROW, so without this it paints at full
+     height inside the still-small window and spills outside the native
+     viewport for the frames the resize takes. On <html> rather than the
+     elements themselves so it matches `html.form-ready #container`'s
+     specificity and wins on source order. */
+  html.sizing #container{visibility:hidden}
 
   /* ── Recording ── */
   #rec{display:none;align-items:center;gap:5px}
@@ -182,6 +252,7 @@
   <div id="dropdown"></div>
   <div id="pill" onclick="onPillClick(event)">
     <div id="idle">
+      <span id="hairline"></span>
       <span id="idle-mark"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="7" cy="12" r="2.15" fill="currentColor" stroke="none"/><path d="M11.2 7.4a6.1 6.1 0 0 1 0 9.2"/><path d="M15 4.45a10 10 0 0 1 0 15.1"/></svg></span>
       <span id="pill-text">FONOS</span>
     </div>
@@ -300,36 +371,112 @@ let rollerIdx=0; // index into circular list, maps to center slot
 // permission's System Settings pane (if any) instead of the mode menu.
 let errActive=false,errPane=null,errTimer=null,stopTm=null;
 
-const S=window.devicePixelRatio||2;
-const PH=32;
-const IDLE_W=98,REC_W=122,PROC_W=116,MENU_W=168;
+/* ── Geometry ──
+   Sizes are LOGICAL pixels throughout, and the idle sizes are owned by Rust
+   (commands::float_geom) rather than restated here — that lockstep between
+   tauri.conf.json, this file and the placement math used to be maintained by
+   hand, and nothing caught it when it slipped.
+
+   Nothing converts to physical pixels on this side any more. It used to, via a
+   `devicePixelRatio` captured once at load; now that the indicator can be
+   dragged between displays that value goes stale the moment it crosses onto a
+   monitor with a different scale factor, and every later resize would be off
+   by the ratio between them. resize_float converts against the window's live
+   scale instead.
+
+   The values below are the pill defaults, used until float_geometry
+   resolves (and if it fails) so the pill always has a sane size to render at. */
+let FORM='pill';
+let IDLE_FADE=8;                 // seconds of quiet before dimming; 0 = never
+let IDLE_SIZES={hairline:[44,14],dot:[24,24],pill:[98,32],off:[98,32]};
+let PH=32;                       // working-state pill height
+const REC_W=122,PROC_W=116,MENU_W=168;
+/// Narrowest a working-state pill may be — the pre-0.8.7 idle width. The idle
+/// shape's own width is irrelevant here: a 44px hairline still expands to a
+/// readable pill the moment it has something to report.
+const RESULT_MIN_W=98;
+
+function idleW(){return (IDLE_SIZES[FORM]||IDLE_SIZES.pill)[0];}
+function idleH(){return (IDLE_SIZES[FORM]||IDLE_SIZES.pill)[1];}
 
 // Width for a success/no-speech result pill. English/short labels stay at the
-// 98px idle width (IDLE_W is the floor); a longer localized label — e.g. the
-// zh "未识别到语音" — grows the pill just enough that it never clips. CJK glyphs
-// are ~full-em at the 9px result font, latin ~5px; +icon(12)+gap(4)+pad(20)+slack.
+// 98px floor; a longer localized label — e.g. the zh "未识别到语音" — grows the
+// pill just enough that it never clips. CJK glyphs are ~full-em at the 9px
+// result font, latin ~5px; +icon(12)+gap(4)+pad(20)+slack.
 function resultW(label){
   var t=0;
   for(var i=0;i<label.length;i++)t+=label.charCodeAt(i)>0x2e7f?9.5:5;
-  return Math.max(IDLE_W,Math.round(t+42));
+  return Math.max(RESULT_MIN_W,Math.round(t+42));
+}
+
+/* Paint the chrome and sizing that belong to the *current* combination of idle
+   shape and state. Called from inside every applyVisual mutation, so it lands
+   in the same frame as the state change it belongs to.
+
+   A working state (recording/processing/result) always renders the
+   full glass pill, whatever the idle shape, because that is exactly when you
+   want to see it. At idle only the `pill` shape wears chrome; hairline and dot
+   are bare marks, and get an explicit height so they sit centered in their
+   window instead of collapsing against its bottom edge (#container is
+   bottom-aligned so the menu can grow upward). */
+function applyChrome(){
+  setFormClass();
+  var p=document.getElementById('pill');
+  var working=expectedState!==null;
+  var glass=working||FORM==='pill';
+  p.classList.toggle('glass',glass);
+  // Marks the working states for CSS that must not treat them as idle (the
+  // hover chrome above). The state classes themselves can't serve: a selector
+  // would have to name all four, and miss the next one added.
+  p.classList.toggle('working',working);
+  // #pill is inline-flex, so it hugs its content — a 14pt dot inside a 24pt
+  // window, or a content-sized glass pill inside the 122pt recording window,
+  // leaves strips that the window swallows clicks on but #pill (which carries
+  // the click and drag handlers) never receives. Pin it to the full window
+  // width so the window really is the hit area, which is the entire premise of
+  // the sizing. The exception is an open menu: there the window is as wide as
+  // the dropdown and the pill is only its bottom row, so stretching it would
+  // draw a 168pt-wide pill under a 156pt menu.
+  var menuOpen=document.getElementById('dropdown').classList.contains('show');
+  var fill=!menuOpen&&desiredW&&desiredH;
+  p.style.width=fill?desiredW+'px':'';
+  p.style.height=fill?desiredH+'px':(glass?'':idleH()+'px');
 }
 
 // Dev-only assertions: the vite dev server / a plain browser load via
 // http(s):, the packaged app via tauri:. Keeps assert noise out of prod logs.
 const DEV=location.protocol==='http:'||location.protocol==='https:';
 
-// Logical size last sent to resize_float — i.e. the REAL window geometry
-// (a superseded queued shrink never updates it). applyVisual compares
-// transition targets against this to decide grow vs shrink.
+/* `curW`/`curH` hold the size RUST last reported the window to be — never a
+   size this file merely requested. See applyVisual's "who owns the window
+   size" note: an issued resize cannot be recalled, so tracking our own
+   requests would drift from reality the first time a transition is superseded.
+   NaN after a failure, so every later comparison misses and the next
+   transition re-issues its resize. */
 let curW=0,curH=0;
-function sz(w,h){
-  // Only applyVisual may call this: every native resize must ride the
-  // protected transition path (paint/resize ordering + full-surface repaint).
-  curW=w;curH=h;
-  if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
-  // resize_float is a sync Tauri command, so it runs on the main thread and
-  // the NSWindow frame change has been applied by the time this resolves.
-  return window.__TAURI_INTERNALS__.invoke('resize_float',{width:Math.round(w*S),height:Math.round(h*S)}).catch(()=>{});
+function sz(w,h,anchorOffsetY){
+  // Only the reconciler may call this: every native resize must ride the
+  // protected paint/resize ordering.
+  if(typeof window.__TAURI_INTERNALS__==='undefined'){curW=w;curH=h;return Promise.resolve();}
+  return window.__TAURI_INTERNALS__.invoke('resize_float',{
+    width:w,height:h,
+    // How far below the window's top edge the mark sits. Omitted (null) means
+    // centered, which is right for every state except an open menu — that
+    // grows the window upward, leaving the mark near the bottom, and centering
+    // there would shove it down by half the menu's height as it opened.
+    anchorOffsetY:(typeof anchorOffsetY==='number')?anchorOffsetY:null,
+  }).then(function(){
+    // Rust de-duplicates against its own record of what it last asked the
+    // platform for, so a resolved call means the window is committed to this
+    // size even though the frame change may still be queued.
+    curW=w;curH=h;
+  },function(e){
+    // NaN misses every later comparison, so the next transition re-issues its
+    // resize — and, unlike a numeric sentinel, cannot masquerade as a small
+    // window and make a shrink look like a grow.
+    curW=NaN;curH=NaN;
+    throw e;
+  });
 }
 
 /* ── Full-surface invalidation (structural fix for the ghost-layer bug) ──
@@ -410,28 +557,179 @@ function assertState(){
    the final state. `seq` supersedes queued work when a newer transition
    begins (rapid hotkey sequences): the newest transition always wins and no
    stale resize can land after it. */
-let seq=0;
-function applyVisual(mutate,w,h){
-  const tok=++seq;
-  const paint=()=>{mutate();assertState();};
-  if(w===curW&&h===curH){
-    paint();flashRepaint();
-  }else if(w>curW||h>curH){
-    sz(w,h).then(()=>{
-      if(tok!==seq)return;
-      paint();flashRepaint();
-    });
-  }else{
-    paint();
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      if(tok!==seq)return;
-      sz(w,h).then(()=>{if(tok===seq)flashRepaint();});
-    }));
-  }
+function twoFrames(fn){requestAnimationFrame(()=>requestAnimationFrame(fn));}
+/* Two frames, or 50ms — whichever comes first.
+
+   The timer is not belt-and-braces, it is load-bearing: WebKit suspends
+   requestAnimationFrame for a window that is hidden or fully occluded, and the
+   reconciler awaits this BEFORE the window is first shown. Without the timer
+   that is a closed loop — no frames until the window is shown, and the window
+   is not shown until the geometry lands, which waits on frames. The indicator
+   never appeared at all.
+
+   50ms is ~3 frames at 60Hz, so on a visible window rAF always wins and the
+   timer never fires. */
+function nextTwoFrames(){
+  return new Promise(function(resolve){
+    var done=false;
+    var fin=function(){if(done)return;done=true;resolve();};
+    twoFrames(fin);
+    setTimeout(fin,50);
+  });
 }
-function idleSz(){applyVisual(()=>{enterState(null);},IDLE_W,PH);}
+
+/* ── State and geometry are separate concerns ──
+
+   The state mutation runs SYNCHRONOUSLY and unconditionally. It is never
+   deferred behind a resize and never cancelled, because a state change is not a
+   request — it already happened. The pipeline said "recording started"; the
+   only question is what the window looks like, not whether we believe it.
+
+   Every bug in this area came from the previous design, which awaited the
+   resize and only then applied the mutation: anything that superseded the
+   resize also silently discarded the state change. A settings save landing in
+   the ~3 frames of a recording's grow left the pill idle for the whole take,
+   and a failed grow into a terminal error left it stuck on the previous pane
+   forever. Bookkeeping added to detect those cases (a `pendingState` marker, a
+   supersession token) then had its own stranding bugs.
+
+   Geometry is reconciled toward `desired*` by a single coalescing loop. It is
+   idempotent and always converges on the newest desired size, so there is
+   nothing to supersede and no ordering to get wrong. */
+let desiredW=0,desiredH=0,desiredOff=null;
+
+/* Paint ordering is preserved as a paint-only concern. On a GROW the window is
+   still small when the wider content is painted, so the pane is hidden (see
+   `.sizing` in the CSS) until the window has caught up — a few frames of
+   nothing, rather than a few frames of a clipped pill. On a SHRINK the smaller
+   content is already correct inside the larger window, so nothing is hidden. */
+function applyVisual(mutate,w,h,anchorOffsetY){
+  // NaN (a failed resize) must count as "unknown, assume grow" — the safe side,
+  // since growing hides the pane rather than risking a clipped paint.
+  const grows=!(w<=curW&&h<=curH);
+  if(grows)document.documentElement.classList.add('sizing');
+  // Before the mutation, not after: applyChrome() sizes #pill from these, and
+  // reading them a line too late left the pill wearing the PREVIOUS state's
+  // width — a 44pt pill inside a 122pt recording window, with transparent
+  // strips either side that swallow clicks without being clickable.
+  desiredW=w;desiredH=h;desiredOff=anchorOffsetY;
+  mutate();
+  assertState();
+  applyChrome();
+  armDormancy();
+  // Hiding is immediate — an "off" indicator returning to idle should vanish
+  // rather than linger at idle size for the length of a resize. Showing waits
+  // for the geometry to land (below), so it is never revealed mis-sized.
+  if(!shouldShow())syncVisibility();
+  const settled=reconcile();
+  if(shouldShow())settled.then(syncVisibility,NOOP);
+  return settled;
+}
+
+/* Whether the window belongs on screen right now.
+
+   `off` means "no idle presence", NOT "no feedback": pressing a hotkey and
+   watching text appear with nothing acknowledging it anywhere on screen is
+   disorienting. So the pill still surfaces for recording / processing / result
+   and disappears again on the way back to idle. */
+function shouldShow(){return FORM!=='off'||expectedState!==null;}
+/* Deliberately uncached. A remembered "is it shown" would be a second opinion
+   about a window this file does not own — Rust also shows it (the wedged-webview
+   safety net at startup), and a cache that disagreed would suppress the very
+   call needed to put things right. show/hide on an already-shown/hidden window
+   is a no-op, and this runs a handful of times per dictation, not per frame. */
+function syncVisibility(){invoke(shouldShow()?'show_float':'hide_float');}
+
+/* Drive the window toward `desired*`. Coalescing: a call while one is running
+   simply returns the running promise, because the loop re-reads `desired*` on
+   every pass and will pick up the newer target on its own. */
+/** Swallow a rejected transition. A resize failure is reported by whoever
+    gates on the geometry (the reveal handshake); the many call sites that
+    merely fire-and-forget must not turn it into an unhandled rejection. */
+function NOOP(){}
+let reconciling=null;
+function reconcile(){
+  if(reconciling)return reconciling;
+  const run=(async function(){
+    let failed=null;
+    try{
+      // Runs for every shape including "off". A hidden window still needs the
+      // right geometry before it is revealed for a working state — and
+      // resizing while hidden is the one moment nothing can flash.
+      while(!(desiredW===curW&&desiredH===curH)){
+        const w=desiredW,h=desiredH,off=desiredOff;
+        const grows=!(w<=curW&&h<=curH);
+        try{
+          if(grows){
+            // Resize first, then let the queued frame change actually run
+            // before revealing the pane. `resize_float` resolving is NOT proof
+            // the frame changed: tao dispatches both setters onto the main
+            // queue, so the change lands when the main thread next reaches its
+            // run loop — after the promise has already settled.
+            await sz(w,h,off);
+            await nextTwoFrames();
+          }else{
+            // The smaller content is already painted and fits, so shrink
+            // whenever the compositor is ready for it.
+            await nextTwoFrames();
+            // Re-read before committing: a state can begin during those two
+            // frames (closing the menu then immediately recording), and issuing
+            // the shrink we captured beforehand would squeeze the window down
+            // to idle before growing it again — the new pane visibly vanishing
+            // in between. The loop condition picks up the newer target instead.
+            if(desiredW!==w||desiredH!==h||desiredOff!==off)continue;
+            await sz(w,h,off);
+          }
+        }catch(e){
+          failed=e;
+          // Retry only for a target that has since CHANGED — a newer state
+          // deserves its own attempt. Retrying the same failing size would
+          // spin on IPC forever, because the failure leaves curW/curH NaN and
+          // NaN never equals the target.
+          if(desiredW===w&&desiredH===h&&desiredOff===off)break;
+          continue;
+        }
+        // This pass landed, so whatever failed before it is history — the
+        // window IS the size the caller is waiting for. Keeping the stale error
+        // would make a reveal handshake treat successful geometry as failed and
+        // fall through to the safety net.
+        failed=null;
+        flashRepaint();
+      }
+    }finally{
+      document.documentElement.classList.remove('sizing');
+    }
+    // Surface the failure: callers that gate on the geometry having landed
+    // (the off→visible handshake, startup's reveal) must not proceed as though
+    // the window were the right size.
+    if(failed)throw failed;
+  })();
+  reconciling=run;
+  // Clear the slot only once the run has settled, and only if it is still
+  // ours. Doing this inside the async body ran BEFORE this assignment for a
+  // pass that needed no resize, so the fulfilled promise was written back over
+  // the null and every later reconcile() returned it without doing anything —
+  // leaving `.sizing` applied and the indicator invisible until a reload.
+  const clear=()=>{if(reconciling===run)reconciling=null;};
+  run.then(clear,clear);
+  return run;
+}
+
+function idleSz(){return applyVisual(()=>{enterState(null);},idleW(),idleH());}
+/* Re-apply the geometry the current state already asked for. Used when
+   something outside the state machine invalidates the window — switching away
+   from "off", where every resize was skipped and the native window is still
+   whatever startup left it. */
+function reassertGeometry(){
+  if(!desiredW||!desiredH)return idleSz();
+  curW=NaN;curH=NaN; // force the reconciler to re-issue rather than see a match
+  return reconcile();
+}
 
 function onPillClick(e){
+  // A drag (or a press that closed the menu) ends in a click event here.
+  // Swallow it, or every reposition would also toggle the workflow menu.
+  if(swallowClick){swallowClick=false;e.stopPropagation();return;}
   // While an error is showing, a click opens the relevant System Settings pane
   // (when the error carries one) instead of toggling the mode menu.
   if(errActive){
@@ -444,14 +742,22 @@ function onPillClick(e){
   toggleMenu(e);
 }
 function toggleMenu(e){
-  if(isRec)return;
+  // Idle only. `isRec` alone was not enough: processing and the result panes
+  // clear it, so the menu could open over them — and closing it always targets
+  // the IDLE size, which would clip the working pane into a 44pt window (and,
+  // for the result panes, leave `.show` set on a menu nothing ever closes).
+  if(expectedState!==null)return;
   e.stopPropagation();
   const dd=document.getElementById('dropdown');
   if(dd.classList.contains('show')){closeMenu();}
   else{
     // Reload modes each time menu opens — picks up newly added modes
     loadModes().then(()=>{
-      if(isRec)return; // recording started while modes were loading
+      // Re-check the FULL idle condition, not just isRec: processing and the
+      // result panes clear isRec, so a load that resolves after one of them
+      // began would open a menu over the working pane and hand applyVisual a
+      // menu-sized target that supersedes the pane's own.
+      if(expectedState!==null)return;
       rollerIdx=allModes.findIndex(m=>m.id===currentMode);
       if(rollerIdx<0)rollerIdx=0;
       renderMenu();
@@ -462,7 +768,11 @@ function toggleMenu(e){
       dd.style.visibility='hidden';
       dd.classList.add('show');
       const h=dd.offsetHeight;
-      applyVisual(()=>{dd.style.visibility='';},MENU_W,PH+h+10);
+      // The mark holds still and the menu grows upward above it: the window is
+      // the menu plus the mark's own row, and the anchor sits in the middle of
+      // that bottom row rather than in the middle of the window.
+      const markH=idleH(),total=markH+h+10;
+      applyVisual(()=>{dd.style.visibility='';},MENU_W,total,total-markH/2).catch(NOOP);
     });
   }
 }
@@ -472,7 +782,15 @@ function closeMenu(){
   // clobber a wide error pill) when there is nothing to close.
   const dd=document.getElementById('dropdown');
   if(!dd.classList.contains('show'))return;
-  applyVisual(()=>{dd.classList.remove('show');},IDLE_W,PH);
+  // Back to whatever the CURRENT state wants. It is idle in practice (the menu
+  // cannot open otherwise), but a state can begin while the menu is up — a
+  // hotkey press does not go through the pill — and shrinking to the idle size
+  // then would clip the pane that just appeared.
+  if(expectedState!==null){
+    applyVisual(()=>{dd.classList.remove('show');},desiredW,desiredH,desiredOff).catch(NOOP);
+  }else{
+    applyVisual(()=>{dd.classList.remove('show');},idleW(),idleH()).catch(NOOP);
+  }
 }
 
 // Get mode at circular index
@@ -592,6 +910,146 @@ function openSettings(){
   window.__TAURI_INTERNALS__.invoke('plugin:event|emit',{event:'show-main-window',payload:'settings'}).catch(()=>{});
 }
 
+/* ── Layered dormancy ──
+   After `float_idle_fade_secs` of quiet the indicator drops to 18% and sheds
+   its backdrop-filter (see the .dormant CSS). Re-armed by every transition and
+   by the pointer coming near, so it only ever fires on genuine idleness.
+
+   Working states never dim: the whole point of the recording/processing panes
+   is to be read, and a run longer than the fade delay would otherwise fade out
+   mid-sentence. */
+let dormantTm=null;
+function armDormancy(){
+  if(dormantTm){clearTimeout(dormantTm);dormantTm=null;}
+  var p=document.getElementById('pill');
+  if(!p)return;
+  p.classList.remove('dormant');
+  if(!IDLE_FADE||expectedState!==null||FORM==='off')return;
+  dormantTm=setTimeout(function(){
+    dormantTm=null;
+    // Re-check: a state may have begun between arming and firing.
+    if(expectedState!==null)return;
+    p.classList.add('dormant');
+    // The opacity tween is 0.3s; flush the full surface once it has settled,
+    // for the same reason every other transition does (see flashRepaint) —
+    // a partial damage rect can leave the old, brighter pixels behind.
+    setTimeout(flashRepaint,400);
+  },IDLE_FADE*1000);
+}
+
+/* ── Drag ──
+   The window IS the hit area (see float_geom), so a press anywhere on the
+   indicator is either a click or the start of a drag. They are told apart by
+   distance, not time: under DRAG_SLOP the press stays a click, at or past it
+   the drag begins and the click that follows is swallowed.
+
+   The gesture is driven from here via pointer capture rather than handed to the
+   platform's own window-drag loop (`startDragging`). That loop swallows the
+   pointerup, so the webview could only ever *infer* when the drag ended — and
+   every way of inferring it was wrong in a different way. A debounce on window
+   moves fires during a mid-drag pause, and worse, window-move events cannot
+   distinguish the user dragging from this app moving its own window (following
+   the cursor to another display, or clamping a bigger state back on screen), so
+   a programmatic move could be recorded as the user's chosen position.
+
+   Owning the gesture makes both ends unambiguous: pointerdown starts it,
+   pointerup finishes it and commits once. Deltas are screen-relative, so the
+   window tracking the pointer does not feed back into them. */
+const DRAG_SLOP=4;
+let pressed=false,dragging=false,swallowClick=false;
+let pressX=0,pressY=0,lastX=0,lastY=0;
+
+function invoke(cmd,args){
+  if(typeof window.__TAURI_INTERNALS__==='undefined')return Promise.resolve();
+  return window.__TAURI_INTERNALS__.invoke(cmd,args||{}).catch(()=>{});
+}
+
+function onPointerDown(e){
+  // Left button only; a right-click must not start a window drag.
+  if(e.button!==0)return;
+  pressed=true;dragging=false;
+  pressX=lastX=e.screenX;pressY=lastY=e.screenY;
+  // Capture so the moves keep arriving even as the window slides out from
+  // under the pointer.
+  try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){}
+}
+
+function onPointerMove(e){
+  armDormancy(); // pointer activity over the indicator counts as "awake"
+  if(!pressed)return;
+  if(!dragging){
+    if(Math.abs(e.screenX-pressX)<DRAG_SLOP&&Math.abs(e.screenY-pressY)<DRAG_SLOP)return;
+    // A press that turns into a drag while the menu is open just closes the
+    // menu. Dragging out of an open menu would have to shrink the window
+    // mid-gesture, and the click that ends the gesture must not reopen what it
+    // just closed — hence swallowClick.
+    if(document.getElementById('dropdown').classList.contains('show')){
+      pressed=false;swallowClick=true;closeMenu();return;
+    }
+    dragging=true;swallowClick=true;
+  }
+  var dx=e.screenX-lastX,dy=e.screenY-lastY;
+  lastX=e.screenX;lastY=e.screenY;
+  if(dx||dy)invoke('nudge_float',{dx:dx,dy:dy});
+}
+
+function onPointerUp(e){
+  try{e.currentTarget.releasePointerCapture(e.pointerId);}catch(_){}
+  pressed=false;
+  if(!dragging)return;
+  dragging=false;
+  // One config write for the whole gesture.
+  invoke('commit_float_anchor');
+}
+
+// The gesture was taken away (the system claimed the pointer, the window lost
+// it). Distinct from pointerup: no click follows, so `swallowClick` must be
+// cleared here or the NEXT genuine click is eaten. The position reached so far
+// is still committed — the indicator is visibly sitting there, and leaving disk
+// disagreeing with the screen is worse than persisting an interrupted drag.
+function onPointerCancel(e){
+  try{e.currentTarget.releasePointerCapture(e.pointerId);}catch(_){}
+  pressed=false;swallowClick=false;
+  if(!dragging)return;
+  dragging=false;
+  invoke('commit_float_anchor');
+}
+
+/* ── Idle shape ──
+   Applying a shape is paint-only. Rust owns only the window's VISIBILITY for
+   a shape (commands::set_float_visible); the geometry stays on this side so it
+   rides applyVisual's protected transition path, which is what keeps curW/curH
+   honest and stops a shape change from clipping a recording already in
+   flight. */
+// Returns true when the shape actually changed, so the caller knows whether the
+// window geometry needs re-asserting. `config:saved` fires for every settings
+// edit and always carries these two fields, so without this every unrelated
+// save would churn a resize + full-surface repaint on the pill.
+function setFormClass(){
+  var root=document.documentElement;
+  if(!root.classList.contains('form-'+FORM)){
+    root.classList.remove('form-hairline','form-dot','form-pill','form-off');
+    root.classList.add('form-'+FORM);
+  }
+  // Reveal the indicator now that its shape is settled (see #container).
+  root.classList.add('form-ready');
+}
+// Returns true when the shape or fade delay actually changed, so the caller
+// knows whether the window geometry needs re-asserting. `config:saved` fires
+// for every settings edit and always carries these two fields, so without this
+// every unrelated save would churn a resize + full-surface repaint.
+//
+// Deliberately does NOT paint the new shape: hairline↔dot changes width and
+// height in OPPOSITE directions, so painting the dot while the window is still
+// 44×14 clips it vertically. The class swap is handed to applyVisual as the
+// mutation instead, where it lands on the correct side of the resize.
+function applyForm(form,fadeSecs){
+  var changed=false;
+  if(form&&form!==FORM){FORM=form;changed=true;}
+  if(typeof fadeSecs==='number'&&fadeSecs!==IDLE_FADE){IDLE_FADE=fadeSecs;changed=true;}
+  return changed;
+}
+
 // Single-state invariant. A new cycle can begin while a previous state is
 // still showing (success revert pending, an error lingering, an STS turn still
 // speaking). enterState clears any pending revert timer (stopTm / errTimer) and
@@ -603,6 +1061,13 @@ function enterState(cls){
   if(stopTm){clearTimeout(stopTm);stopTm=null;}
   if(errTimer){clearTimeout(errTimer);errTimer=null;}
   var p=document.getElementById('pill');
+  // A hotkey can start a cycle while the menu is open; the menu must not
+  // survive into a window sized for the new pane.
+  // Every state change closes the menu, idle included: a hotkey can start a
+  // cycle while it is open, and a settings save can resize at idle — either way
+  // a surviving `.show` leaves a menu in a window sized without it.
+  var dd=document.getElementById('dropdown');
+  if(dd)dd.classList.remove('show');
   p.classList.remove('recording','processing','success','error');
   if(cls)p.classList.add(cls);
   else lastResultKey=null; // idle: no transient result label to re-localize
@@ -617,13 +1082,13 @@ function startRec(){
     if(durTm)clearInterval(durTm);
     durTm=setInterval(()=>{document.getElementById('rec-dur').textContent=Math.round((Date.now()-t0)/1000)+'s';},1000);
     if(animId)cancelAnimationFrame(animId);animT=0;drawW();
-  },REC_W,PH);
+  },REC_W,PH).catch(NOOP);
 }
 function showProcessing(){
   isRec=false;clearErr();
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
-  applyVisual(()=>{enterState('processing');},PROC_W,PH);
+  applyVisual(()=>{enterState('processing');},PROC_W,PH).catch(NOOP);
 }
 function stopRec(text){
   isRec=false;clearErr();
@@ -642,9 +1107,9 @@ function stopRec(text){
     enterState(text?'success':'error');
     stopTm=setTimeout(()=>{
       stopTm=null;
-      idleSz();
+      idleSz().catch(NOOP);
     },1200);
-  },resultW(L(key)),PH);
+  },resultW(L(key)),PH).catch(NOOP);
 }
 // ── Empty input ── PillEventSink (adapters.rs) emits `float:empty-input` for
 // PipelineEvent::EmptyInput — a text source (e.g. selection) that produced no
@@ -669,9 +1134,9 @@ function showEmptyInput(){
     enterState('error');
     stopTm=setTimeout(()=>{
       stopTm=null;
-      idleSz();
+      idleSz().catch(NOOP);
     },1200);
-  },resultW(L(key)),PH);
+  },resultW(L(key)),PH).catch(NOOP);
 }
 // ── Bench reset ── Emitted by BenchEventSink (bench.rs) once a Test Run bench
 // run reaches a terminal state (Delivered/NoSpeech/Failed). A bench mic run's
@@ -691,7 +1156,7 @@ function resetPill(){
   if(durTm){clearInterval(durTm);durTm=null;}
   if(animId){cancelAnimationFrame(animId);animId=null;}
   clearErr();
-  idleSz();
+  idleSz().catch(NOOP);
 }
 function clearErr(){
   errActive=false;errPane=null;
@@ -753,9 +1218,9 @@ function showError(payload){
     // Permission errors linger longer so they can be read and clicked.
     errTimer=setTimeout(function(){
       clearErr();
-      idleSz();
+      idleSz().catch(NOOP);
     },pane?6000:2600);
-  },w,PH);
+  },w,PH).catch(NOOP);
 }
 function drawW(){
   animId=requestAnimationFrame(drawW);animT+=0.04;
@@ -771,6 +1236,14 @@ document.addEventListener('click',e=>{
 // Close when window loses focus (user clicks anywhere outside the float window)
 window.addEventListener('blur',()=>{closeMenu();});
 
+// ── Pointer: wake from dormancy, and tell a click from a drag ──
+var pillEl=document.getElementById('pill');
+pillEl.addEventListener('pointerdown',onPointerDown);
+pillEl.addEventListener('pointermove',onPointerMove);
+pillEl.addEventListener('pointerup',onPointerUp);
+pillEl.addEventListener('pointercancel',onPointerCancel);
+document.addEventListener('mouseenter',()=>armDormancy());
+
 function setup(){
   if(typeof window.__TAURI_INTERNALS__==='undefined'){setTimeout(setup,500);return;}
   const inv=window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__);
@@ -782,14 +1255,66 @@ function setup(){
   listen('float:empty-input',()=>showEmptyInput());
   listen('float:error',e=>showError(e&&e.payload?e.payload:''));
   listen('float:reset',()=>resetPill());
-  // Settings changed (not a pill terminal event): live-update the language and
-  // active voice workflow from the small subset save_config emits.
+  // Settings changed (not a pill terminal event): live-update the language,
+  // active voice workflow and indicator shape from the subset save_config
+  // emits. Rust only shows/hides the window for a shape change
+  // (commands::set_float_visible) — the geometry is this side's job, so that
+  // it rides applyVisual's protected transition path like every other resize.
   listen('config:saved',e=>{
     var p=e&&e.payload;if(!p)return;
+    var wasOff=FORM==='off';
     if(p.active_voice_workflow)currentMode=p.active_voice_workflow;
     applyLocale(p.ui_language);
+    if(applyForm(p.float_indicator,p.float_idle_fade_secs)){
+      // Re-assert geometry for whatever is on screen. At idle that is the new
+      // shape's idle size; mid-state it is the pane's own size — which matters
+      // most when leaving "off", where every resize was skipped and the native
+      // window is still whatever startup left it, so a 122pt recording pill
+      // would otherwise be shown inside a 44pt frame.
+      // Geometry for the new shape; syncVisibility (inside applyVisual) then
+      // shows or hides to match. The bespoke off→visible handshake that used to
+      // live here is gone: visibility is now a plain function of shape AND
+      // state, re-evaluated by every transition, so a shape change needs no
+      // special case of its own.
+      if(expectedState===null)idleSz().catch(NOOP); else reassertGeometry().catch(NOOP);
+    }
   });
-  loadCfg();loadModes();idleSz();
+
+  // Shape and fade delay before anything paints, so the first frame is already
+  // the configured shape rather than the built-in default flashing into it.
+  //
+  // #container stays `visibility:hidden` until applyForm marks the document
+  // form-ready, so EVERY exit from here must reach applyForm — a path that
+  // doesn't leaves the indicator permanently invisible with no way to recover
+  // from the UI, since its own settings live behind it. Hence the falsy-payload
+  // branch and the timeout below: a hung invoke must still end in a visible,
+  // default-shaped indicator.
+  var geomDone=false;
+  function applyGeometry(g){
+    if(geomDone)return;
+    geomDone=true;
+    if(g&&Array.isArray(g.sizes)){
+      var m={};
+      g.sizes.forEach(function(row){m[row[0]]=[row[1],row[2]];});
+      IDLE_SIZES=m;
+    }
+    if(g&&typeof g.working_height==='number')PH=g.working_height;
+    applyForm(g&&g.form,g&&g.idle_fade_secs);
+    // Size, then reveal. idleSz() routes the class swap through applyVisual, so
+    // the shape lands on the correct side of the initial resize; the window is
+    // created hidden and shown here, once it is the right size. Without this
+    // the indicator was absent for the whole 1200ms until Rust's safety net
+    // fired — that net is for a wedged webview, not the normal path.
+    // syncVisibility (inside applyVisual) reveals it once the geometry has
+    // landed, and leaves it hidden if that failed — a window shown without
+    // #container's form-ready is invisible to the eye but still eats clicks.
+    // Rust's 1200ms net covers a total failure.
+    idleSz().catch(NOOP);
+  }
+  inv('float_geometry').then(applyGeometry).catch(function(){applyGeometry(null);});
+  setTimeout(function(){applyGeometry(null);},3000);
+
+  loadCfg();loadModes();
 }
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(setup,100)):setTimeout(setup,100);
 </script>

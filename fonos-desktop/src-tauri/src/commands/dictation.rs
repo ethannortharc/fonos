@@ -70,173 +70,158 @@ pub fn force_reset_recording() {
     }
 }
 
-/// Move float pill back to the primary monitor (bottom center).
+/// Place the float indicator at its startup position and show it in the shape
+/// the config asks for (or leave it hidden, for `"off"`).
+///
+/// All the geometry lives in [`super::float_geom`]; this is just the setup-time
+/// entry point. Cross-platform: the placement math no longer needs a per-OS
+/// branch, only the clearance constant does.
 pub fn move_float_to_primary_pub(app: &tauri::AppHandle) {
-    move_float_to_monitor(app, true);
-}
-
-/// Position the float pill at bottom-center of a monitor.
-/// On macOS: uses CGEvent for cursor position and Dock clearance.
-/// On Linux: uses the primary monitor, centered at bottom.
-#[cfg(target_os = "macos")]
-fn move_float_to_monitor(app: &tauri::AppHandle, primary: bool) {
     let Some(float_win) = app.get_webview_window("float") else { return };
-
-    let monitors = match float_win.available_monitors() {
-        Ok(m) if !m.is_empty() => m,
-        _ => return,
-    };
-
-    let target = if primary {
-        monitors.iter().find(|m| m.position().x == 0 && m.position().y == 0)
-            .unwrap_or(&monitors[0])
-    } else {
-        // CGEvent.location() returns points (logical coords on macOS).
-        // Tauri monitor position/size are physical pixels.
-        // Convert monitor bounds to logical for comparison.
-        let cursor = {
-            let source = core_graphics::event_source::CGEventSource::new(
-                core_graphics::event_source::CGEventSourceStateID::CombinedSessionState
-            ).expect("CGEventSource");
-            let event = core_graphics::event::CGEvent::new(source).expect("CGEvent");
-            event.location()
-        };
-
-        eprintln!("[fonos] cursor at logical ({:.0}, {:.0})", cursor.x, cursor.y);
-
-        monitors.iter().find(|m| {
-            let scale = m.scale_factor();
-            // Convert physical → logical
-            let lx = m.position().x as f64 / scale;
-            let ly = m.position().y as f64 / scale;
-            let lw = m.size().width as f64 / scale;
-            let lh = m.size().height as f64 / scale;
-            eprintln!("[fonos] monitor logical: ({:.0},{:.0}) {:.0}x{:.0} scale={scale}", lx, ly, lw, lh);
-            cursor.x >= lx && cursor.x < lx + lw && cursor.y >= ly && cursor.y < ly + lh
-        }).unwrap_or_else(|| {
-            eprintln!("[fonos] cursor not found in any monitor, using first");
-            &monitors[0]
-        })
-    };
-
-    move_float_to_monitor_rect(&float_win, target);
+    let cfg = super::current_config(app);
+    super::seed_float_anchor(&float_win, cfg.float_form(), cfg.float_anchor());
+    super::place_and_show_float(app, cfg.float_form());
 }
 
-/// Bottom-center the float pill on `target`. The single source of truth for the
-/// pill's placement math — target *selection* (primary / under-cursor /
-/// display-that-still-contains-it) is the caller's job; this only does the
-/// geometry, so every path lands the pill identically.
+/// When a recording starts, bring the indicator to the display the cursor is
+/// on — but only when it is not already there.
+///
+/// The "only when not already there" guard is what makes a dragged position
+/// survive: the previous implementation re-ran bottom-center placement on
+/// *every* recording start, which would now silently undo the user's drag the
+/// first time they spoke.
+///
+/// Crossing displays carries the user's intent along — the offset they dragged
+/// the indicator to, relative to that display's default spot, is reapplied on
+/// the new one. That transplant always starts from the **home** anchor, never
+/// from the current (possibly already-transplanted) one: chaining is lossy,
+/// because the clamp applied on a narrow display permanently shrinks the
+/// offset, so hopping to a small screen and back would strand the indicator
+/// somewhere the user never put it.
+///
+/// macOS-only, matching [`super::monitor_under_cursor`]; on other platforms the
+/// indicator simply stays where it is, which is also what a user who placed it
+/// deliberately would expect.
 #[cfg(target_os = "macos")]
-fn move_float_to_monitor_rect(float_win: &tauri::WebviewWindow, target: &tauri::Monitor) {
-    let (px, py) = bottom_center_physical(
-        target.position().x,
-        target.position().y,
-        target.size().width as i32,
-        target.size().height as i32,
-        target.scale_factor(),
+pub(crate) fn follow_cursor_to_monitor(app: &tauri::AppHandle) {
+    use super::float_geom;
+    let Some(float_win) = app.get_webview_window("float") else { return };
+    let Some(home) = super::float_home() else { return };
+    let Some(current) = super::float_anchor() else { return };
+    let Some((mon, _cursor)) = super::monitor_under_cursor(&float_win) else { return };
+
+    // The cursor's display, in the same logical space as every other rect here.
+    let scale = if mon.scale_factor() > 0.0 && mon.scale_factor().is_finite() {
+        mon.scale_factor()
+    } else {
+        1.0
+    };
+    let target: float_geom::Rect = (
+        mon.position().x as f64 / scale,
+        mon.position().y as f64 / scale,
+        mon.size().width as f64 / scale,
+        mon.size().height as f64 / scale,
     );
-    // set_position expects physical pixels.
-    let _ = float_win.set_position(tauri::PhysicalPosition::new(px, py));
+    if float_geom::rect_index_containing(&[target], current.0, current.1).is_some() {
+        return; // already on the cursor's display — nothing to do
+    }
+
+    // Measure the user's offset against the default of the display they chose
+    // the position ON, not wherever the indicator happens to be sitting now.
+    let new_default = float_geom::default_anchor(target);
+    let moved = match super::indicator_monitor(&float_win, Some(home)) {
+        Some((home_mon, _)) => {
+            float_geom::transplant_anchor(home, float_geom::default_anchor(home_mon), new_default)
+        }
+        None => new_default,
+    };
+
+    // Always clamped, unlike seed_float_anchor. That path PRESERVES a position
+    // the user chose, so clamping it against a stand-in size would drift it;
+    // this one RELOCATES the indicator onto the cursor's display, so an
+    // unclamped transplant landing past that display's edge would strand the
+    // pill on the previous screen (or, via indicator_monitor's fallback, the
+    // primary) — with `off` there is no idle marker to hint at where it went.
+    let form = super::current_config(app).float_form();
+    let placed = float_geom::clamp_anchor(moved, float_geom::clamp_size(form), target);
+    // Deliberately updates the current anchor only, never home: following the
+    // cursor is transient and must not overwrite the position the user chose.
+    // Only an explicit drag (`commit_float_anchor`) moves home.
+    super::set_float_anchor(placed);
+    reposition_float_to_anchor(&float_win);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn follow_cursor_to_monitor(_app: &tauri::AppHandle) {}
+
+/// Move the float window so its current size is centered on the current anchor.
+/// Used by the paths that change the anchor without changing the size — so
+/// float.html's `curW`/`curH` stay accurate without it being told anything.
+pub(crate) fn reposition_float_to_anchor(float_win: &tauri::WebviewWindow) {
+    use super::float_geom;
+    let Some(anchor) = super::float_anchor() else { return };
+    let Some((_, size)) = super::float_rect(float_win) else { return };
+    let raw = float_geom::top_left_for(anchor, size);
+    // Clamp the RECT, exactly as resize_float does. The window may currently be
+    // a working state far wider than the idle shape whose anchor was clamped,
+    // so an anchor legal for a 44pt hairline can still put a 122pt recording
+    // pill off the edge. Without this, that pill stays half off-screen until
+    // its next state transition happens to re-run resize_float.
+    let (x, y) = match super::indicator_monitor(float_win, Some(anchor)) {
+        Some((mon, _)) => float_geom::clamp_top_left(raw, size, mon),
+        None => raw,
+    };
+    let _ = float_win.set_position(tauri::LogicalPosition::new(x.round(), y.round()));
     // A programmatic move of a transparent NSWindow can leave the window
     // server compositing the old frame at the old spot until a display pass
     // happens — same ghost mechanism as resize_float; see refresh_ns_window.
+    #[cfg(target_os = "macos")]
     super::refresh_ns_window(float_win);
+    #[cfg(target_os = "linux")]
+    super::refresh_gtk_window(float_win);
 }
 
-/// Pure bottom-center math: given a monitor's physical bounds and scale, return
-/// the physical (x, y) that centers the 98×32 pill horizontally and sits it
-/// ~110pt above the monitor's bottom edge (macOS Dock clearance). Extracted so
-/// the placement is unit-testable without a live window.
+/// Re-place the float indicator after the display configuration changes
+/// (external monitor connected/disconnected, resolution/arrangement change).
 ///
-/// Pill geometry is a three-way lockstep: tauri.conf.json float window (98×32)
-/// ↔ float.html IDLE_W/PH ↔ here.
-#[cfg(target_os = "macos")]
-fn bottom_center_physical(mon_x: i32, mon_y: i32, mon_w: i32, mon_h: i32, scale: f64) -> (i32, i32) {
-    let pill_w = 98.0; // logical pixels
-    let pill_h = 32.0;
-    // ~110pt above screen bottom to clear macOS Dock + gap above it
-    let dock_clearance = 110.0;
-
-    // Convert monitor position/size to logical
-    let lx = mon_x as f64 / scale;
-    let ly = mon_y as f64 / scale;
-    let lw = mon_w as f64 / scale;
-    let lh = mon_h as f64 / scale;
-
-    // Center horizontally, position above Dock at bottom
-    let x = lx + (lw - pill_w) / 2.0;
-    let y = ly + lh - pill_h - dock_clearance;
-
-    ((x * scale) as i32, (y * scale) as i32)
-}
-
-/// A monitor's physical bounds — the plain-data slice of `tauri::Monitor` that
-/// the pure target-selection logic below operates on (so it needs no live app).
-#[cfg(target_os = "macos")]
-#[derive(Clone, Copy, Debug)]
-struct MonitorRect {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-}
-
-/// Pure: index of the first rect whose bounds contain the point `(cx, cy)`,
-/// else `None`. Left edge inclusive, right/bottom exclusive — matching
-/// `resize_float`'s existing "which monitor is the pill's center on" test.
-#[cfg(target_os = "macos")]
-fn monitor_index_containing(rects: &[MonitorRect], cx: i32, cy: i32) -> Option<usize> {
-    rects
-        .iter()
-        .position(|r| cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h)
-}
-
-/// Re-place the float pill after the display configuration changes (external
-/// monitor connected/disconnected, resolution/arrangement change).
-///
-/// Rule: if the pill's current center still falls inside a live monitor, re-run
-/// the bottom-center math on *that* monitor — so a resolution or arrangement
-/// shift re-anchors the pill without yanking it off the display the user left it
-/// on. If its display is gone (center inside no live monitor), fall back to the
-/// primary monitor, same as first-launch placement.
+/// Rule: if the home position still falls inside a live monitor, keep it and
+/// only clamp it back into that monitor's (possibly changed) bounds — a
+/// resolution shift must not throw away a position the user chose. If its
+/// display is gone, fall back to the default placement on the primary monitor,
+/// same as first launch.
 #[cfg(target_os = "macos")]
 pub(crate) fn reposition_float_after_display_change(app: &tauri::AppHandle) {
+    use super::float_geom;
     let Some(float_win) = app.get_webview_window("float") else { return };
+    let Some(home) = super::float_home() else { return };
 
-    let monitors = match float_win.available_monitors() {
-        Ok(m) if !m.is_empty() => m,
-        _ => return,
+    let Some((mon, _)) = super::indicator_monitor(&float_win, Some(home)) else { return };
+    // `indicator_monitor` falls back to the primary display when the point is
+    // inside none of them, so "did its own display survive?" is exactly "is the
+    // point inside the monitor it just handed back".
+    let survived = float_geom::rect_index_containing(&[mon], home.0, home.1).is_some();
+
+    let form = super::current_config(app).float_form();
+    let next = if !survived {
+        float_geom::default_anchor(mon)
+    } else if float_geom::shows_when_idle(form) {
+        float_geom::clamp_anchor(home, float_geom::idle_size(form), mon)
+    } else {
+        home // see seed_float_anchor: no idle window to fit
     };
-
-    // Current pill center, physical pixels (same coordinate space as the
-    // monitor bounds and as resize_float's center-on-monitor test).
-    let (Ok(pos), Ok(size)) = (float_win.outer_position(), float_win.outer_size()) else {
-        return;
-    };
-    let cx = pos.x + size.width as i32 / 2;
-    let cy = pos.y + size.height as i32 / 2;
-
-    let rects: Vec<MonitorRect> = monitors
-        .iter()
-        .map(|m| MonitorRect {
-            x: m.position().x,
-            y: m.position().y,
-            w: m.size().width as i32,
-            h: m.size().height as i32,
-        })
-        .collect();
-
-    let target = match monitor_index_containing(&rects, cx, cy) {
-        // Pill's display survived — re-anchor on it (handles resolution shifts).
-        Some(i) => &monitors[i],
-        // Pill's display is gone — fall back to primary (monitor at origin).
-        None => monitors
-            .iter()
-            .find(|m| m.position().x == 0 && m.position().y == 0)
-            .unwrap_or(&monitors[0]),
-    };
-
-    move_float_to_monitor_rect(&float_win, target);
+    // Home moves too: the old coordinates refer to hardware that is gone (or to
+    // bounds that no longer exist), so keeping them would make the next
+    // follow-the-cursor transplant measure its offset against a phantom display.
+    super::set_float_home(next);
+    // Deliberately NOT persisted. `survived` only tells us whether the saved
+    // coordinate still falls inside a live rect, which conflates "the display
+    // was unplugged" with "the display's resolution shrank past it" — and
+    // writing a default over the user's chosen position for the latter would
+    // lose it permanently, even after they restore the resolution. The stale
+    // saved anchor is instead recognized at startup, where
+    // `seed_float_anchor` falls back to the default rather than clamping a
+    // coordinate that belongs to hardware that is gone.
+    reposition_float_to_anchor(&float_win);
 }
 
 /// Register a CoreGraphics display-reconfiguration callback so the float pill
@@ -302,33 +287,6 @@ pub fn register_display_reconfig_callback(app: &tauri::AppHandle) {
     unsafe {
         let _ = CGDisplayRegisterReconfigurationCallback(on_reconfig, std::ptr::null());
     }
-}
-
-/// Linux/Windows fallback: center on primary monitor, near bottom.
-/// Uses physical pixels directly (Tauri on Linux reports physical).
-#[cfg(not(target_os = "macos"))]
-fn move_float_to_monitor(app: &tauri::AppHandle, _primary: bool) {
-    let Some(float_win) = app.get_webview_window("float") else { return };
-    let monitors = match float_win.available_monitors() {
-        Ok(m) if !m.is_empty() => m,
-        _ => return,
-    };
-    let target = &monitors[0];
-    let scale = target.scale_factor();
-    // Use physical pixels for position (Tauri Linux uses physical coords)
-    let mon_x = target.position().x as f64;
-    let mon_y = target.position().y as f64;
-    let mon_w = target.size().width as f64;
-    let mon_h = target.size().height as f64;
-    // Pill geometry, three-way lockstep: tauri.conf.json float window (98×32)
-    // ↔ float.html IDLE_W/PH ↔ here.
-    let pill_w = 98.0 * scale;
-    let pill_h = 32.0 * scale;
-    let taskbar = 48.0 * scale; // approximate Linux taskbar height
-    let x = mon_x + (mon_w - pill_w) / 2.0;
-    let y = mon_y + mon_h - pill_h - taskbar;
-    eprintln!("fonos: float pill position: ({}, {}) monitor: {}x{} scale={}", x, y, mon_w, mon_h, scale);
-    let _ = float_win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
 }
 
 #[derive(Serialize)]
@@ -513,7 +471,7 @@ pub async fn start_recording(app: tauri::AppHandle, state: tauri::State<'_, AppS
 
     // Move float pill to the monitor where the cursor is (skip for agent mode)
     if !skip_float.unwrap_or(false) {
-        move_float_to_monitor(&app, false);
+        follow_cursor_to_monitor(&app);
         let _ = app.emit("float:start", "");
     }
 
@@ -1332,79 +1290,4 @@ fn preprocess_audio(samples: Vec<i16>) -> (Vec<i16>, (f64, f64)) {
         noise_removed_pct, gain_db);
 
     (normalized, (noise_removed_pct, gain_db))
-}
-
-/// Unit tests for the pure display-placement logic backing
-/// [`reposition_float_after_display_change`]. macOS-gated because the functions
-/// under test are macOS-only (Linux uses a different placement path).
-#[cfg(all(test, target_os = "macos"))]
-mod display_tests {
-    use super::{bottom_center_physical, monitor_index_containing, MonitorRect};
-
-    // Built-in laptop display at the origin, 1512×982 @ 2x (physical 3024×1964).
-    fn builtin() -> MonitorRect {
-        MonitorRect { x: 0, y: 0, w: 3024, h: 1964 }
-    }
-    // External 4K to the right of the built-in, 3840×2160 @ 1x.
-    fn external() -> MonitorRect {
-        MonitorRect { x: 3024, y: 0, w: 3840, h: 2160 }
-    }
-
-    #[test]
-    fn center_on_external_selects_external() {
-        let rects = [builtin(), external()];
-        // A point comfortably inside the external display.
-        assert_eq!(monitor_index_containing(&rects, 3024 + 1920, 1080), Some(1));
-    }
-
-    #[test]
-    fn center_on_builtin_selects_builtin() {
-        let rects = [builtin(), external()];
-        assert_eq!(monitor_index_containing(&rects, 1500, 980), Some(0));
-    }
-
-    #[test]
-    fn stranded_center_on_dead_display_selects_none() {
-        // External unplugged: only the built-in survives, but the pill's center
-        // is still parked at coordinates that were inside the (now gone) 4K.
-        // This is exactly the reported bug — selection must return None so the
-        // caller falls back to the primary monitor.
-        let rects = [builtin()];
-        assert_eq!(monitor_index_containing(&rects, 3024 + 1920, 1080), None);
-    }
-
-    #[test]
-    fn edges_are_left_inclusive_right_exclusive() {
-        let rects = [builtin()];
-        assert_eq!(monitor_index_containing(&rects, 0, 0), Some(0)); // top-left corner
-        assert_eq!(monitor_index_containing(&rects, 3024, 0), None); // right edge exclusive
-        assert_eq!(monitor_index_containing(&rects, 0, 1964), None); // bottom edge exclusive
-    }
-
-    #[test]
-    fn empty_monitor_set_selects_none() {
-        assert_eq!(monitor_index_containing(&[], 100, 100), None);
-    }
-
-    #[test]
-    fn bottom_center_1x_centers_and_clears_dock() {
-        // 1920×1080 @ 1x at origin: x = (1920-98)/2 = 911, y = 1080-32-110 = 938.
-        assert_eq!(bottom_center_physical(0, 0, 1920, 1080, 1.0), (911, 938));
-    }
-
-    #[test]
-    fn bottom_center_2x_scales_back_to_physical() {
-        // 3024×1964 physical @ 2x → logical 1512×982.
-        // x_logical = (1512-98)/2 = 707 → physical 1414.
-        // y_logical = 982-32-110 = 840 → physical 1680.
-        assert_eq!(bottom_center_physical(0, 0, 3024, 1964, 2.0), (1414, 1680));
-    }
-
-    #[test]
-    fn bottom_center_honors_monitor_offset() {
-        // External at physical x=3024 @ 1x: pill centers within that display,
-        // not the desktop origin — the offset must carry through.
-        let (x, _y) = bottom_center_physical(3024, 0, 3840, 2160, 1.0);
-        assert_eq!(x, 3024 + (3840 - 98) / 2);
-    }
 }

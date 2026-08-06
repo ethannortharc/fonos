@@ -10,6 +10,7 @@ import { COPYRIGHT } from "../../lib/copyright";
 import type { AppConfig } from "../../types";
 import MicrophonePicker from "./MicrophonePicker";
 import DoctorCard from "./DoctorCard";
+import FloatIndicatorSection from "./FloatIndicatorSection";
 
 // ── Updates (in-app auto-update) ──────────────────────────────────────────────
 // Compact section: current version + a state-driven control. On mount it runs a
@@ -288,6 +289,11 @@ export default function GeneralTab({
       />
 
       {/* Divider */}
+      <div className="border-t border-[rgba(255,255,255,0.04)]" />
+
+      {/* ── Floating indicator (idle shape / dormancy / position) ── */}
+      <FloatIndicatorSection config={config} onSave={onSave} />
+
       <div className="border-t border-[rgba(255,255,255,0.04)]" />
 
       {/* ── Model warm-up ── */}

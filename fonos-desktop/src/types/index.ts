@@ -10,6 +10,14 @@ export interface TextActionBinding {
   output_target: "floating_popup" | "active_text_field" | "clipboard" | "append_to_container" | "none";
 }
 
+/**
+ * Idle shape of the floating indicator (mirrors the `FLOAT_*` constants in
+ * `fonos-core::config`). Only the *idle* shape varies — every working state
+ * expands to the full pill regardless, `"off"` included: it withholds the
+ * indicator while there is nothing to report, not while there is.
+ */
+export type FloatIndicator = "hairline" | "dot" | "pill" | "off";
+
 /** Application configuration, persisted to disk as JSON. */
 export interface AppConfig {
   hotkey_dictation: string;
@@ -22,7 +30,29 @@ export interface AppConfig {
   tts_speed: number;
   audio_input_device: string;
   audio_output_device: string;
+  /**
+   * DEPRECATED — superseded by `float_indicator`, which folds "don't show it"
+   * into the same field as the shape. Never had a reader; kept so older configs
+   * still round-trip, and migrated to `float_indicator: "off"` on load.
+   */
   show_floating_indicator: boolean;
+  /**
+   * Idle shape of the floating indicator. `"off"` means no idle presence — the
+   * pill still appears for recording/processing/result, then hides again.
+   */
+  float_indicator?: FloatIndicator;
+  /** Seconds of idleness before the indicator dims; `0` disables dimming. */
+  float_idle_fade_secs?: number;
+  /**
+   * Remembered indicator position (center of the mark, **logical points** —
+   * a multi-display desktop has no coherent global physical space; see the
+   * desktop crate's `commands::float_geom`). Set by dragging: `nudge_float`
+   * moves it in memory and `commit_float_anchor` persists it once the gesture
+   * ends. Never edited directly by the settings UI — the "reset position"
+   * button clears it via `reset_float_anchor`.
+   */
+  float_anchor_x?: number | null;
+  float_anchor_y?: number | null;
   warmup_enabled?: boolean;
   ui_language?: "auto" | "en" | "zh";
   hotkey_listen?: string;

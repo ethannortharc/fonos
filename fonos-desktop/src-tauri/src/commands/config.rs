@@ -84,6 +84,14 @@ pub fn save_config(
     let saved_active_voice_workflow = updated.active_voice_workflow.clone();
     let saved_llm = updated.llm_profile.clone();
     let saved_tts = updated.tts_profile.clone();
+    let saved_float_form = updated.float_form();
+    let saved_float_idle_fade_secs = updated.float_idle_fade_secs;
+    // The indicator's shape is applied natively (window size + visibility), not
+    // just repainted, so it needs its own signal separate from the front-end
+    // `config:saved` payload below.
+    let float_form_changed = updates
+        .as_object()
+        .is_some_and(|u| u.contains_key("float_indicator"));
 
     // Update in-memory state.
     *guard = updated;
@@ -107,8 +115,19 @@ pub fn save_config(
         serde_json::json!({
             "ui_language": saved_ui_language,
             "active_voice_workflow": saved_active_voice_workflow,
+            "float_indicator": saved_float_form,
+            "float_idle_fade_secs": saved_float_idle_fade_secs,
         }),
     );
+
+    // Visibility is deliberately NOT touched here. It depends on the STATE as
+    // well as the shape — `"off"` still shows the pill for a dictation in
+    // flight — and only float.html knows the state. Two deciders raced: this
+    // path hid the window on a switch to `"off"` during processing (where
+    // `is_recording()` is already false), while the front end went on believing
+    // it was visible. The `config:saved` event above is the whole handoff; the
+    // front end re-evaluates geometry and visibility together.
+    let _ = float_form_changed;
 
     // Onboarding P2: unlock notifications (once ever, funnel-gated) + tray
     // repaint. Every branch is best-effort — config saving must never fail

@@ -115,6 +115,26 @@ const en = {
   "vocab.attach-hint":
     "To apply a book, open Flows, click a flow's Transcribe or LLM step, and tick the book there.",
 
+  // general tab — floating indicator (idle shape / dormancy / position)
+  "general.float.title": "Floating indicator",
+  "general.float.desc": "The small marker that shows Fonos is listening. Only its idle look changes here — recording and results always show the full pill, whichever shape you pick.",
+  "general.float.shape": "Idle shape",
+  "general.float.shape.hairline": "Hairline",
+  "general.float.shape.hairline.desc": "A bare rule. Smallest footprint, and no blur over what's behind it.",
+  "general.float.shape.dot": "Dot",
+  "general.float.shape.dot.desc": "A small waveform mark.",
+  "general.float.shape.pill": "Pill",
+  "general.float.shape.pill.desc": "The full marker with wordmark.",
+  "general.float.shape.off": "Off",
+  "general.float.shape.off.desc": "Nothing on screen while idle — the pill still appears while dictating, then disappears.",
+  "general.float.fade": "Dim when idle",
+  "general.float.fade.desc": "How long to wait before fading it back. Moving the pointer over it brings it straight back.",
+  "general.float.fade.never": "Never",
+  "general.float.fade.secs": "{n}s",
+  "general.float.position": "Position",
+  "general.float.position.desc": "Drag the indicator anywhere on screen; it stays there.",
+  "general.float.position.reset": "Reset position",
+
   // general tab (extended)
   "general.warmup.title": "Model warm-up",
   "general.warmup.desc": "Ping local STT/LLM backends when recording starts, so the first dictation after idle doesn't pay a model cold start.",
@@ -954,6 +974,26 @@ const zh: Partial<Record<Key, string>> = {
   "vocab.attach-hint": "要让词汇书生效：打开「流程」，点击流程里的听写或大模型节点，在表单中勾选词汇书。",
 
   // general tab (extended)
+  // general tab — floating indicator (idle shape / dormancy / position)
+  "general.float.title": "悬浮指示器",
+  "general.float.desc": "提示 Fonos 正在待命的小标记。这里只改它闲置时的样子——不论选哪种，录音和结果都会展开成完整胶囊。",
+  "general.float.shape": "闲置形态",
+  "general.float.shape.hairline": "细线",
+  "general.float.shape.hairline.desc": "一条细横线。占地最小，且不会模糊它背后的内容。",
+  "general.float.shape.dot": "圆点",
+  "general.float.shape.dot.desc": "一个小的声波标记。",
+  "general.float.shape.pill": "胶囊",
+  "general.float.shape.pill.desc": "带文字的完整标记。",
+  "general.float.shape.off": "关闭",
+  "general.float.shape.off.desc": "闲置时屏幕上什么都没有——听写时胶囊照常出现，结束后再消失。",
+  "general.float.fade": "闲置后隐去",
+  "general.float.fade.desc": "等多久让它淡下去。鼠标移上去会立刻恢复。",
+  "general.float.fade.never": "不隐去",
+  "general.float.fade.secs": "{n} 秒",
+  "general.float.position": "位置",
+  "general.float.position.desc": "把指示器拖到屏幕任意位置，它会留在那儿。",
+  "general.float.position.reset": "重置位置",
+
   "general.warmup.title": "模型预热",
   "general.warmup.desc": "开始录音时预热本地 STT/LLM 后端,避免闲置后的首次听写等待模型冷启动。",
   "general.insert.title": "文本插入",

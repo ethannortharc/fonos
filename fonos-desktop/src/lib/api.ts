@@ -360,12 +360,43 @@ export async function sttConfigured(): Promise<boolean> {
 
 // ─── Window ───────────────────────────────────────────────────────────────────
 
-/** Resize the float window. */
+/**
+ * Resize the float window. Sizes are LOGICAL pixels — the Rust side converts
+ * against the window's live scale factor, so nothing here needs (or should
+ * capture) a `devicePixelRatio`.
+ *
+ * `anchorOffsetY` is how far below the window's top edge the indicator's mark
+ * sits; omit it for the usual centered case. See `commands::resize_float`.
+ */
 export async function resizeFloat(
   width: number,
-  height: number
+  height: number,
+  anchorOffsetY?: number
 ): Promise<void> {
-  return invoke<void>("resize_float", { width, height });
+  return invoke<void>("resize_float", {
+    width,
+    height,
+    anchorOffsetY: anchorOffsetY ?? null,
+  });
+}
+
+/**
+ * Move the float indicator by a pointer delta, in logical points. Memory only —
+ * `commitFloatAnchor` is what writes the position to disk, so a drag costs one
+ * config write rather than one per frame.
+ */
+export async function nudgeFloat(dx: number, dy: number): Promise<void> {
+  return invoke<void>("nudge_float", { dx, dy });
+}
+
+/** Persist the float indicator's position once a drag has ended. */
+export async function commitFloatAnchor(): Promise<void> {
+  return invoke<void>("commit_float_anchor");
+}
+
+/** Forget a dragged position and return the indicator to its default spot. */
+export async function resetFloatAnchor(): Promise<void> {
+  return invoke<void>("reset_float_anchor");
 }
 
 // ─── Selection ───────────────────────────────────────────────────────────────
